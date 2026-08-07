@@ -3,6 +3,7 @@ import Nav from '../components/Nav';
 import DatePicker from '../components/DatePicker';
 import ImageDrop from '../components/ImageDrop';
 import { useAppState } from '../state/useAppState';
+import { formatDate } from '../data/catalog';
 
 export default function NewOrderStep1() {
   const { state, patch, today } = useAppState();
@@ -11,6 +12,13 @@ export default function NewOrderStep1() {
   return (
     <div className="screen-wrap">
       <Nav />
+
+      {state.draftRestoredToast && (
+        <div className="update-toast">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
+          {state.draftRestoredToast}
+        </div>
+      )}
 
       <div className="step-header">
         <div className="step step-active">
@@ -51,9 +59,26 @@ export default function NewOrderStep1() {
         </div>
 
         <div className="form-grid-2">
-          <DatePicker label="Due Date" id="dueDate" selected={state.dueSelected} onSelect={(d) => patch({ dueSelected: d })} today={today} />
-          <DatePicker label="Function Date" id="funcDate" selected={state.funcSelected} onSelect={(d) => patch({ funcSelected: d })} today={today} />
+          <DatePicker
+            label="Due Date"
+            id="dueDate"
+            selected={state.dueSelected}
+            today={today}
+            onSelect={(d) => patch((st) => ({
+              dueSelected: d,
+              // A due date change can leave a previously-picked function
+              // date now falling before it — clear it rather than leave an
+              // invalid combination sitting in the form.
+              funcSelected: st.funcSelected && st.funcSelected < d ? null : st.funcSelected,
+            }))}
+          />
+          <DatePicker label="Function Date" id="funcDate" selected={state.funcSelected} onSelect={(d) => patch({ funcSelected: d })} today={today} minDate={state.dueSelected} />
         </div>
+        {state.dueSelected && (
+          <p className="hint-text" style={{ marginBottom: 'var(--space-4)' }}>
+            Function Date must be on or after the Due Date ({formatDate(state.dueSelected)}).
+          </p>
+        )}
 
         <div className="field" style={{ marginBottom: 'var(--space-6)' }}>
           <label>School Logo</label>

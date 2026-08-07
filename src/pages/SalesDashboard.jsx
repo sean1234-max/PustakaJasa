@@ -1,11 +1,25 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import { useAppState } from '../state/useAppState';
 import { STATUS_STAGES, STATUS_BG, STATUS_TEXT } from '../data/catalog';
 
+// Sales works one stage at a time — filter tabs map 1:1 to STATUS_STAGES,
+// except the first stage is relabeled "Waiting for Approve" since that's
+// the action Sales actually takes on it.
+const FILTERS = [
+  { status: 'Submitted to Sales', label: 'Waiting for Approve' },
+  { status: 'In Production', label: 'In Production' },
+  { status: 'Out for Delivery', label: 'Out for Delivery' },
+  { status: 'Completed', label: 'Completed' },
+];
+
 export default function SalesDashboard() {
   const { state } = useAppState();
   const navigate = useNavigate();
+  const [filter, setFilter] = useState(FILTERS[0].status);
+
+  const filteredOrders = state.orders.filter((ord) => ord.status === filter);
 
   return (
     <div className="screen-wrap">
@@ -18,9 +32,26 @@ export default function SalesDashboard() {
         </div>
       </div>
 
-      <div className="card-kicker">All Orders</div>
+      <div className="tabs" style={{ marginBottom: 'var(--space-4)' }}>
+        {FILTERS.map((f) => {
+          const count = state.orders.filter((o) => o.status === f.status).length;
+          return (
+            <button
+              key={f.status}
+              type="button"
+              className={`btn ${f.status === filter ? 'btn-primary' : 'btn-ghost'}`}
+              onClick={() => setFilter(f.status)}
+            >
+              {f.label} ({count})
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="card-kicker">{FILTERS.find((f) => f.status === filter)?.label}</div>
+      {filteredOrders.length === 0 && <p className="hint-text">No orders in this stage.</p>}
       <div className="order-grid">
-        {state.orders.map((ord) => {
+        {filteredOrders.map((ord) => {
           const idx = STATUS_STAGES.indexOf(ord.status);
           const pendingReview = ord.status === 'Submitted to Sales';
 

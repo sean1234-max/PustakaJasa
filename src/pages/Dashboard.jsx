@@ -25,14 +25,20 @@ export default function Dashboard() {
           {state.updateToast}
         </div>
       )}
+      {state.draftRestoredToast && (
+        <div className="update-toast">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
+          {state.draftRestoredToast} <button type="button" className="btn btn-ghost" style={{ marginLeft: 'var(--space-2)' }} onClick={() => navigate('/order/step1')}>Resume</button>
+        </div>
+      )}
 
       <div className="card-kicker">My Orders</div>
       <div className="order-grid">
         {state.orders.map((ord) => {
           const idx = STATUS_STAGES.indexOf(ord.status);
-          const invoiceIdLabel = idx >= 2 ? (ord.invoiceId || `INV-${ord.id.replace('ORD-', '')}`) : '-';
-          const canAmend = idx < 2;
-          const canAddOn = idx === 2;
+          const invoiceIdLabel = idx >= 1 ? (ord.invoiceId || `INV-${ord.id.replace('ORD-', '')}`) : '-';
+          const canAmend = idx === 0;
+          const canAddOn = idx === 1;
           const isCompleted = ord.status === 'Completed';
 
           return (

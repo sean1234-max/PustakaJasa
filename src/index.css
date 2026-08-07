@@ -312,6 +312,8 @@ a:hover { color: var(--color-accent-900); text-decoration: underline; }
 .cal-cell-dim { color: rgba(0, 0, 0, 0.3); }
 .cal-cell-selected { background: var(--color-accent-700); color: #fff; font-weight: 600; }
 .cal-cell-today { border: 1px solid var(--color-accent-700); }
+.cal-cell-disabled { color: rgba(0, 0, 0, 0.2); cursor: not-allowed; }
+.cal-cell-disabled:hover { background: none; transform: none; }
 
 /* Login */
 .login-header { display: flex; flex-direction: column; align-items: center; gap: var(--space-2); margin-bottom: var(--space-6); }

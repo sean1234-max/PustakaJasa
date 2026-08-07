@@ -1,8 +1,9 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { CATEGORIES, formatDate, standardUnitPrice } from '../data/catalog';
 import { ACCOUNTS } from '../data/accounts';
 import { seedOrders, buildInitialRowsByBlock, buildInitialPlakRows } from '../data/seedOrders';
 import { computeBlocks, snapshotDetail, noopUpdaters } from '../utils/computeBlocks';
+import { loadDraft, saveDraft, clearDraft, draftHasContent } from '../utils/draftPersistence';
 import { AppStateContext } from './AppStateContext';
 
 const TODAY = new Date(2026, 7, 6); // matches the mockup's fixed "today"
@@ -31,6 +32,7 @@ function resetCategoryFields(catKey, st) {
 }
 
 function initialState() {
+  const draft = loadDraft();
   return {
     userId: '',
     password: '',
@@ -67,6 +69,12 @@ function initialState() {
     nextOrderSeq: 96,
     updateToast: '',
 
+    // A restored draft overwrites the blanks above with whatever was last
+    // autosaved (e.g. after a crash or dead battery mid-order) — see
+    // draftPersistence.js for exactly which fields are covered.
+    ...(draft || {}),
+    draftRestoredToast: draftHasContent(draft) ? 'Restored your unsaved order draft.' : '',
+
     amendOrderId: null,
     amendCategoriesUsed: [],
     amendCategory: '',
@@ -94,10 +102,38 @@ export function AppStateProvider({ children }) {
   const [state, setState] = useState(initialState);
   const toastTimer = useRef(null);
   const updateToastTimer = useRef(null);
+  const draftToastTimer = useRef(null);
+  const draftSaveTimer = useRef(null);
+  const stateRef = useRef(state);
+  stateRef.current = state;
 
   const patch = useCallback((updater) => {
     setState((prev) => ({ ...prev, ...(typeof updater === 'function' ? updater(prev) : updater) }));
   }, []);
+
+  // Autosave the in-progress order draft so a crash, closed tab, or dead
+  // battery mid-order doesn't lose what the teacher already filled in —
+  // debounced while typing, flushed immediately on tab close, and always
+  // available again on reload since initialState() reads it back.
+  useEffect(() => {
+    if (state.role !== 'teacher') return undefined;
+    clearTimeout(draftSaveTimer.current);
+    draftSaveTimer.current = setTimeout(() => saveDraft(state), 1500);
+    return () => clearTimeout(draftSaveTimer.current);
+  }, [state]);
+
+  useEffect(() => {
+    const flush = () => { if (stateRef.current.role === 'teacher') saveDraft(stateRef.current); };
+    window.addEventListener('beforeunload', flush);
+    return () => window.removeEventListener('beforeunload', flush);
+  }, []);
+
+  const initialDraftToastRef = useRef(state.draftRestoredToast);
+  useEffect(() => {
+    if (!initialDraftToastRef.current) return undefined;
+    draftToastTimer.current = setTimeout(() => patch({ draftRestoredToast: '' }), 4000);
+    return () => clearTimeout(draftToastTimer.current);
+  }, [patch]);
 
   // Returns the matched role on success (for the caller to route on), or
   // null on failure (and records the error for the Login screen to show).
@@ -112,6 +148,7 @@ export function AppStateProvider({ children }) {
   }, [patch]);
 
   const logout = useCallback(() => {
+    clearDraft();
     patch({ role: null, userId: '', password: '', loginError: '' });
   }, [patch]);
 
@@ -290,13 +327,15 @@ export function AppStateProvider({ children }) {
   // true whenever any item's unit price no longer matches the standard
   // catalog rate — that's the flag that turns the order's total red
   // downstream, so production knows to double-check it against the catalog.
+  // Approving sends the order straight into production — there's no
+  // separate "approved but not yet in production" holding stage.
   const approveOrder = useCallback((orderId, updatedItems) => {
     patch((st) => {
       const totalAmount = updatedItems.reduce((sum, it) => sum + it.harga, 0);
       const priceAdjusted = updatedItems.some((it) => it.unitPrice !== standardUnitPrice(it.jenisPlak));
       return {
         orders: st.orders.map((o) => (
-          o.id === orderId ? { ...o, items: updatedItems, totalAmount, priceAdjusted, status: 'Sales Approved' } : o
+          o.id === orderId ? { ...o, items: updatedItems, totalAmount, priceAdjusted, status: 'In Production' } : o
         )),
       };
     });

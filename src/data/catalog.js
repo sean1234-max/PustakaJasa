@@ -77,11 +77,11 @@ export function standardUnitPrice(code) {
 }
 
 export const STATUS_STAGES = [
-  'Submitted to Sales', 'Sales Approved', 'In Production', 'Out for Delivery', 'Completed',
+  'Submitted to Sales', 'In Production', 'Out for Delivery', 'Completed',
 ];
 
-export const STATUS_BG = ['#e4ecf2', '#c3d5e3', '#5980a6', '#2f5878', '#1d1f20'];
-export const STATUS_TEXT = ['#1d1f20', '#1d1f20', '#fff', '#fff', '#fff'];
+export const STATUS_BG = ['#e4ecf2', '#5980a6', '#2f5878', '#1d1f20'];
+export const STATUS_TEXT = ['#1d1f20', '#fff', '#fff', '#fff'];
 
 export function formatDate(d) {
   if (!d) return '';

@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { WEEKDAYS, MONTHS, formatDate } from '../data/catalog';
 
-function buildCells(view, selected, today, onSelect) {
+function buildCells(view, selected, today, minDate, handleSelect) {
   const { y, m } = view;
   const firstDow = new Date(y, m, 1).getDay();
   const totalDays = new Date(y, m + 1, 0).getDate();
@@ -22,11 +22,13 @@ function buildCells(view, selected, today, onSelect) {
   return cells.map((c, i) => {
     const isSelected = selected && c.date.toDateString() === selected.toDateString();
     const isToday = c.date.toDateString() === today.toDateString();
+    const isDisabled = Boolean(minDate) && c.date < minDate;
     let className = 'cal-cell';
     if (!c.curMonth) className += ' cal-cell-dim';
     if (isSelected) className += ' cal-cell-selected';
     else if (isToday) className += ' cal-cell-today';
-    return { key: i, label: c.label, className, onClick: () => onSelect(c.date) };
+    if (isDisabled) className += ' cal-cell-disabled';
+    return { key: i, label: c.label, className, onClick: isDisabled ? undefined : () => handleSelect(c.date) };
   });
 }
 
@@ -36,7 +38,7 @@ function shiftMonth(view, delta) {
   return { y, m };
 }
 
-export default function DatePicker({ label, id, selected, onSelect, today }) {
+export default function DatePicker({ label, id, selected, onSelect, today, minDate }) {
   const [open, setOpen] = useState(false);
   const [view, setView] = useState({ y: today.getFullYear(), m: today.getMonth() });
   const ref = useRef(null);
@@ -48,7 +50,7 @@ export default function DatePicker({ label, id, selected, onSelect, today }) {
     return () => document.removeEventListener('mousedown', onDocClick);
   }, [open]);
 
-  const cells = buildCells(view, selected, today, (d) => { onSelect(d); setOpen(false); });
+  const cells = buildCells(view, selected, today, minDate, (d) => { onSelect(d); setOpen(false); });
 
   return (
     <div className="field" style={{ position: 'relative' }} ref={ref}>

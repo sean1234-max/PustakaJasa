@@ -12,7 +12,7 @@ export default function OrderDetails() {
   if (!order) return null;
 
   const idx = STATUS_STAGES.indexOf(order.status);
-  const invoiceIdLabel = idx >= 2 ? (order.invoiceId || `INV-${order.id.replace('ORD-', '')}`) : '-';
+  const invoiceIdLabel = idx >= 1 ? (order.invoiceId || `INV-${order.id.replace('ORD-', '')}`) : '-';
   const totalQty = order.items.reduce((sum, it) => sum + (Number(it.qty) || 0), 0);
 
   return (
