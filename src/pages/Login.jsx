@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import { useAppState } from '../state/useAppState';
 
-const ROLE_HOME = { teacher: '/dashboard', salesman: '/sales/dashboard' };
+const ROLE_HOME = { teacher: '/dashboard', salesman: '/sales/dashboard', production: '/production/dashboard' };
 
 export default function Login() {
   const { state, patch, login } = useAppState();

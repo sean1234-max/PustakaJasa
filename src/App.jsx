@@ -14,6 +14,8 @@ import AddOn from './pages/AddOn';
 import AddOnSummary from './pages/AddOnSummary';
 import SalesDashboard from './pages/SalesDashboard';
 import SalesOrderSummary from './pages/SalesOrderSummary';
+import ProductionDashboard from './pages/ProductionDashboard';
+import ProductionOrderDetail from './pages/ProductionOrderDetail';
 
 export default function App() {
   return (
@@ -37,6 +39,9 @@ export default function App() {
 
             <Route path="/sales/dashboard" element={<RequireRole role="salesman"><SalesDashboard /></RequireRole>} />
             <Route path="/sales/orders/:id" element={<RequireRole role="salesman"><SalesOrderSummary /></RequireRole>} />
+
+            <Route path="/production/dashboard" element={<RequireRole role="production"><ProductionDashboard /></RequireRole>} />
+            <Route path="/production/orders/:id" element={<RequireRole role="production"><ProductionOrderDetail /></RequireRole>} />
 
             <Route path="*" element={<Navigate to="/login" replace />} />
           </Routes>

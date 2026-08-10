@@ -48,8 +48,9 @@ export function seedOrders() {
         category: 'LONJAKAN', pbdVariant: 0,
         lineValues: {
           'LONJAKAN::0::0': 'HARI ANUGERAH LONJAKAN SAUJANA',
-          'LONJAKAN::0::1': 'TAHUN 1',
-          'LONJAKAN::0::2': 'KEDUDUKAN PERTAMA',
+          'LONJAKAN::0::1': '2026',
+          'LONJAKAN::0::2': 'TAHUN 1',
+          'LONJAKAN::0::3': 'KEDUDUKAN PERTAMA',
         },
         matrixValues: {},
         rowsByBlock: { 'LONJAKAN::0': [{ id: 1, desc: 'TAHUN 1', qty: '10' }, { id: 2, desc: 'TAHUN 2', qty: '15' }] },

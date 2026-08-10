@@ -68,6 +68,7 @@ function initialState() {
     lastOrderId: '',
     nextOrderSeq: 96,
     updateToast: '',
+    productionToast: '',
 
     // A restored draft overwrites the blanks above with whatever was last
     // autosaved (e.g. after a crash or dead battery mid-order) — see
@@ -102,6 +103,7 @@ export function AppStateProvider({ children }) {
   const [state, setState] = useState(initialState);
   const toastTimer = useRef(null);
   const updateToastTimer = useRef(null);
+  const productionToastTimer = useRef(null);
   const draftToastTimer = useRef(null);
   const draftSaveTimer = useRef(null);
   const stateRef = useRef(state);
@@ -341,10 +343,37 @@ export function AppStateProvider({ children }) {
     });
   }, [patch]);
 
+  // Production: records the invoice ID billing hands over on paper once an
+  // approved order's hardcopy comes back invoiced. Guarded against orders
+  // that aren't yet approved, blank input, and overwriting an existing
+  // invoiceId — that paperwork is treated as immutable once recorded.
+  const setInvoiceId = useCallback((orderId, invoiceId) => {
+    const trimmed = (invoiceId || '').trim();
+    setState((st) => {
+      const order = st.orders.find((o) => o.id === orderId);
+      if (!order || order.status !== 'In Production') {
+        return { ...st, productionToast: 'This order is not ready for invoice entry.' };
+      }
+      if (order.invoiceId) {
+        return { ...st, productionToast: 'Invoice ID is already set for this order.' };
+      }
+      if (!trimmed) {
+        return { ...st, productionToast: 'Enter a valid Invoice ID.' };
+      }
+      return {
+        ...st,
+        orders: st.orders.map((o) => (o.id === orderId ? { ...o, invoiceId: trimmed } : o)),
+        productionToast: 'Invoice ID saved — order is ready for export.',
+      };
+    });
+    clearTimeout(productionToastTimer.current);
+    productionToastTimer.current = setTimeout(() => patch({ productionToast: '' }), 2500);
+  }, [patch]);
+
   const value = {
     state, patch, today: TODAY, login, logout,
     resetCurrentCategory, addToCart, removeFromCart, submitOrder, reorderOrder,
-    openAmend, updateAmend, openAddOn, commitAddOn, approveOrder,
+    openAmend, updateAmend, openAddOn, commitAddOn, approveOrder, setInvoiceId,
   };
 
   return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>;

@@ -22,6 +22,16 @@ export default function Nav() {
     );
   }
 
+  if (state.role === 'production') {
+    return (
+      <nav className="nav">
+        <span className="nav-brand">Production Portal</span>
+        <Link to="/production/dashboard" aria-current={pathname.startsWith('/production') ? 'page' : undefined}>Orders</Link>
+        <button type="button" className="nav-logout" onClick={handleLogout}>Log Out</button>
+      </nav>
+    );
+  }
+
   return (
     <nav className="nav">
       <span className="nav-brand">School Portal</span>

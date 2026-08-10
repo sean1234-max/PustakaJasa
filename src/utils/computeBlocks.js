@@ -29,10 +29,21 @@ export function computeBlocks(catKey, pbdVariant, lineValues, matrixValues, rows
   for (const b of activeIndices) {
     const lines = currentCat.linePlaceholders.map((placeholder, i) => {
       const key = `${catKey}::${b}::${i}`;
-      return {
+      const line = {
         key, num: i + 1, placeholder, value: lineValues[key] || '',
         onChange: (val) => updaters.onLine(key, val),
       };
+      // "position" (index 2) gets an optional second box — both numbered
+      // "3" — so the teacher can split it without needing to know to press
+      // Enter inside a single field. Combined with a line break on export.
+      if (i === 2 && currentCat.positionLine2Placeholder) {
+        const key2 = `${catKey}::${b}::2b`;
+        line.secondLine = {
+          key: key2, placeholder: currentCat.positionLine2Placeholder, value: lineValues[key2] || '',
+          onChange: (val) => updaters.onLine(key2, val),
+        };
+      }
+      return line;
     });
 
     let matrixRows = [], columns = [], colTotals = [], grandTotal = 0, rows = [], blockTotalQty = 0;
@@ -106,3 +117,39 @@ export const noopUpdaters = {
   onLine: () => {}, onMatrix: () => {}, onRowField: () => {}, onRowRemove: () => {},
   onAddRow: () => {}, onPlakSelect: () => {},
 };
+
+// Rebuilds read-only `blocks` (the same shape NewOrderStep2 renders live)
+// for one category of an already-submitted order, straight from each
+// item's stored `detail` snapshot — lets Sales/Production reuse
+// OrderCategoryBlock to show exactly what the teacher filled in, instead
+// of re-deriving a simplified summary. Groups items by blockIdx so a
+// category with more than one block (e.g. both PBD variants used in the
+// same order) renders every block, not just one.
+export function reconstructBlocksForCategory(order, catKey) {
+  const items = (order.items || []).filter((it) => it.categoryKey === catKey);
+  const blockIdxs = [...new Set(items.map((it) => it.blockIdx ?? 0))];
+  const allBlocks = [];
+  let isMatrix = false;
+
+  blockIdxs.forEach((blockIdx) => {
+    const blockItems = items.filter((it) => (it.blockIdx ?? 0) === blockIdx);
+    const lineValues = {};
+    const matrixValues = {};
+    const rowsByBlock = {};
+    const plakRows = {};
+    const key = `${catKey}::${blockIdx}`;
+    blockItems.forEach((it) => {
+      if (it.detail) {
+        Object.assign(lineValues, it.detail.lines || {});
+        if (it.detail.matrix) Object.assign(matrixValues, it.detail.matrix);
+        if (it.detail.rows) rowsByBlock[key] = it.detail.rows;
+      }
+      plakRows[key] = [...(plakRows[key] || []), { id: it.id, jenisPlak: it.jenisPlak }];
+    });
+    const result = computeBlocks(catKey, blockIdx, lineValues, matrixValues, rowsByBlock, plakRows, [], noopUpdaters);
+    isMatrix = result.isMatrix;
+    allBlocks.push(...result.blocks);
+  });
+
+  return { blocks: allBlocks, isMatrix };
+}

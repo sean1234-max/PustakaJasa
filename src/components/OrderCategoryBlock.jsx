@@ -27,13 +27,32 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, refImag
           {blk.lines.map((ln) => (
             <div key={ln.key} className="ref-sample-line">
               <div className="line-num">{ln.num}</div>
-              <input
-                className="input"
-                placeholder={ln.placeholder}
-                value={ln.value}
-                readOnly={!editable.lines}
-                onChange={editable.lines ? (e) => ln.onChange(e.target.value) : undefined}
-              />
+              {ln.secondLine ? (
+                <div className="ref-sample-line-stack">
+                  <input
+                    className="input"
+                    placeholder={ln.placeholder}
+                    value={ln.value}
+                    readOnly={!editable.lines}
+                    onChange={editable.lines ? (e) => ln.onChange(e.target.value) : undefined}
+                  />
+                  <input
+                    className="input"
+                    placeholder={ln.secondLine.placeholder}
+                    value={ln.secondLine.value}
+                    readOnly={!editable.lines}
+                    onChange={editable.lines ? (e) => ln.secondLine.onChange(e.target.value) : undefined}
+                  />
+                </div>
+              ) : (
+                <input
+                  className="input"
+                  placeholder={ln.placeholder}
+                  value={ln.value}
+                  readOnly={!editable.lines}
+                  onChange={editable.lines ? (e) => ln.onChange(e.target.value) : undefined}
+                />
+              )}
             </div>
           ))}
         </div>
