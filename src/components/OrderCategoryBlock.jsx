@@ -1,4 +1,5 @@
 import ImageDrop from './ImageDrop';
+import PlakPicker from './PlakPicker';
 
 // Renders one category "block": reference sample + numbered lines, the
 // quantity table (matrix or list mode), the optional Nama Kelas & Tahun
@@ -170,10 +171,7 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, refImag
             <tr key={pr.id}>
               <td>
                 {editable.jenisPlak ? (
-                  <select className="input" value={pr.jenisPlak} onChange={(e) => pr.setJenisPlak(e.target.value)}>
-                    <option value="">—</option>
-                    {plakOptions.map((po) => <option key={po.code} value={po.code}>{po.code}</option>)}
-                  </select>
+                  <PlakPicker value={pr.jenisPlak} onChange={pr.setJenisPlak} catalog={plakOptions} />
                 ) : (pr.jenisPlak || '—')}
               </td>
               <td><div className="input input-readonly">{pr.qty}</div></td>

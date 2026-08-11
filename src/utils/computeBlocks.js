@@ -1,4 +1,4 @@
-import { CATEGORIES, PLAK_CATALOG } from '../data/catalog';
+import { CATEGORIES, standardUnitPrice } from '../data/catalog';
 
 export function snapshotDetail(catKey, blockIdx, isMatrix, lineValues, matrixValues, rowsByBlockMap) {
   const detail = { lines: {}, matrix: null, rows: null };
@@ -78,12 +78,12 @@ export function computeBlocks(catKey, pbdVariant, lineValues, matrixValues, rows
     const plakRowsKey = `${catKey}::${b}`;
     const rawPlakRows = plakRowsMap[plakRowsKey] || [];
     const plakRows = rawPlakRows.map((pr) => {
-      const priceEntry = PLAK_CATALOG.find((p) => p.code === pr.jenisPlak);
-      const harga = priceEntry ? blockTotalQty * priceEntry.price : 0;
+      const unitPrice = standardUnitPrice(pr.jenisPlak);
+      const harga = unitPrice != null ? blockTotalQty * unitPrice : 0;
       return {
         id: pr.id, jenisPlak: pr.jenisPlak, qty: blockTotalQty, rawHarga: harga,
-        unitPrice: priceEntry ? priceEntry.price : null,
-        hargaLabel: priceEntry ? `RM ${harga.toFixed(2)}` : '—',
+        unitPrice,
+        hargaLabel: unitPrice != null ? `RM ${harga.toFixed(2)}` : '—',
         setJenisPlak: (v) => updaters.onPlakSelect(plakRowsKey, pr.id, v),
       };
     });
