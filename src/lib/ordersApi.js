@@ -50,8 +50,7 @@ function fromDbOrder(row) {
   };
 }
 
-// Fetches all orders, newest first. On a brand-new project the table is
-// empty, so callers should fall back to seeding (see seedOrdersIfEmpty).
+// Fetches all orders, newest first.
 export async function fetchOrders() {
   const { data, error } = await supabase
     .from('orders')
@@ -59,25 +58,6 @@ export async function fetchOrders() {
     .order('created_at', { ascending: false });
   if (error) throw error;
   return data.map(fromDbOrder);
-}
-
-// First-run convenience: if the table is empty, populate it with the app's
-// sample orders so the dashboard isn't blank on a fresh Supabase project.
-// Read-then-write isn't atomic, so two concurrent callers (React StrictMode's
-// double effect invocation in dev, or two browser tabs both hitting an empty
-// table) can both see it empty and both try to insert — the loser gets a
-// unique-violation (23505) on the shared seed IDs. Rather than treat that as
-// a real failure, just re-read: the winner's insert already did the job.
-export async function seedOrdersIfEmpty(seedOrdersFn) {
-  const existing = await fetchOrders();
-  if (existing.length > 0) return existing;
-  const seeded = seedOrdersFn();
-  const { error } = await supabase.from('orders').insert(seeded.map(toDbOrder));
-  if (error) {
-    if (error.code === '23505') return fetchOrders();
-    throw error;
-  }
-  return seeded;
 }
 
 export async function insertOrder(order) {

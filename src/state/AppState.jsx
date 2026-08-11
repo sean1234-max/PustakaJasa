@@ -1,11 +1,11 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { CATEGORIES, formatDate, standardUnitPrice } from '../data/catalog';
 import { ACCOUNTS } from '../data/accounts';
-import { seedOrders, buildInitialRowsByBlock, buildInitialPlakRows } from '../data/seedOrders';
+import { buildInitialRowsByBlock, buildInitialPlakRows } from '../data/formDefaults';
 import { computeBlocks, snapshotDetail, noopUpdaters } from '../utils/computeBlocks';
 import { loadDraft, saveDraft, clearDraft, draftHasContent } from '../utils/draftPersistence';
 import { AppStateContext } from './AppStateContext';
-import { seedOrdersIfEmpty, insertOrder, updateOrder } from '../lib/ordersApi';
+import { fetchOrders, insertOrder, updateOrder } from '../lib/ordersApi';
 
 const TODAY = new Date(2026, 7, 6); // matches the mockup's fixed "today"
 
@@ -132,17 +132,16 @@ export function AppStateProvider({ children }) {
     return () => window.removeEventListener('beforeunload', flush);
   }, []);
 
-  // Orders now live in Supabase (see supabase/migrations/0001_orders.sql)
-  // instead of only in memory. On first load, pull whatever's in the table;
-  // if the project is brand new and the table is empty, seed it once with
-  // the sample orders so the dashboard isn't blank.
+  // Orders live in Supabase (see supabase/migrations/0001_orders.sql) —
+  // pull whatever's really in the table on first load. No mock/sample
+  // fallback: an empty table means an empty dashboard.
   useEffect(() => {
     let cancelled = false;
-    seedOrdersIfEmpty(seedOrders)
+    fetchOrders()
       .then((orders) => { if (!cancelled) patch({ orders, ordersLoaded: true }); })
       .catch((err) => {
-        console.error('Failed to load orders from Supabase, falling back to local seed data:', err);
-        if (!cancelled) patch({ orders: seedOrders(), ordersLoaded: true });
+        console.error('Failed to load orders from Supabase:', err);
+        if (!cancelled) patch({ ordersLoaded: true });
       });
     return () => { cancelled = true; };
   }, [patch]);

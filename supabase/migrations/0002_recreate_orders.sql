@@ -30,3 +30,4 @@ alter table public.orders enable row level security;
 create policy "allow anon read" on public.orders for select using (true);
 create policy "allow anon insert" on public.orders for insert with check (true);
 create policy "allow anon update" on public.orders for update using (true) with check (true);
+create policy "allow anon delete" on public.orders for delete using (true);
