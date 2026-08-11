@@ -1,11 +1,10 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { CATEGORIES, formatDate, standardUnitPrice } from '../data/catalog';
-import { ACCOUNTS } from '../data/accounts';
 import { buildInitialRowsByBlock, buildInitialPlakRows } from '../data/formDefaults';
 import { computeBlocks, snapshotDetail, noopUpdaters } from '../utils/computeBlocks';
-import { loadDraft, saveDraft, clearDraft, draftHasContent } from '../utils/draftPersistence';
 import { AppStateContext } from './AppStateContext';
 import { fetchOrders, insertOrder, updateOrder } from '../lib/ordersApi';
+import { supabase } from '../lib/supabaseClient';
 
 const TODAY = new Date(2026, 7, 6); // matches the mockup's fixed "today"
 
@@ -33,7 +32,6 @@ function resetCategoryFields(catKey, st) {
 }
 
 function initialState() {
-  const draft = loadDraft();
   return {
     userId: '',
     password: '',
@@ -49,6 +47,8 @@ function initialState() {
     funcSelected: null,
     logoDataUrl: null,
     logoFileName: '',
+    schoolType: null,
+    stepError: '',
 
     category: 'MP1',
     pbdVariant: 0,
@@ -72,12 +72,7 @@ function initialState() {
     updateToast: '',
     productionToast: '',
 
-    // A restored draft overwrites the blanks above with whatever was last
-    // autosaved (e.g. after a crash or dead battery mid-order) — see
-    // draftPersistence.js for exactly which fields are covered.
-    ...(draft || {}),
-    draftRestoredToast: draftHasContent(draft) ? 'Restored your unsaved order draft.' : '',
-
+    draftRestoredToast: '',
     amendOrderId: null,
     amendCategoriesUsed: [],
     amendCategory: '',
@@ -119,32 +114,21 @@ export function AppStateProvider({ children }) {
   // battery mid-order doesn't lose what the teacher already filled in —
   // debounced while typing, flushed immediately on tab close, and always
   // available again on reload since initialState() reads it back.
-  useEffect(() => {
-    if (state.role !== 'teacher') return undefined;
-    clearTimeout(draftSaveTimer.current);
-    draftSaveTimer.current = setTimeout(() => saveDraft(state), 1500);
-    return () => clearTimeout(draftSaveTimer.current);
-  }, [state]);
-
-  useEffect(() => {
-    const flush = () => { if (stateRef.current.role === 'teacher') saveDraft(stateRef.current); };
-    window.addEventListener('beforeunload', flush);
-    return () => window.removeEventListener('beforeunload', flush);
-  }, []);
 
   // Orders live in Supabase (see supabase/migrations/0001_orders.sql) —
   // pull whatever's really in the table on first load. No mock/sample
   // fallback: an empty table means an empty dashboard.
   useEffect(() => {
+    if (!state.role) return undefined;
     let cancelled = false;
-    fetchOrders()
+    fetchOrders(state.userAuthId, state.role)
       .then((orders) => { if (!cancelled) patch({ orders, ordersLoaded: true }); })
       .catch((err) => {
         console.error('Failed to load orders from Supabase:', err);
         if (!cancelled) patch({ ordersLoaded: true });
       });
     return () => { cancelled = true; };
-  }, [patch]);
+  }, [patch, state.role, state.userAuthId]);
 
   const initialDraftToastRef = useRef(state.draftRestoredToast);
   useEffect(() => {
@@ -155,23 +139,57 @@ export function AppStateProvider({ children }) {
 
   // Returns the matched role on success (for the caller to route on), or
   // null on failure (and records the error for the Login screen to show).
-  const login = useCallback((userId, password) => {
-    const account = ACCOUNTS.find((a) => a.userId === userId && a.password === password);
-    if (!account) {
+  const login = useCallback(async (userId, password) => {
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: userId,
+      password: password,
+    });
+    if (error) {
       patch({ loginError: 'Invalid User ID or Password.' });
       return null;
     }
-    patch({ role: account.role, loginError: '', userId: '', password: '' });
-    return account.role;
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('role, sekolah, display_name')
+      .eq('id', data.user.id)
+      .single();
+    if (profileError || !profile) {
+      patch({ loginError: 'No role found for this account.' });
+      return null;
+    }
+    patch({ role: profile.role, sekolah: profile.sekolah || '', userAuthId: data.user.id, loginError: '', userId: '', password: '' });
+    return profile.role;
   }, [patch]);
 
+  // A full reset, not a patch — logging out ends the session, so nothing
+  // from the previous account (draft fields, cart, loaded orders) should
+  // carry over to whoever logs in next on this browser tab.
   const logout = useCallback(() => {
-    clearDraft();
-    patch({ role: null, userId: '', password: '', loginError: '' });
-  }, [patch]);
+    setState(initialState());
+  }, []);
 
   const resetCurrentCategory = useCallback((catKey) => {
     patch((st) => resetCategoryFields(catKey, st));
+  }, [patch]);
+
+  // Wipes the New Order draft (Function Details + Order Details + cart)
+  // back to blank whenever the teacher (re)starts the flow via the "New
+  // Order" nav link or "Place Another Order" — every field except Sekolah,
+  // which stays pinned to the account's school from login.
+  const startNewOrder = useCallback(() => {
+    patch({
+      sales: '', picName: '', phone: '', remark: '',
+      dueSelected: null, funcSelected: null,
+      logoDataUrl: null, logoFileName: '', schoolType: null, stepError: '',
+
+      category: 'MP1', pbdVariant: 0,
+      lineValues: {}, matrixValues: {},
+      rowsByBlock: buildInitialRowsByBlock(), plakRows: buildInitialPlakRows(),
+      namaKelasRows: [{ id: 1, namaKelas: '', tahun: '' }],
+      nextRowId: 1000, nextPlakRowId: 1000, nextNamaKelasRowId: 2,
+
+      cart: [], nextCartId: 1, cartToast: '',
+    });
   }, [patch]);
 
   const addToCart = useCallback(() => {
@@ -220,9 +238,10 @@ export function AppStateProvider({ children }) {
       const newOrder = {
         id: newId, invoiceId: null, datePlaced: formatDate(TODAY), deliveryDate: 'TBD',
         totalAmount: totalAmt, status: 'Submitted to Sales', priceAdjusted: false,
+	createdBy: st.userAuthId,
         sekolah: st.sekolah, sales: st.sales, picName: st.picName, phone: st.phone, remark: st.remark,
         dueDate: st.dueSelected, functionDate: st.funcSelected,
-        logoDataUrl: st.logoDataUrl, logoFileName: st.logoFileName,
+        logoDataUrl: st.logoDataUrl, logoFileName: st.logoFileName, schoolType: st.schoolType,
         snapshot, items: st.cart.map((ci) => ({ ...ci })),
       };
       insertOrder(newOrder).catch((err) => console.error('Failed to save order to Supabase:', err));
@@ -237,7 +256,7 @@ export function AppStateProvider({ children }) {
     patch({
       sekolah: ord.sekolah, sales: ord.sales, picName: ord.picName, phone: ord.phone, remark: ord.remark,
       dueSelected: ord.dueDate || null, funcSelected: ord.functionDate || null,
-      logoDataUrl: ord.logoDataUrl || null, logoFileName: ord.logoFileName || '',
+      logoDataUrl: ord.logoDataUrl || null, logoFileName: ord.logoFileName || '', schoolType: ord.schoolType || null,
       // The category-draft (which award category + its filled-in fields)
       // is only available for orders placed through this app's New Order
       // flow — older/imported orders just prefill the school info above.
@@ -401,7 +420,7 @@ export function AppStateProvider({ children }) {
 
   const value = {
     state, patch, today: TODAY, login, logout,
-    resetCurrentCategory, addToCart, removeFromCart, submitOrder, reorderOrder,
+    resetCurrentCategory, startNewOrder, addToCart, removeFromCart, submitOrder, reorderOrder,
     openAmend, updateAmend, openAddOn, commitAddOn, approveOrder, setInvoiceId,
   };
 

@@ -4,6 +4,11 @@ export const MONTHS = [
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
 
+export const SALES_NAMES = [
+  'Guoh', 'Fatt', 'Joyce', 'Bong', 'Wendy', 'Harriet', 'Kent', 'Maggie',
+  'Keith', 'Foo', 'Adam', 'Rex', 'CY', 'Fidah', 'Ikmal', 'Aina', 'Nazrin',
+];
+
 const SUBJECTS_CORE = [
   'BAHASA MELAYU', 'BAHASA INGGERIS', 'MATEMATIK', 'SAINS', 'PENDIDIKAN ISLAM',
   'BAHASA ARAB', 'PENDIDIKAN SENI VISUAL', 'PENDIDIKAN JASMANI', 'PENDIDIKAN KESIHATAN',

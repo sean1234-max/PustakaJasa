@@ -7,9 +7,9 @@ export default function Login() {
   const { state, patch, login } = useAppState();
   const navigate = useNavigate();
 
-  const submit = (e) => {
+  const submit = async (e) => {
     e.preventDefault();
-    const role = login(state.userId, state.password);
+    const role = await login(state.userId, state.password);
     if (role) navigate(ROLE_HOME[role]);
   };
 

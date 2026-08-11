@@ -2,7 +2,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAppState } from '../state/useAppState';
 
 export default function Nav() {
-  const { state, logout } = useAppState();
+  const { state, logout, startNewOrder } = useAppState();
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const cartCount = state.cart.length;
@@ -35,7 +35,7 @@ export default function Nav() {
   return (
     <nav className="nav">
       <span className="nav-brand">School Portal</span>
-      <Link to="/order/step1" aria-current={pathname.startsWith('/order') ? 'page' : undefined}>New Order</Link>
+      <Link to="/order/step1" onClick={startNewOrder} aria-current={pathname.startsWith('/order') ? 'page' : undefined}>New Order</Link>
       <Link to="/dashboard" aria-current={pathname === '/dashboard' ? 'page' : undefined}>My Orders</Link>
       <Link to="/cart" className="nav-cart" aria-label="Cart">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">

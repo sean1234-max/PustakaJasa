@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAppState } from '../state/useAppState';
 
 export default function Success() {
-  const { state } = useAppState();
+  const { state, startNewOrder } = useAppState();
   const navigate = useNavigate();
 
   return (
@@ -22,7 +22,7 @@ export default function Success() {
         </p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
           <button type="button" className="btn btn-primary" onClick={() => navigate('/dashboard')}>Go to My Orders</button>
-          <button type="button" className="btn btn-ghost" onClick={() => navigate('/order/step1')}>Place Another Order</button>
+          <button type="button" className="btn btn-ghost" onClick={() => { startNewOrder(); navigate('/order/step1'); }}>Place Another Order</button>
         </div>
       </div>
     </div>

@@ -22,8 +22,10 @@ function toDbOrder(order) {
     function_date: order.functionDate ?? null,
     logo_data_url: order.logoDataUrl ?? null,
     logo_file_name: order.logoFileName ?? null,
+    school_type: order.schoolType ?? null,
     items: order.items ?? [],
     snapshot: order.snapshot ?? null,
+    created_by: order.createdBy ?? null,
   };
 }
 
@@ -45,17 +47,29 @@ function fromDbOrder(row) {
     functionDate: row.function_date,
     logoDataUrl: row.logo_data_url,
     logoFileName: row.logo_file_name,
+    schoolType: row.school_type,
     items: row.items || [],
     snapshot: row.snapshot,
+    createdBy: row.created_by,
   };
 }
 
 // Fetches all orders, newest first.
-export async function fetchOrders() {
-  const { data, error } = await supabase
-    .from('orders')
-    .select('*')
-    .order('created_at', { ascending: false });
+export async function fetchOrders(userId, role) {
+  let query = supabase.from('orders').select('*').order('created_at', { ascending: false });
+  if (role === 'teacher' && userId) {
+    query = query.eq('created_by', userId);
+  } else if (role === 'salesman' && userId) {
+    const { data: assignments, error: assignError } = await supabase
+      .from('salesman_assignments')
+      .select('teacher_id')
+      .eq('salesman_id', userId);
+    if (assignError) throw assignError;
+    const teacherIds = (assignments || []).map((a) => a.teacher_id);
+    if (teacherIds.length === 0) return [];
+    query = query.in('created_by', teacherIds);
+  }
+  const { data, error } = await query;
   if (error) throw error;
   return data.map(fromDbOrder);
 }
