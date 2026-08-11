@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import { useAppState } from '../state/useAppState';
@@ -6,14 +7,17 @@ import { formatDate } from '../data/catalog';
 export default function Cart() {
   const { state, patch, today, removeFromCart, submitOrder } = useAppState();
   const navigate = useNavigate();
+  const [submitting, setSubmitting] = useState(false);
 
   const cartTotalQty = state.cart.reduce((sum, ci) => sum + (Number(ci.qty) || 0), 0);
   const cartTotalHarga = state.cart.reduce((sum, ci) => sum + ci.harga, 0);
 
-  const handleSubmit = () => {
-    if (state.cart.length === 0) return;
-    submitOrder();
-    navigate('/success');
+  const handleSubmit = async () => {
+    if (state.cart.length === 0 || submitting) return;
+    setSubmitting(true);
+    const id = await submitOrder();
+    setSubmitting(false);
+    if (id) navigate('/success');
   };
 
   return (
@@ -71,7 +75,10 @@ export default function Cart() {
 
         <div className="row-split">
           <button type="button" className="btn btn-ghost" onClick={() => navigate('/order/step1')}>← Back to Order</button>
-          <button type="button" className="btn btn-primary" disabled={state.cart.length === 0} onClick={handleSubmit}>Submit Order</button>
+          {state.cartToast && <span className="toast-inline">{state.cartToast}</span>}
+          <button type="button" className="btn btn-primary" disabled={state.cart.length === 0 || submitting} onClick={handleSubmit}>
+            {submitting ? 'Submitting…' : 'Submit Order'}
+          </button>
         </div>
       </div>
     </div>

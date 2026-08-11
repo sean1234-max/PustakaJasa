@@ -72,7 +72,6 @@ function initialState() {
     orders: [],
     ordersLoaded: false,
     lastOrderId: '',
-    nextOrderSeq: 96,
     updateToast: '',
     productionToast: '',
 
@@ -255,35 +254,70 @@ export function AppStateProvider({ children }) {
     patch((st) => ({ cart: st.cart.filter((c) => c.id !== id) }));
   }, [patch]);
 
-  const submitOrder = useCallback(() => {
-    setState((st) => {
-      const totalAmt = st.cart.reduce((sum, ci) => sum + ci.harga, 0);
-      const newId = `ORD-2026-${String(st.nextOrderSeq).padStart(3, '0')}`;
-      // Only the category-draft portion needs to survive here — sekolah,
-      // dates, etc. now live as top-level order fields below, so Sales can
-      // rely on every order carrying them regardless of how it was created.
-      const snapshot = {
-        category: st.category, pbdVariant: st.pbdVariant,
-        lineValues: { ...st.lineValues }, matrixValues: { ...st.matrixValues },
-        rowsByBlock: JSON.parse(JSON.stringify(st.rowsByBlock)),
-        plakRows: JSON.parse(JSON.stringify(st.plakRows)),
-        namaKelasRows: JSON.parse(JSON.stringify(st.namaKelasRows)),
-      };
-      const newOrder = {
-        id: newId, invoiceId: null, datePlaced: formatDate(TODAY), deliveryDate: 'TBD',
-        totalAmount: totalAmt, status: 'Submitted to Sales', priceAdjusted: false,
-	createdBy: st.userAuthId,
-        sekolah: st.sekolah, sales: st.sales, picName: st.picName, phone: st.phone, remark: st.remark,
-        dueDate: st.dueSelected, functionDate: st.funcSelected,
-        logoDataUrl: st.logoDataUrl, logoFileName: st.logoFileName, schoolType: st.schoolType,
-        snapshot, items: st.cart.map((ci) => ({ ...ci })),
-      };
-      insertOrder(newOrder).catch((err) => console.error('Failed to save order to Supabase:', err));
-      return {
-        ...st, lastOrderId: newId, orders: [newOrder, ...st.orders], nextOrderSeq: st.nextOrderSeq + 1, cart: [],
-      };
-    });
-  }, []);
+  // The order id used to come from a nextOrderSeq counter that lived only
+  // in this tab's in-memory state — it reset to 96 on every login *and*
+  // every refresh, so two submissions from different sessions (or just a
+  // refreshed tab) regularly generated the same "ORD-2026-096" id. Since
+  // `id` is the orders table's primary key, the second insert silently
+  // failed a unique-constraint check (only logged to the console) while
+  // the UI still showed it optimistically — so it looked submitted to the
+  // teacher but never reached Sales. Deriving the next number from what's
+  // actually in the table (scoped to the current year) fixes that: it's
+  // correct regardless of how many other sessions or refreshes happened
+  // in between. Returns the new order's id on success, or null if the
+  // insert failed, so the caller knows whether it's safe to move on.
+  const submitOrder = useCallback(async () => {
+    const st = stateRef.current;
+    const year = TODAY.getFullYear();
+    const prefix = `ORD-${year}-`;
+    let seq = 96;
+    try {
+      const { data, error } = await supabase
+        .from('orders')
+        .select('id')
+        .like('id', `${prefix}%`)
+        .order('id', { ascending: false })
+        .limit(1);
+      if (!error && data?.[0]) {
+        const n = Number(data[0].id.slice(prefix.length));
+        if (Number.isFinite(n)) seq = n + 1;
+      }
+    } catch (err) {
+      console.error('Failed to look up the next order number:', err);
+    }
+    const newId = `${prefix}${String(seq).padStart(3, '0')}`;
+
+    const totalAmt = st.cart.reduce((sum, ci) => sum + ci.harga, 0);
+    // Only the category-draft portion needs to survive here — sekolah,
+    // dates, etc. now live as top-level order fields below, so Sales can
+    // rely on every order carrying them regardless of how it was created.
+    const snapshot = {
+      category: st.category, pbdVariant: st.pbdVariant,
+      lineValues: { ...st.lineValues }, matrixValues: { ...st.matrixValues },
+      rowsByBlock: JSON.parse(JSON.stringify(st.rowsByBlock)),
+      plakRows: JSON.parse(JSON.stringify(st.plakRows)),
+      namaKelasRows: JSON.parse(JSON.stringify(st.namaKelasRows)),
+    };
+    const newOrder = {
+      id: newId, invoiceId: null, datePlaced: formatDate(TODAY), deliveryDate: 'TBD',
+      totalAmount: totalAmt, status: 'Submitted to Sales', priceAdjusted: false,
+      createdBy: st.userAuthId,
+      sekolah: st.sekolah, sales: st.sales, picName: st.picName, phone: st.phone, remark: st.remark,
+      dueDate: st.dueSelected, functionDate: st.funcSelected,
+      logoDataUrl: st.logoDataUrl, logoFileName: st.logoFileName, schoolType: st.schoolType,
+      snapshot, items: st.cart.map((ci) => ({ ...ci })),
+    };
+
+    try {
+      await insertOrder(newOrder);
+    } catch (err) {
+      console.error('Failed to save order to Supabase:', err);
+      patch({ cartToast: 'Could not submit the order — please try again.' });
+      return null;
+    }
+    patch((latest) => ({ lastOrderId: newId, orders: [newOrder, ...latest.orders], cart: [], cartToast: '' }));
+    return newId;
+  }, [patch]);
 
   const reorderOrder = useCallback((ord) => {
     const snap = ord.snapshot;
