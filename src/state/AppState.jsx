@@ -5,6 +5,7 @@ import { seedOrders, buildInitialRowsByBlock, buildInitialPlakRows } from '../da
 import { computeBlocks, snapshotDetail, noopUpdaters } from '../utils/computeBlocks';
 import { loadDraft, saveDraft, clearDraft, draftHasContent } from '../utils/draftPersistence';
 import { AppStateContext } from './AppStateContext';
+import { seedOrdersIfEmpty, insertOrder, updateOrder } from '../lib/ordersApi';
 
 const TODAY = new Date(2026, 7, 6); // matches the mockup's fixed "today"
 
@@ -64,7 +65,8 @@ function initialState() {
     nextCartId: 1,
     cartToast: '',
 
-    orders: seedOrders(),
+    orders: [],
+    ordersLoaded: false,
     lastOrderId: '',
     nextOrderSeq: 96,
     updateToast: '',
@@ -129,6 +131,21 @@ export function AppStateProvider({ children }) {
     window.addEventListener('beforeunload', flush);
     return () => window.removeEventListener('beforeunload', flush);
   }, []);
+
+  // Orders now live in Supabase (see supabase/migrations/0001_orders.sql)
+  // instead of only in memory. On first load, pull whatever's in the table;
+  // if the project is brand new and the table is empty, seed it once with
+  // the sample orders so the dashboard isn't blank.
+  useEffect(() => {
+    let cancelled = false;
+    seedOrdersIfEmpty(seedOrders)
+      .then((orders) => { if (!cancelled) patch({ orders, ordersLoaded: true }); })
+      .catch((err) => {
+        console.error('Failed to load orders from Supabase, falling back to local seed data:', err);
+        if (!cancelled) patch({ orders: seedOrders(), ordersLoaded: true });
+      });
+    return () => { cancelled = true; };
+  }, [patch]);
 
   const initialDraftToastRef = useRef(state.draftRestoredToast);
   useEffect(() => {
@@ -209,6 +226,7 @@ export function AppStateProvider({ children }) {
         logoDataUrl: st.logoDataUrl, logoFileName: st.logoFileName,
         snapshot, items: st.cart.map((ci) => ({ ...ci })),
       };
+      insertOrder(newOrder).catch((err) => console.error('Failed to save order to Supabase:', err));
       return {
         ...st, lastOrderId: newId, orders: [newOrder, ...st.orders], nextOrderSeq: st.nextOrderSeq + 1, cart: [],
       };
@@ -275,9 +293,12 @@ export function AppStateProvider({ children }) {
           });
         });
       });
+      const amendedTotal = newItems.reduce((sum, it) => sum + it.harga, 0);
+      updateOrder(st.amendOrderId, { items: newItems, totalAmount: amendedTotal })
+        .catch((err) => console.error('Failed to save amend to Supabase:', err));
       return {
         ...st,
-        orders: st.orders.map((o) => (o.id === st.amendOrderId ? { ...o, items: newItems, totalAmount: newItems.reduce((sum, it) => sum + it.harga, 0) } : o)),
+        orders: st.orders.map((o) => (o.id === st.amendOrderId ? { ...o, items: newItems, totalAmount: amendedTotal } : o)),
         updateToast: 'Update successful.',
       };
     });
@@ -313,9 +334,14 @@ export function AppStateProvider({ children }) {
           });
         });
       });
+      const targetOrder = st.orders.find((o) => o.id === st.addOnOrderId);
+      const combinedItems = targetOrder ? [...targetOrder.items, ...newItems] : newItems;
+      const combinedTotal = (targetOrder?.totalAmount || 0) + newItems.reduce((sum, it) => sum + it.harga, 0);
+      updateOrder(st.addOnOrderId, { items: combinedItems, totalAmount: combinedTotal })
+        .catch((err) => console.error('Failed to save add-on to Supabase:', err));
       return {
         ...st,
-        orders: st.orders.map((o) => (o.id === st.addOnOrderId ? { ...o, items: [...o.items, ...newItems], totalAmount: o.totalAmount + newItems.reduce((sum, it) => sum + it.harga, 0) } : o)),
+        orders: st.orders.map((o) => (o.id === st.addOnOrderId ? { ...o, items: combinedItems, totalAmount: combinedTotal } : o)),
         nextCartId: st.nextCartId + newItems.length,
         updateToast: 'Update successful.',
       };
@@ -335,6 +361,8 @@ export function AppStateProvider({ children }) {
     patch((st) => {
       const totalAmount = updatedItems.reduce((sum, it) => sum + it.harga, 0);
       const priceAdjusted = updatedItems.some((it) => it.unitPrice !== standardUnitPrice(it.jenisPlak));
+      updateOrder(orderId, { items: updatedItems, totalAmount, priceAdjusted, status: 'In Production' })
+        .catch((err) => console.error('Failed to save approval to Supabase:', err));
       return {
         orders: st.orders.map((o) => (
           o.id === orderId ? { ...o, items: updatedItems, totalAmount, priceAdjusted, status: 'In Production' } : o
@@ -360,6 +388,8 @@ export function AppStateProvider({ children }) {
       if (!trimmed) {
         return { ...st, productionToast: 'Enter a valid Invoice ID.' };
       }
+      updateOrder(orderId, { invoiceId: trimmed })
+        .catch((err) => console.error('Failed to save invoice ID to Supabase:', err));
       return {
         ...st,
         orders: st.orders.map((o) => (o.id === orderId ? { ...o, invoiceId: trimmed } : o)),
