@@ -6,7 +6,10 @@ import { AppStateContext } from './AppStateContext';
 import { fetchOrders, insertOrder, updateOrder } from '../lib/ordersApi';
 import { supabase } from '../lib/supabaseClient';
 
-const TODAY = new Date(2026, 7, 6); // matches the mockup's fixed "today"
+// Real "today", normalized to midnight so it compares cleanly against the
+// midnight-constructed dates the calendar cells and date-math use.
+const now = new Date();
+const TODAY = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
 // Clears one category's draft fields back to blank (used after "Add to Cart"
 // and by the standalone reset action) — extracted so both call sites share
@@ -37,6 +40,7 @@ function initialState() {
     password: '',
     loginError: '',
     role: null,
+    sessionChecked: false,
 
     sekolah: '',
     sales: '',
@@ -115,6 +119,32 @@ export function AppStateProvider({ children }) {
   // debounced while typing, flushed immediately on tab close, and always
   // available again on reload since initialState() reads it back.
 
+  // supabase-js persists the auth session in localStorage on its own, but
+  // a hard refresh still wipes this component's in-memory state back to
+  // role: null — so without this, every refresh bounced a logged-in user
+  // back to the Login screen. On first mount, check whether a Supabase
+  // session already exists and restore role/sekolah/userAuthId from it
+  // before anything renders a route (see the sessionChecked gate in
+  // App.jsx), so a refresh lands back on the same page instead.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('role, sekolah, display_name')
+          .eq('id', session.user.id)
+          .single();
+        if (!cancelled && profile) {
+          patch({ role: profile.role, sekolah: profile.sekolah || '', userAuthId: session.user.id });
+        }
+      }
+      if (!cancelled) patch({ sessionChecked: true });
+    })();
+    return () => { cancelled = true; };
+  }, [patch]);
+
   // Orders live in Supabase (see supabase/migrations/0001_orders.sql) —
   // pull whatever's really in the table on first load. No mock/sample
   // fallback: an empty table means an empty dashboard.
@@ -163,9 +193,13 @@ export function AppStateProvider({ children }) {
 
   // A full reset, not a patch — logging out ends the session, so nothing
   // from the previous account (draft fields, cart, loaded orders) should
-  // carry over to whoever logs in next on this browser tab.
+  // carry over to whoever logs in next on this browser tab. Also clears
+  // the Supabase session itself (not just local state) — otherwise the
+  // session-restore effect above would silently log the same account back
+  // in on the next refresh.
   const logout = useCallback(() => {
-    setState(initialState());
+    supabase.auth.signOut().catch((err) => console.error('Failed to sign out of Supabase:', err));
+    setState({ ...initialState(), sessionChecked: true });
   }, []);
 
   const resetCurrentCategory = useCallback((catKey) => {

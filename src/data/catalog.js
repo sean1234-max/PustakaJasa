@@ -114,3 +114,7 @@ export function formatDate(d) {
   if (!d) return '';
   return `${String(d.getDate()).padStart(2, '0')} ${MONTHS[d.getMonth()].slice(0, 3)} ${d.getFullYear()}`;
 }
+
+export function addDays(d, days) {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate() + days);
+}

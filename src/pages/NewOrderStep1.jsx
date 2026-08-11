@@ -4,11 +4,12 @@ import DatePicker from '../components/DatePicker';
 import ImageDrop from '../components/ImageDrop';
 import SalesCombobox from '../components/SalesCombobox';
 import { useAppState } from '../state/useAppState';
-import { formatDate, SALES_NAMES } from '../data/catalog';
+import { formatDate, addDays, SALES_NAMES } from '../data/catalog';
 
 export default function NewOrderStep1() {
   const { state, patch, today } = useAppState();
   const navigate = useNavigate();
+  const dueMinDate = addDays(today, 3);
 
   const handleNext = () => {
     if (!state.schoolType) {
@@ -75,6 +76,7 @@ export default function NewOrderStep1() {
             id="dueDate"
             selected={state.dueSelected}
             today={today}
+            minDate={dueMinDate}
             onSelect={(d) => patch((st) => ({
               dueSelected: d,
               // A due date change can leave a previously-picked function
@@ -83,13 +85,12 @@ export default function NewOrderStep1() {
               funcSelected: st.funcSelected && st.funcSelected < d ? null : st.funcSelected,
             }))}
           />
-          <DatePicker label="Function Date" id="funcDate" selected={state.funcSelected} onSelect={(d) => patch({ funcSelected: d })} today={today} minDate={state.dueSelected} />
+          <DatePicker label="Function Date" id="funcDate" selected={state.funcSelected} onSelect={(d) => patch({ funcSelected: d })} today={today} minDate={state.dueSelected || dueMinDate} />
         </div>
-        {state.dueSelected && (
-          <p className="hint-text" style={{ marginBottom: 'var(--space-4)' }}>
-            Function Date must be on or after the Due Date ({formatDate(state.dueSelected)}).
-          </p>
-        )}
+        <p className="hint-text" style={{ marginBottom: 'var(--space-4)' }}>
+          Due Date must be on or after {formatDate(dueMinDate)} (at least 4 days from today, including today).
+          {state.dueSelected && ` Function Date must be on or after the Due Date (${formatDate(state.dueSelected)}).`}
+        </p>
 
         <div className="field" style={{ marginBottom: 'var(--space-6)' }}>
           <label>School Type</label>
