@@ -110,6 +110,25 @@ function colorBaseVariants() {
 // with their own absolute price (CPH's A/B/C), and base-price-plus-addon
 // codes (SM-13187, Eastern Trophy) without special-casing any of them.
 export const PLAK_CATALOG = [
+  {
+    code: 'CRYSTAL',
+    children: [
+      { code: '80-B', price: 15, children: [{ code: 'DESIGN 1' }, { code: 'DESIGN 2' }, { code: 'DESIGN 3' }] },
+      { code: 'R-100', price: 19, children: [{ code: 'DESIGN A' }, { code: 'DESIGN B' }, { code: 'DESIGN C' }] },
+      { code: '10030', price: 29, children: [{ code: 'DESIGN A' }, { code: 'DESIGN B' }, { code: 'DESIGN C' }] },
+      { code: 'AK-7', price: 39, children: [{ code: 'DESIGN A' }, { code: 'DESIGN B' }, { code: 'DESIGN C' }] },
+      { code: '00S', price: 39, children: [{ code: 'DESIGN A' }, { code: 'DESIGN B' }, { code: 'DESIGN C' }] },
+      { code: '0011A', price: 39, children: [{ code: 'DESIGN A' }, { code: 'DESIGN B' }, { code: 'DESIGN C' }] },
+      { code: 'SA4', price: 45, children: [{ code: 'DESIGN A' }, { code: 'DESIGN B' }, { code: 'DESIGN C' }] },
+      { code: 'R-7', price: 49, children: [{ code: 'DESIGN A' }, { code: 'DESIGN B' }, { code: 'DESIGN C' }] },
+      { code: 'CA-15', price: 59, children: [{ code: 'DESIGN A' }, { code: 'DESIGN B' }, { code: 'DESIGN C' }] },
+      { code: 'PSA-3', price: 59, children: [{ code: 'DESIGN A' }, { code: 'DESIGN B' }, { code: 'DESIGN C' }] },
+      { code: 'CM-27', price: 62, children: [{ code: 'DESIGN A' }, { code: 'DESIGN B' }, { code: 'DESIGN C' }] },
+      { code: '11-3', price: 72, children: [{ code: 'DESIGN A' }, { code: 'DESIGN B' }, { code: 'DESIGN C' }] },
+      { code: '0171', price: 82, children: [{ code: 'DESIGN A' }, { code: 'DESIGN B' }, { code: 'DESIGN C' }] },
+      { code: 'XB-5A', price: 89, children: [{ code: 'DESIGN A' }, { code: 'DESIGN B' }, { code: 'DESIGN C' }] },
+    ],
+  },
   { code: 'CPH', children: [{ code: 'A', price: 7.50 }, { code: 'B', price: 7.50 }, { code: 'C', price: 7.50 }] },
   { code: 'VB', children: [{ code: 'A', price: 65 }, { code: 'B', price: 60 }, { code: 'C', price: 50 }, { code: 'D', price: 45 }] },
   { code: 'SONGKET', children: [{ code: 'A', price: 75 }, { code: 'B', price: 70 }, { code: 'C', price: 65 }] },
@@ -137,25 +156,6 @@ export const PLAK_CATALOG = [
   { code: 'SL245#3', price: 42 },
   { code: 'SL243#3', price: 45 },
   { code: 'TSL232#3', price: 45 },
-  {
-    code: 'CRYSTAL',
-    children: [
-      { code: '80-B', price: 15, children: [{ code: 'DESIGN 1' }, { code: 'DESIGN 2' }, { code: 'DESIGN 3' }] },
-      { code: 'R-100', price: 19, children: [{ code: 'DESIGN A' }, { code: 'DESIGN B' }, { code: 'DESIGN C' }] },
-      { code: '10030', price: 29, children: [{ code: 'DESIGN A' }, { code: 'DESIGN B' }, { code: 'DESIGN C' }] },
-      { code: 'AK-7', price: 39, children: [{ code: 'DESIGN A' }, { code: 'DESIGN B' }, { code: 'DESIGN C' }] },
-      { code: '00S', price: 39, children: [{ code: 'DESIGN A' }, { code: 'DESIGN B' }, { code: 'DESIGN C' }] },
-      { code: '0011A', price: 39, children: [{ code: 'DESIGN A' }, { code: 'DESIGN B' }, { code: 'DESIGN C' }] },
-      { code: 'SA4', price: 45, children: [{ code: 'DESIGN A' }, { code: 'DESIGN B' }, { code: 'DESIGN C' }] },
-      { code: 'R-7', price: 49, children: [{ code: 'DESIGN A' }, { code: 'DESIGN B' }, { code: 'DESIGN C' }] },
-      { code: 'CA-15', price: 59, children: [{ code: 'DESIGN A' }, { code: 'DESIGN B' }, { code: 'DESIGN C' }] },
-      { code: 'PSA-3', price: 59, children: [{ code: 'DESIGN A' }, { code: 'DESIGN B' }, { code: 'DESIGN C' }] },
-      { code: 'CM-27', price: 62, children: [{ code: 'DESIGN A' }, { code: 'DESIGN B' }, { code: 'DESIGN C' }] },
-      { code: '11-3', price: 72, children: [{ code: 'DESIGN A' }, { code: 'DESIGN B' }, { code: 'DESIGN C' }] },
-      { code: '0171', price: 82, children: [{ code: 'DESIGN A' }, { code: 'DESIGN B' }, { code: 'DESIGN C' }] },
-      { code: 'XB-5A', price: 89, children: [{ code: 'DESIGN A' }, { code: 'DESIGN B' }, { code: 'DESIGN C' }] },
-    ],
-  },
 ];
 
 // Flattens the tree into { code: fullPathString, price: totalPrice } for

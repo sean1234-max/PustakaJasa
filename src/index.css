@@ -333,11 +333,6 @@ a:hover { color: var(--color-accent-900); text-decoration: underline; }
 
 /* Jenis Plak picker (hover-flyout catalog tree) */
 .plak-picker { position: relative; }
-.plak-picker-trigger {
-  display: flex; align-items: center; justify-content: space-between;
-  text-align: left; cursor: pointer; font-weight: 400;
-}
-.plak-picker-placeholder { opacity: 0.5; }
 .plak-menu-root {
   position: absolute;
   top: 100%; left: 0; z-index: 30;

@@ -37,34 +37,53 @@ function PlakMenuLevel({ nodes, path, onPick }) {
   );
 }
 
-// Trigger + flyout menu for picking a Jenis Plak code out of the (possibly
-// nested) catalog tree — replaces a plain <select>, which can't express
-// "hover a code to reveal its variants" for codes like SM-13187 that need a
-// color then a base tier picked before a price is known.
+// Type-to-search trigger + flyout menu for picking a Jenis Plak code out of
+// the (possibly nested) catalog tree — replaces a plain <select>, which
+// can't express "hover a code to reveal its variants" for codes like
+// SM-13187 that need a color then a base tier picked before a price is
+// known. Typing filters the top-level codes by prefix, same as the Sales
+// picker; the committed value only changes on an explicit leaf pick, so a
+// stray blur can't leave half-typed text sitting in the order.
 export default function PlakPicker({ value, onChange, catalog }) {
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState(value || '');
   const ref = useRef(null);
+
+  useEffect(() => { setQuery(value || ''); }, [value]);
 
   useEffect(() => {
     if (!open) return undefined;
-    const onDocClick = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    const onDocClick = (e) => { if (ref.current && !ref.current.contains(e.target)) { setOpen(false); setQuery(value || ''); } };
     document.addEventListener('mousedown', onDocClick);
     return () => document.removeEventListener('mousedown', onDocClick);
-  }, [open]);
+  }, [open, value]);
+
+  const filtered = catalog.filter((node) => node.code.toLowerCase().startsWith(query.trim().toLowerCase()));
 
   const handlePick = (path) => {
     onChange(path.join(' / '));
+    setQuery(path.join(' / '));
     setOpen(false);
   };
 
   return (
     <div className="plak-picker" ref={ref}>
-      <button type="button" className="input plak-picker-trigger" onClick={() => setOpen((o) => !o)}>
-        <span className={value ? undefined : 'plak-picker-placeholder'}>{value || '— Select —'}</span>
-      </button>
+      <input
+        className="input"
+        placeholder="— Select —"
+        autoComplete="off"
+        value={query}
+        onFocus={() => setOpen(true)}
+        onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && filtered.length === 1 && !filtered[0].children?.length) { handlePick([filtered[0].code]); e.preventDefault(); }
+          else if (e.key === 'Escape') { setOpen(false); setQuery(value || ''); }
+        }}
+      />
       {open && (
         <div className="plak-menu-root card elev-lg">
-          <PlakMenuLevel nodes={catalog} path={[]} onPick={handlePick} />
+          {filtered.length === 0 && <div className="combo-empty">No match</div>}
+          <PlakMenuLevel nodes={filtered} path={[]} onPick={handlePick} />
         </div>
       )}
     </div>
