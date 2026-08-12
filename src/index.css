@@ -260,8 +260,40 @@ a:hover { color: var(--color-accent-900); text-decoration: underline; }
 @media (max-width: 640px) {
   .ref-sample-grid { grid-template-columns: 1fr; }
 }
+.ref-sample-img {
+  display: block; width: 100%; max-height: 200px;
+  object-fit: contain; background: #fff;
+  border: 1px solid var(--color-neutral-300);
+}
+.ref-sample-placeholder {
+  display: flex; align-items: center; justify-content: center;
+  height: 200px; text-align: center; padding: var(--space-3);
+  border: 1px dashed var(--color-neutral-500);
+  background: #fafafa; color: var(--color-text); opacity: 0.5; font-size: 13px;
+}
 .ref-sample-lines { display: flex; flex-direction: column; gap: var(--space-3); }
 .ref-sample-line { display: flex; align-items: center; gap: var(--space-3); }
+.ref-image-admin-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--space-6);
+  margin-top: var(--space-4);
+}
+
+/* Jenis Plak catalog admin (Production) */
+.catalog-admin-list { display: flex; flex-direction: column; }
+.catalog-admin-row {
+  display: flex; align-items: center; gap: var(--space-3);
+  padding: 8px 0; border-bottom: 1px solid var(--color-neutral-100);
+}
+.catalog-admin-code { flex: 1; font-size: 13px; }
+.catalog-admin-code-hidden { opacity: 0.4; text-decoration: line-through; }
+.catalog-admin-price { width: 90px; flex: none; padding: 6px 8px; font-size: 13px; }
+.catalog-admin-actions { display: flex; gap: var(--space-2); flex: none; }
+.catalog-admin-actions .btn, .catalog-admin-add-row .btn { padding: 5px 12px; font-size: 12px; }
+.catalog-admin-add-row { background: var(--color-neutral-100); gap: var(--space-2); }
+.catalog-admin-add-row .input { flex: none; width: auto; }
+.catalog-admin-add-row input[placeholder^="Code"] { flex: 1; }
 .ref-sample-line-stack { display: flex; flex-direction: column; gap: var(--space-2); flex: 1; }
 .line-num {
   width: 24px; height: 24px;
@@ -342,6 +374,8 @@ a:hover { color: var(--color-accent-900); text-decoration: underline; }
 /* No max-height/overflow here on purpose — clipping this box would also
    clip every flyout submenu positioned relative to an item inside it. */
 .plak-menu { min-width: 150px; }
+.plak-menu-root-split { display: flex; align-items: flex-start; }
+.plak-menu-col-divided { border-left: 1px solid var(--color-neutral-300); }
 .plak-menu-item-wrap { position: relative; }
 .plak-menu-item {
   display: flex; align-items: center; justify-content: space-between; gap: var(--space-2);

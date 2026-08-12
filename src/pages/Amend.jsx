@@ -4,7 +4,7 @@ import Nav from '../components/Nav';
 import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import { useAppState } from '../state/useAppState';
-import { CATEGORIES, PLAK_CATALOG } from '../data/catalog';
+import { CATEGORIES } from '../data/catalog';
 import { computeBlocks } from '../utils/computeBlocks';
 import { createDraftUpdaters } from '../utils/draftUpdaters';
 
@@ -31,9 +31,9 @@ export default function Amend() {
 
   const { blocks } = useMemo(() => (
     state.amendCategory
-      ? computeBlocks(state.amendCategory, state.amendPbdVariant, state.amendLineValues, state.amendMatrixValues, state.amendRowsByBlock, state.amendPlakRows, [], updaters)
+      ? computeBlocks(state.amendCategory, state.amendPbdVariant, state.amendLineValues, state.amendMatrixValues, state.amendRowsByBlock, state.amendPlakRows, [], updaters, state.plakCatalog)
       : { blocks: [] }
-  ), [state.amendCategory, state.amendPbdVariant, state.amendLineValues, state.amendMatrixValues, state.amendRowsByBlock, state.amendPlakRows, updaters]);
+  ), [state.amendCategory, state.amendPbdVariant, state.amendLineValues, state.amendMatrixValues, state.amendRowsByBlock, state.amendPlakRows, updaters, state.plakCatalog]);
 
   if (!order) return null;
 
@@ -62,7 +62,7 @@ export default function Amend() {
         )}
 
         {blocks.map((blk) => (
-          <OrderCategoryBlock key={blk.idx} blk={blk} editable={EDITABLE} plakOptions={PLAK_CATALOG} />
+          <OrderCategoryBlock key={blk.idx} blk={blk} editable={EDITABLE} refImageUrl={state.refImages?.[blk.sampleSlotId]} />
         ))}
 
         <div className="row-split" style={{ marginTop: 'var(--space-6)' }}>

@@ -23,10 +23,13 @@ export default function Nav() {
   }
 
   if (state.role === 'production') {
+    const ordersActive = pathname === '/production/dashboard' || pathname.startsWith('/production/orders');
     return (
       <nav className="nav">
         <span className="nav-brand">Production Portal</span>
-        <Link to="/production/dashboard" aria-current={pathname.startsWith('/production') ? 'page' : undefined}>Orders</Link>
+        <Link to="/production/dashboard" aria-current={ordersActive ? 'page' : undefined}>Orders</Link>
+        <Link to="/production/reference-images" aria-current={pathname === '/production/reference-images' ? 'page' : undefined}>Reference Images</Link>
+        <Link to="/production/catalog" aria-current={pathname === '/production/catalog' ? 'page' : undefined}>Catalog</Link>
         <button type="button" className="nav-logout" onClick={handleLogout}>Log Out</button>
       </nav>
     );

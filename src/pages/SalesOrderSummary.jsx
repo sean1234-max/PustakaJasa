@@ -4,7 +4,7 @@ import Nav from '../components/Nav';
 import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import { useAppState } from '../state/useAppState';
-import { STATUS_STAGES, STATUS_BG, STATUS_TEXT, PLAK_CATALOG, standardUnitPrice } from '../data/catalog';
+import { STATUS_STAGES, STATUS_BG, STATUS_TEXT, standardUnitPrice } from '../data/catalog';
 import { reconstructBlocksForCategory } from '../utils/computeBlocks';
 import { getOrderCategories } from '../utils/exportCsv';
 
@@ -25,7 +25,7 @@ export default function SalesOrderSummary() {
   const [priceDrafts, setPriceDrafts] = useState(() => {
     const out = {};
     (order?.items || []).forEach((it) => {
-      out[it.id] = it.unitPrice ?? standardUnitPrice(it.jenisPlak) ?? 0;
+      out[it.id] = it.unitPrice ?? standardUnitPrice(it.jenisPlak, state.plakCatalog) ?? 0;
     });
     return out;
   });
@@ -42,8 +42,8 @@ export default function SalesOrderSummary() {
   const currentCat = categories.find((c) => c.key === activeCat) || categories[0];
   const catBlocks = useMemo(() => {
     if (!order || !currentCat) return [];
-    return reconstructBlocksForCategory(order, currentCat.key).blocks;
-  }, [order, currentCat]);
+    return reconstructBlocksForCategory(order, currentCat.key, state.plakCatalog).blocks;
+  }, [order, currentCat, state.plakCatalog]);
 
   if (!order) return null;
 
@@ -108,7 +108,7 @@ export default function SalesOrderSummary() {
               </thead>
               <tbody>
                 {rows.map((it) => {
-                  const adjusted = it.unitPrice !== standardUnitPrice(it.jenisPlak);
+                  const adjusted = it.unitPrice !== standardUnitPrice(it.jenisPlak, state.plakCatalog);
                   return (
                     <tr key={it.id}>
                       <td>{it.categoryLabel}</td>
@@ -134,7 +134,7 @@ export default function SalesOrderSummary() {
                 })}
                 <tr>
                   <td /><td /><td /><td><strong>TOTAL</strong></td>
-                  <td><strong className={order.priceAdjusted || rows.some((it) => it.unitPrice !== standardUnitPrice(it.jenisPlak)) ? 'amount-adjusted' : undefined}>RM {totalHarga.toFixed(2)}</strong></td>
+                  <td><strong className={order.priceAdjusted || rows.some((it) => it.unitPrice !== standardUnitPrice(it.jenisPlak, state.plakCatalog)) ? 'amount-adjusted' : undefined}>RM {totalHarga.toFixed(2)}</strong></td>
                 </tr>
               </tbody>
             </table>
@@ -155,7 +155,7 @@ export default function SalesOrderSummary() {
                   <CategoryTabs categories={categories} active={currentCat?.key} onSelect={setActiveCat} />
                 </div>
                 {catBlocks.map((blk) => (
-                  <OrderCategoryBlock key={blk.idx} blk={blk} editable={READONLY} plakOptions={PLAK_CATALOG} />
+                  <OrderCategoryBlock key={blk.idx} blk={blk} editable={READONLY} refImageUrl={state.refImages?.[blk.sampleSlotId]} />
                 ))}
               </>
             )}

@@ -1,10 +1,10 @@
-import { useState, useMemo } from 'react';
+import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import { useAppState } from '../state/useAppState';
-import { CATEGORIES, PLAK_CATALOG } from '../data/catalog';
+import { CATEGORIES, filterHiddenPlakCatalog } from '../data/catalog';
 import { computeBlocks } from '../utils/computeBlocks';
 import { createDraftUpdaters } from '../utils/draftUpdaters';
 
@@ -19,7 +19,6 @@ const EDITABLE = { lines: true, rowDesc: true, rowQty: true, addRemoveRows: true
 export default function NewOrderStep2() {
   const { state, patch, addToCart } = useAppState();
   const navigate = useNavigate();
-  const [refImages, setRefImages] = useState({});
 
   const updaters = useMemo(() => {
     const u = createDraftUpdaters(patch, DRAFT_FIELDS, true);
@@ -31,11 +30,14 @@ export default function NewOrderStep2() {
   }, [patch]);
 
   const { blocks, isPbdCategory } = useMemo(() => computeBlocks(
-    state.category, state.pbdVariant, state.lineValues, state.matrixValues, state.rowsByBlock, state.plakRows, state.namaKelasRows, updaters,
-  ), [state.category, state.pbdVariant, state.lineValues, state.matrixValues, state.rowsByBlock, state.plakRows, state.namaKelasRows, updaters]);
+    state.category, state.pbdVariant, state.lineValues, state.matrixValues, state.rowsByBlock, state.plakRows, state.namaKelasRows, updaters, state.plakCatalog,
+  ), [state.category, state.pbdVariant, state.lineValues, state.matrixValues, state.rowsByBlock, state.plakRows, state.namaKelasRows, updaters, state.plakCatalog]);
+
+  // Codes Production has hidden (e.g. out of stock) never appear in the
+  // teacher's picker — see filterHiddenPlakCatalog.
+  const visiblePlakCatalog = useMemo(() => filterHiddenPlakCatalog(state.plakCatalog), [state.plakCatalog]);
 
   const pbdCat = CATEGORIES.find((c) => c.key === 'PBD');
-  const onRefImageChange = (slotId, url, fileName) => setRefImages((prev) => ({ ...prev, [slotId]: { url, fileName } }));
 
   return (
     <div className="screen-wrap">
@@ -76,9 +78,8 @@ export default function NewOrderStep2() {
             key={blk.idx}
             blk={blk}
             editable={EDITABLE}
-            plakOptions={PLAK_CATALOG}
-            refImage={refImages[blk.sampleSlotId]}
-            onRefImageChange={onRefImageChange}
+            plakOptions={visiblePlakCatalog}
+            refImageUrl={state.refImages?.[blk.sampleSlotId]}
           />
         ))}
 

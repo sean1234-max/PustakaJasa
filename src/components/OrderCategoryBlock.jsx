@@ -1,4 +1,3 @@
-import ImageDrop from './ImageDrop';
 import PlakPicker from './PlakPicker';
 
 // Renders one category "block": reference sample + numbered lines, the
@@ -6,7 +5,10 @@ import PlakPicker from './PlakPicker';
 // sub-table (PBD variant 0 only), and the Jenis Plak / QTY / Harga row.
 // Reused by New Order Step 2, Amend, and Add On — `editable` controls which
 // parts of the block are inputs vs read-only text for each of those.
-export default function OrderCategoryBlock({ blk, editable, plakOptions, refImage, onRefImageChange }) {
+// The reference image itself is never editable here regardless of
+// `editable` — it's a fixed per-category example Production manages from
+// its own admin screen (Production → Reference Images), not per-order data.
+export default function OrderCategoryBlock({ blk, editable, plakOptions, refImageUrl }) {
   return (
     <div>
       <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Reference Sample (Contoh)</div>
@@ -14,15 +16,11 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, refImag
 
       <div className="ref-sample-grid">
         <div className="ref-sample-image">
-          <ImageDrop
-            value={refImage?.url}
-            fileName={refImage?.fileName}
-            onChange={(url, fileName) => onRefImageChange?.(blk.sampleSlotId, url, fileName)}
-            placeholder="Drop reference sample"
-            subtext="or click to browse"
-            height={200}
-            thumbSize={80}
-          />
+          {refImageUrl ? (
+            <img src={refImageUrl} alt="Reference sample" className="ref-sample-img" />
+          ) : (
+            <div className="ref-sample-placeholder">No reference image set yet</div>
+          )}
         </div>
         <div className="ref-sample-lines">
           {blk.lines.map((ln) => (

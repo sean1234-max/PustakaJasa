@@ -4,7 +4,7 @@ import Nav from '../components/Nav';
 import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import { useAppState } from '../state/useAppState';
-import { STATUS_STAGES, STATUS_BG, STATUS_TEXT, PLAK_CATALOG, formatDate } from '../data/catalog';
+import { STATUS_STAGES, STATUS_BG, STATUS_TEXT, formatDate } from '../data/catalog';
 import { reconstructBlocksForCategory } from '../utils/computeBlocks';
 import { getOrderCategories } from '../utils/exportCsv';
 
@@ -22,8 +22,8 @@ export default function OrderDetails() {
   const currentCat = categories.find((c) => c.key === activeCat) || categories[0];
   const catBlocks = useMemo(() => {
     if (!order || !currentCat) return [];
-    return reconstructBlocksForCategory(order, currentCat.key).blocks;
-  }, [order, currentCat]);
+    return reconstructBlocksForCategory(order, currentCat.key, state.plakCatalog).blocks;
+  }, [order, currentCat, state.plakCatalog]);
 
   if (!order) return null;
 
@@ -112,7 +112,7 @@ export default function OrderDetails() {
                   <CategoryTabs categories={categories} active={currentCat?.key} onSelect={setActiveCat} />
                 </div>
                 {catBlocks.map((blk) => (
-                  <OrderCategoryBlock key={blk.idx} blk={blk} editable={READONLY} plakOptions={PLAK_CATALOG} />
+                  <OrderCategoryBlock key={blk.idx} blk={blk} editable={READONLY} refImageUrl={state.refImages?.[blk.sampleSlotId]} />
                 ))}
               </>
             )}

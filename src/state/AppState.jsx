@@ -4,6 +4,10 @@ import { buildInitialRowsByBlock, buildInitialPlakRows } from '../data/formDefau
 import { computeBlocks, snapshotDetail, noopUpdaters } from '../utils/computeBlocks';
 import { AppStateContext } from './AppStateContext';
 import { fetchOrders, insertOrder, updateOrder } from '../lib/ordersApi';
+import {
+  fetchReferenceImages, saveReferenceImage,
+  fetchPlakCatalog, addPlakNode, removePlakNode, updatePlakNode,
+} from '../lib/catalogAdminApi';
 import { supabase } from '../lib/supabaseClient';
 
 // Real "today", normalized to midnight so it compares cleanly against the
@@ -74,6 +78,10 @@ function initialState() {
     lastOrderId: '',
     updateToast: '',
     productionToast: '',
+
+    refImages: {},
+    plakCatalog: [],
+    plakCatalogLoaded: false,
 
     draftRestoredToast: '',
     amendOrderId: null,
@@ -159,6 +167,21 @@ export function AppStateProvider({ children }) {
     return () => { cancelled = true; };
   }, [patch, state.role, state.userAuthId]);
 
+  // Reference sample images and the Jenis Plak catalog are global settings
+  // Production manages (see catalogAdminApi.js) — fetched once per login so
+  // logging out and into a different account still picks up the latest.
+  useEffect(() => {
+    if (!state.role) return undefined;
+    let cancelled = false;
+    Promise.all([fetchReferenceImages(), fetchPlakCatalog()])
+      .then(([refImages, plakCatalog]) => { if (!cancelled) patch({ refImages, plakCatalog, plakCatalogLoaded: true }); })
+      .catch((err) => {
+        console.error('Failed to load catalog settings from Supabase:', err);
+        if (!cancelled) patch({ plakCatalogLoaded: true });
+      });
+    return () => { cancelled = true; };
+  }, [patch, state.role]);
+
   const initialDraftToastRef = useRef(state.draftRestoredToast);
   useEffect(() => {
     if (!initialDraftToastRef.current) return undefined;
@@ -228,7 +251,7 @@ export function AppStateProvider({ children }) {
   const addToCart = useCallback(() => {
     setState((st) => {
       const { blocks, isMatrix } = computeBlocks(
-        st.category, st.pbdVariant, st.lineValues, st.matrixValues, st.rowsByBlock, st.plakRows, st.namaKelasRows, noopUpdaters,
+        st.category, st.pbdVariant, st.lineValues, st.matrixValues, st.rowsByBlock, st.plakRows, st.namaKelasRows, noopUpdaters, st.plakCatalog,
       );
       const newItems = [];
       blocks.forEach((b) => {
@@ -367,7 +390,7 @@ export function AppStateProvider({ children }) {
       st.amendCategoriesUsed.forEach((catKey) => {
         const pbdV = catKey === 'PBD' ? st.amendPbdVariant : 0;
         const { blocks: catBlocks, isMatrix: catIsMatrix } = computeBlocks(
-          catKey, pbdV, st.amendLineValues, st.amendMatrixValues, st.amendRowsByBlock, st.amendPlakRows, [], noopUpdaters,
+          catKey, pbdV, st.amendLineValues, st.amendMatrixValues, st.amendRowsByBlock, st.amendPlakRows, [], noopUpdaters, st.plakCatalog,
         );
         catBlocks.forEach((blk) => {
           blk.plakRows.forEach((pr) => {
@@ -408,7 +431,7 @@ export function AppStateProvider({ children }) {
       CATEGORIES.forEach((cat) => {
         const pbdV = cat.key === 'PBD' ? st.addOnPbdVariant : 0;
         const { blocks: catBlocks, isMatrix: catIsMatrix } = computeBlocks(
-          cat.key, pbdV, st.addOnLineValues, st.addOnMatrixValues, st.addOnRowsByBlock, st.addOnPlakRows, [], noopUpdaters,
+          cat.key, pbdV, st.addOnLineValues, st.addOnMatrixValues, st.addOnRowsByBlock, st.addOnPlakRows, [], noopUpdaters, st.plakCatalog,
         );
         catBlocks.forEach((blk) => {
           blk.plakRows.forEach((pr) => {
@@ -446,7 +469,7 @@ export function AppStateProvider({ children }) {
   const approveOrder = useCallback((orderId, updatedItems) => {
     patch((st) => {
       const totalAmount = updatedItems.reduce((sum, it) => sum + it.harga, 0);
-      const priceAdjusted = updatedItems.some((it) => it.unitPrice !== standardUnitPrice(it.jenisPlak));
+      const priceAdjusted = updatedItems.some((it) => it.unitPrice !== standardUnitPrice(it.jenisPlak, st.plakCatalog));
       updateOrder(orderId, { items: updatedItems, totalAmount, priceAdjusted, status: 'In Production' })
         .catch((err) => console.error('Failed to save approval to Supabase:', err));
       return {
@@ -486,10 +509,75 @@ export function AppStateProvider({ children }) {
     productionToastTimer.current = setTimeout(() => patch({ productionToast: '' }), 2500);
   }, [patch]);
 
+  // Production: replaces one category's reference sample image. Updates
+  // local state immediately (every teacher's picker reads from it) and
+  // persists to Supabase in the background.
+  const updateReferenceImage = useCallback((slotId, dataUrl) => {
+    patch((st) => ({ refImages: { ...st.refImages, [slotId]: dataUrl } }));
+    saveReferenceImage(slotId, dataUrl).catch((err) => console.error('Failed to save reference image to Supabase:', err));
+  }, [patch]);
+
+  // Production catalog admin: add/remove/edit-price/hide all change the
+  // source of truth in Supabase, then refetch the whole (small, ~150-node)
+  // tree and rebuild it client-side — simpler and less error-prone than
+  // hand-patching a nested tree in local state to match.
+  const refreshPlakCatalog = useCallback(async () => {
+    try {
+      const plakCatalog = await fetchPlakCatalog();
+      patch({ plakCatalog });
+    } catch (err) {
+      console.error('Failed to refresh Jenis Plak catalog from Supabase:', err);
+    }
+  }, [patch]);
+
+  // parentId null adds a new top-level code; pass an existing node's id to
+  // add a variant underneath it (e.g. a new color under an existing code).
+  const addCatalogNode = useCallback(async (parentId, code, price, siblingCount) => {
+    try {
+      await addPlakNode(parentId, code, price, siblingCount || 0);
+      await refreshPlakCatalog();
+    } catch (err) {
+      console.error('Failed to add Jenis Plak code to Supabase:', err);
+    }
+  }, [refreshPlakCatalog]);
+
+  // Deletes the node and everything beneath it (the FK cascades).
+  const removeCatalogNode = useCallback(async (id) => {
+    try {
+      await removePlakNode(id);
+      await refreshPlakCatalog();
+    } catch (err) {
+      console.error('Failed to remove Jenis Plak code from Supabase:', err);
+    }
+  }, [refreshPlakCatalog]);
+
+  const updateCatalogNodePrice = useCallback(async (id, price) => {
+    try {
+      await updatePlakNode(id, { price });
+      await refreshPlakCatalog();
+    } catch (err) {
+      console.error('Failed to update Jenis Plak price in Supabase:', err);
+    }
+  }, [refreshPlakCatalog]);
+
+  // Hiding is per-node, not per-path — hiding a group hides everything
+  // beneath it (see filterHiddenPlakCatalog), but each node's hidden state
+  // is stored and toggled independently, so unhiding a group later doesn't
+  // silently reveal a variant that was individually hidden before that.
+  const setCatalogNodeHidden = useCallback(async (id, hidden) => {
+    try {
+      await updatePlakNode(id, { hidden });
+      await refreshPlakCatalog();
+    } catch (err) {
+      console.error('Failed to update Jenis Plak visibility in Supabase:', err);
+    }
+  }, [refreshPlakCatalog]);
+
   const value = {
     state, patch, today: TODAY, login, logout,
     resetCurrentCategory, startNewOrder, addToCart, removeFromCart, submitOrder, reorderOrder,
     openAmend, updateAmend, openAddOn, commitAddOn, approveOrder, setInvoiceId,
+    updateReferenceImage, addCatalogNode, removeCatalogNode, updateCatalogNodePrice, setCatalogNodeHidden,
   };
 
   return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>;

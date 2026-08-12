@@ -17,6 +17,8 @@ import SalesDashboard from './pages/SalesDashboard';
 import SalesOrderSummary from './pages/SalesOrderSummary';
 import ProductionDashboard from './pages/ProductionDashboard';
 import ProductionOrderDetail from './pages/ProductionOrderDetail';
+import ProductionReferenceImages from './pages/ProductionReferenceImages';
+import ProductionCatalog from './pages/ProductionCatalog';
 
 // Supabase's session lives in localStorage and survives a refresh on its
 // own, but the app's role/sekolah/etc. state doesn't — AppState restores
@@ -49,6 +51,8 @@ function AppRoutes() {
 
       <Route path="/production/dashboard" element={<RequireRole role="production"><ProductionDashboard /></RequireRole>} />
       <Route path="/production/orders/:id" element={<RequireRole role="production"><ProductionOrderDetail /></RequireRole>} />
+      <Route path="/production/reference-images" element={<RequireRole role="production"><ProductionReferenceImages /></RequireRole>} />
+      <Route path="/production/catalog" element={<RequireRole role="production"><ProductionCatalog /></RequireRole>} />
 
       <Route path="*" element={<Navigate to="/login" replace />} />
     </Routes>

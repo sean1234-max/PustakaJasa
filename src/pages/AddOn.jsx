@@ -1,10 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import { useAppState } from '../state/useAppState';
-import { CATEGORIES, PLAK_CATALOG } from '../data/catalog';
+import { CATEGORIES, filterHiddenPlakCatalog } from '../data/catalog';
 import { computeBlocks } from '../utils/computeBlocks';
 import { createDraftUpdaters } from '../utils/draftUpdaters';
 
@@ -19,16 +19,15 @@ const EDITABLE = { lines: true, rowDesc: true, rowQty: true, addRemoveRows: true
 export default function AddOn() {
   const { state, patch } = useAppState();
   const navigate = useNavigate();
-  const [refImages, setRefImages] = useState({});
   const order = state.orders.find((o) => o.id === state.addOnOrderId);
 
   const updaters = useMemo(() => createDraftUpdaters(patch, DRAFT_FIELDS, true), [patch]);
 
   const { blocks, isPbdCategory } = useMemo(() => computeBlocks(
-    state.addOnCategory, state.addOnPbdVariant, state.addOnLineValues, state.addOnMatrixValues, state.addOnRowsByBlock, state.addOnPlakRows, state.addOnNamaKelasRows, updaters,
-  ), [state.addOnCategory, state.addOnPbdVariant, state.addOnLineValues, state.addOnMatrixValues, state.addOnRowsByBlock, state.addOnPlakRows, state.addOnNamaKelasRows, updaters]);
+    state.addOnCategory, state.addOnPbdVariant, state.addOnLineValues, state.addOnMatrixValues, state.addOnRowsByBlock, state.addOnPlakRows, state.addOnNamaKelasRows, updaters, state.plakCatalog,
+  ), [state.addOnCategory, state.addOnPbdVariant, state.addOnLineValues, state.addOnMatrixValues, state.addOnRowsByBlock, state.addOnPlakRows, state.addOnNamaKelasRows, updaters, state.plakCatalog]);
 
-  const onRefImageChange = (slotId, url, fileName) => setRefImages((prev) => ({ ...prev, [slotId]: { url, fileName } }));
+  const visiblePlakCatalog = useMemo(() => filterHiddenPlakCatalog(state.plakCatalog), [state.plakCatalog]);
 
   if (!order) return null;
 
@@ -54,7 +53,7 @@ export default function AddOn() {
         )}
 
         {blocks.map((blk) => (
-          <OrderCategoryBlock key={blk.idx} blk={blk} editable={EDITABLE} plakOptions={PLAK_CATALOG} refImage={refImages[blk.sampleSlotId]} onRefImageChange={onRefImageChange} />
+          <OrderCategoryBlock key={blk.idx} blk={blk} editable={EDITABLE} plakOptions={visiblePlakCatalog} refImageUrl={state.refImages?.[blk.sampleSlotId]} />
         ))}
 
         <div className="row-split" style={{ marginTop: 'var(--space-6)' }}>

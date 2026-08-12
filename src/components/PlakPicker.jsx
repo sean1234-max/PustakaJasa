@@ -1,38 +1,59 @@
 import { useState, useRef, useEffect } from 'react';
 
-// One level of the catalog tree, rendered as a vertical list. An item with
-// children shows a flyout of this same component to its right on hover
-// (nested arbitrarily deep — Eastern Trophy needs 4 levels); a leaf item
-// (no children) is directly clickable and finishes the pick.
+// One level of the catalog tree. An item with children shows a flyout of
+// this same component to its right on hover (nested arbitrarily deep —
+// Eastern Trophy needs 4 levels); a leaf item (no children) is directly
+// clickable and finishes the pick. At the root level only, codes are split
+// into two columns — plain codes on the left, codes that expand into a
+// submenu on the right — so it's clear at a glance which ones have more to
+// pick and which don't, instead of a single list with arrows scattered
+// through it.
 function PlakMenuLevel({ nodes, path, onPick }) {
   const [hoverCode, setHoverCode] = useState(null);
-  return (
-    <div className="plak-menu">
-      {nodes.map((node) => {
-        const hasChildren = Array.isArray(node.children) && node.children.length > 0;
-        const nextPath = [...path, node.code];
-        return (
-          <div
-            key={node.code}
-            className="plak-menu-item-wrap"
-            onMouseEnter={() => setHoverCode(node.code)}
-            onMouseLeave={() => setHoverCode((c) => (c === node.code ? null : c))}
-          >
-            <div
-              className={`plak-menu-item${hasChildren ? '' : ' plak-menu-item-leaf'}`}
-              onClick={() => { if (!hasChildren) onPick(nextPath); }}
-            >
-              <span>{node.code}</span>
-              {hasChildren && <span className="plak-menu-arrow">›</span>}
-            </div>
-            {hasChildren && hoverCode === node.code && (
-              <div className="plak-menu-flyout">
-                <PlakMenuLevel nodes={node.children} path={nextPath} onPick={onPick} />
-              </div>
-            )}
+  const isRoot = path.length === 0;
+
+  const renderItem = (node) => {
+    const hasChildren = Array.isArray(node.children) && node.children.length > 0;
+    const nextPath = [...path, node.code];
+    const key = node.id ?? node.code;
+    return (
+      <div
+        key={key}
+        className="plak-menu-item-wrap"
+        onMouseEnter={() => setHoverCode(key)}
+        onMouseLeave={() => setHoverCode((c) => (c === key ? null : c))}
+      >
+        <div
+          className={`plak-menu-item${hasChildren ? '' : ' plak-menu-item-leaf'}`}
+          onClick={() => { if (!hasChildren) onPick(nextPath); }}
+        >
+          <span>{node.code}</span>
+          {hasChildren && <span className="plak-menu-arrow">›</span>}
+        </div>
+        {hasChildren && hoverCode === key && (
+          <div className="plak-menu-flyout">
+            <PlakMenuLevel nodes={node.children} path={nextPath} onPick={onPick} />
           </div>
-        );
-      })}
+        )}
+      </div>
+    );
+  };
+
+  if (!isRoot) {
+    return <div className="plak-menu">{nodes.map(renderItem)}</div>;
+  }
+
+  const plainCodes = nodes.filter((n) => !(Array.isArray(n.children) && n.children.length > 0));
+  const expandableCodes = nodes.filter((n) => Array.isArray(n.children) && n.children.length > 0);
+
+  return (
+    <div className="plak-menu-root-split">
+      {plainCodes.length > 0 && <div className="plak-menu">{plainCodes.map(renderItem)}</div>}
+      {expandableCodes.length > 0 && (
+        <div className={`plak-menu${plainCodes.length > 0 ? ' plak-menu-col-divided' : ''}`}>
+          {expandableCodes.map(renderItem)}
+        </div>
+      )}
     </div>
   );
 }

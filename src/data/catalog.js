@@ -90,82 +90,24 @@ export const CATEGORIES = [
   },
 ];
 
-// Some codes (SM-13187, SM-13230, and each Eastern Trophy model) share the
-// exact same GOLD/SILVER/BRONZE → BASE A/B/C addon structure, only the base
-// code's own price differs — factored out so the four copies can't drift.
-function colorBaseVariants() {
-  const bases = [
-    { code: 'BASE A', price: 6 },
-    { code: 'BASE B', price: 5 },
-    { code: 'BASE C', price: 4 },
-  ];
-  return ['GOLD', 'SILVER', 'BRONZE'].map((color) => ({ code: color, children: bases }));
-}
-
-// The Jenis Plak catalog, as a tree: a leaf (no `children`) is a directly
-// selectable code; a node with `children` is a group you drill into. Each
-// node's own `price` (default 0) is additive down the path to whichever leaf
-// is finally picked — e.g. SM-13187 (RM6) → GOLD (RM0) → BASE A (RM6) prices
-// at RM12. This lets one shape cover flat codes (57166 A), sibling variants
-// with their own absolute price (CPH's A/B/C), and base-price-plus-addon
-// codes (SM-13187, Eastern Trophy) without special-casing any of them.
-export const PLAK_CATALOG = [
-  {
-    code: 'CRYSTAL',
-    children: [
-      { code: '80-B', price: 15, children: [{ code: 'DESIGN 1' }, { code: 'DESIGN 2' }, { code: 'DESIGN 3' }] },
-      { code: 'R-100', price: 19, children: [{ code: 'DESIGN A' }, { code: 'DESIGN B' }, { code: 'DESIGN C' }] },
-      { code: '10030', price: 29, children: [{ code: 'DESIGN A' }, { code: 'DESIGN B' }, { code: 'DESIGN C' }] },
-      { code: 'AK-7', price: 39, children: [{ code: 'DESIGN A' }, { code: 'DESIGN B' }, { code: 'DESIGN C' }] },
-      { code: '00S', price: 39, children: [{ code: 'DESIGN A' }, { code: 'DESIGN B' }, { code: 'DESIGN C' }] },
-      { code: '0011A', price: 39, children: [{ code: 'DESIGN A' }, { code: 'DESIGN B' }, { code: 'DESIGN C' }] },
-      { code: 'SA4', price: 45, children: [{ code: 'DESIGN A' }, { code: 'DESIGN B' }, { code: 'DESIGN C' }] },
-      { code: 'R-7', price: 49, children: [{ code: 'DESIGN A' }, { code: 'DESIGN B' }, { code: 'DESIGN C' }] },
-      { code: 'CA-15', price: 59, children: [{ code: 'DESIGN A' }, { code: 'DESIGN B' }, { code: 'DESIGN C' }] },
-      { code: 'PSA-3', price: 59, children: [{ code: 'DESIGN A' }, { code: 'DESIGN B' }, { code: 'DESIGN C' }] },
-      { code: 'CM-27', price: 62, children: [{ code: 'DESIGN A' }, { code: 'DESIGN B' }, { code: 'DESIGN C' }] },
-      { code: '11-3', price: 72, children: [{ code: 'DESIGN A' }, { code: 'DESIGN B' }, { code: 'DESIGN C' }] },
-      { code: '0171', price: 82, children: [{ code: 'DESIGN A' }, { code: 'DESIGN B' }, { code: 'DESIGN C' }] },
-      { code: 'XB-5A', price: 89, children: [{ code: 'DESIGN A' }, { code: 'DESIGN B' }, { code: 'DESIGN C' }] },
-    ],
-  },
-  { code: 'CPH', children: [{ code: 'A', price: 7.50 }, { code: 'B', price: 7.50 }, { code: 'C', price: 7.50 }] },
-  { code: 'VB', children: [{ code: 'A', price: 65 }, { code: 'B', price: 60 }, { code: 'C', price: 50 }, { code: 'D', price: 45 }] },
-  { code: 'SONGKET', children: [{ code: 'A', price: 75 }, { code: 'B', price: 70 }, { code: 'C', price: 65 }] },
-  { code: '57166 A', price: 85 },
-  { code: 'DECO LIGHT', price: 20 },
-  { code: 'CRYSTAL MEDAL', price: 15 },
-  { code: 'SOLID GOLD', children: [{ code: '4942', price: 59 }, { code: '4943', price: 59 }] },
-  { code: 'FD 251', price: 6.50 },
-  { code: '18059', price: 6 },
-  { code: 'SM-13187', price: 6, children: colorBaseVariants() },
-  { code: 'SM-13230', price: 6, children: colorBaseVariants() },
-  {
-    code: 'EASTERN TROPHY',
-    children: [
-      { code: 'MP393', price: 6, children: colorBaseVariants() },
-      { code: 'MP399', price: 6, children: colorBaseVariants() },
-    ],
-  },
-  { code: '13228', price: 16 },
-  { code: 'JZ 19821', price: 19 },
-  { code: 'H25', price: 19 },
-  { code: 'YK', children: [{ code: '628', price: 25 }, { code: '1370', price: 33 }] },
-  { code: 'W038', children: [{ code: 'A', price: 33 }, { code: 'B', price: 29 }, { code: 'C', price: 27 }] },
-  { code: 'SR-116 A', price: 34 },
-  { code: 'SL245#3', price: 42 },
-  { code: 'SL243#3', price: 45 },
-  { code: 'TSL232#3', price: 45 },
-];
+// The Jenis Plak catalog now lives in Supabase (plak_catalog_nodes —
+// see supabase/migrations/0006_catalog_admin.sql) so Production can add,
+// remove, edit prices, and hide/unhide codes live, without a code deploy.
+// AppState fetches the flat rows and rebuilds this same tree shape client
+// side: a leaf (no `children`) is a directly selectable code; a node with
+// `children` is a group you drill into. Each node's own `price` (default
+// 0) is additive down the path to whichever leaf is finally picked — e.g.
+// SM-13187 (RM6) → GOLD (RM0) → BASE A (RM6) prices at RM12. Everything
+// below operates on that tree, whatever its current shape.
 
 // Flattens the tree into { code: fullPathString, price: totalPrice } for
 // every leaf — fullPathString (joined with " / ") is exactly what gets
 // stored as an order line's jenisPlak once a teacher finishes picking down
 // a path, so this is also the lookup table standardUnitPrice searches.
-function flattenPlakCatalog(nodes, prefix = [], priceSoFar = 0) {
-  return nodes.flatMap((node) => {
+export function flattenPlakCatalog(nodes, prefix = [], priceSoFar = 0) {
+  return (nodes || []).flatMap((node) => {
     const path = [...prefix, node.code];
-    const total = priceSoFar + (node.price || 0);
+    const total = priceSoFar + (Number(node.price) || 0);
     if (!node.children || node.children.length === 0) {
       return [{ code: path.join(' / '), price: total }];
     }
@@ -173,14 +115,42 @@ function flattenPlakCatalog(nodes, prefix = [], priceSoFar = 0) {
   });
 }
 
-const PLAK_PRICES = flattenPlakCatalog(PLAK_CATALOG);
-
-// Standard list price for a plaque code (its full " / "-joined path) — the
-// baseline Sales compares an order's (possibly negotiated) unit price
-// against to flag a discount/markup.
-export function standardUnitPrice(code) {
-  const entry = PLAK_PRICES.find((p) => p.code === code);
+// Standard list price for a plaque code (its full " / "-joined path) —
+// the baseline Sales compares an order's (possibly negotiated) unit price
+// against to flag a discount/markup. Takes the live catalog tree since
+// prices are Production-editable, not fixed at build time.
+export function standardUnitPrice(code, plakCatalogTree) {
+  const entry = flattenPlakCatalog(plakCatalogTree).find((p) => p.code === code);
   return entry ? entry.price : null;
+}
+
+// One reference-sample image slot per category (+ PBD variant), keyed by
+// the exact sampleSlotId computeBlocks.js generates (`sample-${catKey}-${b}`)
+// — Production manages these directly by slot, teachers only ever see them.
+export const REFERENCE_IMAGE_SLOTS = [
+  { id: 'sample-MP1-0', label: 'MP THP 1' },
+  { id: 'sample-MP2-0', label: 'MP THP 2' },
+  { id: 'sample-PBD-0', label: 'PBD — Mengikut Kuantiti' },
+  { id: 'sample-PBD-1', label: 'PBD — Mengikut Kedudukan' },
+  { id: 'sample-LONJAKAN-0', label: 'Lonjakan Saujana' },
+  { id: 'sample-TOKOH-0', label: 'Tokoh' },
+];
+
+// Prunes any node marked `hidden` (Production, out of stock) — hiding a
+// whole code or just one branch inside it both work, since this checks
+// every node at every depth. If hiding leaves a group with no selectable
+// variants left, the group itself is dropped too rather than left as a
+// bogus empty leaf. Only used for the teacher-facing picker — Production's
+// own catalog admin view renders the raw, unfiltered tree.
+export function filterHiddenPlakCatalog(nodes) {
+  return (nodes || []).flatMap((node) => {
+    if (node.hidden) return [];
+    const hadChildren = Array.isArray(node.children) && node.children.length > 0;
+    if (!hadChildren) return [node];
+    const children = filterHiddenPlakCatalog(node.children);
+    if (children.length === 0) return [];
+    return [{ ...node, children }];
+  });
 }
 
 export const STATUS_STAGES = [

@@ -1,4 +1,4 @@
-import { CATEGORIES, standardUnitPrice } from '../data/catalog';
+import { CATEGORIES, flattenPlakCatalog } from '../data/catalog';
 
 export function snapshotDetail(catKey, blockIdx, isMatrix, lineValues, matrixValues, rowsByBlockMap) {
   const detail = { lines: {}, matrix: null, rows: null };
@@ -18,7 +18,14 @@ export function snapshotDetail(catKey, blockIdx, isMatrix, lineValues, matrixVal
 // original prototype's computeBlocks so the calculation rules (matrix totals,
 // harga = qty * price) stay identical. `updaters` are callbacks the caller
 // wires to its own state setters; pass no-ops for read-only rendering.
-export function computeBlocks(catKey, pbdVariant, lineValues, matrixValues, rowsByBlockMap, plakRowsMap, namaKelasRows, updaters) {
+// `plakCatalog` is the live (Production-editable) catalog tree — flattened
+// once here rather than per plak row.
+export function computeBlocks(catKey, pbdVariant, lineValues, matrixValues, rowsByBlockMap, plakRowsMap, namaKelasRows, updaters, plakCatalog) {
+  const flatPrices = flattenPlakCatalog(plakCatalog);
+  const priceFor = (code) => {
+    const entry = flatPrices.find((p) => p.code === code);
+    return entry ? entry.price : null;
+  };
   const currentCat = CATEGORIES.find((c) => c.key === catKey) || CATEGORIES[0];
   const isMatrix = currentCat.mode === 'matrix';
   const blocksCount = currentCat.blocksCount || 1;
@@ -78,7 +85,7 @@ export function computeBlocks(catKey, pbdVariant, lineValues, matrixValues, rows
     const plakRowsKey = `${catKey}::${b}`;
     const rawPlakRows = plakRowsMap[plakRowsKey] || [];
     const plakRows = rawPlakRows.map((pr) => {
-      const unitPrice = standardUnitPrice(pr.jenisPlak);
+      const unitPrice = priceFor(pr.jenisPlak);
       const harga = unitPrice != null ? blockTotalQty * unitPrice : 0;
       return {
         id: pr.id, jenisPlak: pr.jenisPlak, qty: blockTotalQty, rawHarga: harga,
@@ -125,7 +132,7 @@ export const noopUpdaters = {
 // of re-deriving a simplified summary. Groups items by blockIdx so a
 // category with more than one block (e.g. both PBD variants used in the
 // same order) renders every block, not just one.
-export function reconstructBlocksForCategory(order, catKey) {
+export function reconstructBlocksForCategory(order, catKey, plakCatalog) {
   const items = (order.items || []).filter((it) => it.categoryKey === catKey);
   const blockIdxs = [...new Set(items.map((it) => it.blockIdx ?? 0))];
   const allBlocks = [];
@@ -146,7 +153,7 @@ export function reconstructBlocksForCategory(order, catKey) {
       }
       plakRows[key] = [...(plakRows[key] || []), { id: it.id, jenisPlak: it.jenisPlak }];
     });
-    const result = computeBlocks(catKey, blockIdx, lineValues, matrixValues, rowsByBlock, plakRows, [], noopUpdaters);
+    const result = computeBlocks(catKey, blockIdx, lineValues, matrixValues, rowsByBlock, plakRows, [], noopUpdaters, plakCatalog);
     isMatrix = result.isMatrix;
     allBlocks.push(...result.blocks);
   });

@@ -4,7 +4,7 @@ import Nav from '../components/Nav';
 import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import { useAppState } from '../state/useAppState';
-import { STATUS_STAGES, STATUS_BG, STATUS_TEXT, PLAK_CATALOG } from '../data/catalog';
+import { STATUS_STAGES, STATUS_BG, STATUS_TEXT } from '../data/catalog';
 import { reconstructBlocksForCategory } from '../utils/computeBlocks';
 import { getOrderCategories, buildCsvRows, rowsToCsv, buildCategoryCsvFilename } from '../utils/exportCsv';
 import { downloadTextFile } from '../utils/downloadBlob';
@@ -28,8 +28,8 @@ export default function ProductionOrderDetail() {
 
   const catBlocks = useMemo(() => {
     if (!order || !currentCat) return [];
-    return reconstructBlocksForCategory(order, currentCat.key).blocks;
-  }, [order, currentCat]);
+    return reconstructBlocksForCategory(order, currentCat.key, state.plakCatalog).blocks;
+  }, [order, currentCat, state.plakCatalog]);
 
   const csvData = useMemo(() => {
     if (!order || !currentCat) return { rows: [], skippedItemIds: [] };
@@ -152,7 +152,7 @@ export default function ProductionOrderDetail() {
                     </div>
 
                     {catBlocks.map((blk) => (
-                      <OrderCategoryBlock key={blk.idx} blk={blk} editable={READONLY} plakOptions={PLAK_CATALOG} />
+                      <OrderCategoryBlock key={blk.idx} blk={blk} editable={READONLY} refImageUrl={state.refImages?.[blk.sampleSlotId]} />
                     ))}
 
                     {csvData.rows.length === 0 ? (
