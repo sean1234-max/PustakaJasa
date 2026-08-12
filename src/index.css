@@ -344,7 +344,9 @@ a:hover { color: var(--color-accent-900); text-decoration: underline; }
   margin-top: var(--space-1);
   padding: var(--space-1);
 }
-.plak-menu { min-width: 150px; max-height: 320px; overflow-y: auto; }
+/* No max-height/overflow here on purpose — clipping this box would also
+   clip every flyout submenu positioned relative to an item inside it. */
+.plak-menu { min-width: 150px; }
 .plak-menu-item-wrap { position: relative; }
 .plak-menu-item {
   display: flex; align-items: center; justify-content: space-between; gap: var(--space-2);
