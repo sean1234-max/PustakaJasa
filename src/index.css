@@ -470,9 +470,12 @@ a:hover { color: var(--color-accent-900); text-decoration: underline; }
 .row-split { display: flex; justify-content: space-between; align-items: center; }
 .toast-inline { font-size: 12px; color: var(--color-accent-700); font-weight: 600; }
 
-/* Print (Sales: print an approved order) */
+/* Print (Sales: print an approved order — summary + every category's
+   details together, regardless of which tab is open on screen). */
+.print-only { display: none; }
 @media print {
-  .nav, .step-header, .no-print { display: none !important; }
+  .nav, .step-header, .no-print, .screen-only { display: none !important; }
+  .print-only { display: block; }
   body, .app-shell { background: #fff; padding: 0; }
   .screen-wrap { max-width: none; }
   .card { box-shadow: none; border: none; padding: 0; }

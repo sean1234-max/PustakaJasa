@@ -12,6 +12,59 @@ import { getOrderCategories } from '../utils/exportCsv';
 // already submitted, it never edits the underlying order/category data.
 const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: false, matrix: false, jenisPlak: false, namaKelas: false };
 
+// Shared between the on-screen Summary tab and the print-only section —
+// printing needs the same price table, just alongside every category's
+// details instead of behind a separate tab.
+function PriceTable({ rows, editable, priceDrafts, setPrice, plakCatalog, totalQty, totalHarga, priceAdjusted }) {
+  return (
+    <>
+      <table className="table" style={{ margin: 'var(--space-3) 0 0' }}>
+        <thead>
+          <tr>
+            <th>Category</th>
+            <th>Jenis Plak</th>
+            <th style={{ width: 130 }}>Price per Unit</th>
+            <th style={{ width: 80 }}>QTY</th>
+            <th style={{ width: 130 }}>Harga</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((it) => {
+            const adjusted = it.unitPrice !== standardUnitPrice(it.jenisPlak, plakCatalog);
+            return (
+              <tr key={it.id}>
+                <td>{it.categoryLabel}</td>
+                <td>{it.jenisPlak}</td>
+                <td>
+                  {editable ? (
+                    <input
+                      className={`input${adjusted ? ' amount-adjusted' : ''}`}
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={priceDrafts[it.id]}
+                      onChange={(e) => setPrice(it.id, e.target.value)}
+                    />
+                  ) : (
+                    <span className={adjusted ? 'amount-adjusted' : undefined}>RM {it.unitPrice.toFixed(2)}</span>
+                  )}
+                </td>
+                <td>{it.qty}</td>
+                <td><strong className={adjusted ? 'amount-adjusted' : undefined}>RM {it.harga.toFixed(2)}</strong></td>
+              </tr>
+            );
+          })}
+          <tr>
+            <td /><td /><td /><td><strong>TOTAL</strong></td>
+            <td><strong className={priceAdjusted ? 'amount-adjusted' : undefined}>RM {totalHarga.toFixed(2)}</strong></td>
+          </tr>
+        </tbody>
+      </table>
+      <p className="hint-text" style={{ marginTop: 'var(--space-2)' }}>QTY total: {totalQty}</p>
+    </>
+  );
+}
+
 export default function SalesOrderSummary() {
   const { state, approveOrder } = useAppState();
   const { id } = useParams();
@@ -45,11 +98,20 @@ export default function SalesOrderSummary() {
     return reconstructBlocksForCategory(order, currentCat.key, state.plakCatalog).blocks;
   }, [order, currentCat, state.plakCatalog]);
 
+  // Printing needs every category's details at once, not just whichever
+  // tab happens to be open on screen — the tab UI is for browsing, the
+  // printout is the full order.
+  const allCatBlocks = useMemo(() => {
+    if (!order) return [];
+    return categories.flatMap((cat) => reconstructBlocksForCategory(order, cat.key, state.plakCatalog).blocks);
+  }, [order, categories, state.plakCatalog]);
+
   if (!order) return null;
 
   const idx = STATUS_STAGES.indexOf(order.status);
   const totalQty = rows.reduce((sum, it) => sum + (Number(it.qty) || 0), 0);
   const totalHarga = rows.reduce((sum, it) => sum + it.harga, 0);
+  const priceAdjusted = order.priceAdjusted || rows.some((it) => it.unitPrice !== standardUnitPrice(it.jenisPlak, state.plakCatalog));
 
   const setPrice = (itemId, value) => setPriceDrafts((prev) => ({ ...prev, [itemId]: value }));
 
@@ -93,86 +155,74 @@ export default function SalesOrderSummary() {
           <span className="status-pill" style={{ background: STATUS_BG[idx], color: STATUS_TEXT[idx] }}>{order.status}</span>
         </div>
 
-        {page === 'summary' ? (
-          <>
-            <div className="form-grid-2" style={{ marginTop: 'var(--space-3)' }}>
-              {order.sekolah && <div><div className="dim">Sekolah</div><div>{order.sekolah}</div></div>}
-              {order.picName && <div><div className="dim">PIC Name</div><div>{order.picName}{order.phone ? ` / ${order.phone}` : ''}</div></div>}
-            </div>
+        <div className="screen-only">
+          {page === 'summary' ? (
+            <>
+              <div className="form-grid-2" style={{ marginTop: 'var(--space-3)' }}>
+                {order.sekolah && <div><div className="dim">Sekolah</div><div>{order.sekolah}</div></div>}
+                {order.picName && <div><div className="dim">PIC Name</div><div>{order.picName}{order.phone ? ` / ${order.phone}` : ''}</div></div>}
+              </div>
 
-            <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Jenis Plak / Price per Unit / QTY / Harga</div>
-            <table className="table" style={{ margin: 'var(--space-3) 0 0' }}>
-              <thead>
-                <tr>
-                  <th>Category</th>
-                  <th>Jenis Plak</th>
-                  <th style={{ width: 130 }}>Price per Unit</th>
-                  <th style={{ width: 80 }}>QTY</th>
-                  <th style={{ width: 130 }}>Harga</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((it) => {
-                  const adjusted = it.unitPrice !== standardUnitPrice(it.jenisPlak, state.plakCatalog);
-                  return (
-                    <tr key={it.id}>
-                      <td>{it.categoryLabel}</td>
-                      <td>{it.jenisPlak}</td>
-                      <td>
-                        {editable ? (
-                          <input
-                            className={`input${adjusted ? ' amount-adjusted' : ''}`}
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={priceDrafts[it.id]}
-                            onChange={(e) => setPrice(it.id, e.target.value)}
-                          />
-                        ) : (
-                          <span className={adjusted ? 'amount-adjusted' : undefined}>RM {it.unitPrice.toFixed(2)}</span>
-                        )}
-                      </td>
-                      <td>{it.qty}</td>
-                      <td><strong className={adjusted ? 'amount-adjusted' : undefined}>RM {it.harga.toFixed(2)}</strong></td>
-                    </tr>
-                  );
-                })}
-                <tr>
-                  <td /><td /><td /><td><strong>TOTAL</strong></td>
-                  <td><strong className={order.priceAdjusted || rows.some((it) => it.unitPrice !== standardUnitPrice(it.jenisPlak, state.plakCatalog)) ? 'amount-adjusted' : undefined}>RM {totalHarga.toFixed(2)}</strong></td>
-                </tr>
-              </tbody>
-            </table>
-            <p className="hint-text" style={{ marginTop: 'var(--space-2)' }}>QTY total: {totalQty}</p>
+              <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Jenis Plak / Price per Unit / QTY / Harga</div>
+              <PriceTable
+                rows={rows} editable={editable} priceDrafts={priceDrafts} setPrice={setPrice}
+                plakCatalog={state.plakCatalog} totalQty={totalQty} totalHarga={totalHarga} priceAdjusted={priceAdjusted}
+              />
 
-            <div className="row-split" style={{ marginTop: 'var(--space-6)' }}>
-              <button type="button" className="btn btn-ghost" onClick={() => setPage('details')}>View Order Details →</button>
-              {editable
-                ? <button type="button" className="btn btn-primary" onClick={handleApprove}>Approve</button>
-                : <button type="button" className="btn btn-primary" onClick={handlePrint}>Print Order</button>}
-            </div>
-          </>
-        ) : (
-          <>
-            {categories.length === 0 ? (
-              <p className="hint-text" style={{ marginTop: 'var(--space-3)' }}>No category details found for this order.</p>
-            ) : (
-              <>
-                <div style={{ margin: 'var(--space-3) 0' }}>
-                  <CategoryTabs categories={categories} active={currentCat?.key} onSelect={setActiveCat} />
-                </div>
-                {catBlocks.map((blk) => (
-                  <OrderCategoryBlock key={blk.idx} blk={blk} editable={READONLY} refImageUrl={state.refImages?.[blk.sampleSlotId]} />
-                ))}
-              </>
-            )}
+              <div className="row-split" style={{ marginTop: 'var(--space-6)' }}>
+                <button type="button" className="btn btn-ghost" onClick={() => setPage('details')}>View Order Details →</button>
+                {editable
+                  ? <button type="button" className="btn btn-primary" onClick={handleApprove}>Approve</button>
+                  : <button type="button" className="btn btn-primary" onClick={handlePrint}>Print Order</button>}
+              </div>
+            </>
+          ) : (
+            <>
+              {categories.length === 0 ? (
+                <p className="hint-text" style={{ marginTop: 'var(--space-3)' }}>No category details found for this order.</p>
+              ) : (
+                <>
+                  <div style={{ margin: 'var(--space-3) 0' }}>
+                    <CategoryTabs categories={categories} active={currentCat?.key} onSelect={setActiveCat} />
+                  </div>
+                  {catBlocks.map((blk) => (
+                    <OrderCategoryBlock key={blk.idx} blk={blk} editable={READONLY} refImageUrl={state.refImages?.[blk.sampleSlotId]} />
+                  ))}
+                </>
+              )}
 
-            <div className="row-split" style={{ marginTop: 'var(--space-6)' }}>
-              <button type="button" className="btn btn-ghost" onClick={() => setPage('summary')}>← Back to Summary</button>
-              <span />
-            </div>
-          </>
-        )}
+              <div className="row-split" style={{ marginTop: 'var(--space-6)' }}>
+                <button type="button" className="btn btn-ghost" onClick={() => setPage('summary')}>← Back to Summary</button>
+                <span />
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Print-only: combines the summary price table and every category's
+            full details into one printout, regardless of which tab is open
+            on screen — see the "Print Order" button, only shown once approved. */}
+        <div className="print-only">
+          <div className="form-grid-2" style={{ marginTop: 'var(--space-3)' }}>
+            {order.sekolah && <div><div className="dim">Sekolah</div><div>{order.sekolah}</div></div>}
+            {order.picName && <div><div className="dim">PIC Name</div><div>{order.picName}{order.phone ? ` / ${order.phone}` : ''}</div></div>}
+          </div>
+
+          <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Jenis Plak / Price per Unit / QTY / Harga</div>
+          <PriceTable
+            rows={rows} editable={false} priceDrafts={priceDrafts} setPrice={setPrice}
+            plakCatalog={state.plakCatalog} totalQty={totalQty} totalHarga={totalHarga} priceAdjusted={priceAdjusted}
+          />
+
+          {categories.length > 0 && (
+            <>
+              <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Order Details</div>
+              {allCatBlocks.map((blk, i) => (
+                <OrderCategoryBlock key={i} blk={blk} editable={READONLY} refImageUrl={state.refImages?.[blk.sampleSlotId]} />
+              ))}
+            </>
+          )}
+        </div>
       </div>
     </div>
   );
