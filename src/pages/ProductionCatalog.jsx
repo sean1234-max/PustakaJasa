@@ -3,9 +3,10 @@ import Nav from '../components/Nav';
 import { useAppState } from '../state/useAppState';
 
 // One row per catalog node, recursing into its children. Each row can add
-// a variant beneath it, edit its own price, hide/unhide it, or remove it
-// (and everything beneath it) entirely.
-function CatalogRow({ node, depth, onAddChild, onRemove, onPriceChange, onToggleHidden }) {
+// a variant beneath it, edit its own price, hide/unhide it, remove it (and
+// everything beneath it), or move it up/down among its own siblings —
+// that's what controls which variant a teacher sees listed first.
+function CatalogRow({ node, depth, canMoveUp, canMoveDown, onAddChild, onRemove, onPriceChange, onToggleHidden, onMove }) {
   const [addingChild, setAddingChild] = useState(false);
   const [newCode, setNewCode] = useState('');
   const [newPrice, setNewPrice] = useState('');
@@ -45,6 +46,8 @@ function CatalogRow({ node, depth, onAddChild, onRemove, onPriceChange, onToggle
           onBlur={commitPrice}
         />
         <div className="catalog-admin-actions">
+          <button type="button" className="btn btn-ghost btn-icon" aria-label="Move up" disabled={!canMoveUp} onClick={() => onMove(node.id, 'up')}>▲</button>
+          <button type="button" className="btn btn-ghost btn-icon" aria-label="Move down" disabled={!canMoveDown} onClick={() => onMove(node.id, 'down')}>▼</button>
           <button type="button" className="btn btn-ghost" onClick={() => setAddingChild((v) => !v)}>+ Variant</button>
           <button type="button" className={`btn ${node.hidden ? 'btn-secondary' : 'btn-ghost'}`} onClick={() => onToggleHidden(node.id, !node.hidden)}>
             {node.hidden ? 'Unhide' : 'Hide'}
@@ -62,15 +65,18 @@ function CatalogRow({ node, depth, onAddChild, onRemove, onPriceChange, onToggle
         </div>
       )}
 
-      {hasChildren && node.children.map((child) => (
+      {hasChildren && node.children.map((child, i) => (
         <CatalogRow
           key={child.id}
           node={child}
           depth={depth + 1}
+          canMoveUp={i > 0}
+          canMoveDown={i < node.children.length - 1}
           onAddChild={onAddChild}
           onRemove={onRemove}
           onPriceChange={onPriceChange}
           onToggleHidden={onToggleHidden}
+          onMove={onMove}
         />
       ))}
     </>
@@ -78,7 +84,7 @@ function CatalogRow({ node, depth, onAddChild, onRemove, onPriceChange, onToggle
 }
 
 export default function ProductionCatalog() {
-  const { state, addCatalogNode, removeCatalogNode, updateCatalogNodePrice, setCatalogNodeHidden } = useAppState();
+  const { state, addCatalogNode, removeCatalogNode, updateCatalogNodePrice, setCatalogNodeHidden, moveCatalogNode } = useAppState();
   const [newTopCode, setNewTopCode] = useState('');
   const [newTopPrice, setNewTopPrice] = useState('');
 
@@ -111,15 +117,18 @@ export default function ProductionCatalog() {
           <p className="hint-text">No codes yet — add one above.</p>
         ) : (
           <div className="catalog-admin-list">
-            {state.plakCatalog.map((node) => (
+            {state.plakCatalog.map((node, i) => (
               <CatalogRow
                 key={node.id}
                 node={node}
                 depth={0}
+                canMoveUp={i > 0}
+                canMoveDown={i < state.plakCatalog.length - 1}
                 onAddChild={(parentId, code, price) => addCatalogNode(parentId, code, price, 0)}
                 onRemove={removeCatalogNode}
                 onPriceChange={updateCatalogNodePrice}
                 onToggleHidden={setCatalogNodeHidden}
+                onMove={moveCatalogNode}
               />
             ))}
           </div>

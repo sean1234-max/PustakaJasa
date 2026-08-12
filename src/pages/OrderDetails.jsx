@@ -86,7 +86,7 @@ export default function OrderDetails() {
             </div>
             {order.logoDataUrl && (
               <div className="field" style={{ marginTop: 'var(--space-4)' }}>
-                <label>School Logo</label>
+                <label>Logo Type</label>
                 <img src={order.logoDataUrl} alt="" style={{ width: 52, height: 52, objectFit: 'contain', border: '1px solid var(--color-neutral-300)', background: '#fff' }} />
               </div>
             )}

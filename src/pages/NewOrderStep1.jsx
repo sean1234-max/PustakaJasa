@@ -17,7 +17,7 @@ export default function NewOrderStep1() {
       return;
     }
     if (state.schoolType === 'NOT_SK' && !state.logoDataUrl) {
-      patch({ stepError: 'Please upload the school logo (required for Not SK schools).' });
+      patch({ stepError: 'Please upload the logo (required for Not SK schools).' });
       return;
     }
     patch({ stepError: '' });
@@ -112,12 +112,12 @@ export default function NewOrderStep1() {
           </div>
           {state.schoolType === 'NOT_SK' && (
             <div style={{ marginTop: 'var(--space-4)' }}>
-              <label>School Logo</label>
+              <label>Logo</label>
               <ImageDrop
                 value={state.logoDataUrl}
                 fileName={state.logoFileName}
                 onChange={(url, fileName) => patch({ logoDataUrl: url, logoFileName: fileName, stepError: '' })}
-                placeholder="Upload school logo"
+                placeholder="Upload logo"
                 subtext="PNG or JPG, click to browse"
               />
             </div>

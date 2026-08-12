@@ -53,11 +53,16 @@ export default function SalesOrderSummary() {
 
   const setPrice = (itemId, value) => setPriceDrafts((prev) => ({ ...prev, [itemId]: value }));
 
+  // Stays on this page after approving (instead of bouncing back to the
+  // dashboard) so Sales can immediately print the now-approved order —
+  // the page re-renders read-only once order.status flips, and the Print
+  // button takes its place where Approve was.
   const handleApprove = () => {
     const updatedItems = rows.map((r) => ({ ...r, unitPrice: r.unitPrice, harga: r.harga }));
     approveOrder(order.id, updatedItems);
-    navigate('/sales/dashboard');
   };
+
+  const handlePrint = () => window.print();
 
   return (
     <div className="screen-wrap">
@@ -142,7 +147,9 @@ export default function SalesOrderSummary() {
 
             <div className="row-split" style={{ marginTop: 'var(--space-6)' }}>
               <button type="button" className="btn btn-ghost" onClick={() => setPage('details')}>View Order Details →</button>
-              {editable && <button type="button" className="btn btn-primary" onClick={handleApprove}>Approve</button>}
+              {editable
+                ? <button type="button" className="btn btn-primary" onClick={handleApprove}>Approve</button>
+                : <button type="button" className="btn btn-primary" onClick={handlePrint}>Print Order</button>}
             </div>
           </>
         ) : (

@@ -15,6 +15,21 @@ import { supabase } from '../lib/supabaseClient';
 const now = new Date();
 const TODAY = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
+// Finds a catalog node by id anywhere in the tree, along with the sibling
+// array it lives in (its parent's `children`, or the root array for a
+// top-level code) — used to reorder a node relative to its siblings.
+function findNodeAndSiblings(nodes, id, siblings) {
+  const parentSiblings = siblings || nodes;
+  for (const node of nodes) {
+    if (node.id === id) return { node, siblings: parentSiblings };
+    if (node.children) {
+      const found = findNodeAndSiblings(node.children, id, node.children);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
 // Clears one category's draft fields back to blank (used after "Add to Cart"
 // and by the standalone reset action) — extracted so both call sites share
 // the id-counter bookkeeping instead of drifting apart.
@@ -573,11 +588,33 @@ export function AppStateProvider({ children }) {
     }
   }, [refreshPlakCatalog]);
 
+  // Swaps a node with its previous/next sibling and renumbers every
+  // sibling's sort_order 0..N-1 to match — not just the swapped pair,
+  // since ties are common (new codes/variants all default to sort_order
+  // 0 or a rough count) and only a full renumber reliably fixes those
+  // instead of leaving some pairs still tied.
+  const moveCatalogNode = useCallback(async (id, direction) => {
+    const found = findNodeAndSiblings(stateRef.current.plakCatalog, id);
+    if (!found) return;
+    const { siblings } = found;
+    const idx = siblings.findIndex((n) => n.id === id);
+    const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= siblings.length) return;
+    const reordered = [...siblings];
+    [reordered[idx], reordered[swapIdx]] = [reordered[swapIdx], reordered[idx]];
+    try {
+      await Promise.all(reordered.map((n, i) => updatePlakNode(n.id, { sort_order: i })));
+      await refreshPlakCatalog();
+    } catch (err) {
+      console.error('Failed to reorder Jenis Plak catalog in Supabase:', err);
+    }
+  }, [refreshPlakCatalog]);
+
   const value = {
     state, patch, today: TODAY, login, logout,
     resetCurrentCategory, startNewOrder, addToCart, removeFromCart, submitOrder, reorderOrder,
     openAmend, updateAmend, openAddOn, commitAddOn, approveOrder, setInvoiceId,
-    updateReferenceImage, addCatalogNode, removeCatalogNode, updateCatalogNodePrice, setCatalogNodeHidden,
+    updateReferenceImage, addCatalogNode, removeCatalogNode, updateCatalogNodePrice, setCatalogNodeHidden, moveCatalogNode,
   };
 
   return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>;
