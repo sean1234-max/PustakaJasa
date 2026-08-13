@@ -8,7 +8,13 @@ import PlakPicker from './PlakPicker';
 // The reference image itself is never editable here regardless of
 // `editable` — it's a fixed per-category example Production manages from
 // its own admin screen (Production → Reference Images), not per-order data.
-export default function OrderCategoryBlock({ blk, editable, plakOptions, refImageUrl }) {
+// `hideEmptyRows` (print only — the editable New Order / Amend / Add On
+// screens always show every subject/row so the teacher can fill any of
+// them in) drops subjects/rows nobody ordered from the printed quantity
+// table, so the printout only lists what was actually selected.
+export default function OrderCategoryBlock({ blk, editable, plakOptions, refImageUrl, hideEmptyRows }) {
+  const matrixRows = hideEmptyRows ? blk.matrixRows.filter((row) => row.rowTotal > 0) : blk.matrixRows;
+  const listRows = hideEmptyRows ? blk.rows.filter((row) => Number(row.qty) > 0) : blk.rows;
   return (
     <div>
       <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Reference Sample (Contoh)</div>
@@ -70,7 +76,7 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, refImag
               </tr>
             </thead>
             <tbody>
-              {blk.matrixRows.map((row) => (
+              {matrixRows.map((row) => (
                 <tr key={row.subject}>
                   <td>{row.subject}</td>
                   {row.cells.map((cell) => (
@@ -108,7 +114,7 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, refImag
               </tr>
             </thead>
             <tbody>
-              {blk.rows.map((row) => (
+              {listRows.map((row) => (
                 <tr key={row.id}>
                   <td>
                     {editable.rowDesc

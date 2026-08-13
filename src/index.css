@@ -475,10 +475,15 @@ a:hover { color: var(--color-accent-900); text-decoration: underline; }
    Pagination: Order Summary is always page 1; Order Details always starts
    on a fresh page 2 (.print-details-section); each category then forces
    its own page via .print-category-break, so categories never share a
-   printed page. .print-category-page/.ref-sample-grid/.table use
-   break-inside: avoid as a best-effort hint so a category's tables don't
-   split mid-row when they fit on one page — browsers ignore it and let
-   the content overflow when a category is taller than a page. */
+   printed page.
+   Deliberately NOT using break-inside: avoid on the whole category
+   wrapper or the whole table — a category can legitimately be taller
+   than one printed page (e.g. a 13-subject quantity matrix), and forcing
+   the entire block to avoid splitting just pushes it whole onto the next
+   page, which still doesn't fit, cascading into wasted near-blank pages.
+   Instead only individual table rows are kept intact, and headings are
+   glued to what follows them, so long categories flow across pages at
+   sensible row boundaries instead of leaving big gaps. */
 .print-only { display: none; }
 @media print {
   .nav, .step-header, .no-print, .screen-only { display: none !important; }
@@ -490,6 +495,7 @@ a:hover { color: var(--color-accent-900); text-decoration: underline; }
 
   .print-details-section { break-before: page; page-break-before: always; }
   .print-category-break { break-before: page; page-break-before: always; }
-  .print-category-page { break-inside: avoid; page-break-inside: avoid; }
-  .ref-sample-grid, .table { break-inside: avoid; page-break-inside: avoid; }
+  .print-only .card-kicker { break-after: avoid; page-break-after: avoid; }
+  .print-only .ref-sample-grid { break-inside: avoid; page-break-inside: avoid; }
+  .print-only .table tr { break-inside: avoid; page-break-inside: avoid; }
 }

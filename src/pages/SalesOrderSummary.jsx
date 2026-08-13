@@ -228,7 +228,7 @@ export default function SalesOrderSummary() {
                   className={`print-category-page${catIdx > 0 ? ' print-category-break' : ''}`}
                 >
                   {blocks.map((blk, i) => (
-                    <OrderCategoryBlock key={i} blk={blk} editable={READONLY} refImageUrl={state.refImages?.[blk.sampleSlotId]} />
+                    <OrderCategoryBlock key={i} blk={blk} editable={READONLY} refImageUrl={state.refImages?.[blk.sampleSlotId]} hideEmptyRows />
                   ))}
                 </div>
               ))}

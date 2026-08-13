@@ -85,7 +85,15 @@ export function computeBlocks(catKey, pbdVariant, lineValues, matrixValues, rows
     const plakRowsKey = `${catKey}::${b}`;
     const rawPlakRows = plakRowsMap[plakRowsKey] || [];
     const plakRows = rawPlakRows.map((pr) => {
-      const unitPrice = priceFor(pr.jenisPlak);
+      // Reviewing/printing an already-submitted order (reconstructBlocksForCategory
+      // below) carries the item's actual approved unitPrice — possibly
+      // Sales-negotiated away from the standard catalog rate — so that's used
+      // as-is instead of re-deriving a price from the live catalog, which can
+      // silently miss (e.g. the catalog code was since renamed) or simply not
+      // reflect a negotiated price. Live order-creation flows (New Order,
+      // Amend, Add On) never set pr.unitPrice since no price exists yet there,
+      // so they keep falling back to the catalog lookup as before.
+      const unitPrice = pr.unitPrice != null ? pr.unitPrice : priceFor(pr.jenisPlak);
       const harga = unitPrice != null ? blockTotalQty * unitPrice : 0;
       return {
         id: pr.id, jenisPlak: pr.jenisPlak, qty: blockTotalQty, rawHarga: harga,
@@ -151,7 +159,7 @@ export function reconstructBlocksForCategory(order, catKey, plakCatalog) {
         if (it.detail.matrix) Object.assign(matrixValues, it.detail.matrix);
         if (it.detail.rows) rowsByBlock[key] = it.detail.rows;
       }
-      plakRows[key] = [...(plakRows[key] || []), { id: it.id, jenisPlak: it.jenisPlak }];
+      plakRows[key] = [...(plakRows[key] || []), { id: it.id, jenisPlak: it.jenisPlak, unitPrice: it.unitPrice }];
     });
     const result = computeBlocks(catKey, blockIdx, lineValues, matrixValues, rowsByBlock, plakRows, [], noopUpdaters, plakCatalog);
     isMatrix = result.isMatrix;
