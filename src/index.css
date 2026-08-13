@@ -471,7 +471,14 @@ a:hover { color: var(--color-accent-900); text-decoration: underline; }
 .toast-inline { font-size: 12px; color: var(--color-accent-700); font-weight: 600; }
 
 /* Print (Sales: print an approved order — summary + every category's
-   details together, regardless of which tab is open on screen). */
+   details together, regardless of which tab is open on screen).
+   Pagination: Order Summary is always page 1; Order Details always starts
+   on a fresh page 2 (.print-details-section); each category then forces
+   its own page via .print-category-break, so categories never share a
+   printed page. .print-category-page/.ref-sample-grid/.table use
+   break-inside: avoid as a best-effort hint so a category's tables don't
+   split mid-row when they fit on one page — browsers ignore it and let
+   the content overflow when a category is taller than a page. */
 .print-only { display: none; }
 @media print {
   .nav, .step-header, .no-print, .screen-only { display: none !important; }
@@ -480,4 +487,9 @@ a:hover { color: var(--color-accent-900); text-decoration: underline; }
   .screen-wrap { max-width: none; }
   .card { box-shadow: none; border: none; padding: 0; }
   .btn { display: none !important; }
+
+  .print-details-section { break-before: page; page-break-before: always; }
+  .print-category-break { break-before: page; page-break-before: always; }
+  .print-category-page { break-inside: avoid; page-break-inside: avoid; }
+  .ref-sample-grid, .table { break-inside: avoid; page-break-inside: avoid; }
 }

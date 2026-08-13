@@ -100,10 +100,15 @@ export default function SalesOrderSummary() {
 
   // Printing needs every category's details at once, not just whichever
   // tab happens to be open on screen — the tab UI is for browsing, the
-  // printout is the full order.
-  const allCatBlocks = useMemo(() => {
+  // printout is the full order. Kept grouped per category (rather than
+  // flattened) so the print layout can force a page break between
+  // categories without losing track of which blocks belong together.
+  const catBlockGroups = useMemo(() => {
     if (!order) return [];
-    return categories.flatMap((cat) => reconstructBlocksForCategory(order, cat.key, state.plakCatalog).blocks);
+    return categories.map((cat) => ({
+      cat,
+      blocks: reconstructBlocksForCategory(order, cat.key, state.plakCatalog).blocks,
+    }));
   }, [order, categories, state.plakCatalog]);
 
   if (!order) return null;
@@ -215,12 +220,19 @@ export default function SalesOrderSummary() {
           />
 
           {categories.length > 0 && (
-            <>
+            <div className="print-details-section">
               <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Order Details</div>
-              {allCatBlocks.map((blk, i) => (
-                <OrderCategoryBlock key={i} blk={blk} editable={READONLY} refImageUrl={state.refImages?.[blk.sampleSlotId]} />
+              {catBlockGroups.map(({ cat, blocks }, catIdx) => (
+                <div
+                  key={cat.key}
+                  className={`print-category-page${catIdx > 0 ? ' print-category-break' : ''}`}
+                >
+                  {blocks.map((blk, i) => (
+                    <OrderCategoryBlock key={i} blk={blk} editable={READONLY} refImageUrl={state.refImages?.[blk.sampleSlotId]} />
+                  ))}
+                </div>
               ))}
-            </>
+            </div>
           )}
         </div>
       </div>
