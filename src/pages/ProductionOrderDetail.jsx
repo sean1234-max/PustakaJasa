@@ -60,8 +60,13 @@ export default function ProductionOrderDetail() {
     <div className="screen-wrap">
       <Nav />
 
-      <button type="button" className="btn btn-ghost" style={{ marginBottom: 'var(--space-4)' }} onClick={() => navigate('/production/dashboard')}>
-        ← Back to Production Orders
+      <button
+        type="button"
+        className="btn btn-ghost"
+        style={{ marginBottom: 'var(--space-4)' }}
+        onClick={() => navigate(state.role === 'admin' ? '/admin/orders' : '/production/dashboard')}
+      >
+        ← Back to {state.role === 'admin' ? 'Orders' : 'Production Orders'}
       </button>
 
       <div className="step-header">
