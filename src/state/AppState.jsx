@@ -3,7 +3,7 @@ import { CATEGORIES, formatDate, standardUnitPrice } from '../data/catalog';
 import { buildInitialRowsByBlock, buildInitialPlakRows } from '../data/formDefaults';
 import { computeBlocks, snapshotDetail, noopUpdaters } from '../utils/computeBlocks';
 import { AppStateContext } from './AppStateContext';
-import { fetchOrders, insertOrder, updateOrder } from '../lib/ordersApi';
+import { fetchOrders, insertOrder, updateOrder, nextOrderSeq } from '../lib/ordersApi';
 import {
   fetchReferenceImages, saveReferenceImage,
   fetchPlakCatalog, addPlakNode, removePlakNode, updatePlakNode,
@@ -155,11 +155,16 @@ export function AppStateProvider({ children }) {
       if (session?.user) {
         const { data: profile } = await supabase
           .from('profiles')
-          .select('role, sekolah, display_name')
+          .select('role, sekolah, display_name, status')
           .eq('id', session.user.id)
           .single();
         if (!cancelled && profile) {
-          patch({ role: profile.role, sekolah: profile.sekolah || '', userAuthId: session.user.id });
+          if (profile.status && profile.status !== 'active') {
+            await supabase.auth.signOut();
+            if (!cancelled) patch({ loginError: 'This account has been deactivated. Please contact your administrator.' });
+          } else {
+            patch({ role: profile.role, sekolah: profile.sekolah || '', userAuthId: session.user.id });
+          }
         }
       }
       if (!cancelled) patch({ sessionChecked: true });
@@ -217,11 +222,16 @@ export function AppStateProvider({ children }) {
     }
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
-      .select('role, sekolah, display_name')
+      .select('role, sekolah, display_name, status')
       .eq('id', data.user.id)
       .single();
     if (profileError || !profile) {
       patch({ loginError: 'No role found for this account.' });
+      return null;
+    }
+    if (profile.status && profile.status !== 'active') {
+      await supabase.auth.signOut();
+      patch({ loginError: 'This account has been deactivated. Please contact your administrator.' });
       return null;
     }
     patch({ role: profile.role, sekolah: profile.sekolah || '', userAuthId: data.user.id, loginError: '', userId: '', password: '' });
@@ -295,33 +305,27 @@ export function AppStateProvider({ children }) {
   // The order id used to come from a nextOrderSeq counter that lived only
   // in this tab's in-memory state — it reset to 96 on every login *and*
   // every refresh, so two submissions from different sessions (or just a
-  // refreshed tab) regularly generated the same "ORD-2026-096" id. Since
-  // `id` is the orders table's primary key, the second insert silently
-  // failed a unique-constraint check (only logged to the console) while
-  // the UI still showed it optimistically — so it looked submitted to the
-  // teacher but never reached Sales. Deriving the next number from what's
-  // actually in the table (scoped to the current year) fixes that: it's
-  // correct regardless of how many other sessions or refreshes happened
-  // in between. Returns the new order's id on success, or null if the
-  // insert failed, so the caller knows whether it's safe to move on.
+  // refreshed tab) regularly generated the same "ORD-2026-096" id. That was
+  // later changed to a client-side "read the current max, then +1" lookup,
+  // but that's still a race: two teachers submitting close together can
+  // both read the same max before either has inserted, so both compute the
+  // same next number and the second insert fails its unique-constraint
+  // check with no automatic retry. next_order_seq() (supabase/migrations/
+  // 0009) hands out numbers atomically in the database instead, so
+  // concurrent submissions can never collide. Returns the new order's id on
+  // success, or null if the insert failed, so the caller knows whether it's
+  // safe to move on.
   const submitOrder = useCallback(async () => {
     const st = stateRef.current;
     const year = TODAY.getFullYear();
     const prefix = `ORD-${year}-`;
-    let seq = 96;
+    let seq;
     try {
-      const { data, error } = await supabase
-        .from('orders')
-        .select('id')
-        .like('id', `${prefix}%`)
-        .order('id', { ascending: false })
-        .limit(1);
-      if (!error && data?.[0]) {
-        const n = Number(data[0].id.slice(prefix.length));
-        if (Number.isFinite(n)) seq = n + 1;
-      }
+      seq = await nextOrderSeq(prefix, 96);
     } catch (err) {
-      console.error('Failed to look up the next order number:', err);
+      console.error('Failed to reserve the next order number:', err);
+      patch({ cartToast: 'Could not submit the order — please try again.' });
+      return null;
     }
     const newId = `${prefix}${String(seq).padStart(3, '0')}`;
 

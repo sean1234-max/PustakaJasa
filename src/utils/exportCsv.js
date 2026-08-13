@@ -129,7 +129,13 @@ export function buildCsvRows(order, categoryKey) {
 // "position" field) is preserved raw inside the quotes, which is what
 // Excel/Illustrator render as an in-cell line break (the Alt+Enter result).
 function quoteCsvValue(value) {
-  const str = String(value ?? '');
+  let str = String(value ?? '');
+  // A leading =, +, -, or @ makes Excel/Sheets read the cell as a formula
+  // instead of text — a teacher-typed field (e.g. a plaque line) starting
+  // with one of these would otherwise execute as a formula for whoever
+  // opens the exported CSV. Prefixing with a tab neutralizes it while
+  // staying invisible in the cell.
+  if (/^[=+\-@]/.test(str)) str = `\t${str}`;
   if (/[",\n\r]/.test(str)) return `"${str.replace(/"/g, '""')}"`;
   return str;
 }

@@ -19,6 +19,14 @@ import ProductionDashboard from './pages/ProductionDashboard';
 import ProductionOrderDetail from './pages/ProductionOrderDetail';
 import ProductionReferenceImages from './pages/ProductionReferenceImages';
 import ProductionCatalog from './pages/ProductionCatalog';
+import AdminDashboard from './pages/AdminDashboard';
+import AdminUsers from './pages/AdminUsers';
+import AdminSchools from './pages/AdminSchools';
+import AdminSchoolDetail from './pages/AdminSchoolDetail';
+import AdminSalesmen from './pages/AdminSalesmen';
+import AdminSalesmanDetail from './pages/AdminSalesmanDetail';
+import AdminOrders from './pages/AdminOrders';
+import AdminAuditLog from './pages/AdminAuditLog';
 
 // Supabase's session lives in localStorage and survives a refresh on its
 // own, but the app's role/sekolah/etc. state doesn't — AppState restores
@@ -50,9 +58,21 @@ function AppRoutes() {
       <Route path="/sales/orders/:id" element={<RequireRole role="salesman"><SalesOrderSummary /></RequireRole>} />
 
       <Route path="/production/dashboard" element={<RequireRole role="production"><ProductionDashboard /></RequireRole>} />
-      <Route path="/production/orders/:id" element={<RequireRole role="production"><ProductionOrderDetail /></RequireRole>} />
-      <Route path="/production/reference-images" element={<RequireRole role="production"><ProductionReferenceImages /></RequireRole>} />
-      <Route path="/production/catalog" element={<RequireRole role="production"><ProductionCatalog /></RequireRole>} />
+      <Route path="/production/orders/:id" element={<RequireRole role={['production', 'admin']}><ProductionOrderDetail /></RequireRole>} />
+      <Route path="/production/reference-images" element={<RequireRole role={['production', 'admin']}><ProductionReferenceImages /></RequireRole>} />
+      <Route path="/production/catalog" element={<RequireRole role={['production', 'admin']}><ProductionCatalog /></RequireRole>} />
+
+      <Route path="/admin/dashboard" element={<RequireRole role="admin"><AdminDashboard /></RequireRole>} />
+      <Route path="/admin/users" element={<RequireRole role="admin"><AdminUsers /></RequireRole>} />
+      <Route path="/admin/schools" element={<RequireRole role="admin"><AdminSchools /></RequireRole>} />
+      <Route path="/admin/schools/:id" element={<RequireRole role="admin"><AdminSchoolDetail /></RequireRole>} />
+      <Route path="/admin/salesmen" element={<RequireRole role="admin"><AdminSalesmen /></RequireRole>} />
+      <Route path="/admin/salesmen/:id" element={<RequireRole role="admin"><AdminSalesmanDetail /></RequireRole>} />
+      <Route path="/admin/orders" element={<RequireRole role="admin"><AdminOrders /></RequireRole>} />
+      <Route path="/admin/orders/:id" element={<RequireRole role={['production', 'admin']}><ProductionOrderDetail /></RequireRole>} />
+      <Route path="/admin/catalog" element={<RequireRole role={['production', 'admin']}><ProductionCatalog /></RequireRole>} />
+      <Route path="/admin/reference-images" element={<RequireRole role={['production', 'admin']}><ProductionReferenceImages /></RequireRole>} />
+      <Route path="/admin/audit-log" element={<RequireRole role="admin"><AdminAuditLog /></RequireRole>} />
 
       <Route path="*" element={<Navigate to="/login" replace />} />
     </Routes>

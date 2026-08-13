@@ -74,6 +74,17 @@ export async function fetchOrders(userId, role) {
   return data.map(fromDbOrder);
 }
 
+// Atomically reserves the next order number for `prefix` (e.g. "ORD-2026-")
+// via the next_order_seq() Postgres function (supabase/migrations/0009) —
+// a single database statement, so concurrent submissions can never be
+// handed the same number. `minSeq` only matters the very first time a
+// prefix is used; after that the database-side counter takes over.
+export async function nextOrderSeq(prefix, minSeq) {
+  const { data, error } = await supabase.rpc('next_order_seq', { p_prefix: prefix, p_min_seq: minSeq });
+  if (error) throw error;
+  return data;
+}
+
 export async function insertOrder(order) {
   const { error } = await supabase.from('orders').insert(toDbOrder(order));
   if (error) throw error;
