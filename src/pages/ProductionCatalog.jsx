@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import Nav from '../components/Nav';
 import { useAppState } from '../state/useAppState';
-import { logAdminAction } from '../lib/adminApi';
 
 // One row per catalog node, recursing into its children. Each row can add
 // a variant beneath it, edit its own price, hide/unhide it, remove it (and
@@ -84,39 +83,25 @@ function CatalogRow({ node, depth, canMoveUp, canMoveDown, onAddChild, onRemove,
   );
 }
 
-// Shared as-is between /production/catalog and /admin/catalog (see
-// src/App.jsx) — same component, same AppState handlers. The admin-audit-
-// log calls below are role-gated, so Production's existing behavior is
-// completely unaffected.
 export default function ProductionCatalog() {
   const { state, addCatalogNode, removeCatalogNode, updateCatalogNodePrice, setCatalogNodeHidden, moveCatalogNode } = useAppState();
   const [newTopCode, setNewTopCode] = useState('');
   const [newTopPrice, setNewTopPrice] = useState('');
 
-  const isAdmin = state.role === 'admin';
-  const logCatalogAction = (action, targetId, after) => {
-    if (isAdmin) logAdminAction({ action, targetTable: 'plak_catalog_nodes', targetId, after });
-  };
-
   const handleAddChild = (parentId, code, price, siblingCount) => {
     addCatalogNode(parentId, code, price, siblingCount);
-    logCatalogAction('Admin added a catalog code', null, { code, price });
   };
   const handleRemove = (id) => {
     removeCatalogNode(id);
-    logCatalogAction('Admin removed a catalog code', id);
   };
   const handlePriceChange = (id, price) => {
     updateCatalogNodePrice(id, price);
-    logCatalogAction('Admin updated a catalog price', id, { price });
   };
   const handleToggleHidden = (id, hidden) => {
     setCatalogNodeHidden(id, hidden);
-    logCatalogAction(hidden ? 'Admin hid a catalog code' : 'Admin unhid a catalog code', id);
   };
   const handleMove = (id, direction) => {
     moveCatalogNode(id, direction);
-    logCatalogAction('Admin reordered the catalog', id, { direction });
   };
 
   const addTopLevel = () => {

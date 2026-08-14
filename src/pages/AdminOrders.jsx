@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import Nav from '../components/Nav';
+import AdminLayout from '../components/AdminLayout';
 import { useAppState } from '../state/useAppState';
 import { STATUS_STAGES, STATUS_BG, STATUS_TEXT } from '../data/catalog';
 
@@ -19,6 +19,24 @@ function startOfDay(d) {
   const copy = new Date(d);
   copy.setHours(0, 0, 0, 0);
   return copy;
+}
+
+function Select({ label, value, onChange, children }) {
+  return (
+    <div className="flex flex-col gap-2">
+      <label className="text-label-bold text-on-surface-variant">{label}</label>
+      <div className="relative">
+        <select
+          className="w-full appearance-none bg-transparent border border-outline-variant text-on-surface text-body-md rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary cursor-pointer pr-10"
+          value={value}
+          onChange={onChange}
+        >
+          {children}
+        </select>
+        <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none">expand_more</span>
+      </div>
+    </div>
+  );
 }
 
 export default function AdminOrders() {
@@ -75,93 +93,94 @@ export default function AdminOrders() {
   };
 
   return (
-    <div className="screen-wrap">
-      <Nav />
-
-      <div className="dashboard-header">
-        <div>
-          <div className="card-title" style={{ marginBottom: 'var(--space-2)' }}>Orders</div>
-          <p className="hint-text" style={{ margin: 0 }}>Every order across every school.</p>
-        </div>
-      </div>
-
-      <div className="card" style={{ marginBottom: 'var(--space-6)' }}>
-        <div className="form-grid-2" style={{ gridTemplateColumns: dateFilter === 'Custom Range' ? '1fr 1fr 1fr 1fr' : '1fr 1fr 1fr 1fr' }}>
-          <div className="field" style={{ marginBottom: 0 }}>
-            <label htmlFor="filter-school">School</label>
-            <select className="input" id="filter-school" value={schoolFilter} onChange={(e) => setSchoolFilter(e.target.value)}>
-              <option value="all">All Schools</option>
-              {schoolOptions.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </div>
-          <div className="field" style={{ marginBottom: 0 }}>
-            <label htmlFor="filter-salesman">Salesman</label>
-            <select className="input" id="filter-salesman" value={salesmanFilter} onChange={(e) => setSalesmanFilter(e.target.value)}>
-              <option value="all">All Salesmen</option>
-              {salesmanOptions.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </div>
-          <div className="field" style={{ marginBottom: 0 }}>
-            <label htmlFor="filter-status">Status</label>
-            <select className="input" id="filter-status" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-              <option value="all">All Statuses</option>
-              {STATUS_STAGES.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </div>
-          <div className="field" style={{ marginBottom: 0 }}>
-            <label htmlFor="filter-date">Date</label>
-            <select className="input" id="filter-date" value={dateFilter} onChange={(e) => setDateFilter(e.target.value)}>
-              {DATE_OPTIONS.map((d) => <option key={d} value={d}>{d}</option>)}
-            </select>
-          </div>
+    <AdminLayout title="Orders" subtitle="Every order across every school.">
+      <section className="bg-surface-container-lowest border border-outline-variant rounded-xl p-5 shadow-sm mb-10">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 items-end">
+          <Select label="School" value={schoolFilter} onChange={(e) => setSchoolFilter(e.target.value)}>
+            <option value="all">All Schools</option>
+            {schoolOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+          </Select>
+          <Select label="Salesman" value={salesmanFilter} onChange={(e) => setSalesmanFilter(e.target.value)}>
+            <option value="all">All Salesmen</option>
+            {salesmanOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+          </Select>
+          <Select label="Status" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+            <option value="all">All Statuses</option>
+            {STATUS_STAGES.map((s) => <option key={s} value={s}>{s}</option>)}
+          </Select>
+          <Select label="Date" value={dateFilter} onChange={(e) => setDateFilter(e.target.value)}>
+            {DATE_OPTIONS.map((d) => <option key={d} value={d}>{d}</option>)}
+          </Select>
         </div>
 
         {dateFilter === 'Custom Range' && (
-          <div className="form-grid-2" style={{ marginTop: 'var(--space-4)' }}>
-            <div className="field" style={{ marginBottom: 0 }}>
-              <label htmlFor="date-from">From</label>
-              <input className="input" id="date-from" type="date" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)} />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
+            <div className="flex flex-col gap-2">
+              <label className="text-label-bold text-on-surface-variant" htmlFor="date-from">From</label>
+              <input className="border border-outline-variant text-on-surface text-body-md rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary" id="date-from" type="date" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)} />
             </div>
-            <div className="field" style={{ marginBottom: 0 }}>
-              <label htmlFor="date-to">To</label>
-              <input className="input" id="date-to" type="date" value={customTo} onChange={(e) => setCustomTo(e.target.value)} />
+            <div className="flex flex-col gap-2">
+              <label className="text-label-bold text-on-surface-variant" htmlFor="date-to">To</label>
+              <input className="border border-outline-variant text-on-surface text-body-md rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary" id="date-to" type="date" value={customTo} onChange={(e) => setCustomTo(e.target.value)} />
             </div>
           </div>
         )}
 
-        <div className="row-split" style={{ marginTop: 'var(--space-4)' }}>
-          <span className="hint-text" style={{ margin: 0 }}>{filtered.length} of {orders.length} orders</span>
-          <button type="button" className="btn btn-ghost" onClick={clearFilters}>Clear Filters</button>
+        <div className="flex items-center justify-between mt-6">
+          <span className="text-body-sm text-on-surface-variant">{filtered.length} of {orders.length} orders</span>
+          <button type="button" onClick={clearFilters} className="text-label-bold font-semibold text-on-surface hover:text-primary transition-colors py-2 px-4 rounded-lg hover:bg-surface-variant">
+            Clear Filters
+          </button>
         </div>
-      </div>
+      </section>
 
       {filtered.length === 0 ? (
-        <p className="hint-text">No orders found. Try changing the school, salesman, status, or date filter.</p>
+        <p className="text-body-md text-on-surface-variant">No orders found. Try changing the school, salesman, status, or date filter.</p>
       ) : (
-        <div className="order-grid">
+        <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filtered.map((ord) => {
             const idx = STATUS_STAGES.indexOf(ord.status);
             return (
-              <div key={ord.id} className="card order-card" style={{ cursor: 'pointer' }} onClick={() => navigate(`/admin/orders/${ord.id}`)}>
-                <div className="order-card-top">
+              <button
+                type="button"
+                key={ord.id}
+                onClick={() => navigate(`/admin/orders/${ord.id}`)}
+                className="text-left bg-surface-container-lowest border border-outline-variant rounded-xl p-5 shadow-sm hover:shadow-lg transition-all duration-200"
+              >
+                <div className="flex justify-between items-start mb-6">
                   <div>
-                    <div className="order-card-label">Order ID</div>
-                    <div className="order-card-id">{ord.id}</div>
+                    <span className="block text-label-bold uppercase tracking-wider text-on-surface-variant mb-1">Order ID</span>
+                    <span className="text-headline-sm text-primary">{ord.id}</span>
                   </div>
-                  <span className="status-pill" style={{ background: STATUS_BG[idx], color: STATUS_TEXT[idx] }}>{ord.status}</span>
+                  <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold whitespace-nowrap" style={{ background: STATUS_BG[idx], color: STATUS_TEXT[idx] }}>
+                    {ord.status}
+                  </span>
                 </div>
-                <div className="order-card-meta">
-                  <div><div className="dim">Sekolah</div><div>{ord.sekolah || '—'}</div></div>
-                  <div><div className="dim">Sales</div><div>{ord.sales || '—'}</div></div>
+                <div className="grid grid-cols-2 gap-4 mb-4">
+                  <div>
+                    <span className="block text-body-sm text-on-surface-variant mb-0.5">Sekolah</span>
+                    <span className="block text-body-md text-on-surface font-medium truncate">{ord.sekolah || '—'}</span>
+                  </div>
+                  <div>
+                    <span className="block text-body-sm text-on-surface-variant mb-0.5">Sales</span>
+                    <span className="block text-body-md text-on-surface font-medium truncate">{ord.sales || '—'}</span>
+                  </div>
                 </div>
-                <div className="order-card-meta" style={{ gridTemplateColumns: '1fr' }}>
-                  <div><div className="dim">Date Placed</div><div>{ord.datePlaced}</div></div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <span className="block text-body-sm text-on-surface-variant mb-0.5">Date Placed</span>
+                    <span className="block text-body-md text-on-surface font-medium">{ord.datePlaced}</span>
+                  </div>
+                  <div>
+                    <span className="block text-body-sm text-on-surface-variant mb-0.5">Invoice Number</span>
+                    <span className="block text-body-md text-on-surface font-medium truncate">{ord.invoiceId || '—'}</span>
+                  </div>
                 </div>
-              </div>
+              </button>
             );
           })}
-        </div>
+        </section>
       )}
-    </div>
+    </AdminLayout>
   );
 }

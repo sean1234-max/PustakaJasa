@@ -1,5 +1,103 @@
 @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600;700&display=swap');
 
+/* Admin Portal redesign (Stitch mockups) — Inter + Material Symbols are
+   only ever referenced by admin markup (AdminLayout and the Admin* pages),
+   so loading them here doesn't change how any other role looks. Tailwind
+   is imported without its preflight layer (base.css) so it never resets
+   margins/fonts/borders on elements elsewhere in the app that don't use
+   Tailwind utility classes at all — only `utilities` and `theme` are
+   pulled in, which are purely opt-in via class names. */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap');
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/utilities.css' layer(utilities);
+
+@theme {
+  --color-surface-bright: #f8f9ff;
+  --color-tertiary-fixed: #ffdbcc;
+  --color-secondary: #565e74;
+  --color-error-container: #ffdad6;
+  --color-surface-container-highest: #d3e4fe;
+  --color-on-secondary-container: #5c647a;
+  --color-on-secondary-fixed: #131b2e;
+  --color-tertiary-fixed-dim: #ffb695;
+  --color-on-primary-container: #dad7ff;
+  --color-secondary-fixed: #dae2fd;
+  --color-surface-container-lowest: #ffffff;
+  --color-background: #f8f9ff;
+  --color-on-secondary: #ffffff;
+  --color-error: #ba1a1a;
+  --color-outline-variant: #c7c4d8;
+  --color-on-primary: #ffffff;
+  --color-inverse-primary: #c3c0ff;
+  --color-surface-variant: #d3e4fe;
+  --color-outline: #777587;
+  --color-on-error: #ffffff;
+  --color-surface-tint: #4d44e3;
+  --color-on-tertiary-fixed-variant: #7b2f00;
+  --color-surface-container: #e5eeff;
+  --color-on-tertiary-fixed: #351000;
+  --color-primary-fixed-dim: #c3c0ff;
+  --color-secondary-container: #dae2fd;
+  --color-on-tertiary: #ffffff;
+  --color-surface-container-low: #eff4ff;
+  --color-on-primary-fixed: #0f0069;
+  --color-tertiary: #7e3000;
+  --color-on-surface: #0b1c30;
+  --color-on-secondary-fixed-variant: #3f465c;
+  --color-on-error-container: #93000a;
+  --color-inverse-surface: #213145;
+  --color-surface-container-high: #dce9ff;
+  --color-primary: #3525cd;
+  --color-on-tertiary-container: #ffd2be;
+  --color-tertiary-container: #a44100;
+  --color-primary-container: #4f46e5;
+  --color-surface: #f8f9ff;
+  --color-on-background: #0b1c30;
+  --color-surface-dim: #cbdbf5;
+  --color-on-surface-variant: #464555;
+  --color-secondary-fixed-dim: #bec6e0;
+  --color-on-primary-fixed-variant: #3323cc;
+  --color-primary-fixed: #e2dfff;
+  --color-inverse-on-surface: #eaf1ff;
+
+  --text-body-md: 14px;
+  --text-body-md--line-height: 20px;
+  --text-body-md--font-weight: 400;
+  --text-body-sm: 13px;
+  --text-body-sm--line-height: 18px;
+  --text-body-sm--font-weight: 400;
+  --text-stat-lg: 24px;
+  --text-stat-lg--line-height: 32px;
+  --text-stat-lg--font-weight: 700;
+  --text-headline-md: 20px;
+  --text-headline-md--line-height: 28px;
+  --text-headline-md--letter-spacing: -0.01em;
+  --text-headline-md--font-weight: 600;
+  --text-label-bold: 12px;
+  --text-label-bold--line-height: 16px;
+  --text-label-bold--letter-spacing: 0.05em;
+  --text-label-bold--font-weight: 600;
+  --text-display-lg: 30px;
+  --text-display-lg--line-height: 38px;
+  --text-display-lg--letter-spacing: -0.02em;
+  --text-display-lg--font-weight: 700;
+  --text-headline-sm: 16px;
+  --text-headline-sm--line-height: 24px;
+  --text-headline-sm--font-weight: 600;
+}
+
+.admin-shell, .admin-shell input, .admin-shell select, .admin-shell textarea, .admin-shell button {
+  font-family: 'Inter', system-ui, sans-serif;
+}
+
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  font-size: 20px;
+  line-height: 1;
+  vertical-align: middle;
+}
+
 :root {
   --color-bg: #f2f2f3;
   --color-text: #1d1f20;
@@ -35,6 +133,16 @@ body {
 
 a { color: var(--color-accent-700); text-decoration: none; }
 a:hover { color: var(--color-accent-900); text-decoration: underline; }
+
+/* Tailwind's utility classes live in an @layer, and unlayered rules always
+   win the cascade over layered ones regardless of specificity or source
+   order — so the plain `a { color }` rule above silently overrode every
+   Tailwind text-color class applied to AdminLayout's sidebar <Link>s. This
+   is also unlayered (and more specific than a bare `a`), so it wins
+   instead, without having to touch the global rule non-admin pages rely on. */
+.admin-shell nav a { color: rgba(255, 255, 255, 0.8); text-decoration: none; }
+.admin-shell nav a:hover { color: #ffffff; text-decoration: none; }
+.admin-shell nav a[aria-current='page'] { color: var(--color-on-primary-container) !important; }
 
 .app-shell {
   min-height: 100vh;
@@ -338,6 +446,13 @@ a:hover { color: var(--color-accent-900); text-decoration: underline; }
 .image-drop-title { font-size: 13px; font-weight: 600; }
 .image-drop-sub { font-size: 11px; opacity: 0.55; }
 
+/* Opt-in modifier (see ImageDrop.jsx's `stacked` prop) — large image on
+   top, text below, instead of the default small-thumbnail-beside-text row.
+   Only applied where a caller explicitly passes stacked, so every other
+   ImageDrop usage is untouched. */
+.image-drop-stacked { flex-direction: column; align-items: center; text-align: center; }
+.image-drop-stacked .image-drop-title { margin-top: var(--space-2); }
+
 /* Calendar */
 .cal-icon { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); opacity: 0.6; pointer-events: none; }
 .cal-pop {
@@ -509,14 +624,22 @@ a:hover { color: var(--color-accent-900); text-decoration: underline; }
    on a fresh page 2 (.print-details-section); each category then forces
    its own page via .print-category-break, so categories never share a
    printed page.
-   Deliberately NOT using break-inside: avoid on the whole category
-   wrapper or the whole table — a category can legitimately be taller
-   than one printed page (e.g. a 13-subject quantity matrix), and forcing
-   the entire block to avoid splitting just pushes it whole onto the next
-   page, which still doesn't fit, cascading into wasted near-blank pages.
-   Instead only individual table rows are kept intact, and headings are
-   glued to what follows them, so long categories flow across pages at
-   sensible row boundaries instead of leaving big gaps. */
+   .print-category-page now also gets break-inside: avoid, so a category
+   whose content fits on one page never gets split mid-way (e.g. the
+   quantity matrix's own TOTAL row landing on a different page than its
+   subject rows, or the trailing "Jenis Plak / QTY / Harga" table —
+   rendered as part of the same OrderCategoryBlock, see
+   src/components/OrderCategoryBlock.jsx — getting separated from the
+   matrix above it). This was deliberately left off before: a category CAN
+   legitimately be taller than one printed page (e.g. a 13-subject
+   quantity matrix), and avoid-break just pushes the whole block onto a
+   fresh page — if it's still too tall there, most browsers simply let it
+   overflow/split on that fresh page rather than cascading indefinitely,
+   but this does mean a genuinely oversized category can now leave a
+   larger gap at the bottom of the previous page than before. Individual
+   table rows still never split mid-row, and headings still stay glued to
+   what follows them, as a fallback for whatever a category-level
+   avoid-break doesn't fully solve. */
 .print-only { display: none; }
 @media print {
   .nav, .step-header, .no-print, .screen-only { display: none !important; }
@@ -528,6 +651,7 @@ a:hover { color: var(--color-accent-900); text-decoration: underline; }
 
   .print-details-section { break-before: page; page-break-before: always; }
   .print-category-break { break-before: page; page-break-before: always; }
+  .print-category-page { break-inside: avoid; page-break-inside: avoid; }
   .print-only .card-kicker { break-after: avoid; page-break-after: avoid; }
   .print-only .ref-sample-grid { break-inside: avoid; page-break-inside: avoid; }
   .print-only .table tr { break-inside: avoid; page-break-inside: avoid; }

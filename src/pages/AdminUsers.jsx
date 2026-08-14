@@ -1,14 +1,26 @@
 import { Fragment, useEffect, useState } from 'react';
-import Nav from '../components/Nav';
-import { fetchAllProfiles, createAccount, updateProfile, resetPassword, logAdminAction } from '../lib/adminApi';
+import AdminLayout from '../components/AdminLayout';
+import { useAppState } from '../state/useAppState';
+import { fetchAllProfiles, createAccount, updateProfile, resetPassword, deleteAccount, logAdminAction } from '../lib/adminApi';
 
 const ROLE_LABELS = { teacher: 'School', salesman: 'Salesman', production: 'Production', admin: 'Admin' };
 const ROLE_OPTIONS = Object.keys(ROLE_LABELS);
 const STATUS_OPTIONS = ['active', 'inactive', 'suspended'];
 
 const EMPTY_FORM = { role: 'teacher', sekolah: '', displayName: '', email: '', password: '', assignedSalesmanId: '' };
+const inputClass = 'w-full px-3 py-2 border border-outline-variant rounded-lg bg-surface-bright focus:ring-2 focus:ring-primary focus:border-primary text-body-md text-on-surface outline-none transition-all';
+
+function Field({ label, htmlFor, children }) {
+  return (
+    <div className="mb-4">
+      <label className="block text-label-bold text-on-surface-variant mb-1" htmlFor={htmlFor}>{label}</label>
+      {children}
+    </div>
+  );
+}
 
 export default function AdminUsers() {
+  const { state } = useAppState();
   const [profiles, setProfiles] = useState(null);
   const [loadError, setLoadError] = useState('');
   const [search, setSearch] = useState('');
@@ -112,6 +124,19 @@ export default function AdminUsers() {
     }
   };
 
+  const handleDelete = async (p) => {
+    if (!window.confirm(`Permanently delete ${p.display_name || p.email || 'this user'}? This can't be undone. If this account has order or activity history, deletion will be blocked — suspend it instead.`)) return;
+    try {
+      await deleteAccount(p.id);
+      await logAdminAction({ action: 'Admin deleted a user account', targetTable: 'profiles', targetId: p.id, before: { display_name: p.display_name, email: p.email, role: p.role } });
+      setToast('User deleted successfully.');
+      setExpandedId(null);
+      load();
+    } catch (err) {
+      setFormError(err.message);
+    }
+  };
+
   const handleResetPassword = async (p) => {
     if (newPassword.length < 6) {
       setFormError('New password must be at least 6 characters.');
@@ -128,92 +153,94 @@ export default function AdminUsers() {
   };
 
   return (
-    <div className="screen-wrap">
-      <Nav />
-
-      <div className="dashboard-header">
-        <div>
-          <div className="card-title" style={{ marginBottom: 'var(--space-2)' }}>Users</div>
-          <p className="hint-text" style={{ margin: 0 }}>Manage every account in the system.</p>
-        </div>
-        <button type="button" className="btn btn-primary" onClick={() => { setShowAddForm((v) => !v); setFormError(''); }}>+ Add User</button>
-      </div>
-
+    <AdminLayout
+      title="Users"
+      subtitle="Manage every account in the system."
+      headerActions={(
+        <button
+          type="button"
+          onClick={() => { setShowAddForm((v) => !v); setFormError(''); }}
+          className="bg-primary text-on-primary text-label-bold font-semibold px-5 py-2.5 rounded-lg flex items-center gap-2 hover:opacity-90 transition-opacity whitespace-nowrap w-full sm:w-auto shadow-sm justify-center"
+        >
+          <span className="material-symbols-outlined text-[18px]">add</span>
+          Add User
+        </button>
+      )}
+    >
       {toast && (
-        <div className="update-toast">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
+        <div className="mb-6 flex items-center gap-2 bg-secondary-container/40 text-on-secondary-container px-4 py-3 rounded-lg text-body-md">
+          <span className="material-symbols-outlined text-[18px]">check_circle</span>
           {toast}
         </div>
       )}
-      {loadError && <div className="login-error">{loadError}</div>}
+      {loadError && <div className="mb-6 bg-error-container text-on-error-container px-4 py-3 rounded-lg text-body-md">{loadError}</div>}
 
       {showAddForm && (
-        <form className="card" style={{ marginBottom: 'var(--space-6)' }} onSubmit={handleCreate}>
-          <div className="card-kicker" style={{ marginBottom: 'var(--space-3)' }}>Add User</div>
+        <form onSubmit={handleCreate} className="bg-surface-container-lowest border border-outline-variant rounded-xl shadow-sm p-6 mb-8">
+          <h3 className="text-headline-sm text-on-surface mb-4">Add User</h3>
 
-          <div className="field">
-            <label htmlFor="new-role">Role *</label>
-            <select className="input" id="new-role" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
+          <Field label="Role *" htmlFor="new-role">
+            <select className={inputClass} id="new-role" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
               {ROLE_OPTIONS.map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
             </select>
-          </div>
+          </Field>
 
           {form.role === 'teacher' && (
-            <div className="field">
-              <label htmlFor="new-sekolah">School Name *</label>
-              <input className="input" id="new-sekolah" placeholder="e.g. SMK Puchong" value={form.sekolah} onChange={(e) => setForm({ ...form, sekolah: e.target.value })} />
-            </div>
+            <Field label="School Name *" htmlFor="new-sekolah">
+              <input className={inputClass} id="new-sekolah" placeholder="e.g. SMK Puchong" value={form.sekolah} onChange={(e) => setForm({ ...form, sekolah: e.target.value })} />
+            </Field>
           )}
 
-          <div className="field">
-            <label htmlFor="new-name">{form.role === 'teacher' ? 'Teacher Name' : 'Name'} *</label>
-            <input className="input" id="new-name" placeholder="e.g. Mr. Lim" value={form.displayName} onChange={(e) => setForm({ ...form, displayName: e.target.value })} />
-          </div>
+          <Field label={form.role === 'teacher' ? 'Teacher Name *' : 'Name *'} htmlFor="new-name">
+            <input className={inputClass} id="new-name" placeholder="e.g. Mr. Lim" value={form.displayName} onChange={(e) => setForm({ ...form, displayName: e.target.value })} />
+          </Field>
 
-          <div className="field">
-            <label htmlFor="new-email">Email *</label>
-            <input className="input" id="new-email" type="email" placeholder="e.g. teacher@school.com" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
-          </div>
+          <Field label="Email *" htmlFor="new-email">
+            <input className={inputClass} id="new-email" type="email" placeholder="e.g. teacher@school.com" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+          </Field>
 
-          <div className="field">
-            <label htmlFor="new-password">Password *</label>
-            <input className="input" id="new-password" type="password" placeholder="At least 6 characters" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
-          </div>
+          <Field label="Password *" htmlFor="new-password">
+            <input className={inputClass} id="new-password" type="password" placeholder="At least 6 characters" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
+          </Field>
 
           {form.role === 'teacher' && (
-            <div className="field">
-              <label htmlFor="new-salesman">Assigned Salesman</label>
-              <select className="input" id="new-salesman" value={form.assignedSalesmanId} onChange={(e) => setForm({ ...form, assignedSalesmanId: e.target.value })}>
+            <Field label="Assigned Salesman" htmlFor="new-salesman">
+              <select className={inputClass} id="new-salesman" value={form.assignedSalesmanId} onChange={(e) => setForm({ ...form, assignedSalesmanId: e.target.value })}>
                 <option value="">None</option>
                 {salesmenOptions.map((s) => <option key={s.id} value={s.id}>{s.display_name || s.email}</option>)}
               </select>
-            </div>
+            </Field>
           )}
 
-          {formError && <div className="login-error" style={{ marginBottom: 'var(--space-4)' }}>{formError}</div>}
+          {formError && <div className="bg-error-container text-on-error-container px-4 py-3 rounded-lg text-body-md mb-4">{formError}</div>}
 
-          <div className="row-split">
-            <button type="button" className="btn btn-ghost" onClick={() => setShowAddForm(false)}>Cancel</button>
-            <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Creating...' : 'Create User'}</button>
+          <div className="flex justify-end gap-3">
+            <button type="button" onClick={() => setShowAddForm(false)} className="text-label-bold font-semibold text-on-surface hover:text-primary px-4 py-2.5 rounded-lg">Cancel</button>
+            <button type="submit" disabled={saving} className="bg-primary text-on-primary text-label-bold font-semibold px-6 py-2.5 rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-60">
+              {saving ? 'Creating...' : 'Create User'}
+            </button>
           </div>
         </form>
       )}
 
-      <div className="form-grid-2" style={{ gridTemplateColumns: '2fr 1fr 1fr' }}>
-        <div className="field" style={{ marginBottom: 0 }}>
-          <label htmlFor="user-search">Search</label>
-          <input className="input" id="user-search" placeholder="Search by name, email, or school..." value={search} onChange={(e) => setSearch(e.target.value)} />
+      <div className="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant p-5 mb-8 flex flex-col md:flex-row gap-4">
+        <div className="flex-1">
+          <label className="block text-label-bold text-on-surface-variant mb-1" htmlFor="user-search">Search</label>
+          <div className="relative">
+            <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline">search</span>
+            <input className="w-full pl-10 pr-4 py-2 border border-outline-variant rounded-lg bg-surface-bright focus:ring-2 focus:ring-primary focus:border-primary text-body-md text-on-surface placeholder:text-outline-variant outline-none transition-all" id="user-search" placeholder="Search by name, email, or school..." value={search} onChange={(e) => setSearch(e.target.value)} />
+          </div>
         </div>
-        <div className="field" style={{ marginBottom: 0 }}>
-          <label htmlFor="role-filter">Role</label>
-          <select className="input" id="role-filter" value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)}>
+        <div className="w-full md:w-48">
+          <label className="block text-label-bold text-on-surface-variant mb-1" htmlFor="role-filter">Role</label>
+          <select className={inputClass} id="role-filter" value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)}>
             <option value="all">All Roles</option>
             {ROLE_OPTIONS.map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
           </select>
         </div>
-        <div className="field" style={{ marginBottom: 0 }}>
-          <label htmlFor="status-filter">Status</label>
-          <select className="input" id="status-filter" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+        <div className="w-full md:w-48">
+          <label className="block text-label-bold text-on-surface-variant mb-1" htmlFor="status-filter">Status</label>
+          <select className={inputClass} id="status-filter" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
             <option value="all">All Statuses</option>
             {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s[0].toUpperCase() + s.slice(1)}</option>)}
           </select>
@@ -221,69 +248,102 @@ export default function AdminUsers() {
       </div>
 
       {profiles === null ? (
-        <p className="hint-text">Loading users...</p>
+        <p className="text-body-md text-on-surface-variant">Loading users...</p>
       ) : filtered.length === 0 ? (
-        <p className="hint-text">No users found. Try changing your search or filters.</p>
+        <p className="text-body-md text-on-surface-variant">No users found. Try changing your search or filters.</p>
       ) : (
-        <div className="table-wrap">
-          <table className="table">
-            <thead>
-              <tr><th>Name</th><th>Role</th><th>Email</th><th>School</th><th>Status</th><th /></tr>
-            </thead>
-            <tbody>
-              {filtered.map((p) => (
-                <Fragment key={p.id}>
-                  <tr>
-                    <td>{p.display_name || '—'}</td>
-                    <td>{ROLE_LABELS[p.role] || p.role}</td>
-                    <td>{p.email || '—'}</td>
-                    <td>{p.sekolah || '—'}</td>
-                    <td><span className="status-pill" style={{ background: 'var(--color-accent-100)', color: 'var(--color-accent-900)' }}>{p.status}</span></td>
-                    <td><button type="button" className="btn btn-ghost" onClick={() => startEdit(p)}>{expandedId === p.id ? 'Close' : 'Edit'}</button></td>
-                  </tr>
-                  {expandedId === p.id && (
-                    <tr>
-                      <td colSpan={6}>
-                        <div className="form-grid-2">
-                          <div className="field">
-                            <label>Name</label>
-                            <input className="input" value={editDraft.display_name} onChange={(e) => setEditDraft({ ...editDraft, display_name: e.target.value })} />
-                          </div>
-                          {p.role === 'teacher' && (
-                            <div className="field">
-                              <label>School Name</label>
-                              <input className="input" value={editDraft.sekolah} onChange={(e) => setEditDraft({ ...editDraft, sekolah: e.target.value })} />
-                            </div>
-                          )}
-                          <div className="field">
-                            <label>Account Status</label>
-                            <select className="input" value={editDraft.status} onChange={(e) => setEditDraft({ ...editDraft, status: e.target.value })}>
-                              {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s[0].toUpperCase() + s.slice(1)}</option>)}
-                            </select>
-                          </div>
-                        </div>
-                        <button type="button" className="btn btn-primary" style={{ marginBottom: 'var(--space-6)' }} onClick={() => saveEdit(p)}>Save Changes</button>
-
-                        <div className="card-kicker">Change Password</div>
-                        <div className="form-grid-2" style={{ gridTemplateColumns: '2fr 1fr' }}>
-                          <div className="field">
-                            <label>New Password</label>
-                            <input className="input" type="password" placeholder="At least 6 characters" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
-                          </div>
-                          <div className="field" style={{ display: 'flex', alignItems: 'flex-end' }}>
-                            <button type="button" className="btn btn-secondary" onClick={() => handleResetPassword(p)}>Change Password</button>
-                          </div>
-                        </div>
-                        {formError && <div className="login-error">{formError}</div>}
+        <div className="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-outline-variant bg-surface-bright/50">
+                  <th className="text-label-bold text-on-surface-variant py-4 px-6 uppercase tracking-wider">Name</th>
+                  <th className="text-label-bold text-on-surface-variant py-4 px-6 uppercase tracking-wider">Role</th>
+                  <th className="text-label-bold text-on-surface-variant py-4 px-6 uppercase tracking-wider">Email</th>
+                  <th className="text-label-bold text-on-surface-variant py-4 px-6 uppercase tracking-wider">School</th>
+                  <th className="text-label-bold text-on-surface-variant py-4 px-6 uppercase tracking-wider">Status</th>
+                  <th className="text-label-bold text-on-surface-variant py-4 px-6 uppercase tracking-wider text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="text-body-md text-on-surface divide-y divide-outline-variant">
+                {filtered.map((p) => (
+                  <Fragment key={p.id}>
+                    <tr className="hover:bg-surface-container-low transition-colors">
+                      <td className="py-4 px-6 font-medium">{p.display_name || '—'}</td>
+                      <td className="py-4 px-6 text-on-surface-variant">{ROLE_LABELS[p.role] || p.role}</td>
+                      <td className="py-4 px-6 text-on-surface-variant">{p.email || '—'}</td>
+                      <td className="py-4 px-6 text-on-surface-variant">{p.sekolah || '—'}</td>
+                      <td className="py-4 px-6">
+                        <span className="inline-flex items-center px-2 py-1 rounded-md bg-secondary-container/50 text-on-secondary-container text-label-bold font-semibold text-[10px] uppercase">{p.status}</span>
+                      </td>
+                      <td className="py-4 px-6 text-right">
+                        <button type="button" onClick={() => startEdit(p)} className="text-label-bold font-semibold text-on-surface hover:text-primary transition-colors">{expandedId === p.id ? 'Close' : 'Edit'}</button>
                       </td>
                     </tr>
-                  )}
-                </Fragment>
-              ))}
-            </tbody>
-          </table>
+                    {expandedId === p.id && (
+                      <tr className="bg-surface-container-lowest border-b-2 border-primary">
+                        <td className="p-0" colSpan={6}>
+                          <div className="p-6 md:p-8 bg-surface-container-lowest border-t border-outline-variant">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                              <div>
+                                <label className="block text-label-bold text-on-surface-variant mb-1">Name</label>
+                                <input className={inputClass} value={editDraft.display_name} onChange={(e) => setEditDraft({ ...editDraft, display_name: e.target.value })} />
+                              </div>
+                              {p.role === 'teacher' && (
+                                <div>
+                                  <label className="block text-label-bold text-on-surface-variant mb-1">School Name</label>
+                                  <input className={inputClass} value={editDraft.sekolah} onChange={(e) => setEditDraft({ ...editDraft, sekolah: e.target.value })} />
+                                </div>
+                              )}
+                              <div>
+                                <label className="block text-label-bold text-on-surface-variant mb-1">Account Status</label>
+                                <select className={inputClass} value={editDraft.status} onChange={(e) => setEditDraft({ ...editDraft, status: e.target.value })}>
+                                  {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s[0].toUpperCase() + s.slice(1)}</option>)}
+                                </select>
+                              </div>
+                            </div>
+                            <button type="button" onClick={() => saveEdit(p)} className="bg-secondary text-on-secondary text-label-bold font-semibold px-5 py-2.5 rounded-lg hover:opacity-90 transition-opacity shadow-sm mb-8">
+                              Save Changes
+                            </button>
+
+                            <div className="max-w-xl border-t border-outline-variant pt-6">
+                              <h4 className="text-label-bold text-on-surface-variant uppercase tracking-wider mb-4">Change Password</h4>
+                              <div className="flex flex-col sm:flex-row gap-4 items-end">
+                                <div className="flex-1 w-full">
+                                  <label className="block text-label-bold text-on-surface-variant mb-1">New Password</label>
+                                  <input className={inputClass} placeholder="At least 6 characters" type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
+                                </div>
+                                <button type="button" onClick={() => handleResetPassword(p)} className="bg-surface-container text-on-surface text-label-bold font-semibold px-5 py-2.5 rounded-lg border border-outline-variant hover:bg-surface-container-highest transition-colors whitespace-nowrap w-full sm:w-auto">
+                                  Change Password
+                                </button>
+                              </div>
+                            </div>
+
+                            <div className="max-w-xl border-t border-outline-variant pt-6 mt-6">
+                              <h4 className="text-label-bold text-error uppercase tracking-wider mb-2">Danger Zone</h4>
+                              {p.id === state.userAuthId ? (
+                                <p className="text-body-sm text-on-surface-variant">You can't delete your own account.</p>
+                              ) : (
+                                <>
+                                  <p className="text-body-sm text-on-surface-variant mb-3">Permanently deletes this account and its login. Blocked if the account has order or activity history — suspend it instead in that case.</p>
+                                  <button type="button" onClick={() => handleDelete(p)} className="bg-error-container text-on-error-container text-label-bold font-semibold px-5 py-2.5 rounded-lg hover:opacity-90 transition-opacity">
+                                    Delete Account
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                            {formError && <div className="mt-4 bg-error-container text-on-error-container px-4 py-3 rounded-lg text-body-md">{formError}</div>}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
-    </div>
+    </AdminLayout>
   );
 }

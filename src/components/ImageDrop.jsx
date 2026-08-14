@@ -12,7 +12,12 @@ const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 // Reimplements the mockup's drag-and-drop upload behavior (drop image ->
 // preview) with plain File/FileReader APIs — the original used a proprietary
 // <image-slot> web component that isn't available outside its design tool.
-export default function ImageDrop({ value, fileName, onChange, placeholder, subtext, height = 76, thumbSize = 52 }) {
+//
+// `stacked` switches from the default side-by-side thumbnail+text row to a
+// large image-on-top-of-text card (image width 100%, height `thumbSize`) —
+// opt-in and defaults to false, so every existing caller (NewOrderStep1's
+// logo upload, ProductionReferenceImages) renders exactly as before.
+export default function ImageDrop({ value, fileName, onChange, placeholder, subtext, height = 76, thumbSize = 52, stacked = false }) {
   const [dragOver, setDragOver] = useState(false);
   const [error, setError] = useState('');
   const inputRef = useRef(null);
@@ -32,7 +37,7 @@ export default function ImageDrop({ value, fileName, onChange, placeholder, subt
   return (
     <div>
       <div
-        className={`image-drop${dragOver ? ' image-drop-over' : ''}`}
+        className={`image-drop${stacked ? ' image-drop-stacked' : ''}${dragOver ? ' image-drop-over' : ''}`}
         style={{ minHeight: height }}
         onClick={() => inputRef.current?.click()}
         onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
@@ -52,7 +57,13 @@ export default function ImageDrop({ value, fileName, onChange, placeholder, subt
         />
         {value ? (
           <>
-            <img src={value} alt="" style={{ width: thumbSize, height: thumbSize, objectFit: 'contain', border: '1px solid var(--color-neutral-300)', background: '#fff' }} />
+            <img
+              src={value}
+              alt=""
+              style={stacked
+                ? { width: '100%', height: thumbSize, objectFit: 'contain', border: '1px solid var(--color-neutral-300)', background: '#fff', borderRadius: 4 }
+                : { width: thumbSize, height: thumbSize, objectFit: 'contain', border: '1px solid var(--color-neutral-300)', background: '#fff' }}
+            />
             <div>
               <div className="image-drop-title">{fileName}</div>
               <div className="image-drop-sub">Click to replace</div>

@@ -24,11 +24,22 @@ export async function fetchSalesmanAssignments() {
   return data;
 }
 
+// A school (teacher_id) may only ever have one active assignment row —
+// enforced in the database by the unique constraint added in
+// supabase/migrations/0020_enforce_school_salesman_uniqueness.sql, not just
+// by the frontend only offering unassigned schools in its dropdown. This
+// is a bare insert (not an upsert) specifically so that assigning a school
+// that's already taken by another salesman FAILS instead of silently
+// stealing it — see reassignSalesman below for the deliberate-reassignment
+// case, which is different.
 export async function assignSalesman(salesmanId, teacherId) {
   const { error } = await supabase
     .from('salesman_assignments')
     .insert({ salesman_id: salesmanId, teacher_id: teacherId });
-  if (error) throw error;
+  if (error) {
+    if (error.code === '23505') throw new Error('This school is already assigned to another salesman.');
+    throw error;
+  }
 }
 
 export async function unassignSalesman(salesmanId, teacherId) {
@@ -40,11 +51,21 @@ export async function unassignSalesman(salesmanId, teacherId) {
   if (error) throw error;
 }
 
-// Swaps a teacher's assignment from one salesman to another in one call —
-// callers don't have to remember to unassign before assigning.
-export async function reassignSalesman(oldSalesmanId, newSalesmanId, teacherId) {
-  if (oldSalesmanId) await unassignSalesman(oldSalesmanId, teacherId);
-  await assignSalesman(newSalesmanId, teacherId);
+// Moves a school's assignment to a different salesman in a single atomic
+// INSERT ... ON CONFLICT (teacher_id) DO UPDATE, rather than a separate
+// unassign-then-assign — that older two-step approach left a window where
+// the school briefly had no assignment at all, and could lose the old
+// assignment outright if the insert half failed after the delete had
+// already succeeded. This is the one place a school's existing assignment
+// is deliberately overwritten (Admin explicitly picked a new salesman for
+// it) rather than rejected — assignSalesman above stays a plain insert so
+// an *unintended* double-assignment (e.g. from the Salesman Detail page)
+// still fails instead of silently overwriting.
+export async function reassignSalesman(newSalesmanId, teacherId) {
+  const { error } = await supabase
+    .from('salesman_assignments')
+    .upsert({ salesman_id: newSalesmanId, teacher_id: teacherId }, { onConflict: 'teacher_id' });
+  if (error) throw error;
 }
 
 // Calls the admin-user-ops Edge Function — the only path that can create a
@@ -78,6 +99,15 @@ export async function createAccount({ role, sekolah, displayName, email, passwor
 
 export async function resetPassword(userId, newPassword) {
   await invokeAdminUserOps({ action: 'reset_password', userId, newPassword });
+}
+
+// Hard-deletes the account (profile row + Supabase Auth user), not a status
+// change — see admin-user-ops for why this has to go through the Edge
+// Function rather than a plain table delete. Fails with a clear message if
+// the account has order/audit-log history on record, since that's a
+// foreign-key violation server-side, not a silent no-op.
+export async function deleteAccount(userId) {
+  await invokeAdminUserOps({ action: 'delete', userId });
 }
 
 // `before`/`after` should be plain objects describing what changed — never

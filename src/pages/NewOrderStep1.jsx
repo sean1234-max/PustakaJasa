@@ -1,17 +1,29 @@
+import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import DatePicker from '../components/DatePicker';
 import ImageDrop from '../components/ImageDrop';
-import SalesCombobox from '../components/SalesCombobox';
 import { useAppState } from '../state/useAppState';
-import { formatDate, addDays, SALES_NAMES } from '../data/catalog';
+import { formatDate, addDays } from '../data/catalog';
 
 export default function NewOrderStep1() {
-  const { state, patch, today } = useAppState();
+  const { state, patch, today, refreshAssignedSalesman } = useAppState();
   const navigate = useNavigate();
   const dueMinDate = addDays(today, 3);
 
+  // Re-checks the database every time the New Order flow starts (not just
+  // once at login) — School->Salesman is admin-managed and can change
+  // mid-session, so the New Order screen must never rely on a value that
+  // might already be stale. The actual enforcement is server-side (see
+  // supabase/migrations/0019_add_order_salesman_assignment.sql); this just
+  // keeps what's shown here honest.
+  useEffect(() => { refreshAssignedSalesman(); }, [refreshAssignedSalesman]);
+
   const handleNext = () => {
+    if (!state.assignedSalesman) {
+      patch({ stepError: 'Your school has not been assigned to a salesman yet. Please contact the administrator.' });
+      return;
+    }
     if (!state.schoolType) {
       patch({ stepError: 'Please select whether the school is SK or Not SK.' });
       return;
@@ -56,7 +68,25 @@ export default function NewOrderStep1() {
             <label htmlFor="sekolah">Sekolah (School Name)</label>
             <input className="input" id="sekolah" placeholder="School name" value={state.sekolah} onChange={(e) => patch({ sekolah: e.target.value })} />
           </div>
-          <SalesCombobox id="sales" value={state.sales} onChange={(name) => patch({ sales: name })} options={SALES_NAMES} />
+          <div className="field">
+            <label htmlFor="sales">Sales</label>
+            <input
+              className="input"
+              id="sales"
+              disabled
+              readOnly
+              value={
+                !state.assignedSalesmanLoaded ? 'Loading...'
+                  : state.assignedSalesman ? (state.assignedSalesman.name || 'Unnamed salesman')
+                    : 'No salesman assigned'
+              }
+            />
+            {state.assignedSalesmanLoaded && !state.assignedSalesman && (
+              <p className="hint-text" style={{ margin: 'var(--space-2) 0 0', color: '#b3261e' }}>
+                This school has not been assigned to a salesman yet. Please contact the administrator.
+              </p>
+            )}
+          </div>
         </div>
 
         <div className="form-grid-2">

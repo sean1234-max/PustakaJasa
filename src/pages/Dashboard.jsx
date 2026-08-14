@@ -4,7 +4,7 @@ import { useAppState } from '../state/useAppState';
 import { STATUS_STAGES, STATUS_BG, STATUS_TEXT } from '../data/catalog';
 
 export default function Dashboard() {
-  const { state, openAmend, openAddOn, reorderOrder } = useAppState();
+  const { state, openAmend, openAddOn, reorderOrder, cancelPendingAddOn } = useAppState();
   const navigate = useNavigate();
 
   return (
@@ -38,7 +38,7 @@ export default function Dashboard() {
           const idx = STATUS_STAGES.indexOf(ord.status);
           const invoiceIdLabel = idx >= 1 ? (ord.invoiceId || `INV-${ord.id.replace('ORD-', '')}`) : '-';
           const canAmend = idx === 0;
-          const canAddOn = idx === 1;
+          const canAddOn = idx === 1 && ord.pendingAddonStatus !== 'pending';
           const isCompleted = ord.status === 'Completed';
 
           return (
@@ -64,6 +64,19 @@ export default function Dashboard() {
               <div className="order-card-invoice"><span className="dim">Invoice ID:</span> {invoiceIdLabel}</div>
               <div className="dim" style={{ fontSize: 11 }}>Total Amount</div>
               <div className={`order-card-total${ord.priceAdjusted ? ' amount-adjusted' : ''}`}>RM {ord.totalAmount.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+
+              {ord.pendingAddonStatus === 'pending' && (
+                <div style={{ background: 'var(--color-accent-100)', color: 'var(--color-accent-900)', fontSize: 12, padding: 'var(--space-2) var(--space-3)', marginTop: 'var(--space-2)' }}>
+                  Add-on submitted — waiting for Sales approval.
+                  <button type="button" className="btn btn-ghost" style={{ marginLeft: 'var(--space-2)', padding: 0 }} onClick={() => cancelPendingAddOn(ord.id)}>Cancel</button>
+                </div>
+              )}
+              {ord.pendingAddonStatus === 'rejected' && (
+                <div className="login-error" style={{ marginTop: 'var(--space-2)', marginBottom: 0 }}>
+                  Add-on rejected by Sales{ord.pendingAddonRejectReason ? `: ${ord.pendingAddonRejectReason}` : '.'}
+                  <button type="button" className="btn btn-ghost" style={{ marginLeft: 'var(--space-2)', padding: 0 }} onClick={() => cancelPendingAddOn(ord.id)}>Dismiss</button>
+                </div>
+              )}
 
               <div className="order-card-actions">
                 <button type="button" className="btn btn-ghost btn-block" onClick={() => navigate(`/orders/${ord.id}`)}>View Details</button>

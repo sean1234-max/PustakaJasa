@@ -8,7 +8,7 @@ const DRAFT_FIELDS = [
   'logoDataUrl', 'logoFileName',
   'category', 'pbdVariant', 'lineValues', 'matrixValues', 'rowsByBlock', 'plakRows', 'namaKelasRows',
   'nextRowId', 'nextPlakRowId', 'nextNamaKelasRowId',
-  'cart', 'nextCartId',
+  'cart',
 ];
 
 // A draft is only worth restoring (and worth telling the user about) once

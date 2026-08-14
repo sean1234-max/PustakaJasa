@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
+import PriceTable from '../components/PriceTable';
 import { useAppState } from '../state/useAppState';
 import { STATUS_STAGES, STATUS_BG, STATUS_TEXT, standardUnitPrice } from '../data/catalog';
 import { reconstructBlocksForCategory } from '../utils/computeBlocks';
@@ -12,61 +13,8 @@ import { getOrderCategories } from '../utils/exportCsv';
 // already submitted, it never edits the underlying order/category data.
 const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: false, matrix: false, jenisPlak: false, namaKelas: false };
 
-// Shared between the on-screen Summary tab and the print-only section —
-// printing needs the same price table, just alongside every category's
-// details instead of behind a separate tab.
-function PriceTable({ rows, editable, priceDrafts, setPrice, plakCatalog, totalQty, totalHarga, priceAdjusted }) {
-  return (
-    <>
-      <table className="table" style={{ margin: 'var(--space-3) 0 0' }}>
-        <thead>
-          <tr>
-            <th>Category</th>
-            <th>Jenis Plak</th>
-            <th style={{ width: 130 }}>Price per Unit</th>
-            <th style={{ width: 80 }}>QTY</th>
-            <th style={{ width: 130 }}>Harga</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((it) => {
-            const adjusted = it.unitPrice !== standardUnitPrice(it.jenisPlak, plakCatalog);
-            return (
-              <tr key={it.id}>
-                <td>{it.categoryLabel}</td>
-                <td>{it.jenisPlak}</td>
-                <td>
-                  {editable ? (
-                    <input
-                      className={`input${adjusted ? ' amount-adjusted' : ''}`}
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={priceDrafts[it.id]}
-                      onChange={(e) => setPrice(it.id, e.target.value)}
-                    />
-                  ) : (
-                    <span className={adjusted ? 'amount-adjusted' : undefined}>RM {it.unitPrice.toFixed(2)}</span>
-                  )}
-                </td>
-                <td>{it.qty}</td>
-                <td><strong className={adjusted ? 'amount-adjusted' : undefined}>RM {it.harga.toFixed(2)}</strong></td>
-              </tr>
-            );
-          })}
-          <tr>
-            <td /><td /><td /><td><strong>TOTAL</strong></td>
-            <td><strong className={priceAdjusted ? 'amount-adjusted' : undefined}>RM {totalHarga.toFixed(2)}</strong></td>
-          </tr>
-        </tbody>
-      </table>
-      <p className="hint-text" style={{ marginTop: 'var(--space-2)' }}>QTY total: {totalQty}</p>
-    </>
-  );
-}
-
 export default function SalesOrderSummary() {
-  const { state, approveOrder } = useAppState();
+  const { state, approveOrder, approveAddOn, rejectAddOn } = useAppState();
   const { id } = useParams();
   const navigate = useNavigate();
   const order = state.orders.find((o) => o.id === id);
@@ -84,11 +32,29 @@ export default function SalesOrderSummary() {
   });
   const [page, setPage] = useState('summary');
 
+  // Same pattern as priceDrafts above, but for a pending add-on's items —
+  // lets Sales adjust pricing before approving it into the order, the same
+  // way they can for the original order.
+  const [addOnPriceDrafts, setAddOnPriceDrafts] = useState(() => {
+    const out = {};
+    (order?.pendingAddonItems || []).forEach((it) => {
+      out[it.id] = it.unitPrice ?? standardUnitPrice(it.jenisPlak, state.plakCatalog) ?? 0;
+    });
+    return out;
+  });
+  const [rejectReason, setRejectReason] = useState('');
+
   const rows = useMemo(() => (order?.items || []).map((it) => {
     const unitPrice = Number(priceDrafts[it.id] ?? it.unitPrice ?? 0);
     const harga = unitPrice * (Number(it.qty) || 0);
     return { ...it, unitPrice, harga };
   }), [order, priceDrafts]);
+
+  const addOnRows = useMemo(() => (order?.pendingAddonItems || []).map((it) => {
+    const unitPrice = Number(addOnPriceDrafts[it.id] ?? it.unitPrice ?? 0);
+    const harga = unitPrice * (Number(it.qty) || 0);
+    return { ...it, unitPrice, harga };
+  }), [order, addOnPriceDrafts]);
 
   const categories = useMemo(() => (order ? getOrderCategories(order) : []), [order]);
   const [activeCat, setActiveCat] = useState(() => categories[0]?.key || '');
@@ -118,7 +84,11 @@ export default function SalesOrderSummary() {
   const totalHarga = rows.reduce((sum, it) => sum + it.harga, 0);
   const priceAdjusted = order.priceAdjusted || rows.some((it) => it.unitPrice !== standardUnitPrice(it.jenisPlak, state.plakCatalog));
 
+  const addOnTotalQty = addOnRows.reduce((sum, it) => sum + (Number(it.qty) || 0), 0);
+  const addOnTotalHarga = addOnRows.reduce((sum, it) => sum + it.harga, 0);
+
   const setPrice = (itemId, value) => setPriceDrafts((prev) => ({ ...prev, [itemId]: value }));
+  const setAddOnPrice = (itemId, value) => setAddOnPriceDrafts((prev) => ({ ...prev, [itemId]: value }));
 
   // Stays on this page after approving (instead of bouncing back to the
   // dashboard) so Sales can immediately print the now-approved order —
@@ -127,6 +97,15 @@ export default function SalesOrderSummary() {
   const handleApprove = () => {
     const updatedItems = rows.map((r) => ({ ...r, unitPrice: r.unitPrice, harga: r.harga }));
     approveOrder(order.id, updatedItems);
+  };
+
+  const handleApproveAddOn = () => {
+    approveAddOn(order.id, addOnRows.map((r) => ({ ...r })));
+  };
+
+  const handleRejectAddOn = () => {
+    rejectAddOn(order.id, rejectReason.trim());
+    setRejectReason('');
   };
 
   const handlePrint = () => window.print();
@@ -173,6 +152,60 @@ export default function SalesOrderSummary() {
                 rows={rows} editable={editable} priceDrafts={priceDrafts} setPrice={setPrice}
                 plakCatalog={state.plakCatalog} totalQty={totalQty} totalHarga={totalHarga} priceAdjusted={priceAdjusted}
               />
+
+              {order.pendingAddonStatus === 'pending' && (
+                <>
+                  <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Tambahan — Pending Approval</div>
+                  <p className="hint-text" style={{ marginTop: 0 }}>Adjust pricing if needed, then approve to add these into the order, or reject to send it back to the teacher.</p>
+                  <table className="table" style={{ margin: 'var(--space-3) 0 0' }}>
+                    <thead>
+                      <tr>
+                        <th>Category</th>
+                        <th>Jenis Plak</th>
+                        <th style={{ width: 130 }}>Price per Unit</th>
+                        <th style={{ width: 80 }}>QTY</th>
+                        <th style={{ width: 130 }}>Harga</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {addOnRows.map((it) => (
+                        <tr key={it.id}>
+                          <td>{it.categoryLabel}</td>
+                          <td>{it.jenisPlak}</td>
+                          <td>
+                            <input
+                              className="input"
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={addOnPriceDrafts[it.id]}
+                              onChange={(e) => setAddOnPrice(it.id, e.target.value)}
+                            />
+                          </td>
+                          <td>{it.qty}</td>
+                          <td><strong>RM {it.harga.toFixed(2)}</strong></td>
+                        </tr>
+                      ))}
+                      <tr><td /><td /><td /><td><strong>SUBTOTAL</strong></td><td><strong>RM {addOnTotalHarga.toFixed(2)}</strong></td></tr>
+                    </tbody>
+                  </table>
+                  <p className="hint-text" style={{ marginTop: 'var(--space-2)' }}>QTY total: {addOnTotalQty}</p>
+
+                  <div className="field" style={{ maxWidth: 420, marginTop: 'var(--space-4)' }}>
+                    <label htmlFor="rejectReason">Reason for rejecting (optional, shown to the teacher)</label>
+                    <input className="input" id="rejectReason" placeholder="e.g. please confirm quantity for X" value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} />
+                  </div>
+                  <div className="row-split" style={{ marginTop: 'var(--space-4)' }}>
+                    <button type="button" className="btn btn-ghost" onClick={handleRejectAddOn}>Reject</button>
+                    <button type="button" className="btn btn-primary" onClick={handleApproveAddOn}>Approve Add-On</button>
+                  </div>
+                </>
+              )}
+              {order.pendingAddonStatus === 'rejected' && (
+                <div className="login-error" style={{ marginTop: 'var(--space-6)' }}>
+                  You rejected this add-on{order.pendingAddonRejectReason ? `: ${order.pendingAddonRejectReason}` : '.'} Waiting for the teacher to cancel or resubmit it.
+                </div>
+              )}
 
               <div className="row-split" style={{ marginTop: 'var(--space-6)' }}>
                 <button type="button" className="btn btn-ghost" onClick={() => setPage('details')}>View Order Details →</button>

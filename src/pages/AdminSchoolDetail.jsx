@@ -1,12 +1,15 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import Nav from '../components/Nav';
+import AdminLayout from '../components/AdminLayout';
 import { useAppState } from '../state/useAppState';
 import { STATUS_STAGES, STATUS_BG, STATUS_TEXT } from '../data/catalog';
 import {
   fetchAllProfiles, fetchSalesmanAssignments, updateProfile, resetPassword,
   reassignSalesman, logAdminAction,
 } from '../lib/adminApi';
+
+const inputClass = 'w-full rounded-lg border border-outline-variant bg-surface-container-lowest text-on-surface focus:ring-2 focus:ring-primary focus:border-primary py-2.5 px-4 shadow-sm outline-none transition-all';
+const secondaryBtnClass = 'w-full sm:w-auto bg-surface-container-lowest border border-outline-variant text-on-surface-variant hover:text-on-surface text-label-bold font-semibold py-2.5 px-4 rounded-lg shadow-sm hover:shadow-md transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed';
 
 export default function AdminSchoolDetail() {
   const { id } = useParams();
@@ -35,10 +38,10 @@ export default function AdminSchoolDetail() {
     return () => clearTimeout(t);
   }, [toast]);
 
-  if (!profiles) return <div className="screen-wrap"><Nav /><p className="hint-text">Loading...</p></div>;
+  if (!profiles) return <AdminLayout title="School Details"><p className="text-body-md text-on-surface-variant">Loading...</p></AdminLayout>;
 
   const school = profiles.find((p) => p.id === id);
-  if (!school) return <div className="screen-wrap"><Nav /><p className="hint-text">School not found.</p></div>;
+  if (!school) return <AdminLayout title="School Details"><p className="text-body-md text-on-surface-variant">School not found.</p></AdminLayout>;
 
   const salesmenOptions = profiles.filter((p) => p.role === 'salesman');
   const currentAssignment = assignments.find((a) => a.teacher_id === id);
@@ -47,7 +50,7 @@ export default function AdminSchoolDetail() {
 
   const handleConfirmReassign = async () => {
     try {
-      await reassignSalesman(currentAssignment?.salesman_id || null, pendingSalesmanId, id);
+      await reassignSalesman(pendingSalesmanId, id);
       const newSalesman = salesmenOptions.find((s) => s.id === pendingSalesmanId);
       await logAdminAction({
         action: 'Admin reassigned a school to a different salesman',
@@ -98,105 +101,151 @@ export default function AdminSchoolDetail() {
   };
 
   return (
-    <div className="screen-wrap">
-      <Nav />
-      <button type="button" className="btn btn-ghost" style={{ marginBottom: 'var(--space-4)' }} onClick={() => navigate('/admin/schools')}>← Back to Schools</button>
+    <AdminLayout>
+      <button type="button" onClick={() => navigate('/admin/schools')} className="flex items-center text-on-surface-variant hover:text-primary transition-colors w-fit mb-6 group">
+        <span className="material-symbols-outlined text-[18px] mr-1 group-hover:-translate-x-1 transition-transform">arrow_back</span>
+        <span className="text-label-bold font-semibold">Back to Schools</span>
+      </button>
 
       {toast && (
-        <div className="update-toast">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
+        <div className="mb-6 flex items-center gap-2 bg-secondary-container/40 text-on-secondary-container px-4 py-3 rounded-lg text-body-md">
+          <span className="material-symbols-outlined text-[18px]">check_circle</span>
           {toast}
         </div>
       )}
-      {error && <div className="login-error">{error}</div>}
+      {error && <div className="mb-6 bg-error-container text-on-error-container px-4 py-3 rounded-lg text-body-md">{error}</div>}
 
-      <div className="card elev-md" style={{ marginBottom: 'var(--space-6)' }}>
-        <div className="order-card-top">
-          <div>
-            <div className="card-kicker">School</div>
-            <div className="card-title">{school.sekolah || '—'}</div>
+      <section className="bg-surface-container-lowest rounded-xl border border-outline-variant shadow-sm overflow-hidden mb-10">
+        <div className="p-6 md:p-8">
+          <div className="flex justify-between items-start mb-8 pb-6 border-b border-outline-variant">
+            <div>
+              <span className="text-label-bold text-on-surface-variant uppercase tracking-widest mb-1 block">School</span>
+              <h2 className="text-display-lg text-on-surface">{school.sekolah || '—'}</h2>
+            </div>
+            <span className="inline-flex items-center px-3 py-1 rounded-md bg-secondary-container/30 text-primary-container text-label-bold font-semibold border border-secondary-container">
+              {school.status}
+            </span>
           </div>
-          <span className="status-pill" style={{ background: 'var(--color-accent-100)', color: 'var(--color-accent-900)' }}>{school.status}</span>
-        </div>
 
-        <div className="form-grid-2" style={{ marginTop: 'var(--space-4)' }}>
-          <div><div className="dim">Teacher Name</div><div>{school.display_name || '—'}</div></div>
-          <div><div className="dim">Teacher Email</div><div>{school.email || '—'}</div></div>
-        </div>
-
-        <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Salesman</div>
-        <p className="hint-text">Current: {currentSalesman?.display_name || 'None'}</p>
-        {!confirmingReassign ? (
-          <div className="form-grid-2" style={{ gridTemplateColumns: '2fr 1fr' }}>
-            <select className="input" value={pendingSalesmanId} onChange={(e) => setPendingSalesmanId(e.target.value)}>
-              <option value="">Select a salesman...</option>
-              {salesmenOptions.map((s) => <option key={s.id} value={s.id}>{s.display_name || s.email}</option>)}
-            </select>
-            <button type="button" className="btn btn-secondary" disabled={!pendingSalesmanId} onClick={() => setConfirmingReassign(true)}>Change Salesman</button>
-          </div>
-        ) : (
-          <div className="card" style={{ background: 'var(--color-accent-100)', border: 'none', padding: 'var(--space-4)' }}>
-            <p style={{ margin: '0 0 var(--space-3)' }}>
-              Are you sure you want to change the salesman for <strong>{school.sekolah}</strong>?<br />
-              Current: {currentSalesman?.display_name || 'None'}<br />
-              New: {salesmenOptions.find((s) => s.id === pendingSalesmanId)?.display_name}
-            </p>
-            <div className="row-split">
-              <button type="button" className="btn btn-ghost" onClick={() => setConfirmingReassign(false)}>Cancel</button>
-              <button type="button" className="btn btn-primary" onClick={handleConfirmReassign}>Confirm Change</button>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-10">
+            <div>
+              <span className="text-label-bold text-on-surface-variant mb-1 block">Teacher Name</span>
+              <p className="text-headline-sm text-on-surface">{school.display_name || '—'}</p>
+            </div>
+            <div>
+              <span className="text-label-bold text-on-surface-variant mb-1 block">Teacher Email</span>
+              <p className="text-headline-sm text-on-surface-variant">{school.email || '—'}</p>
             </div>
           </div>
-        )}
 
-        <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Account Status</div>
-        {confirmingStatus ? (
-          <div className="card" style={{ background: 'var(--color-accent-100)', border: 'none', padding: 'var(--space-4)' }}>
-            <p style={{ margin: '0 0 var(--space-3)' }}>
-              Are you sure you want to {confirmingStatus === 'active' ? 'reactivate' : 'deactivate'} <strong>{school.sekolah}</strong>?<br />
-              {confirmingStatus !== 'active' && 'The school will no longer be able to log in, but existing orders will remain.'}
-            </p>
-            <div className="row-split">
-              <button type="button" className="btn btn-ghost" onClick={() => setConfirmingStatus(null)}>Cancel</button>
-              <button type="button" className="btn btn-primary" onClick={() => handleConfirmStatus(confirmingStatus)}>Confirm</button>
-            </div>
-          </div>
-        ) : school.status === 'active' ? (
-          <button type="button" className="btn btn-secondary" onClick={() => setConfirmingStatus('inactive')}>Deactivate School</button>
-        ) : (
-          <button type="button" className="btn btn-secondary" onClick={() => setConfirmingStatus('active')}>Reactivate School</button>
-        )}
-
-        <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Change Password</div>
-        <div className="form-grid-2" style={{ gridTemplateColumns: '2fr 1fr' }}>
-          <input className="input" type="password" placeholder="At least 6 characters" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
-          <button type="button" className="btn btn-secondary" onClick={handleResetPassword}>Change Password</button>
-        </div>
-      </div>
-
-      <div className="card-kicker">Order History</div>
-      {orders.length === 0 ? (
-        <p className="hint-text">No orders found for this school.</p>
-      ) : (
-        <div className="order-grid">
-          {orders.map((ord) => {
-            const idx = STATUS_STAGES.indexOf(ord.status);
-            return (
-              <div key={ord.id} className="card order-card" style={{ cursor: 'pointer' }} onClick={() => navigate(`/admin/orders/${ord.id}`)}>
-                <div className="order-card-top">
-                  <div>
-                    <div className="order-card-label">Order ID</div>
-                    <div className="order-card-id">{ord.id}</div>
-                  </div>
-                  <span className="status-pill" style={{ background: STATUS_BG[idx], color: STATUS_TEXT[idx] }}>{ord.status}</span>
-                </div>
-                <div className="order-card-meta" style={{ gridTemplateColumns: '1fr' }}>
-                  <div><div className="dim">Date Placed</div><div>{ord.datePlaced}</div></div>
-                </div>
+          <div className="space-y-8 bg-surface p-6 rounded-lg border border-outline-variant/50">
+            <div>
+              <div className="mb-4">
+                <span className="text-label-bold text-on-surface-variant uppercase tracking-widest block mb-1">Salesman</span>
+                <span className="text-body-sm text-on-surface-variant">Current: {currentSalesman?.display_name || 'None'}</span>
               </div>
-            );
-          })}
+              {!confirmingReassign ? (
+                <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+                  <select className={`${inputClass} sm:w-2/3`} value={pendingSalesmanId} onChange={(e) => setPendingSalesmanId(e.target.value)}>
+                    <option value="">Select a salesman...</option>
+                    {salesmenOptions.map((s) => <option key={s.id} value={s.id}>{s.display_name || s.email}</option>)}
+                  </select>
+                  <button type="button" disabled={!pendingSalesmanId} onClick={() => setConfirmingReassign(true)} className={`${secondaryBtnClass} sm:w-1/3`}>
+                    Change Salesman
+                  </button>
+                </div>
+              ) : (
+                <div className="bg-secondary-container/30 rounded-lg p-4">
+                  <p className="mb-3 text-body-md text-on-surface">
+                    Are you sure you want to change the salesman for <strong>{school.sekolah}</strong>?<br />
+                    Current: {currentSalesman?.display_name || 'None'}<br />
+                    New: {salesmenOptions.find((s) => s.id === pendingSalesmanId)?.display_name}
+                  </p>
+                  <div className="flex justify-between gap-3">
+                    <button type="button" onClick={() => setConfirmingReassign(false)} className="text-label-bold font-semibold text-on-surface hover:text-primary px-4 py-2">Cancel</button>
+                    <button type="button" onClick={handleConfirmReassign} className="bg-primary text-on-primary text-label-bold font-semibold px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors">Confirm Change</button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <hr className="border-outline-variant" />
+
+            <div>
+              <div className="mb-4">
+                <span className="text-label-bold text-on-surface-variant uppercase tracking-widest block mb-1">Change Password</span>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+                <input className={`${inputClass} sm:w-2/3`} placeholder="At least 6 characters" type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
+                <button type="button" onClick={handleResetPassword} className={`${secondaryBtnClass} sm:w-1/3`}>Update Password</button>
+              </div>
+            </div>
+
+            <hr className="border-outline-variant" />
+
+            <div>
+              <div className="mb-4">
+                <span className="text-label-bold text-on-surface-variant uppercase tracking-widest block mb-1">Account Status</span>
+              </div>
+              {confirmingStatus ? (
+                <div className="bg-secondary-container/30 rounded-lg p-4">
+                  <p className="mb-3 text-body-md text-on-surface">
+                    Are you sure you want to {confirmingStatus === 'active' ? 'reactivate' : 'deactivate'} <strong>{school.sekolah}</strong>?<br />
+                    {confirmingStatus !== 'active' && 'The school will no longer be able to log in, but existing orders will remain.'}
+                  </p>
+                  <div className="flex justify-between gap-3">
+                    <button type="button" onClick={() => setConfirmingStatus(null)} className="text-label-bold font-semibold text-on-surface hover:text-primary px-4 py-2">Cancel</button>
+                    <button type="button" onClick={() => handleConfirmStatus(confirmingStatus)} className="bg-primary text-on-primary text-label-bold font-semibold px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors">Confirm</button>
+                  </div>
+                </div>
+              ) : school.status === 'active' ? (
+                <button type="button" onClick={() => setConfirmingStatus('inactive')} className="bg-error-container text-on-error-container text-label-bold font-semibold py-2.5 px-6 rounded-lg shadow-sm hover:shadow-md transition-all active:scale-95 border border-error-container/50">
+                  Deactivate School
+                </button>
+              ) : (
+                <button type="button" onClick={() => setConfirmingStatus('active')} className={secondaryBtnClass}>Reactivate School</button>
+              )}
+            </div>
+          </div>
         </div>
-      )}
-    </div>
+      </section>
+
+      <section>
+        <div className="mb-6 flex justify-between items-end border-b border-outline-variant pb-2">
+          <h3 className="text-headline-md text-on-surface">Order History</h3>
+        </div>
+        {orders.length === 0 ? (
+          <p className="text-body-md text-on-surface-variant">No orders found for this school.</p>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {orders.map((ord) => {
+              const idx = STATUS_STAGES.indexOf(ord.status);
+              return (
+                <button
+                  type="button"
+                  key={ord.id}
+                  onClick={() => navigate(`/admin/orders/${ord.id}`)}
+                  className="text-left bg-surface-container-lowest rounded-lg border border-outline-variant p-5 shadow-sm hover:shadow-lg transition-shadow duration-300"
+                >
+                  <div className="flex justify-between items-start mb-6">
+                    <div>
+                      <span className="text-label-bold text-on-surface-variant uppercase block mb-1">Order ID</span>
+                      <span className="text-headline-sm text-primary">{ord.id}</span>
+                    </div>
+                    <span className="inline-flex items-center px-2 py-1 rounded-md text-[10px] font-semibold border border-outline-variant/30" style={{ background: STATUS_BG[idx], color: STATUS_TEXT[idx] }}>
+                      {ord.status}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-body-sm text-on-surface-variant block mb-1">Date Placed</span>
+                    <span className="text-body-md text-on-surface">{ord.datePlaced}</span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </section>
+    </AdminLayout>
   );
 }

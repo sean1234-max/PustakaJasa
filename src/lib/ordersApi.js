@@ -15,6 +15,7 @@ function toDbOrder(order) {
     price_adjusted: !!order.priceAdjusted,
     sekolah: order.sekolah ?? null,
     sales: order.sales ?? null,
+    salesman_id: order.salesmanId ?? null,
     pic_name: order.picName ?? null,
     phone: order.phone ?? null,
     remark: order.remark ?? null,
@@ -26,6 +27,9 @@ function toDbOrder(order) {
     items: order.items ?? [],
     snapshot: order.snapshot ?? null,
     created_by: order.createdBy ?? null,
+    pending_addon_items: order.pendingAddonItems ?? null,
+    pending_addon_status: order.pendingAddonStatus ?? null,
+    pending_addon_reject_reason: order.pendingAddonRejectReason ?? null,
   };
 }
 
@@ -40,6 +44,7 @@ function fromDbOrder(row) {
     priceAdjusted: row.price_adjusted,
     sekolah: row.sekolah,
     sales: row.sales,
+    salesmanId: row.salesman_id,
     picName: row.pic_name,
     phone: row.phone,
     remark: row.remark,
@@ -51,6 +56,9 @@ function fromDbOrder(row) {
     items: row.items || [],
     snapshot: row.snapshot,
     createdBy: row.created_by,
+    pendingAddonItems: row.pending_addon_items || null,
+    pendingAddonStatus: row.pending_addon_status || null,
+    pendingAddonRejectReason: row.pending_addon_reject_reason || null,
   };
 }
 
@@ -102,4 +110,31 @@ export async function updateOrder(id, patch) {
   });
   const { error } = await supabase.from('orders').update(dbPatch).eq('id', id);
   if (error) throw error;
+}
+
+// Looks up the salesman currently assigned to this teacher's school (see
+// supabase/migrations/0019_add_order_salesman_assignment.sql) — the New
+// Order flow shows only this salesman instead of the old free-text pick
+// from a hardcoded roster, and submitOrder() stamps the order with it.
+// Returns null if the school has no assignment yet; the RLS policy on
+// `orders` insert is the real enforcement (this lookup can be stale
+// between fetch and submit, e.g. if Admin reassigns mid-session — an
+// insert built from a stale id is rejected by the database, not silently
+// accepted).
+export async function fetchMyAssignedSalesman(teacherId) {
+  const { data: assignment, error: assignError } = await supabase
+    .from('salesman_assignments')
+    .select('salesman_id')
+    .eq('teacher_id', teacherId)
+    .maybeSingle();
+  if (assignError) throw assignError;
+  if (!assignment) return null;
+
+  const { data: salesman, error: salesmanError } = await supabase
+    .from('profiles')
+    .select('id, display_name')
+    .eq('id', assignment.salesman_id)
+    .single();
+  if (salesmanError) throw salesmanError;
+  return { id: salesman.id, name: salesman.display_name };
 }

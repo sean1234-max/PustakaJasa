@@ -8,6 +8,7 @@ import { STATUS_STAGES, STATUS_BG, STATUS_TEXT } from '../data/catalog';
 import { reconstructBlocksForCategory } from '../utils/computeBlocks';
 import { getOrderCategories, buildCsvRows, rowsToCsv, buildCategoryCsvFilename } from '../utils/exportCsv';
 import { downloadTextFile } from '../utils/downloadBlob';
+import { groupItemsByBatch } from '../utils/orderBatches';
 
 const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: false, matrix: false, jenisPlak: false, namaKelas: false };
 
@@ -40,6 +41,7 @@ export default function ProductionOrderDetail() {
 
   const idx = STATUS_STAGES.indexOf(order.status);
   const totalQty = order.items.reduce((sum, it) => sum + (Number(it.qty) || 0), 0);
+  const itemGroups = groupItemsByBatch(order.items);
 
   const handleSaveInvoice = () => {
     setInvoiceId(order.id, invoiceDraft);
@@ -64,9 +66,9 @@ export default function ProductionOrderDetail() {
         type="button"
         className="btn btn-ghost"
         style={{ marginBottom: 'var(--space-4)' }}
-        onClick={() => navigate(state.role === 'admin' ? '/admin/orders' : '/production/dashboard')}
+        onClick={() => navigate('/production/dashboard')}
       >
-        ← Back to {state.role === 'admin' ? 'Orders' : 'Production Orders'}
+        ← Back to Production Orders
       </button>
 
       <div className="step-header">
@@ -130,20 +132,41 @@ export default function ProductionOrderDetail() {
         ) : (
           <>
             <div className="card-kicker" style={{ marginTop: 'var(--space-3)' }}>Jenis Plak / QTY / Harga</div>
-            <table className="table" style={{ margin: 'var(--space-3) 0 0' }}>
-              <thead><tr><th>Category</th><th>Jenis Plak</th><th style={{ width: 110 }}>QTY</th><th style={{ width: 130 }}>Harga</th></tr></thead>
-              <tbody>
-                {order.items.map((it) => (
-                  <tr key={it.id}>
-                    <td>{it.categoryLabel}</td>
-                    <td>{it.jenisPlak}</td>
-                    <td>{it.qty}</td>
-                    <td>RM {it.harga.toFixed(2)}</td>
-                  </tr>
-                ))}
-                <tr><td /><td><strong>TOTAL</strong></td><td><strong>{totalQty}</strong></td><td><strong>RM {order.totalAmount.toFixed(2)}</strong></td></tr>
-              </tbody>
-            </table>
+            {itemGroups.map((group, gi) => {
+              const groupQty = group.items.reduce((sum, it) => sum + (Number(it.qty) || 0), 0);
+              const groupHarga = group.items.reduce((sum, it) => sum + it.harga, 0);
+              return (
+                <div key={group.batch}>
+                  {itemGroups.length > 1 && <div className="card-kicker" style={{ marginTop: gi === 0 ? 0 : 'var(--space-6)' }}>{group.label}</div>}
+                  <table className="table" style={{ margin: 'var(--space-3) 0 0' }}>
+                    <thead><tr><th>Category</th><th>Jenis Plak</th><th style={{ width: 110 }}>QTY</th><th style={{ width: 130 }}>Harga</th></tr></thead>
+                    <tbody>
+                      {group.items.map((it) => (
+                        <tr key={it.id}>
+                          <td>{it.categoryLabel}</td>
+                          <td>{it.jenisPlak}</td>
+                          <td>{it.qty}</td>
+                          <td>RM {it.harga.toFixed(2)}</td>
+                        </tr>
+                      ))}
+                      <tr>
+                        <td /><td><strong>{itemGroups.length > 1 ? 'SUBTOTAL' : 'TOTAL'}</strong></td>
+                        <td><strong>{groupQty}</strong></td>
+                        <td><strong>RM {(itemGroups.length > 1 ? groupHarga : order.totalAmount).toFixed(2)}</strong></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })}
+            {itemGroups.length > 1 && (
+              <>
+                <p className="hint-text" style={{ marginTop: 'var(--space-2)' }}>QTY total: {totalQty}</p>
+                <div className="combined-total" style={{ marginTop: 'var(--space-4)' }}>
+                  <span className="dim">Grand Total:</span> <strong>RM {order.totalAmount.toFixed(2)}</strong>
+                </div>
+              </>
+            )}
 
             {order.invoiceId ? (
               <>

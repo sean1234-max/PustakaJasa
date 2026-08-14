@@ -73,3 +73,15 @@ export async function updatePlakNode(id, patch) {
   const { error } = await supabase.from('plak_catalog_nodes').update(patch).eq('id', id);
   if (error) throw error;
 }
+
+// Batched sort_order write for drag-and-drop reordering (see AdminCatalog.jsx)
+// — a drag can shift many siblings' indices at once, unlike the arrow
+// buttons' single adjacent swap, so this is one upsert instead of N
+// sequential updatePlakNode calls. Only ever targets existing ids (a
+// reorder never creates or deletes rows), so the upsert's ON CONFLICT DO
+// UPDATE path only ever touches the sort_order column passed in — it
+// can't null out a row's parent_id/code/price/hidden.
+export async function updatePlakNodeOrder(rows) {
+  const { error } = await supabase.from('plak_catalog_nodes').upsert(rows);
+  if (error) throw error;
+}

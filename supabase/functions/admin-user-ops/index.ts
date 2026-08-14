@@ -104,6 +104,41 @@ Deno.serve(async (req) => {
     return jsonResponse({ id: created.user.id });
   }
 
+  if (body.action === 'delete') {
+    const userId = typeof body.userId === 'string' ? body.userId : '';
+    if (!userId) return jsonResponse({ error: 'User is required.' }, 400);
+    if (userId === user.id) return jsonResponse({ error: 'You cannot delete your own account.' }, 400);
+
+    // Assignment rows reference this profile by id (teacher_id or
+    // salesman_id) — clear those first so they can't dangle, mirroring how
+    // reassignSalesman/unassignSalesman (src/lib/adminApi.js) already treat
+    // this table as owned by the assignment relationship, not by either
+    // side's account lifecycle.
+    await adminClient.from('salesman_assignments').delete().eq('teacher_id', userId);
+    await adminClient.from('salesman_assignments').delete().eq('salesman_id', userId);
+
+    // Delete the profile row before the auth user, not after: if this
+    // account has orders/audit-log history referencing it, the delete
+    // fails here on a foreign-key violation and the account is left fully
+    // intact (still logs in normally) rather than half-deleted. Only once
+    // the profile is confirmed gone do we touch the auth account, whose
+    // deletion is what actually revokes login.
+    const { error: profileDeleteError } = await adminClient.from('profiles').delete().eq('id', userId);
+    if (profileDeleteError) {
+      const message = profileDeleteError.code === '23503'
+        ? 'This account has order or activity history on record and cannot be deleted. Suspend it instead.'
+        : 'Unable to delete this account. Please try again.';
+      return jsonResponse({ error: message }, 400);
+    }
+
+    const { error: authDeleteError } = await adminClient.auth.admin.deleteUser(userId);
+    if (authDeleteError) {
+      return jsonResponse({ error: 'Account data was removed, but the login itself could not be deleted. Please try again.' }, 500);
+    }
+
+    return jsonResponse({ ok: true });
+  }
+
   if (body.action === 'reset_password') {
     const userId = typeof body.userId === 'string' ? body.userId : '';
     const newPassword = typeof body.newPassword === 'string' ? body.newPassword : '';

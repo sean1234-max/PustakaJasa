@@ -1,10 +1,21 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import Nav from '../components/Nav';
+import AdminLayout from '../components/AdminLayout';
 import { useAppState } from '../state/useAppState';
 import { fetchAllProfiles, fetchSalesmanAssignments, createAccount, logAdminAction } from '../lib/adminApi';
 
 const EMPTY_FORM = { sekolah: '', displayName: '', email: '', password: '', assignedSalesmanId: '' };
+
+function Field({ label, htmlFor, children }) {
+  return (
+    <div className="mb-4">
+      <label className="block text-label-bold text-on-surface-variant mb-1" htmlFor={htmlFor}>{label}</label>
+      {children}
+    </div>
+  );
+}
+
+const inputClass = 'w-full px-3 py-2 border border-outline-variant rounded-lg bg-surface-bright focus:ring-2 focus:ring-primary focus:border-primary text-body-md text-on-surface outline-none transition-all';
 
 export default function AdminSchools() {
   const { state } = useAppState();
@@ -85,93 +96,109 @@ export default function AdminSchools() {
   };
 
   return (
-    <div className="screen-wrap">
-      <Nav />
-
-      <div className="dashboard-header">
-        <div>
-          <div className="card-title" style={{ marginBottom: 'var(--space-2)' }}>Schools</div>
-          <p className="hint-text" style={{ margin: 0 }}>All schools registered in the system.</p>
-        </div>
-        <button type="button" className="btn btn-primary" onClick={() => { setShowAddForm((v) => !v); setFormError(''); }}>+ Add School</button>
-      </div>
-
+    <AdminLayout
+      title="Schools"
+      subtitle="All schools registered in the system."
+      headerActions={(
+        <button
+          type="button"
+          onClick={() => { setShowAddForm((v) => !v); setFormError(''); }}
+          className="bg-primary text-on-primary text-headline-sm px-6 py-3 rounded-lg hover:bg-primary/90 transition-colors shadow-sm hover:shadow-md flex items-center gap-2 w-full md:w-auto justify-center"
+        >
+          <span className="material-symbols-outlined text-[20px]">add</span>
+          Add School
+        </button>
+      )}
+    >
       {toast && (
-        <div className="update-toast">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
+        <div className="mb-6 flex items-center gap-2 bg-secondary-container/40 text-on-secondary-container px-4 py-3 rounded-lg text-body-md">
+          <span className="material-symbols-outlined text-[18px]">check_circle</span>
           {toast}
         </div>
       )}
 
       {showAddForm && (
-        <form className="card" style={{ marginBottom: 'var(--space-6)' }} onSubmit={handleCreate}>
-          <div className="card-kicker" style={{ marginBottom: 'var(--space-3)' }}>Add School</div>
-          <div className="field">
-            <label htmlFor="school-name">School Name *</label>
-            <input className="input" id="school-name" placeholder="e.g. SMK Puchong" value={form.sekolah} onChange={(e) => setForm({ ...form, sekolah: e.target.value })} />
-          </div>
-          <div className="field">
-            <label htmlFor="teacher-name">Teacher Name *</label>
-            <input className="input" id="teacher-name" placeholder="e.g. Mr. Lim" value={form.displayName} onChange={(e) => setForm({ ...form, displayName: e.target.value })} />
-          </div>
-          <div className="field">
-            <label htmlFor="teacher-email">Teacher Email *</label>
-            <input className="input" id="teacher-email" type="email" placeholder="e.g. teacher@school.com" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
-          </div>
-          <div className="field">
-            <label htmlFor="teacher-password">Password *</label>
-            <input className="input" id="teacher-password" type="password" placeholder="At least 6 characters" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
-          </div>
-          <div className="field">
-            <label htmlFor="assigned-salesman">Assigned Salesman</label>
-            <select className="input" id="assigned-salesman" value={form.assignedSalesmanId} onChange={(e) => setForm({ ...form, assignedSalesmanId: e.target.value })}>
+        <form onSubmit={handleCreate} className="bg-surface-container-lowest border border-outline-variant rounded-xl shadow-sm p-6 mb-10">
+          <h3 className="text-headline-sm text-on-surface mb-4">Add School</h3>
+          <Field label="School Name *" htmlFor="school-name">
+            <input className={inputClass} id="school-name" placeholder="e.g. SMK Puchong" value={form.sekolah} onChange={(e) => setForm({ ...form, sekolah: e.target.value })} />
+          </Field>
+          <Field label="Teacher Name *" htmlFor="teacher-name">
+            <input className={inputClass} id="teacher-name" placeholder="e.g. Mr. Lim" value={form.displayName} onChange={(e) => setForm({ ...form, displayName: e.target.value })} />
+          </Field>
+          <Field label="Teacher Email *" htmlFor="teacher-email">
+            <input className={inputClass} id="teacher-email" type="email" placeholder="e.g. teacher@school.com" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+          </Field>
+          <Field label="Password *" htmlFor="teacher-password">
+            <input className={inputClass} id="teacher-password" type="password" placeholder="At least 6 characters" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
+          </Field>
+          <Field label="Assigned Salesman" htmlFor="assigned-salesman">
+            <select className={inputClass} id="assigned-salesman" value={form.assignedSalesmanId} onChange={(e) => setForm({ ...form, assignedSalesmanId: e.target.value })}>
               <option value="">None</option>
               {salesmenOptions.map((s) => <option key={s.id} value={s.id}>{s.display_name || s.email}</option>)}
             </select>
-          </div>
-          {formError && <div className="login-error" style={{ marginBottom: 'var(--space-4)' }}>{formError}</div>}
-          <div className="row-split">
-            <button type="button" className="btn btn-ghost" onClick={() => setShowAddForm(false)}>Cancel</button>
-            <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Creating...' : 'Create School'}</button>
+          </Field>
+          {formError && <div className="bg-error-container text-on-error-container px-4 py-3 rounded-lg text-body-md mb-4">{formError}</div>}
+          <div className="flex justify-end gap-3">
+            <button type="button" onClick={() => setShowAddForm(false)} className="text-label-bold font-semibold text-on-surface hover:text-primary px-4 py-2.5 rounded-lg">Cancel</button>
+            <button type="submit" disabled={saving} className="bg-primary text-on-primary text-label-bold font-semibold px-6 py-2.5 rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-60">
+              {saving ? 'Creating...' : 'Create School'}
+            </button>
           </div>
         </form>
       )}
 
-      <div className="field" style={{ maxWidth: 400 }}>
-        <label htmlFor="school-search">Search</label>
-        <input className="input" id="school-search" placeholder="Search schools..." value={search} onChange={(e) => setSearch(e.target.value)} />
+      <div className="w-full max-w-md mb-6">
+        <label className="block text-label-bold text-on-surface-variant mb-1" htmlFor="school-search">Search</label>
+        <div className="relative">
+          <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline">search</span>
+          <input className="w-full pl-10 pr-4 py-2.5 bg-surface rounded-lg border border-outline-variant focus:border-primary focus:ring-1 focus:ring-primary text-body-md placeholder:text-outline/70 transition-colors" id="school-search" placeholder="Search schools..." value={search} onChange={(e) => setSearch(e.target.value)} />
+        </div>
       </div>
 
       {profiles === null ? (
-        <p className="hint-text">Loading schools...</p>
+        <p className="text-body-md text-on-surface-variant">Loading schools...</p>
       ) : filtered.length === 0 ? (
-        <p className="hint-text">No schools found. Try changing your search.</p>
+        <p className="text-body-md text-on-surface-variant">No schools found. Try changing your search.</p>
       ) : (
-        <div className="table-wrap">
-          <table className="table">
-            <thead>
-              <tr><th>School</th><th>Teacher</th><th>Salesman</th><th>Status</th><th>Orders</th><th /></tr>
-            </thead>
-            <tbody>
-              {filtered.map((s) => {
-                const assignment = assignments.find((a) => a.teacher_id === s.id);
-                const salesman = assignment ? salesmenById.get(assignment.salesman_id) : null;
-                const orderCount = (state.orders || []).filter((o) => o.createdBy === s.id).length;
-                return (
-                  <tr key={s.id}>
-                    <td>{s.sekolah || '—'}</td>
-                    <td>{s.display_name || '—'}</td>
-                    <td>{salesman ? (salesman.display_name || salesman.email) : '—'}</td>
-                    <td><span className="status-pill" style={{ background: 'var(--color-accent-100)', color: 'var(--color-accent-900)' }}>{s.status}</span></td>
-                    <td>{orderCount}</td>
-                    <td><button type="button" className="btn btn-ghost" onClick={() => navigate(`/admin/schools/${s.id}`)}>View</button></td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+        <div className="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-surface border-b border-outline-variant">
+                  <th className="py-4 px-6 text-label-bold text-on-surface-variant uppercase tracking-wider">School</th>
+                  <th className="py-4 px-6 text-label-bold text-on-surface-variant uppercase tracking-wider">Teacher</th>
+                  <th className="py-4 px-6 text-label-bold text-on-surface-variant uppercase tracking-wider">Salesman</th>
+                  <th className="py-4 px-6 text-label-bold text-on-surface-variant uppercase tracking-wider">Status</th>
+                  <th className="py-4 px-6 text-label-bold text-on-surface-variant uppercase tracking-wider">Orders</th>
+                  <th className="py-4 px-6 text-label-bold text-on-surface-variant uppercase tracking-wider text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-outline-variant text-body-md text-on-surface">
+                {filtered.map((s) => {
+                  const assignment = assignments.find((a) => a.teacher_id === s.id);
+                  const salesman = assignment ? salesmenById.get(assignment.salesman_id) : null;
+                  const orderCount = (state.orders || []).filter((o) => o.createdBy === s.id).length;
+                  return (
+                    <tr key={s.id} className="hover:bg-surface-container-low transition-colors">
+                      <td className="py-4 px-6 text-headline-sm">{s.sekolah || '—'}</td>
+                      <td className="py-4 px-6 text-on-surface-variant">{s.display_name || '—'}</td>
+                      <td className="py-4 px-6 text-on-surface-variant">{salesman ? (salesman.display_name || salesman.email) : '—'}</td>
+                      <td className="py-4 px-6">
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-secondary-container text-on-secondary-container">{s.status}</span>
+                      </td>
+                      <td className="py-4 px-6">{orderCount}</td>
+                      <td className="py-4 px-6 text-right">
+                        <button type="button" onClick={() => navigate(`/admin/schools/${s.id}`)} className="text-primary hover:text-primary-container text-headline-sm underline decoration-primary/30 underline-offset-4 hover:decoration-primary transition-all">View</button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
-    </div>
+    </AdminLayout>
   );
 }

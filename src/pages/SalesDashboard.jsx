@@ -6,11 +6,16 @@ import { STATUS_STAGES, STATUS_BG, STATUS_TEXT } from '../data/catalog';
 
 // Sales works one stage at a time — filter tabs map 1:1 to STATUS_STAGES,
 // except the first stage is relabeled "Waiting for Approve" since that's
-// the action Sales actually takes on it.
+// the action Sales actually takes on it. The add-on tab is separate from
+// the order's main status pipeline — an add-on can be submitted while the
+// order is already "In Production" or later, so it's filtered on
+// pendingAddonStatus instead of ord.status.
+const ADDON_FILTER = 'PENDING_ADDON';
 const FILTERS = [
   { status: 'Submitted to Sales', label: 'Waiting for Approve' },
+  { status: ADDON_FILTER, label: 'Add-On Pending Approval' },
   { status: 'In Production', label: 'In Production' },
-  { status: 'Out for Delivery', label: 'Out for Delivery' },
+  { status: 'Waiting for Delivery', label: 'Waiting for Delivery' },
   { status: 'Completed', label: 'Completed' },
 ];
 
@@ -19,7 +24,9 @@ export default function SalesDashboard() {
   const navigate = useNavigate();
   const [filter, setFilter] = useState(FILTERS[0].status);
 
-  const filteredOrders = state.orders.filter((ord) => ord.status === filter);
+  const filteredOrders = filter === ADDON_FILTER
+    ? state.orders.filter((ord) => ord.pendingAddonStatus === 'pending')
+    : state.orders.filter((ord) => ord.status === filter);
 
   return (
     <div className="screen-wrap">
@@ -34,7 +41,9 @@ export default function SalesDashboard() {
 
       <div className="tabs" style={{ marginBottom: 'var(--space-4)' }}>
         {FILTERS.map((f) => {
-          const count = state.orders.filter((o) => o.status === f.status).length;
+          const count = f.status === ADDON_FILTER
+            ? state.orders.filter((o) => o.pendingAddonStatus === 'pending').length
+            : state.orders.filter((o) => o.status === f.status).length;
           return (
             <button
               key={f.status}
@@ -53,7 +62,7 @@ export default function SalesDashboard() {
       <div className="order-grid">
         {filteredOrders.map((ord) => {
           const idx = STATUS_STAGES.indexOf(ord.status);
-          const pendingReview = ord.status === 'Submitted to Sales';
+          const pendingReview = ord.status === 'Submitted to Sales' || (filter === ADDON_FILTER && ord.pendingAddonStatus === 'pending');
 
           return (
             <div key={ord.id} className="card order-card">
@@ -64,6 +73,9 @@ export default function SalesDashboard() {
                 </div>
                 <span className="status-pill" style={{ background: STATUS_BG[idx], color: STATUS_TEXT[idx] }}>{ord.status}</span>
               </div>
+              {filter === ADDON_FILTER && (
+                <span className="status-pill" style={{ background: 'var(--color-accent-100)', color: 'var(--color-accent-900)', marginTop: 'var(--space-2)' }}>Add-On Pending</span>
+              )}
 
               <div className="order-card-meta" style={{ gridTemplateColumns: '1fr' }}>
                 <div><div className="dim">Sekolah</div><div>{ord.sekolah || '—'}</div></div>
@@ -80,7 +92,7 @@ export default function SalesDashboard() {
 
               <div className="order-card-actions">
                 <button type="button" className="btn btn-primary btn-block" onClick={() => navigate(`/sales/orders/${ord.id}`)}>
-                  {pendingReview ? 'Review Order' : 'View Summary'}
+                  {filter === ADDON_FILTER ? 'Review Add-On' : pendingReview ? 'Review Order' : 'View Summary'}
                 </button>
               </div>
             </div>

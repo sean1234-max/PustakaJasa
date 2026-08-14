@@ -2,20 +2,12 @@ import Nav from '../components/Nav';
 import ImageDrop from '../components/ImageDrop';
 import { useAppState } from '../state/useAppState';
 import { REFERENCE_IMAGE_SLOTS } from '../data/catalog';
-import { logAdminAction } from '../lib/adminApi';
 
-// Shared as-is between /production/reference-images and
-// /admin/reference-images (see src/App.jsx) — same component, same
-// updateReferenceImage handler. Only the admin-audit-log call below is
-// role-gated, so Production's existing behavior is completely unaffected.
 export default function ProductionReferenceImages() {
   const { state, updateReferenceImage } = useAppState();
 
-  const handleChange = (slotId, label, url) => {
+  const handleChange = (slotId, url) => {
     updateReferenceImage(slotId, url);
-    if (state.role === 'admin') {
-      logAdminAction({ action: 'Admin uploaded a reference image', targetTable: 'catalog_reference_images', targetId: slotId, after: { label } });
-    }
   };
 
   return (
@@ -35,7 +27,7 @@ export default function ProductionReferenceImages() {
               <ImageDrop
                 value={state.refImages?.[slot.id]}
                 fileName={slot.label}
-                onChange={(url) => handleChange(slot.id, slot.label, url)}
+                onChange={(url) => handleChange(slot.id, url)}
                 placeholder="Upload reference image"
                 subtext="PNG or JPG, click to browse"
                 height={160}

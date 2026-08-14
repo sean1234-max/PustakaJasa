@@ -6,7 +6,7 @@ import { CATEGORIES } from '../data/catalog';
 import { computeBlocks, noopUpdaters } from '../utils/computeBlocks';
 
 export default function AddOnSummary() {
-  const { state, commitAddOn } = useAppState();
+  const { state, submitPendingAddOn } = useAppState();
   const navigate = useNavigate();
   const order = state.orders.find((o) => o.id === state.addOnOrderId);
 
@@ -49,6 +49,9 @@ export default function AddOnSummary() {
         </table>
 
         <div className="card-kicker">Tambahan (Add-On)</div>
+        <p className="hint-text" style={{ marginTop: 0 }}>
+          These add-on items won&apos;t be added to the order yet — Sales needs to review and approve them first (they may adjust pricing).
+        </p>
         <table className="table" style={{ margin: 'var(--space-3) 0 var(--space-6)' }}>
           <thead><tr><th>Category</th><th>Jenis Plak</th><th style={{ width: 110 }}>QTY</th><th style={{ width: 130 }}>Harga</th></tr></thead>
           <tbody>
@@ -59,12 +62,12 @@ export default function AddOnSummary() {
         </table>
 
         <div className="combined-total">
-          <span className="dim">Combined Total:</span> <strong>RM {(originalTotalHarga + addOnTotalHarga).toFixed(2)}</strong>
+          <span className="dim">Estimated Total After Approval:</span> <strong>RM {(originalTotalHarga + addOnTotalHarga).toFixed(2)}</strong>
         </div>
 
         <div className="row-split">
           <button type="button" className="btn btn-ghost" onClick={() => navigate(`/addon/${order.id}`)}>← Back to Edit</button>
-          <button type="button" className="btn btn-primary" onClick={() => { commitAddOn(); navigate('/dashboard'); }}>Update Order</button>
+          <button type="button" className="btn btn-primary" onClick={() => { submitPendingAddOn(); navigate('/dashboard'); }}>Submit for Sales Approval</button>
         </div>
       </div>
     </div>

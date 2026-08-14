@@ -3,10 +3,12 @@ import { CATEGORIES, formatDate, standardUnitPrice } from '../data/catalog';
 import { buildInitialRowsByBlock, buildInitialPlakRows } from '../data/formDefaults';
 import { computeBlocks, snapshotDetail, noopUpdaters } from '../utils/computeBlocks';
 import { AppStateContext } from './AppStateContext';
-import { fetchOrders, insertOrder, updateOrder, nextOrderSeq } from '../lib/ordersApi';
+import {
+  fetchOrders, insertOrder, updateOrder, nextOrderSeq, fetchMyAssignedSalesman,
+} from '../lib/ordersApi';
 import {
   fetchReferenceImages, saveReferenceImage,
-  fetchPlakCatalog, addPlakNode, removePlakNode, updatePlakNode,
+  fetchPlakCatalog, addPlakNode, removePlakNode, updatePlakNode, updatePlakNodeOrder,
 } from '../lib/catalogAdminApi';
 import { supabase } from '../lib/supabaseClient';
 
@@ -63,6 +65,8 @@ function initialState() {
 
     sekolah: '',
     sales: '',
+    assignedSalesman: null,
+    assignedSalesmanLoaded: false,
     picName: '',
     phone: '',
     remark: '',
@@ -85,7 +89,6 @@ function initialState() {
     nextNamaKelasRowId: 2,
 
     cart: [],
-    nextCartId: 1,
     cartToast: '',
 
     orders: [],
@@ -187,6 +190,29 @@ export function AppStateProvider({ children }) {
     return () => { cancelled = true; };
   }, [patch, state.role, state.userAuthId]);
 
+  // Which salesman is assigned to this teacher's school (see
+  // supabase/migrations/0019_add_order_salesman_assignment.sql) — the New
+  // Order flow reads this rather than letting the teacher freely pick a
+  // name. `refreshAssignedSalesman` (exposed below) lets NewOrderStep1
+  // re-fetch it fresh every time the New Order flow starts, on top of this
+  // once-per-login fetch, so a reassignment Admin makes mid-session is
+  // picked up rather than trusting a stale value carried over from login.
+  const refreshAssignedSalesman = useCallback(async () => {
+    const st = stateRef.current;
+    if (st.role !== 'teacher' || !st.userAuthId) return;
+    try {
+      const salesman = await fetchMyAssignedSalesman(st.userAuthId);
+      patch({ assignedSalesman: salesman, assignedSalesmanLoaded: true, sales: salesman?.name || '' });
+    } catch (err) {
+      console.error('Failed to load assigned salesman:', err);
+      patch({ assignedSalesman: null, assignedSalesmanLoaded: true });
+    }
+  }, [patch]);
+
+  useEffect(() => {
+    if (state.role === 'teacher' && state.userAuthId) refreshAssignedSalesman();
+  }, [state.role, state.userAuthId, refreshAssignedSalesman]);
+
   // Reference sample images and the Jenis Plak catalog are global settings
   // Production manages (see catalogAdminApi.js) — fetched once per login so
   // logging out and into a different account still picks up the latest.
@@ -269,7 +295,7 @@ export function AppStateProvider({ children }) {
       namaKelasRows: [{ id: 1, namaKelas: '', tahun: '' }],
       nextRowId: 1000, nextPlakRowId: 1000, nextNamaKelasRowId: 2,
 
-      cart: [], nextCartId: 1, cartToast: '',
+      cart: [], cartToast: '',
     });
   }, [patch]);
 
@@ -282,7 +308,7 @@ export function AppStateProvider({ children }) {
       blocks.forEach((b) => {
         b.plakRows.forEach((pr) => {
           if (pr.jenisPlak && pr.qty) newItems.push({
-            id: st.nextCartId + newItems.length, jenisPlak: pr.jenisPlak, qty: pr.qty, harga: pr.rawHarga, unitPrice: pr.unitPrice,
+            id: crypto.randomUUID(), jenisPlak: pr.jenisPlak, qty: pr.qty, harga: pr.rawHarga, unitPrice: pr.unitPrice,
             categoryLabel: b.qtyLabel, categoryKey: st.category, blockIdx: b.idx,
             detail: snapshotDetail(st.category, b.idx, isMatrix, st.lineValues, st.matrixValues, st.rowsByBlock),
           });
@@ -291,7 +317,7 @@ export function AppStateProvider({ children }) {
       if (newItems.length === 0) {
         return { ...st, cartToast: 'No filled Jenis Plak rows to add.' };
       }
-      return { ...st, cart: [...st.cart, ...newItems], nextCartId: st.nextCartId + newItems.length, cartToast: `Added ${newItems.length} item(s) to cart.` };
+      return { ...st, cart: [...st.cart, ...newItems], cartToast: `Added ${newItems.length} item(s) to cart.` };
     });
     setState((st) => ({ ...st, ...resetCategoryFields(st.category, st) }));
     clearTimeout(toastTimer.current);
@@ -317,6 +343,15 @@ export function AppStateProvider({ children }) {
   // safe to move on.
   const submitOrder = useCallback(async () => {
     const st = stateRef.current;
+    // The backend (supabase/migrations/0019_add_order_salesman_assignment.sql)
+    // rejects any insert without a salesman_id matching the school's current
+    // assignment — this check just avoids burning an order number (see
+    // next_order_seq below) on a submission that can never succeed, and
+    // gives a clearer message than a raw RLS-violation error would.
+    if (!st.assignedSalesman?.id) {
+      patch({ cartToast: 'Your school has not been assigned to a salesman yet. Please contact the administrator.' });
+      return null;
+    }
     const year = TODAY.getFullYear();
     const prefix = `ORD-${year}-`;
     let seq;
@@ -344,7 +379,8 @@ export function AppStateProvider({ children }) {
       id: newId, invoiceId: null, datePlaced: formatDate(TODAY), deliveryDate: 'TBD',
       totalAmount: totalAmt, status: 'Submitted to Sales', priceAdjusted: false,
       createdBy: st.userAuthId,
-      sekolah: st.sekolah, sales: st.sales, picName: st.picName, phone: st.phone, remark: st.remark,
+      salesmanId: st.assignedSalesman.id,
+      sekolah: st.sekolah, sales: st.assignedSalesman.name, picName: st.picName, phone: st.phone, remark: st.remark,
       dueDate: st.dueSelected, functionDate: st.funcSelected,
       logoDataUrl: st.logoDataUrl, logoFileName: st.logoFileName, schoolType: st.schoolType,
       snapshot, items: st.cart.map((ci) => ({ ...ci })),
@@ -354,7 +390,16 @@ export function AppStateProvider({ children }) {
       await insertOrder(newOrder);
     } catch (err) {
       console.error('Failed to save order to Supabase:', err);
-      patch({ cartToast: 'Could not submit the order — please try again.' });
+      // A row-level-security rejection here means the salesman assignment
+      // this submission relied on no longer matches the database (e.g.
+      // Admin reassigned the school between page load and submit) — the
+      // generic message is misleading for that case, so callers get a hint
+      // to refresh instead of just "try again" on a request that will keep
+      // failing until they do.
+      const message = /row-level security/i.test(err.message || '')
+        ? 'This order could not be created — the salesman assignment for your school may have changed. Please refresh the page and try again.'
+        : 'Could not submit the order — please try again.';
+      patch({ cartToast: message });
       return null;
     }
     patch((latest) => ({ lastOrderId: newId, orders: [newOrder, ...latest.orders], cart: [], cartToast: '' }));
@@ -444,7 +489,14 @@ export function AppStateProvider({ children }) {
     });
   }, [patch]);
 
-  const commitAddOn = useCallback(() => {
+  // Teacher submits an add-on for Sales review — unlike the old
+  // commitAddOn (which merged straight into `items`/`totalAmount`, no
+  // review at all), this only writes the draft into `pendingAddonItems`.
+  // The order's real items/total stay untouched until Sales calls
+  // approveAddOn; Sales can also send it back via rejectAddOn, and the
+  // teacher can withdraw it with cancelPendingAddOn — see
+  // supabase/migrations/0021_addon_approval_workflow.sql.
+  const submitPendingAddOn = useCallback(() => {
     setState((st) => {
       const newItems = [];
       CATEGORIES.forEach((cat) => {
@@ -455,27 +507,82 @@ export function AppStateProvider({ children }) {
         catBlocks.forEach((blk) => {
           blk.plakRows.forEach((pr) => {
             if (pr.jenisPlak && pr.qty) newItems.push({
-              id: st.nextCartId + newItems.length, jenisPlak: pr.jenisPlak, qty: pr.qty, harga: pr.rawHarga, unitPrice: pr.unitPrice, categoryLabel: blk.qtyLabel,
+              id: crypto.randomUUID(), jenisPlak: pr.jenisPlak, qty: pr.qty, harga: pr.rawHarga, unitPrice: pr.unitPrice, categoryLabel: blk.qtyLabel,
               categoryKey: cat.key, blockIdx: blk.idx,
               detail: snapshotDetail(cat.key, blk.idx, catIsMatrix, st.addOnLineValues, st.addOnMatrixValues, st.addOnRowsByBlock),
             });
           });
         });
       });
-      const targetOrder = st.orders.find((o) => o.id === st.addOnOrderId);
-      const combinedItems = targetOrder ? [...targetOrder.items, ...newItems] : newItems;
-      const combinedTotal = (targetOrder?.totalAmount || 0) + newItems.reduce((sum, it) => sum + it.harga, 0);
-      updateOrder(st.addOnOrderId, { items: combinedItems, totalAmount: combinedTotal })
-        .catch((err) => console.error('Failed to save add-on to Supabase:', err));
+      if (newItems.length === 0) return { ...st, updateToast: 'No add-on items to submit.' };
+      updateOrder(st.addOnOrderId, { pendingAddonItems: newItems, pendingAddonStatus: 'pending', pendingAddonRejectReason: null })
+        .catch((err) => console.error('Failed to submit add-on to Supabase:', err));
       return {
         ...st,
-        orders: st.orders.map((o) => (o.id === st.addOnOrderId ? { ...o, items: combinedItems, totalAmount: combinedTotal } : o)),
-        nextCartId: st.nextCartId + newItems.length,
-        updateToast: 'Update successful.',
+        orders: st.orders.map((o) => (
+          o.id === st.addOnOrderId ? { ...o, pendingAddonItems: newItems, pendingAddonStatus: 'pending', pendingAddonRejectReason: null } : o
+        )),
+        updateToast: 'Add-on submitted — waiting for Sales approval.',
       };
     });
     clearTimeout(updateToastTimer.current);
     updateToastTimer.current = setTimeout(() => patch({ updateToast: '' }), 2500);
+  }, [patch]);
+
+  // Teacher withdraws a pending or rejected add-on before/without Sales
+  // acting on it further — clears it back to no-add-on-in-flight.
+  const cancelPendingAddOn = useCallback((orderId) => {
+    updateOrder(orderId, { pendingAddonItems: null, pendingAddonStatus: null, pendingAddonRejectReason: null })
+      .catch((err) => console.error('Failed to cancel add-on in Supabase:', err));
+    patch((st) => ({
+      orders: st.orders.map((o) => (
+        o.id === orderId ? { ...o, pendingAddonItems: null, pendingAddonStatus: null, pendingAddonRejectReason: null } : o
+      )),
+    }));
+  }, [patch]);
+
+  // Sales sends a pending add-on back to the teacher with an optional
+  // reason, instead of approving it — `pendingAddonItems` stays as-is so
+  // the teacher can see what was submitted; only cancelPendingAddOn or a
+  // fresh submitPendingAddOn (which overwrites it) clears it from here.
+  const rejectAddOn = useCallback((orderId, reason) => {
+    updateOrder(orderId, { pendingAddonStatus: 'rejected', pendingAddonRejectReason: reason || '' })
+      .catch((err) => console.error('Failed to reject add-on in Supabase:', err));
+    patch((st) => ({
+      orders: st.orders.map((o) => (o.id === orderId ? { ...o, pendingAddonStatus: 'rejected', pendingAddonRejectReason: reason || '' } : o)),
+    }));
+  }, [patch]);
+
+  // Sales approves a pending add-on — `updatedItems` carries each item's
+  // (possibly Sales-negotiated) unitPrice/harga, same as approveOrder
+  // below. Stamps every item with the next batch number (1, 2, 3…) so it
+  // stays visually distinct from the original order and any earlier
+  // add-on rounds permanently, not just on this review screen — see
+  // src/utils/orderBatches.js. Only ever adds to items/totalAmount; never
+  // touches the order's main `status`, so an add-on can be approved
+  // whether the order is already In Production or beyond.
+  const approveAddOn = useCallback((orderId, updatedItems) => {
+    patch((st) => {
+      const order = st.orders.find((o) => o.id === orderId);
+      if (!order) return {};
+      const nextBatch = order.items.reduce((max, it) => Math.max(max, it.batch || 0), 0) + 1;
+      const batchedItems = updatedItems.map((it) => ({ ...it, batch: nextBatch }));
+      const combinedItems = [...order.items, ...batchedItems];
+      const combinedTotal = order.totalAmount + batchedItems.reduce((sum, it) => sum + it.harga, 0);
+      const priceAdjusted = order.priceAdjusted || batchedItems.some((it) => it.unitPrice !== standardUnitPrice(it.jenisPlak, st.plakCatalog));
+      updateOrder(orderId, {
+        items: combinedItems, totalAmount: combinedTotal, priceAdjusted,
+        pendingAddonItems: null, pendingAddonStatus: null, pendingAddonRejectReason: null,
+      }).catch((err) => console.error('Failed to approve add-on in Supabase:', err));
+      return {
+        orders: st.orders.map((o) => (
+          o.id === orderId ? {
+            ...o, items: combinedItems, totalAmount: combinedTotal, priceAdjusted,
+            pendingAddonItems: null, pendingAddonStatus: null, pendingAddonRejectReason: null,
+          } : o
+        )),
+      };
+    });
   }, [patch]);
 
   // Sales approval: `updatedItems` carries each item's (possibly
@@ -534,6 +641,36 @@ export function AppStateProvider({ children }) {
   const updateReferenceImage = useCallback((slotId, dataUrl) => {
     patch((st) => ({ refImages: { ...st.refImages, [slotId]: dataUrl } }));
     saveReferenceImage(slotId, dataUrl).catch((err) => console.error('Failed to save reference image to Supabase:', err));
+  }, [patch]);
+
+  // Production: signals the order is physically finished and handed off to
+  // delivery. Only offered once an invoice ID is on record (production's own
+  // dashboard groups orders into "Pending Invoice" vs "Ready for Export" —
+  // this button lives in the latter, see src/pages/ProductionDashboard.jsx).
+  // Unlike setInvoiceId/approveOrder above (which update local state
+  // immediately and let the Supabase write fail silently in the
+  // background), this awaits the write first — a failed status change here
+  // must never show "Waiting for Delivery" locally when the database still
+  // says otherwise — and surfaces success/failure via the same
+  // `productionToast` the rest of this page's actions already use.
+  const markProductionDone = useCallback(async (orderId) => {
+    const order = stateRef.current.orders.find((o) => o.id === orderId);
+    if (!order || order.status !== 'In Production' || !order.invoiceId) {
+      patch({ productionToast: 'This order is not ready to be marked done.' });
+    } else {
+      try {
+        await updateOrder(orderId, { status: 'Waiting for Delivery' });
+        patch((st) => ({
+          orders: st.orders.map((o) => (o.id === orderId ? { ...o, status: 'Waiting for Delivery' } : o)),
+          productionToast: 'Production completed. Order is now waiting for delivery.',
+        }));
+      } catch (err) {
+        console.error('Failed to mark order done in Supabase:', err);
+        patch({ productionToast: 'Unable to update order status. Please try again.' });
+      }
+    }
+    clearTimeout(productionToastTimer.current);
+    productionToastTimer.current = setTimeout(() => patch({ productionToast: '' }), 2500);
   }, [patch]);
 
   // Production catalog admin: add/remove/edit-price/hide all change the
@@ -614,11 +751,37 @@ export function AppStateProvider({ children }) {
     }
   }, [refreshPlakCatalog]);
 
+  // Drag-and-drop reorder (AdminCatalog.jsx) — `orderedIds` is the full
+  // sibling group in its new order. Unlike moveCatalogNode above (always a
+  // 2-row adjacent swap), a drag can shift many siblings' indices in one
+  // move, so this writes the whole group in a single batched upsert
+  // (updatePlakNodeOrder) instead of N sequential updates, skipping rows
+  // whose sort_order didn't actually change.
+  const reorderCatalogSiblings = useCallback(async (orderedIds) => {
+    const found = findNodeAndSiblings(stateRef.current.plakCatalog, orderedIds[0]);
+    if (!found) return;
+    const { siblings } = found;
+    const originalIndex = new Map(siblings.map((n, i) => [n.id, i]));
+    const rows = orderedIds
+      .map((id, i) => ({ id, sort_order: i }))
+      .filter(({ id, sort_order }) => originalIndex.get(id) !== sort_order);
+    if (rows.length === 0) return;
+    try {
+      await updatePlakNodeOrder(rows);
+      await refreshPlakCatalog();
+    } catch (err) {
+      console.error('Failed to reorder Jenis Plak catalog in Supabase:', err);
+    }
+  }, [refreshPlakCatalog]);
+
   const value = {
     state, patch, today: TODAY, login, logout,
     resetCurrentCategory, startNewOrder, addToCart, removeFromCart, submitOrder, reorderOrder,
-    openAmend, updateAmend, openAddOn, commitAddOn, approveOrder, setInvoiceId,
+    openAmend, updateAmend, openAddOn, submitPendingAddOn, cancelPendingAddOn, rejectAddOn, approveAddOn, approveOrder, setInvoiceId,
+    markProductionDone,
     updateReferenceImage, addCatalogNode, removeCatalogNode, updateCatalogNodePrice, setCatalogNodeHidden, moveCatalogNode,
+    reorderCatalogSiblings,
+    refreshAssignedSalesman,
   };
 
   return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>;
