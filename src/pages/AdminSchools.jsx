@@ -176,14 +176,16 @@ export default function AdminSchools() {
               </thead>
               <tbody className="divide-y divide-outline-variant text-body-md text-on-surface">
                 {filtered.map((s) => {
-                  const assignment = assignments.find((a) => a.teacher_id === s.id);
-                  const salesman = assignment ? salesmenById.get(assignment.salesman_id) : null;
+                  const schoolSalesmen = assignments
+                    .filter((a) => a.teacher_id === s.id)
+                    .map((a) => salesmenById.get(a.salesman_id))
+                    .filter(Boolean);
                   const orderCount = (state.orders || []).filter((o) => o.createdBy === s.id).length;
                   return (
                     <tr key={s.id} className="hover:bg-surface-container-low transition-colors">
                       <td className="py-4 px-6 text-headline-sm">{s.sekolah || '—'}</td>
                       <td className="py-4 px-6 text-on-surface-variant">{s.display_name || '—'}</td>
-                      <td className="py-4 px-6 text-on-surface-variant">{salesman ? (salesman.display_name || salesman.email) : '—'}</td>
+                      <td className="py-4 px-6 text-on-surface-variant">{schoolSalesmen.length > 0 ? schoolSalesmen.map((sm) => sm.display_name || sm.email).join(', ') : '—'}</td>
                       <td className="py-4 px-6">
                         <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-secondary-container text-on-secondary-container">{s.status}</span>
                       </td>

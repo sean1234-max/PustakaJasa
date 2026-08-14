@@ -41,11 +41,13 @@ export default function Cart() {
               </div>
             )}
             <div><span className="dim">CIKGU / NO TEL :</span> {state.picName}{state.phone ? ` / ${state.phone}` : ''}</div>
+            <div><span className="dim">KETUA PANITIA :</span> {state.ketuaPanitia}</div>
           </div>
           <div className="summary-col">
             <div><span className="dim">TARIKH ORDER :</span> {formatDate(today)}</div>
             <div><span className="dim">TARIKH HANTAR :</span> {formatDate(state.dueSelected)}</div>
             <div><span className="dim">TARIKH FUNCTION :</span> {formatDate(state.funcSelected)}</div>
+            <div><span className="dim">TERMS :</span> {state.terms}</div>
           </div>
         </div>
 

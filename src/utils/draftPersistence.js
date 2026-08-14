@@ -4,7 +4,7 @@ const STORAGE_KEY = 'schoolportal.orderDraft.v1';
 // aren't (they'll live server-side once the backend lands), and login
 // fields never should be.
 const DRAFT_FIELDS = [
-  'sekolah', 'sales', 'picName', 'phone', 'remark', 'dueSelected', 'funcSelected',
+  'sekolah', 'sales', 'picName', 'phone', 'ketuaPanitia', 'terms', 'remark', 'dueSelected', 'funcSelected',
   'logoDataUrl', 'logoFileName',
   'category', 'pbdVariant', 'lineValues', 'matrixValues', 'rowsByBlock', 'plakRows', 'namaKelasRows',
   'nextRowId', 'nextPlakRowId', 'nextNamaKelasRowId',

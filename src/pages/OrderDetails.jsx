@@ -110,6 +110,8 @@ export default function OrderDetails() {
                 {order.sales && <div><div className="dim">Sales</div><div>{order.sales}</div></div>}
                 {order.picName && <div><div className="dim">PIC Name</div><div>{order.picName}</div></div>}
                 {order.phone && <div><div className="dim">Phone Number</div><div>{order.phone}</div></div>}
+                {order.ketuaPanitia && <div><div className="dim">Ketua Panitia</div><div>{order.ketuaPanitia}</div></div>}
+                {order.terms && <div><div className="dim">Terms</div><div>{order.terms}</div></div>}
                 {order.dueDate && <div><div className="dim">Due Date</div><div>{formatDate(new Date(order.dueDate))}</div></div>}
                 {order.functionDate && <div><div className="dim">Function Date</div><div>{formatDate(new Date(order.functionDate))}</div></div>}
                 {order.schoolType && <div><div className="dim">School Type</div><div>{order.schoolType === 'SK' ? 'SK' : 'Not SK'}</div></div>}
@@ -164,6 +166,8 @@ export default function OrderDetails() {
           <div className="form-grid-2" style={{ marginTop: 'var(--space-3)' }}>
             {order.sekolah && <div><div className="dim">Sekolah</div><div>{order.sekolah}</div></div>}
             {order.picName && <div><div className="dim">PIC Name</div><div>{order.picName}{order.phone ? ` / ${order.phone}` : ''}</div></div>}
+            {order.ketuaPanitia && <div><div className="dim">Ketua Panitia</div><div>{order.ketuaPanitia}</div></div>}
+            {order.terms && <div><div className="dim">Terms</div><div>{order.terms}</div></div>}
             {order.dueDate && <div><div className="dim">Due Date</div><div>{formatDate(new Date(order.dueDate))}</div></div>}
             {order.functionDate && <div><div className="dim">Function Date</div><div>{formatDate(new Date(order.functionDate))}</div></div>}
           </div>

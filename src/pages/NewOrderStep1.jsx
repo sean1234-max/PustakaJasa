@@ -15,13 +15,13 @@ export default function NewOrderStep1() {
   // once at login) — School->Salesman is admin-managed and can change
   // mid-session, so the New Order screen must never rely on a value that
   // might already be stale. The actual enforcement is server-side (see
-  // supabase/migrations/0019_add_order_salesman_assignment.sql); this just
-  // keeps what's shown here honest.
+  // supabase/migrations/0025_allow_multiple_salesmen_per_school.sql); this
+  // just keeps what's shown here honest.
   useEffect(() => { refreshAssignedSalesman(); }, [refreshAssignedSalesman]);
 
   const handleNext = () => {
-    if (!state.assignedSalesman) {
-      patch({ stepError: 'Your school has not been assigned to a salesman yet. Please contact the administrator.' });
+    if (!state.selectedSalesmanId) {
+      patch({ stepError: state.assignedSalesmen.length === 0 ? 'Your school has not been assigned to a salesman yet. Please contact the administrator.' : 'Please select which salesman this order is for.' });
       return;
     }
     if (!state.schoolType) {
@@ -70,18 +70,31 @@ export default function NewOrderStep1() {
           </div>
           <div className="field">
             <label htmlFor="sales">Sales</label>
-            <input
-              className="input"
-              id="sales"
-              disabled
-              readOnly
-              value={
-                !state.assignedSalesmanLoaded ? 'Loading...'
-                  : state.assignedSalesman ? (state.assignedSalesman.name || 'Unnamed salesman')
-                    : 'No salesman assigned'
-              }
-            />
-            {state.assignedSalesmanLoaded && !state.assignedSalesman && (
+            {!state.assignedSalesmanLoaded ? (
+              <input className="input" id="sales" disabled readOnly value="Loading..." />
+            ) : state.assignedSalesmen.length > 1 ? (
+              <select
+                className="input"
+                id="sales"
+                value={state.selectedSalesmanId}
+                onChange={(e) => {
+                  const chosen = state.assignedSalesmen.find((s) => s.id === e.target.value);
+                  patch({ selectedSalesmanId: e.target.value, sales: chosen?.name || '' });
+                }}
+              >
+                <option value="">Select a salesman...</option>
+                {state.assignedSalesmen.map((s) => <option key={s.id} value={s.id}>{s.name || 'Unnamed salesman'}</option>)}
+              </select>
+            ) : (
+              <input
+                className="input"
+                id="sales"
+                disabled
+                readOnly
+                value={state.assignedSalesmen[0] ? (state.assignedSalesmen[0].name || 'Unnamed salesman') : 'No salesman assigned'}
+              />
+            )}
+            {state.assignedSalesmanLoaded && state.assignedSalesmen.length === 0 && (
               <p className="hint-text" style={{ margin: 'var(--space-2) 0 0', color: '#b3261e' }}>
                 This school has not been assigned to a salesman yet. Please contact the administrator.
               </p>
@@ -97,6 +110,21 @@ export default function NewOrderStep1() {
           <div className="field">
             <label htmlFor="phone">Phone Number</label>
             <input className="input" id="phone" placeholder="e.g. 012-345 6789" value={state.phone} onChange={(e) => patch({ phone: e.target.value })} />
+          </div>
+        </div>
+
+        <div className="form-grid-2">
+          <div className="field">
+            <label htmlFor="ketuaPanitia">Ketua Panitia</label>
+            <input className="input" id="ketuaPanitia" placeholder="e.g. Ketua Panitia Matematik" value={state.ketuaPanitia} onChange={(e) => patch({ ketuaPanitia: e.target.value })} />
+          </div>
+          <div className="field">
+            <label htmlFor="terms">Terms</label>
+            <select className="input" id="terms" value={state.terms} onChange={(e) => patch({ terms: e.target.value })}>
+              <option value="">Select terms</option>
+              <option value="Cash">Cash</option>
+              <option value="Cheque">Cheque</option>
+            </select>
           </div>
         </div>
 

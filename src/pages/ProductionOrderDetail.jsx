@@ -4,7 +4,7 @@ import Nav from '../components/Nav';
 import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import { useAppState } from '../state/useAppState';
-import { STATUS_STAGES, STATUS_BG, STATUS_TEXT } from '../data/catalog';
+import { STATUS_STAGES, STATUS_BG, STATUS_TEXT, formatDate } from '../data/catalog';
 import { reconstructBlocksForCategory } from '../utils/computeBlocks';
 import { getOrderCategories, buildCsvRows, rowsToCsv, buildCategoryCsvFilename } from '../utils/exportCsv';
 import { downloadTextFile } from '../utils/downloadBlob';
@@ -96,7 +96,12 @@ export default function ProductionOrderDetail() {
           <>
             <div className="form-grid-2" style={{ marginTop: 'var(--space-3)' }}>
               {order.sekolah && <div><div className="dim">Sekolah</div><div>{order.sekolah}</div></div>}
+              {order.sales && <div><div className="dim">Sales</div><div>{order.sales}</div></div>}
               {order.picName && <div><div className="dim">PIC Name</div><div>{order.picName}{order.phone ? ` / ${order.phone}` : ''}</div></div>}
+              {order.ketuaPanitia && <div><div className="dim">Ketua Panitia</div><div>{order.ketuaPanitia}</div></div>}
+              {order.terms && <div><div className="dim">Terms</div><div>{order.terms}</div></div>}
+              {order.dueDate && <div><div className="dim">Due Date</div><div>{formatDate(new Date(order.dueDate))}</div></div>}
+              {order.functionDate && <div><div className="dim">Function Date</div><div>{formatDate(new Date(order.functionDate))}</div></div>}
               <div><div className="dim">Date Placed</div><div>{order.datePlaced}</div></div>
               <div><div className="dim">Total Amount</div><div>RM {order.totalAmount.toFixed(2)}</div></div>
             </div>

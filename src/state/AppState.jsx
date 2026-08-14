@@ -4,7 +4,7 @@ import { buildInitialRowsByBlock, buildInitialPlakRows } from '../data/formDefau
 import { computeBlocks, snapshotDetail, noopUpdaters } from '../utils/computeBlocks';
 import { AppStateContext } from './AppStateContext';
 import {
-  fetchOrders, insertOrder, updateOrder, nextOrderSeq, fetchMyAssignedSalesman,
+  fetchOrders, insertOrder, updateOrder, nextOrderSeq, fetchMyAssignedSalesmen,
 } from '../lib/ordersApi';
 import {
   fetchReferenceImages, saveReferenceImage,
@@ -65,10 +65,13 @@ function initialState() {
 
     sekolah: '',
     sales: '',
-    assignedSalesman: null,
+    assignedSalesmen: [],
     assignedSalesmanLoaded: false,
+    selectedSalesmanId: '',
     picName: '',
     phone: '',
+    ketuaPanitia: '',
+    terms: '',
     remark: '',
     dueSelected: null,
     funcSelected: null,
@@ -190,22 +193,34 @@ export function AppStateProvider({ children }) {
     return () => { cancelled = true; };
   }, [patch, state.role, state.userAuthId]);
 
-  // Which salesman is assigned to this teacher's school (see
-  // supabase/migrations/0019_add_order_salesman_assignment.sql) — the New
-  // Order flow reads this rather than letting the teacher freely pick a
-  // name. `refreshAssignedSalesman` (exposed below) lets NewOrderStep1
-  // re-fetch it fresh every time the New Order flow starts, on top of this
-  // once-per-login fetch, so a reassignment Admin makes mid-session is
-  // picked up rather than trusting a stale value carried over from login.
+  // Which salesmen are assigned to this teacher's school (see
+  // supabase/migrations/0025_allow_multiple_salesmen_per_school.sql) — the
+  // New Order flow lets the teacher pick among these rather than freely
+  // typing a name. `refreshAssignedSalesman` (exposed below) lets
+  // NewOrderStep1 re-fetch it fresh every time the New Order flow starts,
+  // on top of this once-per-login fetch, so an assignment change Admin
+  // makes mid-session is picked up rather than trusting a stale value
+  // carried over from login.
   const refreshAssignedSalesman = useCallback(async () => {
     const st = stateRef.current;
     if (st.role !== 'teacher' || !st.userAuthId) return;
     try {
-      const salesman = await fetchMyAssignedSalesman(st.userAuthId);
-      patch({ assignedSalesman: salesman, assignedSalesmanLoaded: true, sales: salesman?.name || '' });
+      const salesmen = await fetchMyAssignedSalesmen(st.userAuthId);
+      patch((latest) => {
+        // Keep the teacher's already-picked salesman if it's still in the
+        // (possibly changed) assigned list; auto-pick when there's only
+        // one option so the common case needs no extra click.
+        const stillValid = salesmen.some((s) => s.id === latest.selectedSalesmanId);
+        const selectedSalesmanId = stillValid ? latest.selectedSalesmanId : (salesmen.length === 1 ? salesmen[0].id : '');
+        const selected = salesmen.find((s) => s.id === selectedSalesmanId);
+        return {
+          assignedSalesmen: salesmen, assignedSalesmanLoaded: true,
+          selectedSalesmanId, sales: selected?.name || '',
+        };
+      });
     } catch (err) {
-      console.error('Failed to load assigned salesman:', err);
-      patch({ assignedSalesman: null, assignedSalesmanLoaded: true });
+      console.error('Failed to load assigned salesmen:', err);
+      patch({ assignedSalesmen: [], assignedSalesmanLoaded: true, selectedSalesmanId: '', sales: '' });
     }
   }, [patch]);
 
@@ -285,7 +300,7 @@ export function AppStateProvider({ children }) {
   // which stays pinned to the account's school from login.
   const startNewOrder = useCallback(() => {
     patch({
-      sales: '', picName: '', phone: '', remark: '',
+      sales: '', picName: '', phone: '', ketuaPanitia: '', terms: '', remark: '',
       dueSelected: null, funcSelected: null,
       logoDataUrl: null, logoFileName: '', schoolType: null, stepError: '',
 
@@ -343,13 +358,14 @@ export function AppStateProvider({ children }) {
   // safe to move on.
   const submitOrder = useCallback(async () => {
     const st = stateRef.current;
-    // The backend (supabase/migrations/0019_add_order_salesman_assignment.sql)
-    // rejects any insert without a salesman_id matching the school's current
-    // assignment — this check just avoids burning an order number (see
+    const selectedSalesman = st.assignedSalesmen.find((s) => s.id === st.selectedSalesmanId);
+    // The backend (supabase/migrations/0025_allow_multiple_salesmen_per_school.sql)
+    // rejects any insert without a salesman_id in the school's current
+    // assignment set — this check just avoids burning an order number (see
     // next_order_seq below) on a submission that can never succeed, and
     // gives a clearer message than a raw RLS-violation error would.
-    if (!st.assignedSalesman?.id) {
-      patch({ cartToast: 'Your school has not been assigned to a salesman yet. Please contact the administrator.' });
+    if (!selectedSalesman) {
+      patch({ cartToast: st.assignedSalesmen.length === 0 ? 'Your school has not been assigned to a salesman yet. Please contact the administrator.' : 'Please select which salesman this order is for.' });
       return null;
     }
     const year = TODAY.getFullYear();
@@ -379,8 +395,8 @@ export function AppStateProvider({ children }) {
       id: newId, invoiceId: null, datePlaced: formatDate(TODAY), deliveryDate: 'TBD',
       totalAmount: totalAmt, status: 'Submitted to Sales', priceAdjusted: false,
       createdBy: st.userAuthId,
-      salesmanId: st.assignedSalesman.id,
-      sekolah: st.sekolah, sales: st.assignedSalesman.name, picName: st.picName, phone: st.phone, remark: st.remark,
+      salesmanId: selectedSalesman.id,
+      sekolah: st.sekolah, sales: selectedSalesman.name, picName: st.picName, phone: st.phone, ketuaPanitia: st.ketuaPanitia, terms: st.terms, remark: st.remark,
       dueDate: st.dueSelected, functionDate: st.funcSelected,
       logoDataUrl: st.logoDataUrl, logoFileName: st.logoFileName, schoolType: st.schoolType,
       snapshot, items: st.cart.map((ci) => ({ ...ci })),
@@ -409,7 +425,7 @@ export function AppStateProvider({ children }) {
   const reorderOrder = useCallback((ord) => {
     const snap = ord.snapshot;
     patch({
-      sekolah: ord.sekolah, sales: ord.sales, picName: ord.picName, phone: ord.phone, remark: ord.remark,
+      sekolah: ord.sekolah, sales: ord.sales, picName: ord.picName, phone: ord.phone, ketuaPanitia: ord.ketuaPanitia || '', terms: ord.terms || '', remark: ord.remark,
       dueSelected: ord.dueDate || null, funcSelected: ord.functionDate || null,
       logoDataUrl: ord.logoDataUrl || null, logoFileName: ord.logoFileName || '', schoolType: ord.schoolType || null,
       // The category-draft (which award category + its filled-in fields)

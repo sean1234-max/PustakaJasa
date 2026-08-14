@@ -56,15 +56,11 @@ export default function AdminSalesmanDetail() {
   const allSchools = profiles.filter((p) => p.role === 'teacher');
   const assignedTeacherIds = assignments.filter((a) => a.salesman_id === id).map((a) => a.teacher_id);
   const assignedSchools = allSchools.filter((s) => assignedTeacherIds.includes(s.id));
-  // "Available to assign" must exclude every school already assigned to
-  // ANY salesman, not just this one — a school assigned elsewhere is still
-  // off-limits here (School:Salesman is many-to-one). The database is the
-  // real enforcement (see supabase/migrations/0020_enforce_school_salesman_
-  // uniqueness.sql + assignSalesman's unique-violation handling in
-  // adminApi.js), so even if this list were ever stale, the assign action
-  // itself would still be rejected.
-  const allAssignedTeacherIds = new Set(assignments.map((a) => a.teacher_id));
-  const unassignedSchools = allSchools.filter((s) => !allAssignedTeacherIds.has(s.id));
+  // A school may now be assigned to more than one salesman (see
+  // supabase/migrations/0025_allow_multiple_salesmen_per_school.sql) — so
+  // "available to assign" only excludes schools already assigned to THIS
+  // salesman, not schools assigned elsewhere.
+  const unassignedSchools = allSchools.filter((s) => !assignedTeacherIds.includes(s.id));
   const salesmanOrders = (state.orders || []).filter((o) => assignedTeacherIds.includes(o.createdBy));
 
   const handleAssign = async () => {

@@ -5,7 +5,7 @@ import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import PriceTable from '../components/PriceTable';
 import { useAppState } from '../state/useAppState';
-import { STATUS_STAGES, STATUS_BG, STATUS_TEXT, standardUnitPrice } from '../data/catalog';
+import { STATUS_STAGES, STATUS_BG, STATUS_TEXT, standardUnitPrice, formatDate } from '../data/catalog';
 import { reconstructBlocksForCategory } from '../utils/computeBlocks';
 import { getOrderCategories } from '../utils/exportCsv';
 
@@ -144,7 +144,12 @@ export default function SalesOrderSummary() {
             <>
               <div className="form-grid-2" style={{ marginTop: 'var(--space-3)' }}>
                 {order.sekolah && <div><div className="dim">Sekolah</div><div>{order.sekolah}</div></div>}
+                {order.sales && <div><div className="dim">Sales</div><div>{order.sales}</div></div>}
                 {order.picName && <div><div className="dim">PIC Name</div><div>{order.picName}{order.phone ? ` / ${order.phone}` : ''}</div></div>}
+                {order.ketuaPanitia && <div><div className="dim">Ketua Panitia</div><div>{order.ketuaPanitia}</div></div>}
+                {order.terms && <div><div className="dim">Terms</div><div>{order.terms}</div></div>}
+                {order.dueDate && <div><div className="dim">Due Date</div><div>{formatDate(new Date(order.dueDate))}</div></div>}
+                {order.functionDate && <div><div className="dim">Function Date</div><div>{formatDate(new Date(order.functionDate))}</div></div>}
               </div>
 
               <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Jenis Plak / Price per Unit / QTY / Harga</div>
@@ -243,7 +248,12 @@ export default function SalesOrderSummary() {
         <div className="print-only">
           <div className="form-grid-2" style={{ marginTop: 'var(--space-3)' }}>
             {order.sekolah && <div><div className="dim">Sekolah</div><div>{order.sekolah}</div></div>}
+            {order.sales && <div><div className="dim">Sales</div><div>{order.sales}</div></div>}
             {order.picName && <div><div className="dim">PIC Name</div><div>{order.picName}{order.phone ? ` / ${order.phone}` : ''}</div></div>}
+            {order.ketuaPanitia && <div><div className="dim">Ketua Panitia</div><div>{order.ketuaPanitia}</div></div>}
+            {order.terms && <div><div className="dim">Terms</div><div>{order.terms}</div></div>}
+            {order.dueDate && <div><div className="dim">Due Date</div><div>{formatDate(new Date(order.dueDate))}</div></div>}
+            {order.functionDate && <div><div className="dim">Function Date</div><div>{formatDate(new Date(order.functionDate))}</div></div>}
           </div>
 
           <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Jenis Plak / Price per Unit / QTY / Harga</div>

@@ -24,20 +24,17 @@ export async function fetchSalesmanAssignments() {
   return data;
 }
 
-// A school (teacher_id) may only ever have one active assignment row —
-// enforced in the database by the unique constraint added in
-// supabase/migrations/0020_enforce_school_salesman_uniqueness.sql, not just
-// by the frontend only offering unassigned schools in its dropdown. This
-// is a bare insert (not an upsert) specifically so that assigning a school
-// that's already taken by another salesman FAILS instead of silently
-// stealing it — see reassignSalesman below for the deliberate-reassignment
-// case, which is different.
+// A school may now be assigned to more than one salesman (see
+// supabase/migrations/0025_allow_multiple_salesmen_per_school.sql) — this
+// is a bare insert, so assigning the same salesman to the same school
+// twice FAILS on the (teacher_id, salesman_id) unique constraint instead
+// of silently creating a duplicate row.
 export async function assignSalesman(salesmanId, teacherId) {
   const { error } = await supabase
     .from('salesman_assignments')
     .insert({ salesman_id: salesmanId, teacher_id: teacherId });
   if (error) {
-    if (error.code === '23505') throw new Error('This school is already assigned to another salesman.');
+    if (error.code === '23505') throw new Error('This school is already assigned to this salesman.');
     throw error;
   }
 }
@@ -48,23 +45,6 @@ export async function unassignSalesman(salesmanId, teacherId) {
     .delete()
     .eq('salesman_id', salesmanId)
     .eq('teacher_id', teacherId);
-  if (error) throw error;
-}
-
-// Moves a school's assignment to a different salesman in a single atomic
-// INSERT ... ON CONFLICT (teacher_id) DO UPDATE, rather than a separate
-// unassign-then-assign — that older two-step approach left a window where
-// the school briefly had no assignment at all, and could lose the old
-// assignment outright if the insert half failed after the delete had
-// already succeeded. This is the one place a school's existing assignment
-// is deliberately overwritten (Admin explicitly picked a new salesman for
-// it) rather than rejected — assignSalesman above stays a plain insert so
-// an *unintended* double-assignment (e.g. from the Salesman Detail page)
-// still fails instead of silently overwriting.
-export async function reassignSalesman(newSalesmanId, teacherId) {
-  const { error } = await supabase
-    .from('salesman_assignments')
-    .upsert({ salesman_id: newSalesmanId, teacher_id: teacherId }, { onConflict: 'teacher_id' });
   if (error) throw error;
 }
 

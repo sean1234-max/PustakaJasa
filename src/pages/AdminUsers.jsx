@@ -62,8 +62,12 @@ export default function AdminUsers() {
   const handleCreate = async (e) => {
     e.preventDefault();
     setFormError('');
-    if (!form.email.trim() || !form.password || !form.displayName.trim()) {
-      setFormError('Name, email, and password are required.');
+    if (!form.email.trim() || !form.password) {
+      setFormError('Email and password are required.');
+      return;
+    }
+    if (form.role !== 'teacher' && !form.displayName.trim()) {
+      setFormError('Name is required.');
       return;
     }
     if (!/^\S+@\S+\.\S+$/.test(form.email.trim())) {
@@ -83,7 +87,7 @@ export default function AdminUsers() {
       const result = await createAccount({
         role: form.role,
         sekolah: form.role === 'teacher' ? form.sekolah.trim() : null,
-        displayName: form.displayName.trim(),
+        displayName: form.displayName.trim() || null,
         email: form.email.trim(),
         password: form.password,
         assignedSalesmanId: form.assignedSalesmanId || null,
@@ -191,9 +195,11 @@ export default function AdminUsers() {
             </Field>
           )}
 
-          <Field label={form.role === 'teacher' ? 'Teacher Name *' : 'Name *'} htmlFor="new-name">
-            <input className={inputClass} id="new-name" placeholder="e.g. Mr. Lim" value={form.displayName} onChange={(e) => setForm({ ...form, displayName: e.target.value })} />
-          </Field>
+          {form.role !== 'teacher' && (
+            <Field label="Name *" htmlFor="new-name">
+              <input className={inputClass} id="new-name" placeholder="e.g. Mr. Lim" value={form.displayName} onChange={(e) => setForm({ ...form, displayName: e.target.value })} />
+            </Field>
+          )}
 
           <Field label="Email *" htmlFor="new-email">
             <input className={inputClass} id="new-email" type="email" placeholder="e.g. teacher@school.com" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />

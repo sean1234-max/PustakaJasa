@@ -18,6 +18,8 @@ function toDbOrder(order) {
     salesman_id: order.salesmanId ?? null,
     pic_name: order.picName ?? null,
     phone: order.phone ?? null,
+    ketua_panitia: order.ketuaPanitia ?? null,
+    terms: order.terms ?? null,
     remark: order.remark ?? null,
     due_date: order.dueDate ?? null,
     function_date: order.functionDate ?? null,
@@ -47,6 +49,8 @@ function fromDbOrder(row) {
     salesmanId: row.salesman_id,
     picName: row.pic_name,
     phone: row.phone,
+    ketuaPanitia: row.ketua_panitia,
+    terms: row.terms,
     remark: row.remark,
     dueDate: row.due_date,
     functionDate: row.function_date,
@@ -112,29 +116,28 @@ export async function updateOrder(id, patch) {
   if (error) throw error;
 }
 
-// Looks up the salesman currently assigned to this teacher's school (see
-// supabase/migrations/0019_add_order_salesman_assignment.sql) — the New
-// Order flow shows only this salesman instead of the old free-text pick
-// from a hardcoded roster, and submitOrder() stamps the order with it.
-// Returns null if the school has no assignment yet; the RLS policy on
-// `orders` insert is the real enforcement (this lookup can be stale
-// between fetch and submit, e.g. if Admin reassigns mid-session — an
-// insert built from a stale id is rejected by the database, not silently
-// accepted).
-export async function fetchMyAssignedSalesman(teacherId) {
-  const { data: assignment, error: assignError } = await supabase
+// Looks up every salesman currently assigned to this teacher's school (see
+// supabase/migrations/0025_allow_multiple_salesmen_per_school.sql) — the
+// New Order flow lets the teacher pick among these instead of the old
+// free-text pick from a hardcoded roster, and submitOrder() stamps the
+// order with whichever one they chose. Returns [] if the school has no
+// assignment yet; the RLS policy on `orders` insert is the real
+// enforcement (this lookup can be stale between fetch and submit, e.g. if
+// Admin changes assignments mid-session — an insert built from a stale id
+// is rejected by the database, not silently accepted).
+export async function fetchMyAssignedSalesmen(teacherId) {
+  const { data: assignments, error: assignError } = await supabase
     .from('salesman_assignments')
     .select('salesman_id')
-    .eq('teacher_id', teacherId)
-    .maybeSingle();
+    .eq('teacher_id', teacherId);
   if (assignError) throw assignError;
-  if (!assignment) return null;
+  if (!assignments || assignments.length === 0) return [];
 
-  const { data: salesman, error: salesmanError } = await supabase
+  const salesmanIds = assignments.map((a) => a.salesman_id);
+  const { data: salesmen, error: salesmenError } = await supabase
     .from('profiles')
     .select('id, display_name')
-    .eq('id', assignment.salesman_id)
-    .single();
-  if (salesmanError) throw salesmanError;
-  return { id: salesman.id, name: salesman.display_name };
+    .in('id', salesmanIds);
+  if (salesmenError) throw salesmenError;
+  return salesmen.map((s) => ({ id: s.id, name: s.display_name }));
 }
