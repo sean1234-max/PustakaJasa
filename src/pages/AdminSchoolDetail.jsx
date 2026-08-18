@@ -153,13 +153,17 @@ export default function AdminSchoolDetail() {
               <span className="text-label-bold text-on-surface-variant mb-1 block">Teacher Email</span>
               <p className="text-headline-sm text-on-surface-variant">{school.email || '—'}</p>
             </div>
+            <div>
+              <span className="text-label-bold text-on-surface-variant mb-1 block">School Address</span>
+              <p className="text-headline-sm text-on-surface-variant">{school.address || '—'}</p>
+            </div>
           </div>
 
           <div className="space-y-8 bg-surface p-6 rounded-lg border border-outline-variant/50">
             <div>
               <div className="mb-4">
                 <span className="text-label-bold text-on-surface-variant uppercase tracking-widest block mb-1">Salesmen</span>
-                <span className="text-body-sm text-on-surface-variant">A school can be assigned to more than one salesman — the teacher picks which one when placing an order.</span>
+                <span className="text-body-sm text-on-surface-variant">A school can be assigned to up to 3 salesmen (e.g. a sales manager plus a salesman) — the teacher picks which one when placing an order.</span>
               </div>
               {assignedSalesmen.length === 0 ? (
                 <p className="text-body-sm text-on-surface-variant italic mb-4">No salesmen assigned yet.</p>
@@ -175,7 +179,9 @@ export default function AdminSchoolDetail() {
                   ))}
                 </ul>
               )}
-              {unassignedSalesmen.length === 0 ? (
+              {assignedSalesmen.length >= 3 ? (
+                <p className="text-body-sm text-on-surface-variant italic">Maximum of 3 salesmen reached for this school.</p>
+              ) : unassignedSalesmen.length === 0 ? (
                 <p className="text-body-sm text-on-surface-variant italic">No more salesmen available to assign.</p>
               ) : (
                 <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">

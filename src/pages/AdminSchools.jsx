@@ -4,7 +4,7 @@ import AdminLayout from '../components/AdminLayout';
 import { useAppState } from '../state/useAppState';
 import { fetchAllProfiles, fetchSalesmanAssignments, createAccount, logAdminAction } from '../lib/adminApi';
 
-const EMPTY_FORM = { sekolah: '', displayName: '', email: '', password: '', assignedSalesmanId: '' };
+const EMPTY_FORM = { sekolah: '', address: '', displayName: '', email: '', password: '', assignedSalesmanId: '' };
 
 function Field({ label, htmlFor, children }) {
   return (
@@ -73,6 +73,7 @@ export default function AdminSchools() {
       const result = await createAccount({
         role: 'teacher',
         sekolah: form.sekolah.trim(),
+        address: form.address.trim() || null,
         displayName: form.displayName.trim(),
         email: form.email.trim(),
         password: form.password,
@@ -82,7 +83,7 @@ export default function AdminSchools() {
         action: 'Admin created a school account',
         targetTable: 'profiles',
         targetId: result.id,
-        after: { sekolah: form.sekolah, displayName: form.displayName, email: form.email },
+        after: { sekolah: form.sekolah, address: form.address, displayName: form.displayName, email: form.email },
       });
       setToast('School account created successfully.');
       setForm(EMPTY_FORM);
@@ -122,6 +123,9 @@ export default function AdminSchools() {
           <h3 className="text-headline-sm text-on-surface mb-4">Add School</h3>
           <Field label="School Name *" htmlFor="school-name">
             <input className={inputClass} id="school-name" placeholder="e.g. SMK Puchong" value={form.sekolah} onChange={(e) => setForm({ ...form, sekolah: e.target.value })} />
+          </Field>
+          <Field label="School Address" htmlFor="school-address">
+            <input className={inputClass} id="school-address" placeholder="e.g. Jalan Puchong, 47100 Puchong, Selangor" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} />
           </Field>
           <Field label="Teacher Name *" htmlFor="teacher-name">
             <input className={inputClass} id="teacher-name" placeholder="e.g. Mr. Lim" value={form.displayName} onChange={(e) => setForm({ ...form, displayName: e.target.value })} />
