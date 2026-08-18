@@ -9,15 +9,14 @@ const FILTERS = [
   { key: 'In Production', label: 'In Production', match: (o) => o.status === 'In Production' },
   { key: 'Waiting for Delivery', label: 'Waiting for Delivery', match: (o) => o.status === 'Waiting for Delivery' },
   { key: 'Delivered', label: 'Delivered', match: (o) => o.status === 'Completed' },
-  { key: 'History', label: 'History', match: () => true },
 ];
 
 export default function Dashboard() {
   const { state, openAmend, openAddOn, reorderOrder, cancelPendingAddOn } = useAppState();
   const navigate = useNavigate();
-  const [filter, setFilter] = useState('History');
+  const [filter, setFilter] = useState('Submitted to Sales');
 
-  const activeFilter = FILTERS.find((f) => f.key === filter) || FILTERS[4];
+  const activeFilter = FILTERS.find((f) => f.key === filter) || FILTERS[0];
   const filteredOrders = state.orders.filter(activeFilter.match);
 
   return (
