@@ -5,7 +5,7 @@ const STORAGE_KEY = 'schoolportal.orderDraft.v1';
 // fields never should be.
 const DRAFT_FIELDS = [
   'sekolah', 'sales', 'picName', 'phone', 'ketuaPanitia', 'terms', 'remark', 'dueSelected', 'funcSelected',
-  'logoDataUrl', 'logoFileName',
+  'logoDataUrl', 'logoFileName', 'logoRemark', 'schoolType',
   'category', 'pbdVariant', 'lineValues', 'matrixValues', 'rowsByBlock', 'plakRows', 'namaKelasRows',
   'nextRowId', 'nextPlakRowId', 'nextNamaKelasRowId',
   'cart',

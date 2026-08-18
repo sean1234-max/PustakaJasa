@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import { useAppState } from '../state/useAppState';
-import { STATUS_STAGES, STATUS_BG, STATUS_TEXT } from '../data/catalog';
+import { STATUS_STAGES, STATUS_BG, STATUS_TEXT, formatDate } from '../data/catalog';
 
 // Production only ever works orders that are already 'In Production' —
 // split into two local tabs by whether the invoice ID (handed over on
@@ -17,10 +17,28 @@ const TABS = [
   { key: 'history', label: 'Order History', match: (o) => o.status === 'Waiting for Delivery' || o.status === 'Completed' },
 ];
 
+// order.dueDate is stored as free-form text (see supabase/migrations/0001,
+// 0002) but every order-creation/approval path writes it from a JS Date —
+// re-parsing with `new Date(...)` and reading local y/m/d back out gives
+// the same plain calendar date `formatDate` shows elsewhere, so the
+// delivery-date filter below compares like for like with the <input
+// type="date"> value (always "YYYY-MM-DD").
+function dueDateKey(dueDate) {
+  if (!dueDate) return '';
+  const d = new Date(dueDate);
+  if (Number.isNaN(d.getTime())) return '';
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 export default function ProductionDashboard() {
-  const { state, markProductionDone } = useAppState();
+  const { state, today, markProductionDone } = useAppState();
   const navigate = useNavigate();
   const [tab, setTab] = useState(TABS[0].key);
+  // Lets Production see, at a glance, everything that needs to go out on
+  // one delivery date — only relevant once an order has an invoice and is
+  // actually ready to ship, so this only applies on the "Ready for Export"
+  // tab.
+  const [dueDateFilter, setDueDateFilter] = useState('');
 
   const handleMarkDone = (ord) => {
     if (!window.confirm(`Mark order ${ord.id} as done? Its status will change to "Waiting for Delivery".`)) return;
@@ -28,7 +46,9 @@ export default function ProductionDashboard() {
   };
 
   const activeTab = TABS.find((t) => t.key === tab);
-  const filteredOrders = state.orders.filter(activeTab.match);
+  const filteredOrders = state.orders
+    .filter(activeTab.match)
+    .filter((o) => tab !== 'ready' || !dueDateFilter || dueDateKey(o.dueDate) === dueDateFilter);
 
   return (
     <div className="screen-wrap">
@@ -65,6 +85,24 @@ export default function ProductionDashboard() {
       </div>
 
       <div className="card-kicker">{activeTab.label}</div>
+      {tab === 'ready' && (
+        <div className="field" style={{ maxWidth: 260, margin: 'var(--space-3) 0 var(--space-4)' }}>
+          <label htmlFor="dueDateFilter">Filter by Due Date (delivery)</label>
+          <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+            <input
+              className="input"
+              type="date"
+              id="dueDateFilter"
+              min={dueDateKey(today)}
+              value={dueDateFilter}
+              onChange={(e) => setDueDateFilter(e.target.value)}
+            />
+            {dueDateFilter && (
+              <button type="button" className="btn btn-ghost" onClick={() => setDueDateFilter('')}>Clear</button>
+            )}
+          </div>
+        </div>
+      )}
       {filteredOrders.length === 0 && <p className="hint-text">No orders in this stage.</p>}
       <div className="order-grid">
         {filteredOrders.map((ord) => {
@@ -86,9 +124,12 @@ export default function ProductionDashboard() {
               <div className="order-card-meta">
                 <div><div className="dim">Date Placed</div><div>{ord.datePlaced}</div></div>
                 <div><div className="dim">Sales</div><div>{ord.sales || '—'}</div></div>
+                <div><div className="dim">Due Date</div><div>{ord.dueDate ? formatDate(new Date(ord.dueDate)) : '—'}</div></div>
               </div>
 
               <div className="order-card-invoice"><span className="dim">Invoice ID:</span> {ord.invoiceId || '—'}</div>
+              <div className="dim" style={{ fontSize: 11 }}>Total Amount</div>
+              <div className={`order-card-total${ord.priceAdjusted ? ' amount-adjusted' : ''}`}>RM {ord.totalAmount.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
 
               <div className="order-card-actions" style={tab === 'ready' ? { display: 'flex', gap: 'var(--space-2)' } : undefined}>
                 {tab === 'pending' && (

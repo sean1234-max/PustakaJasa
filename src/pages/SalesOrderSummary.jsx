@@ -4,6 +4,7 @@ import Nav from '../components/Nav';
 import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import PriceTable from '../components/PriceTable';
+import DatePicker from '../components/DatePicker';
 import { useAppState } from '../state/useAppState';
 import { STATUS_STAGES, STATUS_BG, STATUS_TEXT, standardUnitPrice, formatDate } from '../data/catalog';
 import { reconstructBlocksForCategory } from '../utils/computeBlocks';
@@ -14,11 +15,17 @@ import { getOrderCategories } from '../utils/exportCsv';
 const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: false, matrix: false, jenisPlak: false, namaKelas: false };
 
 export default function SalesOrderSummary() {
-  const { state, approveOrder, approveAddOn, rejectAddOn } = useAppState();
+  const { state, today, approveOrder, approveAddOn, rejectAddOn } = useAppState();
   const { id } = useParams();
   const navigate = useNavigate();
   const order = state.orders.find((o) => o.id === id);
   const editable = order?.status === 'Submitted to Sales';
+
+  // Due Date / Function Date stay editable right up to the moment of
+  // approval — the same "Sales can still adjust it" window the price
+  // fields already had — then get folded into the approval update below.
+  const [dueDateDraft, setDueDateDraft] = useState(() => (order?.dueDate ? new Date(order.dueDate) : null));
+  const [functionDateDraft, setFunctionDateDraft] = useState(() => (order?.functionDate ? new Date(order.functionDate) : null));
 
   // Keyed by item.id — pre-filled from the item's current unit price (falls
   // back to the standard catalog rate for items that never had one, e.g.
@@ -87,7 +94,14 @@ export default function SalesOrderSummary() {
   const addOnTotalQty = addOnRows.reduce((sum, it) => sum + (Number(it.qty) || 0), 0);
   const addOnTotalHarga = addOnRows.reduce((sum, it) => sum + it.harga, 0);
 
-  const setPrice = (itemId, value) => setPriceDrafts((prev) => ({ ...prev, [itemId]: value }));
+  // `setPrice` is called with an array of item ids by PriceTable (every id
+  // a combined Jenis Plak row stands in for) so editing a combined row's
+  // price applies to every underlying item at once.
+  const setPrice = (itemIds, value) => setPriceDrafts((prev) => {
+    const next = { ...prev };
+    itemIds.forEach((itemId) => { next[itemId] = value; });
+    return next;
+  });
   const setAddOnPrice = (itemId, value) => setAddOnPriceDrafts((prev) => ({ ...prev, [itemId]: value }));
 
   // Stays on this page after approving (instead of bouncing back to the
@@ -96,7 +110,13 @@ export default function SalesOrderSummary() {
   // button takes its place where Approve was.
   const handleApprove = () => {
     const updatedItems = rows.map((r) => ({ ...r, unitPrice: r.unitPrice, harga: r.harga }));
-    approveOrder(order.id, updatedItems);
+    // Only overrides a date if Sales actually set one — never blanks an
+    // existing due/function date just because the draft state happened to
+    // start empty (e.g. a legacy order that predates these fields).
+    const overrides = {};
+    if (dueDateDraft) overrides.dueDate = dueDateDraft;
+    if (functionDateDraft) overrides.functionDate = functionDateDraft;
+    approveOrder(order.id, updatedItems, overrides);
   };
 
   const handleApproveAddOn = () => {
@@ -148,14 +168,24 @@ export default function SalesOrderSummary() {
                 {order.picName && <div><div className="dim">PIC Name</div><div>{order.picName}{order.phone ? ` / ${order.phone}` : ''}</div></div>}
                 {order.ketuaPanitia && <div><div className="dim">Ketua Panitia</div><div>{order.ketuaPanitia}</div></div>}
                 {order.terms && <div><div className="dim">Terms</div><div>{order.terms}</div></div>}
-                {order.dueDate && <div><div className="dim">Due Date</div><div>{formatDate(new Date(order.dueDate))}</div></div>}
-                {order.functionDate && <div><div className="dim">Function Date</div><div>{formatDate(new Date(order.functionDate))}</div></div>}
+                {editable ? (
+                  <>
+                    <DatePicker label="Due Date" id="salesDueDate" selected={dueDateDraft} today={today} onSelect={setDueDateDraft} />
+                    <DatePicker label="Function Date" id="salesFunctionDate" selected={functionDateDraft} today={today} onSelect={setFunctionDateDraft} />
+                  </>
+                ) : (
+                  <>
+                    {order.dueDate && <div><div className="dim">Due Date</div><div>{formatDate(new Date(order.dueDate))}</div></div>}
+                    {order.functionDate && <div><div className="dim">Function Date</div><div>{formatDate(new Date(order.functionDate))}</div></div>}
+                  </>
+                )}
               </div>
 
               <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Jenis Plak / Price per Unit / QTY / Harga</div>
               <PriceTable
                 rows={rows} editable={editable} priceDrafts={priceDrafts} setPrice={setPrice}
                 plakCatalog={state.plakCatalog} totalQty={totalQty} totalHarga={totalHarga} priceAdjusted={priceAdjusted}
+                hideCategory combineJenisPlak
               />
 
               {order.pendingAddonStatus === 'pending' && (
@@ -260,6 +290,7 @@ export default function SalesOrderSummary() {
           <PriceTable
             rows={rows} editable={false} priceDrafts={priceDrafts} setPrice={setPrice}
             plakCatalog={state.plakCatalog} totalQty={totalQty} totalHarga={totalHarga} priceAdjusted={priceAdjusted}
+            hideCategory combineJenisPlak
           />
 
           {categories.length > 0 && (

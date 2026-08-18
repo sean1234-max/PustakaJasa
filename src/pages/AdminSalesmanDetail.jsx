@@ -56,11 +56,16 @@ export default function AdminSalesmanDetail() {
   const allSchools = profiles.filter((p) => p.role === 'teacher');
   const assignedTeacherIds = assignments.filter((a) => a.salesman_id === id).map((a) => a.teacher_id);
   const assignedSchools = allSchools.filter((s) => assignedTeacherIds.includes(s.id));
-  // A school may now be assigned to more than one salesman (see
-  // supabase/migrations/0025_allow_multiple_salesmen_per_school.sql) — so
-  // "available to assign" only excludes schools already assigned to THIS
-  // salesman, not schools assigned elsewhere.
-  const unassignedSchools = allSchools.filter((s) => !assignedTeacherIds.includes(s.id));
+  // A school may now be assigned to more than one salesman, up to 3 (see
+  // supabase/migrations/0025_allow_multiple_salesmen_per_school.sql and
+  // 0026_cap_salesmen_per_school.sql) — so "available to assign" excludes
+  // schools already assigned to THIS salesman, and schools already at the
+  // 3-salesman cap.
+  const salesmenCountByTeacher = assignments.reduce((acc, a) => {
+    acc[a.teacher_id] = (acc[a.teacher_id] || 0) + 1;
+    return acc;
+  }, {});
+  const unassignedSchools = allSchools.filter((s) => !assignedTeacherIds.includes(s.id) && (salesmenCountByTeacher[s.id] || 0) < 3);
   const salesmanOrders = (state.orders || []).filter((o) => assignedTeacherIds.includes(o.createdBy));
 
   const handleAssign = async () => {

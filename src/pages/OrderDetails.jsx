@@ -114,12 +114,18 @@ export default function OrderDetails() {
                 {order.terms && <div><div className="dim">Terms</div><div>{order.terms}</div></div>}
                 {order.dueDate && <div><div className="dim">Due Date</div><div>{formatDate(new Date(order.dueDate))}</div></div>}
                 {order.functionDate && <div><div className="dim">Function Date</div><div>{formatDate(new Date(order.functionDate))}</div></div>}
-                {order.schoolType && <div><div className="dim">School Type</div><div>{order.schoolType === 'SK' ? 'SK' : 'Not SK'}</div></div>}
+                {order.schoolType && <div><div className="dim">Logo Type</div><div>{order.schoolType === 'SK' ? 'SK' : 'Others'}</div></div>}
               </div>
               {order.logoDataUrl && (
                 <div className="field" style={{ marginTop: 'var(--space-4)' }}>
                   <label>Logo Type</label>
                   <img src={order.logoDataUrl} alt="" style={{ width: 52, height: 52, objectFit: 'contain', border: '1px solid var(--color-neutral-300)', background: '#fff' }} />
+                </div>
+              )}
+              {order.logoRemark && (
+                <div style={{ marginTop: 'var(--space-4)' }}>
+                  <div className="dim">Remark (Please Specific Logo)</div>
+                  <div>{order.logoRemark}</div>
                 </div>
               )}
               {order.remark && (

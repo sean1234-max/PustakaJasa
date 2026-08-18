@@ -31,14 +31,17 @@ export default function Cart() {
           <div className="summary-col">
             <div><span className="dim">SALES :</span> {state.sales}</div>
             <div><span className="dim">SEKOLAH :</span> {state.sekolah}</div>
-            <div><span className="dim">SCHOOL TYPE :</span> {state.schoolType === 'SK' ? 'SK' : 'Not SK'}</div>
+            <div><span className="dim">LOGO TYPE :</span> {state.schoolType === 'SK' ? 'SK' : 'Others'}</div>
             {state.schoolType === 'NOT_SK' && (
-              <div className="row-inline">
-                <span className="dim">LOGO :</span>
-                {state.logoDataUrl
-                  ? <img src={state.logoDataUrl} alt="" style={{ width: 28, height: 28, objectFit: 'contain', border: '1px solid var(--color-neutral-300)', background: '#fff' }} />
-                  : <span className="dim">— not uploaded —</span>}
-              </div>
+              <>
+                <div className="row-inline">
+                  <span className="dim">LOGO :</span>
+                  {state.logoDataUrl
+                    ? <img src={state.logoDataUrl} alt="" style={{ width: 28, height: 28, objectFit: 'contain', border: '1px solid var(--color-neutral-300)', background: '#fff' }} />
+                    : <span className="dim">— not uploaded —</span>}
+                </div>
+                <div><span className="dim">LOGO REMARK :</span> {state.logoRemark}</div>
+              </>
             )}
             <div><span className="dim">CIKGU / NO TEL :</span> {state.picName}{state.phone ? ` / ${state.phone}` : ''}</div>
             <div><span className="dim">KETUA PANITIA :</span> {state.ketuaPanitia}</div>
