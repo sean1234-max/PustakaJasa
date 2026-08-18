@@ -222,10 +222,12 @@ export default function NewOrderStep1() {
           )}
         </div>
 
-        <div className="field" style={{ marginBottom: 'var(--space-8)' }}>
-          <label htmlFor="remark">Remark</label>
-          <textarea className="input" id="remark" rows={3} placeholder="Any additional notes for this order" value={state.remark} onChange={(e) => patch({ remark: e.target.value })} />
-        </div>
+        {state.schoolType !== 'NOT_SK' && (
+          <div className="field" style={{ marginBottom: 'var(--space-8)' }}>
+            <label htmlFor="remark">Remark</label>
+            <textarea className="input" id="remark" rows={3} placeholder="Any additional notes for this order" value={state.remark} onChange={(e) => patch({ remark: e.target.value })} />
+          </div>
+        )}
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 'var(--space-4)' }}>
           {state.stepError && <span className="hint-text" style={{ margin: 0, color: '#b3261e' }}>{state.stepError}</span>}
