@@ -14,7 +14,7 @@ export default function AddOnSummary() {
     const items = [];
     CATEGORIES.forEach((cat) => {
       const pbdV = cat.key === 'PBD' ? state.addOnPbdVariant : 0;
-      const { blocks } = computeBlocks(cat.key, pbdV, state.addOnLineValues, state.addOnMatrixValues, state.addOnRowsByBlock, state.addOnPlakRows, [], noopUpdaters, state.plakCatalog);
+      const { blocks } = computeBlocks(cat.key, pbdV, state.addOnLineValues, state.addOnMatrixValues, state.addOnRowsByBlock, state.addOnPlakRows, [], noopUpdaters, state.plakCatalog, state.schoolLanguage);
       blocks.forEach((blk) => {
         blk.plakRows.forEach((pr) => {
           if (pr.jenisPlak && pr.qty) items.push({ jenisPlak: pr.jenisPlak, qty: pr.qty, harga: pr.rawHarga, categoryLabel: blk.qtyLabel });
@@ -22,7 +22,7 @@ export default function AddOnSummary() {
       });
     });
     return items;
-  }, [state.addOnPbdVariant, state.addOnLineValues, state.addOnMatrixValues, state.addOnRowsByBlock, state.addOnPlakRows, state.plakCatalog]);
+  }, [state.addOnPbdVariant, state.addOnLineValues, state.addOnMatrixValues, state.addOnRowsByBlock, state.addOnPlakRows, state.plakCatalog, state.schoolLanguage]);
 
   if (!order) return null;
 

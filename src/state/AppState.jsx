@@ -64,6 +64,7 @@ function initialState() {
     sessionChecked: false,
 
     sekolah: '',
+    schoolLanguage: 'SK',
     sales: '',
     assignedSalesmen: [],
     assignedSalesmanLoaded: false,
@@ -160,18 +161,40 @@ export function AppStateProvider({ children }) {
     (async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('role, sekolah, display_name, status')
-          .eq('id', session.user.id)
-          .single();
+        // A failed profile fetch here used to be indistinguishable from
+        // "not logged in" — role never got set, sessionChecked still
+        // flipped true, and RequireRole bounced a perfectly-valid session
+        // back to Login. That's not hypothetical: this project is on
+        // Supabase's Free tier, where the database can take a moment to
+        // wake up after being idle, which is enough to fail this one
+        // query on an otherwise-valid refresh. Retry a few times with a
+        // short backoff before treating it as a real failure — a login
+        // that already succeeded shouldn't be undone by one slow query.
+        let profile, profileError;
+        for (let attempt = 0; attempt < 3 && !cancelled; attempt += 1) {
+          if (attempt > 0) await new Promise((r) => setTimeout(r, 800 * attempt));
+          ({ data: profile, error: profileError } = await supabase
+            .from('profiles')
+            .select('role, sekolah, school_language, display_name, status')
+            .eq('id', session.user.id)
+            .single());
+          if (profile || !profileError) break;
+        }
         if (!cancelled && profile) {
           if (profile.status && profile.status !== 'active') {
             await supabase.auth.signOut();
             if (!cancelled) patch({ loginError: 'This account has been deactivated. Please contact your administrator.' });
           } else {
-            patch({ role: profile.role, sekolah: profile.sekolah || '', userAuthId: session.user.id });
+            patch({ role: profile.role, sekolah: profile.sekolah || '', schoolLanguage: profile.school_language || 'SK', userAuthId: session.user.id });
           }
+        } else if (!cancelled && profileError) {
+          // Still failing after retries — rather than silently bouncing to
+          // Login with no explanation (looks like a random logout), leave
+          // the Supabase session intact and surface what actually
+          // happened, so the user can just retry instead of re-entering
+          // their password for no reason.
+          console.error('Failed to load profile on session restore:', profileError);
+          patch({ loginError: 'Could not verify your account (connection issue). Please try again.' });
         }
       }
       if (!cancelled) patch({ sessionChecked: true });
@@ -264,7 +287,7 @@ export function AppStateProvider({ children }) {
     }
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
-      .select('role, sekolah, display_name, status')
+      .select('role, sekolah, school_language, display_name, status')
       .eq('id', data.user.id)
       .single();
     if (profileError || !profile) {
@@ -276,7 +299,7 @@ export function AppStateProvider({ children }) {
       patch({ loginError: 'This account has been deactivated. Please contact your administrator.' });
       return null;
     }
-    patch({ role: profile.role, sekolah: profile.sekolah || '', userAuthId: data.user.id, loginError: '', userId: '', password: '' });
+    patch({ role: profile.role, sekolah: profile.sekolah || '', schoolLanguage: profile.school_language || 'SK', userAuthId: data.user.id, loginError: '', userId: '', password: '' });
     return profile.role;
   }, [patch]);
 
@@ -319,7 +342,7 @@ export function AppStateProvider({ children }) {
     setState((st) => {
       const currentCat = CATEGORIES.find((c) => c.key === st.category) || CATEGORIES[0];
       const { blocks, isMatrix } = computeBlocks(
-        st.category, st.pbdVariant, st.lineValues, st.matrixValues, st.rowsByBlock, st.plakRows, st.namaKelasRows, noopUpdaters, st.plakCatalog,
+        st.category, st.pbdVariant, st.lineValues, st.matrixValues, st.rowsByBlock, st.plakRows, st.namaKelasRows, noopUpdaters, st.plakCatalog, st.schoolLanguage,
       );
 
       // Catches the two ways a category can be left half-finished — a
@@ -434,7 +457,7 @@ export function AppStateProvider({ children }) {
       totalAmount: totalAmt, status: 'Submitted to Sales', priceAdjusted: false,
       createdBy: st.userAuthId,
       salesmanId: selectedSalesman.id,
-      sekolah: st.sekolah, sales: selectedSalesman.name, picName: st.picName, phone: st.phone, ketuaPanitia: st.ketuaPanitia, terms: st.terms, remark: st.remark,
+      sekolah: st.sekolah, schoolLanguage: st.schoolLanguage, sales: selectedSalesman.name, picName: st.picName, phone: st.phone, ketuaPanitia: st.ketuaPanitia, terms: st.terms, remark: st.remark,
       dueDate: st.dueSelected, functionDate: st.funcSelected,
       logoDataUrl: st.logoDataUrl, logoFileName: st.logoFileName, logoRemark: st.logoRemark, schoolType: st.schoolType,
       snapshot, items: st.cart.map((ci) => ({ ...ci })),
@@ -508,7 +531,7 @@ export function AppStateProvider({ children }) {
       st.amendCategoriesUsed.forEach((catKey) => {
         const pbdV = catKey === 'PBD' ? st.amendPbdVariant : 0;
         const { blocks: catBlocks, isMatrix: catIsMatrix } = computeBlocks(
-          catKey, pbdV, st.amendLineValues, st.amendMatrixValues, st.amendRowsByBlock, st.amendPlakRows, [], noopUpdaters, st.plakCatalog,
+          catKey, pbdV, st.amendLineValues, st.amendMatrixValues, st.amendRowsByBlock, st.amendPlakRows, [], noopUpdaters, st.plakCatalog, st.schoolLanguage,
         );
         catBlocks.forEach((blk) => {
           blk.plakRows.forEach((pr) => {
@@ -556,7 +579,7 @@ export function AppStateProvider({ children }) {
       CATEGORIES.forEach((cat) => {
         const pbdV = cat.key === 'PBD' ? st.addOnPbdVariant : 0;
         const { blocks: catBlocks, isMatrix: catIsMatrix } = computeBlocks(
-          cat.key, pbdV, st.addOnLineValues, st.addOnMatrixValues, st.addOnRowsByBlock, st.addOnPlakRows, [], noopUpdaters, st.plakCatalog,
+          cat.key, pbdV, st.addOnLineValues, st.addOnMatrixValues, st.addOnRowsByBlock, st.addOnPlakRows, [], noopUpdaters, st.plakCatalog, st.schoolLanguage,
         );
         catBlocks.forEach((blk) => {
           blk.plakRows.forEach((pr) => {
@@ -668,7 +691,10 @@ export function AppStateProvider({ children }) {
   // that aren't yet approved, blank input, and overwriting an existing
   // invoiceId — that paperwork is treated as immutable once recorded.
   const setInvoiceId = useCallback((orderId, invoiceId) => {
-    const trimmed = (invoiceId || '').trim();
+    // Strips every space (not just leading/trailing) before saving or
+    // comparing, so "INV 2026 090" and "INV2026090" are treated as the
+    // same invoice number for the duplicate check below.
+    const normalized = (invoiceId || '').replace(/\s+/g, '');
     setState((st) => {
       const order = st.orders.find((o) => o.id === orderId);
       if (!order || order.status !== 'In Production') {
@@ -677,14 +703,20 @@ export function AppStateProvider({ children }) {
       if (order.invoiceId) {
         return { ...st, productionToast: 'Invoice ID is already set for this order.' };
       }
-      if (!trimmed) {
+      if (!normalized) {
         return { ...st, productionToast: 'Enter a valid Invoice ID.' };
       }
-      updateOrder(orderId, { invoiceId: trimmed })
+      const isDuplicate = st.orders.some((o) => (
+        o.id !== orderId && o.invoiceId && o.invoiceId.replace(/\s+/g, '') === normalized
+      ));
+      if (isDuplicate) {
+        return { ...st, productionToast: 'Invoice ID invalid because repeated, please try again.' };
+      }
+      updateOrder(orderId, { invoiceId: normalized })
         .catch((err) => console.error('Failed to save invoice ID to Supabase:', err));
       return {
         ...st,
-        orders: st.orders.map((o) => (o.id === orderId ? { ...o, invoiceId: trimmed } : o)),
+        orders: st.orders.map((o) => (o.id === orderId ? { ...o, invoiceId: normalized } : o)),
         productionToast: 'Invoice ID saved — order is ready for export.',
       };
     });

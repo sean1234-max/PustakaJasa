@@ -1,4 +1,4 @@
-import { CATEGORIES, flattenPlakCatalog } from '../data/catalog';
+import { CATEGORIES, flattenPlakCatalog, getCategorySubjects, getCategoryColumns } from '../data/catalog';
 
 export function snapshotDetail(catKey, blockIdx, isMatrix, lineValues, matrixValues, rowsByBlockMap) {
   const detail = { lines: {}, matrix: null, rows: null };
@@ -20,7 +20,7 @@ export function snapshotDetail(catKey, blockIdx, isMatrix, lineValues, matrixVal
 // wires to its own state setters; pass no-ops for read-only rendering.
 // `plakCatalog` is the live (Production-editable) catalog tree — flattened
 // once here rather than per plak row.
-export function computeBlocks(catKey, pbdVariant, lineValues, matrixValues, rowsByBlockMap, plakRowsMap, namaKelasRows, updaters, plakCatalog) {
+export function computeBlocks(catKey, pbdVariant, lineValues, matrixValues, rowsByBlockMap, plakRowsMap, namaKelasRows, updaters, plakCatalog, schoolLanguage = 'SK') {
   const flatPrices = flattenPlakCatalog(plakCatalog);
   const priceFor = (code) => {
     const entry = flatPrices.find((p) => p.code === code);
@@ -56,9 +56,9 @@ export function computeBlocks(catKey, pbdVariant, lineValues, matrixValues, rows
     let matrixRows = [], columns = [], colTotals = [], grandTotal = 0, rows = [], blockTotalQty = 0;
 
     if (isMatrix) {
-      columns = currentCat.columns;
+      columns = getCategoryColumns(currentCat, schoolLanguage);
       colTotals = columns.map(() => 0);
-      matrixRows = currentCat.subjects.map((subj) => {
+      matrixRows = getCategorySubjects(currentCat, schoolLanguage).map((subj) => {
         let rowTotal = 0;
         const cells = columns.map((col, ci) => {
           const key = `${catKey}::${subj}::${col}`;
@@ -141,6 +141,7 @@ export const noopUpdaters = {
 // category with more than one block (e.g. both PBD variants used in the
 // same order) renders every block, not just one.
 export function reconstructBlocksForCategory(order, catKey, plakCatalog) {
+  const schoolLanguage = order.schoolLanguage === 'SJKC' ? 'SJKC' : 'SK';
   const items = (order.items || []).filter((it) => it.categoryKey === catKey);
   const blockIdxs = [...new Set(items.map((it) => it.blockIdx ?? 0))];
   const allBlocks = [];
@@ -161,7 +162,7 @@ export function reconstructBlocksForCategory(order, catKey, plakCatalog) {
       }
       plakRows[key] = [...(plakRows[key] || []), { id: it.id, jenisPlak: it.jenisPlak, unitPrice: it.unitPrice }];
     });
-    const result = computeBlocks(catKey, blockIdx, lineValues, matrixValues, rowsByBlock, plakRows, [], noopUpdaters, plakCatalog);
+    const result = computeBlocks(catKey, blockIdx, lineValues, matrixValues, rowsByBlock, plakRows, [], noopUpdaters, plakCatalog, schoolLanguage);
     isMatrix = result.isMatrix;
     allBlocks.push(...result.blocks);
   });
