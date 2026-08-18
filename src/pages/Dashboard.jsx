@@ -1,11 +1,24 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import { useAppState } from '../state/useAppState';
 import { STATUS_STAGES, STATUS_BG, STATUS_TEXT } from '../data/catalog';
 
+const FILTERS = [
+  { key: 'Submitted to Sales', label: 'Submitted to Sales', match: (o) => o.status === 'Submitted to Sales' },
+  { key: 'In Production', label: 'In Production', match: (o) => o.status === 'In Production' },
+  { key: 'Waiting for Delivery', label: 'Waiting for Delivery', match: (o) => o.status === 'Waiting for Delivery' },
+  { key: 'Delivered', label: 'Delivered', match: (o) => o.status === 'Completed' },
+  { key: 'History', label: 'History', match: () => true },
+];
+
 export default function Dashboard() {
   const { state, openAmend, openAddOn, reorderOrder, cancelPendingAddOn } = useAppState();
   const navigate = useNavigate();
+  const [filter, setFilter] = useState('History');
+
+  const activeFilter = FILTERS.find((f) => f.key === filter) || FILTERS[4];
+  const filteredOrders = state.orders.filter(activeFilter.match);
 
   return (
     <div className="screen-wrap">
@@ -32,9 +45,28 @@ export default function Dashboard() {
         </div>
       )}
 
-      <div className="card-kicker">My Orders</div>
+      <div className="tabs" style={{ marginBottom: 'var(--space-4)' }}>
+        {FILTERS.map((f) => {
+          const count = state.orders.filter(f.match).length;
+          return (
+            <button
+              key={f.key}
+              type="button"
+              className={`btn ${f.key === filter ? 'btn-primary' : 'btn-ghost'}`}
+              onClick={() => setFilter(f.key)}
+            >
+              {f.label} ({count})
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="card-kicker">{activeFilter.label}</div>
+      {filteredOrders.length === 0 && (
+        <p className="hint-text" style={{ marginTop: 'var(--space-4)' }}>No orders in this stage.</p>
+      )}
       <div className="order-grid">
-        {state.orders.map((ord) => {
+        {filteredOrders.map((ord) => {
           const idx = STATUS_STAGES.indexOf(ord.status);
           const invoiceIdLabel = idx >= 1 ? (ord.invoiceId || `INV-${ord.id.replace('ORD-', '')}`) : '-';
           const canAmend = idx === 0;
