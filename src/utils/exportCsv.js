@@ -1,4 +1,4 @@
-import { CATEGORIES } from '../data/catalog';
+import { CATEGORIES, getCategorySubjects, getCategoryColumns } from '../data/catalog';
 
 export const CSV_COLUMNS = ['event_header', 'year', 'position', 'event_line_1', 'event_line_2'];
 
@@ -28,12 +28,12 @@ function getPositionLine2(item) {
 // comes from the quantity matrix itself. Each (subject, column) cell with
 // qty > 0 becomes its own row: subject fills in for the sample's second
 // position line, column fills in for event_line_1, repeated `qty` times.
-function buildMatrixRows(item, cat, header, year, positionPart1) {
+function buildMatrixRows(item, cat, header, year, positionPart1, schoolLanguage) {
   const rows = [];
   const matrix = item.detail?.matrix;
   if (!matrix) return rows;
-  cat.subjects.forEach((subject) => {
-    cat.columns.forEach((column) => {
+  getCategorySubjects(cat, schoolLanguage).forEach((subject) => {
+    getCategoryColumns(cat, schoolLanguage).forEach((column) => {
       const qty = Number(matrix[`${cat.key}::${subject}::${column}`]) || 0;
       if (qty <= 0) return;
       const position = positionPart1 ? `${positionPart1}\n${subject}` : subject;
@@ -97,6 +97,7 @@ function buildPbdRows(item, header, year, positionPart1) {
 // skipped (reported via skippedItemIds) rather than producing blank rows.
 export function buildCsvRows(order, categoryKey) {
   const cat = CATEGORIES.find((c) => c.key === categoryKey);
+  const schoolLanguage = order.schoolLanguage === 'SJKC' ? 'SJKC' : 'SK';
   const items = (order.items || []).filter((it) => it.categoryKey === categoryKey);
   const rows = [];
   const skippedItemIds = [];
@@ -110,7 +111,7 @@ export function buildCsvRows(order, categoryKey) {
     const year = getLine(item, 1);
 
     if (cat?.mode === 'matrix') {
-      rows.push(...buildMatrixRows(item, cat, header, year, getLine(item, 2)));
+      rows.push(...buildMatrixRows(item, cat, header, year, getLine(item, 2), schoolLanguage));
     } else if (cat?.positionFromRows) {
       rows.push(...buildRowsFromDescriptionRows(item, header, year));
     } else if (cat?.eventLine1FromRows) {

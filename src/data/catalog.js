@@ -10,11 +10,40 @@ const SUBJECTS_CORE = [
   'PENDIDIKAN MUZIK', 'PENDIDIKAN MORAL', 'BAHASA CINA', 'BAHASA TAMIL',
 ];
 
+// SJKC (Chinese-medium) equivalent of SUBJECTS_CORE, in the same order —
+// engraved directly onto the medal via buildMatrixRows (src/utils/exportCsv.js),
+// so these must be the CORRECT official SJKC subject names, not a rough
+// translation. TODO(pustakajasa): have Production/an SJKC-fluent reviewer
+// confirm every line here before any real SJKC order goes to production.
+const SUBJECTS_CORE_CN = [
+  '国语', '英语', '数学', '科学', '伊斯兰教育',
+  '阿拉伯语', '视觉艺术教育', '体育教育', '健康教育',
+  '音乐教育', '道德教育', '华文', '淡米尔语',
+];
+
+// Same TODO applies: class-level labels for the MP THP 1/2 matrix columns,
+// only PPKI kept untranslated (national programme name, used as-is).
+const CLASS_LEVELS_MY = ['PPKI', 'PRASEKOLAH', 'TAHUN 1', 'TAHUN 2', 'TAHUN 3'];
+const CLASS_LEVELS_MY_UPPER = ['TAHUN 4', 'TAHUN 5', 'TAHUN 6'];
+const CLASS_LEVELS_CN = ['PPKI', '学前班', '一年级', '二年级', '三年级'];
+const CLASS_LEVELS_CN_UPPER = ['四年级', '五年级', '六年级'];
+
+// Resolves a matrix category's subject/column labels for the given school
+// language ('SK' | 'SJKC'), falling back to the Malay ('SK') list for any
+// language the category doesn't have a variant for, or an order placed
+// before school_language existed (null/undefined).
+export function getCategorySubjects(cat, schoolLanguage) {
+  return (cat.subjectsByLanguage && cat.subjectsByLanguage[schoolLanguage]) || cat.subjectsByLanguage.SK;
+}
+export function getCategoryColumns(cat, schoolLanguage) {
+  return (cat.columnsByLanguage && cat.columnsByLanguage[schoolLanguage]) || cat.columnsByLanguage.SK;
+}
+
 export const CATEGORIES = [
   {
     key: 'MP1', label: 'MP THP 1', mode: 'matrix', blocksCount: 1,
-    columns: ['PPKI', 'PRASEKOLAH', 'TAHUN 1', 'TAHUN 2', 'TAHUN 3'],
-    subjects: SUBJECTS_CORE,
+    columnsByLanguage: { SK: CLASS_LEVELS_MY, SJKC: CLASS_LEVELS_CN },
+    subjectsByLanguage: { SK: SUBJECTS_CORE, SJKC: SUBJECTS_CORE_CN },
     // Line 3 (index 2) is "position" — rendered as two stacked boxes (both
     // numbered "3") so the teacher doesn't need to know to press Enter to
     // split it; see OrderCategoryBlock's secondLine rendering. Combined with
@@ -29,8 +58,11 @@ export const CATEGORIES = [
   },
   {
     key: 'MP2', label: 'MP THP 2', mode: 'matrix', blocksCount: 1,
-    columns: ['TAHUN 4', 'TAHUN 5', 'TAHUN 6'],
-    subjects: [...SUBJECTS_CORE, 'SEJARAH', 'REKA BENTUK & TEKNOLOGI'],
+    columnsByLanguage: { SK: CLASS_LEVELS_MY_UPPER, SJKC: CLASS_LEVELS_CN_UPPER },
+    subjectsByLanguage: {
+      SK: [...SUBJECTS_CORE, 'SEJARAH', 'REKA BENTUK & TEKNOLOGI'],
+      SJKC: [...SUBJECTS_CORE_CN, '历史', '设计与工艺'],
+    },
     linePlaceholders: [
       'e.g. HARI ANUGERAH KECEMERLANGAN MURID',
       'e.g. 2025',

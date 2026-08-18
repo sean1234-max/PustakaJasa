@@ -30,8 +30,8 @@ export default function NewOrderStep2() {
   }, [patch]);
 
   const { blocks, isPbdCategory } = useMemo(() => computeBlocks(
-    state.category, state.pbdVariant, state.lineValues, state.matrixValues, state.rowsByBlock, state.plakRows, state.namaKelasRows, updaters, state.plakCatalog,
-  ), [state.category, state.pbdVariant, state.lineValues, state.matrixValues, state.rowsByBlock, state.plakRows, state.namaKelasRows, updaters, state.plakCatalog]);
+    state.category, state.pbdVariant, state.lineValues, state.matrixValues, state.rowsByBlock, state.plakRows, state.namaKelasRows, updaters, state.plakCatalog, state.schoolLanguage,
+  ), [state.category, state.pbdVariant, state.lineValues, state.matrixValues, state.rowsByBlock, state.plakRows, state.namaKelasRows, updaters, state.plakCatalog, state.schoolLanguage]);
 
   // Codes Production has hidden (e.g. out of stock) never appear in the
   // teacher's picker — see filterHiddenPlakCatalog.

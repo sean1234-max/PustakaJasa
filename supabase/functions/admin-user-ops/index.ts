@@ -67,6 +67,7 @@ Deno.serve(async (req) => {
     const role = typeof body.role === 'string' ? body.role : '';
     const sekolah = typeof body.sekolah === 'string' ? body.sekolah : null;
     const address = typeof body.address === 'string' ? body.address : null;
+    const schoolLanguage = body.schoolLanguage === 'SJKC' ? 'SJKC' : 'SK';
     const displayName = typeof body.displayName === 'string' ? body.displayName : null;
 
     if (!email || !password || !role) {
@@ -91,6 +92,7 @@ Deno.serve(async (req) => {
       role,
       sekolah,
       address,
+      school_language: schoolLanguage,
       display_name: displayName,
       email,
       status: 'active',

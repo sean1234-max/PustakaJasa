@@ -69,8 +69,8 @@ async function invokeAdminUserOps(payload) {
   return data;
 }
 
-export async function createAccount({ role, sekolah, address, displayName, email, password, assignedSalesmanId }) {
-  const result = await invokeAdminUserOps({ action: 'create', role, sekolah, address, displayName, email, password });
+export async function createAccount({ role, sekolah, address, schoolLanguage, displayName, email, password, assignedSalesmanId }) {
+  const result = await invokeAdminUserOps({ action: 'create', role, sekolah, address, schoolLanguage, displayName, email, password });
   if (role === 'teacher' && assignedSalesmanId) {
     await assignSalesman(assignedSalesmanId, result.id);
   }

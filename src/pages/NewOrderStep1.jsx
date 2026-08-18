@@ -20,16 +20,52 @@ export default function NewOrderStep1() {
   useEffect(() => { refreshAssignedSalesman(); }, [refreshAssignedSalesman]);
 
   const handleNext = () => {
+    if (!state.sekolah.trim()) {
+      patch({ stepError: 'Please enter the school name.' });
+      return;
+    }
     if (!state.selectedSalesmanId) {
       patch({ stepError: state.assignedSalesmen.length === 0 ? 'Your school has not been assigned to a salesman yet. Please contact the administrator.' : 'Please select which salesman this order is for.' });
       return;
     }
+    if (!state.picName.trim()) {
+      patch({ stepError: 'Please enter the PIC (Cikgu) name.' });
+      return;
+    }
+    if (!state.phone.trim()) {
+      patch({ stepError: 'Please enter a phone number.' });
+      return;
+    }
+    if (!/^[0-9-]+$/.test(state.phone.trim())) {
+      patch({ stepError: 'Phone number can only contain numbers and "-".' });
+      return;
+    }
+    if (!state.ketuaPanitia.trim()) {
+      patch({ stepError: 'Please enter the Ketua Panitia.' });
+      return;
+    }
+    if (!state.terms) {
+      patch({ stepError: 'Please select terms.' });
+      return;
+    }
+    if (!state.dueSelected) {
+      patch({ stepError: 'Please select a due date.' });
+      return;
+    }
+    if (!state.funcSelected) {
+      patch({ stepError: 'Please select a function date.' });
+      return;
+    }
     if (!state.schoolType) {
-      patch({ stepError: 'Please select whether the school is SK or Not SK.' });
+      patch({ stepError: 'Please select whether the school is SK or Others.' });
       return;
     }
     if (state.schoolType === 'NOT_SK' && !state.logoDataUrl) {
-      patch({ stepError: 'Please upload the logo (required for Not SK schools).' });
+      patch({ stepError: 'Please upload the logo (required for Others schools).' });
+      return;
+    }
+    if (state.schoolType === 'NOT_SK' && !state.logoRemark.trim()) {
+      patch({ stepError: 'Please fill in the remark to specify the logo.' });
       return;
     }
     patch({ stepError: '' });
@@ -109,7 +145,7 @@ export default function NewOrderStep1() {
           </div>
           <div className="field">
             <label htmlFor="phone">Phone Number</label>
-            <input className="input" id="phone" placeholder="e.g. 012-345 6789" value={state.phone} onChange={(e) => patch({ phone: e.target.value })} />
+            <input className="input" id="phone" placeholder="e.g. 012-3456789" value={state.phone} onChange={(e) => patch({ phone: e.target.value.replace(/[^0-9-]/g, '') })} />
           </div>
         </div>
 
@@ -122,7 +158,7 @@ export default function NewOrderStep1() {
             <label htmlFor="terms">Terms</label>
             <select className="input" id="terms" value={state.terms} onChange={(e) => patch({ terms: e.target.value })}>
               <option value="">Select terms</option>
-              <option value="Cash">Cash</option>
+              <option value="L/O">L/O</option>
               <option value="Cheque">Cheque</option>
             </select>
           </div>
@@ -156,7 +192,7 @@ export default function NewOrderStep1() {
             <button
               type="button"
               className={`btn ${state.schoolType === 'SK' ? 'btn-primary' : 'btn-ghost'}`}
-              onClick={() => patch({ schoolType: 'SK', logoDataUrl: null, logoFileName: '', stepError: '' })}
+              onClick={() => patch({ schoolType: 'SK', logoDataUrl: null, logoFileName: '', logoRemark: '', stepError: '' })}
             >
               SK
             </button>
@@ -165,7 +201,7 @@ export default function NewOrderStep1() {
               className={`btn ${state.schoolType === 'NOT_SK' ? 'btn-primary' : 'btn-ghost'}`}
               onClick={() => patch({ schoolType: 'NOT_SK', stepError: '' })}
             >
-              Not SK
+              Others
             </button>
           </div>
           {state.schoolType === 'NOT_SK' && (
@@ -178,6 +214,10 @@ export default function NewOrderStep1() {
                 placeholder="Upload logo"
                 subtext="PNG or JPG, click to browse"
               />
+              <div className="field" style={{ marginTop: 'var(--space-4)' }}>
+                <label htmlFor="logoRemark">Remark (Please Specific Logo)</label>
+                <textarea className="input" id="logoRemark" rows={2} placeholder="Describe the logo to be used" value={state.logoRemark} onChange={(e) => patch({ logoRemark: e.target.value, stepError: '' })} />
+              </div>
             </div>
           )}
         </div>

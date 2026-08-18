@@ -31,9 +31,9 @@ export default function Amend() {
 
   const { blocks } = useMemo(() => (
     state.amendCategory
-      ? computeBlocks(state.amendCategory, state.amendPbdVariant, state.amendLineValues, state.amendMatrixValues, state.amendRowsByBlock, state.amendPlakRows, [], updaters, state.plakCatalog)
+      ? computeBlocks(state.amendCategory, state.amendPbdVariant, state.amendLineValues, state.amendMatrixValues, state.amendRowsByBlock, state.amendPlakRows, [], updaters, state.plakCatalog, state.schoolLanguage)
       : { blocks: [] }
-  ), [state.amendCategory, state.amendPbdVariant, state.amendLineValues, state.amendMatrixValues, state.amendRowsByBlock, state.amendPlakRows, updaters, state.plakCatalog]);
+  ), [state.amendCategory, state.amendPbdVariant, state.amendLineValues, state.amendMatrixValues, state.amendRowsByBlock, state.amendPlakRows, updaters, state.plakCatalog, state.schoolLanguage]);
 
   if (!order) return null;
 

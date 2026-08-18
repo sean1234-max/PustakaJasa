@@ -64,6 +64,7 @@ function initialState() {
     sessionChecked: false,
 
     sekolah: '',
+    schoolLanguage: 'SK',
     sales: '',
     assignedSalesmen: [],
     assignedSalesmanLoaded: false,
@@ -77,6 +78,7 @@ function initialState() {
     funcSelected: null,
     logoDataUrl: null,
     logoFileName: '',
+    logoRemark: '',
     schoolType: null,
     stepError: '',
 
@@ -161,7 +163,7 @@ export function AppStateProvider({ children }) {
       if (session?.user) {
         const { data: profile } = await supabase
           .from('profiles')
-          .select('role, sekolah, display_name, status')
+          .select('role, sekolah, school_language, display_name, status')
           .eq('id', session.user.id)
           .single();
         if (!cancelled && profile) {
@@ -169,7 +171,7 @@ export function AppStateProvider({ children }) {
             await supabase.auth.signOut();
             if (!cancelled) patch({ loginError: 'This account has been deactivated. Please contact your administrator.' });
           } else {
-            patch({ role: profile.role, sekolah: profile.sekolah || '', userAuthId: session.user.id });
+            patch({ role: profile.role, sekolah: profile.sekolah || '', schoolLanguage: profile.school_language || 'SK', userAuthId: session.user.id });
           }
         }
       }
@@ -263,7 +265,7 @@ export function AppStateProvider({ children }) {
     }
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
-      .select('role, sekolah, display_name, status')
+      .select('role, sekolah, school_language, display_name, status')
       .eq('id', data.user.id)
       .single();
     if (profileError || !profile) {
@@ -275,7 +277,7 @@ export function AppStateProvider({ children }) {
       patch({ loginError: 'This account has been deactivated. Please contact your administrator.' });
       return null;
     }
-    patch({ role: profile.role, sekolah: profile.sekolah || '', userAuthId: data.user.id, loginError: '', userId: '', password: '' });
+    patch({ role: profile.role, sekolah: profile.sekolah || '', schoolLanguage: profile.school_language || 'SK', userAuthId: data.user.id, loginError: '', userId: '', password: '' });
     return profile.role;
   }, [patch]);
 
@@ -302,7 +304,7 @@ export function AppStateProvider({ children }) {
     patch({
       sales: '', picName: '', phone: '', ketuaPanitia: '', terms: '', remark: '',
       dueSelected: null, funcSelected: null,
-      logoDataUrl: null, logoFileName: '', schoolType: null, stepError: '',
+      logoDataUrl: null, logoFileName: '', logoRemark: '', schoolType: null, stepError: '',
 
       category: 'MP1', pbdVariant: 0,
       lineValues: {}, matrixValues: {},
@@ -316,9 +318,41 @@ export function AppStateProvider({ children }) {
 
   const addToCart = useCallback(() => {
     setState((st) => {
+      const currentCat = CATEGORIES.find((c) => c.key === st.category) || CATEGORIES[0];
       const { blocks, isMatrix } = computeBlocks(
-        st.category, st.pbdVariant, st.lineValues, st.matrixValues, st.rowsByBlock, st.plakRows, st.namaKelasRows, noopUpdaters, st.plakCatalog,
+        st.category, st.pbdVariant, st.lineValues, st.matrixValues, st.rowsByBlock, st.plakRows, st.namaKelasRows, noopUpdaters, st.plakCatalog, st.schoolLanguage,
       );
+
+      // Catches the two ways a category can be left half-finished — a
+      // reference line (or the qty table / Jenis Plak) forgotten — before
+      // it's silently either dropped or added without the info Production
+      // needs. Only fires once the teacher has actually touched this
+      // category (any line typed, any qty entered, or a Jenis Plak
+      // chosen); an untouched category is just skipped, same as before.
+      const blk = blocks[0];
+      if (blk) {
+        const secondLineRequired = blk.lines.some((l) => l.secondLine)
+          && !String(currentCat.positionLine2Placeholder || '').trim().startsWith('(pilihan)');
+        const lineHasValue = (line) => Boolean(String(line.value).trim())
+          || (line.secondLine && Boolean(String(line.secondLine.value).trim()));
+        const lineIsComplete = (line) => Boolean(String(line.value).trim())
+          && (!line.secondLine || !secondLineRequired || Boolean(String(line.secondLine.value).trim()));
+        const hasQty = blk.blockTotalQty > 0;
+        const hasJenisPlak = blk.plakRows.some((pr) => pr.jenisPlak);
+        const engaged = hasQty || hasJenisPlak || blk.lines.some(lineHasValue);
+        if (engaged) {
+          if (!blk.lines.every(lineIsComplete)) {
+            return { ...st, cartToast: `Please fill in all the reference lines for ${blk.qtyLabel} before adding to cart.` };
+          }
+          if (!hasQty) {
+            return { ...st, cartToast: `Please enter a quantity for ${blk.qtyLabel} before adding to cart.` };
+          }
+          if (!hasJenisPlak) {
+            return { ...st, cartToast: `Please choose a Jenis Plak for ${blk.qtyLabel} before adding to cart.` };
+          }
+        }
+      }
+
       const newItems = [];
       blocks.forEach((b) => {
         b.plakRows.forEach((pr) => {
@@ -332,9 +366,14 @@ export function AppStateProvider({ children }) {
       if (newItems.length === 0) {
         return { ...st, cartToast: 'No filled Jenis Plak rows to add.' };
       }
-      return { ...st, cart: [...st.cart, ...newItems], cartToast: `Added ${newItems.length} item(s) to cart.` };
+      // Only clears this category's fields once something was actually
+      // added — bailing out above (validation error or nothing filled)
+      // must never wipe out what the teacher already typed.
+      return {
+        ...st, cart: [...st.cart, ...newItems], cartToast: `Added ${newItems.length} item(s) to cart.`,
+        ...resetCategoryFields(st.category, st),
+      };
     });
-    setState((st) => ({ ...st, ...resetCategoryFields(st.category, st) }));
     clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => patch({ cartToast: '' }), 2500);
   }, [patch]);
@@ -375,7 +414,7 @@ export function AppStateProvider({ children }) {
       seq = await nextOrderSeq(prefix, 96);
     } catch (err) {
       console.error('Failed to reserve the next order number:', err);
-      patch({ cartToast: 'Could not submit the order — please try again.' });
+      patch({ cartToast: `Could not submit the order: ${err.message || 'unknown error'}. Please try again.` });
       return null;
     }
     const newId = `${prefix}${String(seq).padStart(3, '0')}`;
@@ -396,9 +435,9 @@ export function AppStateProvider({ children }) {
       totalAmount: totalAmt, status: 'Submitted to Sales', priceAdjusted: false,
       createdBy: st.userAuthId,
       salesmanId: selectedSalesman.id,
-      sekolah: st.sekolah, sales: selectedSalesman.name, picName: st.picName, phone: st.phone, ketuaPanitia: st.ketuaPanitia, terms: st.terms, remark: st.remark,
+      sekolah: st.sekolah, schoolLanguage: st.schoolLanguage, sales: selectedSalesman.name, picName: st.picName, phone: st.phone, ketuaPanitia: st.ketuaPanitia, terms: st.terms, remark: st.remark,
       dueDate: st.dueSelected, functionDate: st.funcSelected,
-      logoDataUrl: st.logoDataUrl, logoFileName: st.logoFileName, schoolType: st.schoolType,
+      logoDataUrl: st.logoDataUrl, logoFileName: st.logoFileName, logoRemark: st.logoRemark, schoolType: st.schoolType,
       snapshot, items: st.cart.map((ci) => ({ ...ci })),
     };
 
@@ -414,7 +453,7 @@ export function AppStateProvider({ children }) {
       // failing until they do.
       const message = /row-level security/i.test(err.message || '')
         ? 'This order could not be created — the salesman assignment for your school may have changed. Please refresh the page and try again.'
-        : 'Could not submit the order — please try again.';
+        : `Could not submit the order: ${err.message || 'unknown error'}. Please try again or contact the administrator.`;
       patch({ cartToast: message });
       return null;
     }
@@ -427,7 +466,7 @@ export function AppStateProvider({ children }) {
     patch({
       sekolah: ord.sekolah, sales: ord.sales, picName: ord.picName, phone: ord.phone, ketuaPanitia: ord.ketuaPanitia || '', terms: ord.terms || '', remark: ord.remark,
       dueSelected: ord.dueDate || null, funcSelected: ord.functionDate || null,
-      logoDataUrl: ord.logoDataUrl || null, logoFileName: ord.logoFileName || '', schoolType: ord.schoolType || null,
+      logoDataUrl: ord.logoDataUrl || null, logoFileName: ord.logoFileName || '', logoRemark: ord.logoRemark || '', schoolType: ord.schoolType || null,
       // The category-draft (which award category + its filled-in fields)
       // is only available for orders placed through this app's New Order
       // flow — older/imported orders just prefill the school info above.
@@ -470,7 +509,7 @@ export function AppStateProvider({ children }) {
       st.amendCategoriesUsed.forEach((catKey) => {
         const pbdV = catKey === 'PBD' ? st.amendPbdVariant : 0;
         const { blocks: catBlocks, isMatrix: catIsMatrix } = computeBlocks(
-          catKey, pbdV, st.amendLineValues, st.amendMatrixValues, st.amendRowsByBlock, st.amendPlakRows, [], noopUpdaters, st.plakCatalog,
+          catKey, pbdV, st.amendLineValues, st.amendMatrixValues, st.amendRowsByBlock, st.amendPlakRows, [], noopUpdaters, st.plakCatalog, st.schoolLanguage,
         );
         catBlocks.forEach((blk) => {
           blk.plakRows.forEach((pr) => {
@@ -518,7 +557,7 @@ export function AppStateProvider({ children }) {
       CATEGORIES.forEach((cat) => {
         const pbdV = cat.key === 'PBD' ? st.addOnPbdVariant : 0;
         const { blocks: catBlocks, isMatrix: catIsMatrix } = computeBlocks(
-          cat.key, pbdV, st.addOnLineValues, st.addOnMatrixValues, st.addOnRowsByBlock, st.addOnPlakRows, [], noopUpdaters, st.plakCatalog,
+          cat.key, pbdV, st.addOnLineValues, st.addOnMatrixValues, st.addOnRowsByBlock, st.addOnPlakRows, [], noopUpdaters, st.plakCatalog, st.schoolLanguage,
         );
         catBlocks.forEach((blk) => {
           blk.plakRows.forEach((pr) => {
@@ -608,16 +647,19 @@ export function AppStateProvider({ children }) {
   // downstream, so production knows to double-check it against the catalog.
   // Approving sends the order straight into production — there's no
   // separate "approved but not yet in production" holding stage.
-  const approveOrder = useCallback((orderId, updatedItems) => {
+  // `overrides` lets Sales adjust Due Date / Function Date (in addition to
+  // per-item price, already folded into updatedItems) at the same moment
+  // they approve — the only point before production where those dates are
+  // still editable.
+  const approveOrder = useCallback((orderId, updatedItems, overrides = {}) => {
     patch((st) => {
       const totalAmount = updatedItems.reduce((sum, it) => sum + it.harga, 0);
       const priceAdjusted = updatedItems.some((it) => it.unitPrice !== standardUnitPrice(it.jenisPlak, st.plakCatalog));
-      updateOrder(orderId, { items: updatedItems, totalAmount, priceAdjusted, status: 'In Production' })
+      const fields = { items: updatedItems, totalAmount, priceAdjusted, status: 'In Production', ...overrides };
+      updateOrder(orderId, fields)
         .catch((err) => console.error('Failed to save approval to Supabase:', err));
       return {
-        orders: st.orders.map((o) => (
-          o.id === orderId ? { ...o, items: updatedItems, totalAmount, priceAdjusted, status: 'In Production' } : o
-        )),
+        orders: st.orders.map((o) => (o.id === orderId ? { ...o, ...fields } : o)),
       };
     });
   }, [patch]);

@@ -22,6 +22,7 @@ export default function AdminSchoolDetail() {
   const [pendingSalesmanId, setPendingSalesmanId] = useState('');
   const [confirmingStatus, setConfirmingStatus] = useState(null);
   const [newPassword, setNewPassword] = useState('');
+  const [pendingLanguage, setPendingLanguage] = useState('');
 
   const load = () => {
     Promise.all([fetchAllProfiles(), fetchSalesmanAssignments()])
@@ -30,6 +31,11 @@ export default function AdminSchoolDetail() {
   };
 
   useEffect(load, [id]);
+
+  useEffect(() => {
+    const school = (profiles || []).find((p) => p.id === id);
+    if (school) setPendingLanguage(school.school_language === 'SJKC' ? 'SJKC' : 'SK');
+  }, [profiles, id]);
 
   useEffect(() => {
     if (!toast) return undefined;
@@ -102,6 +108,23 @@ export default function AdminSchoolDetail() {
     }
   };
 
+  const handleSaveLanguage = async () => {
+    try {
+      await updateProfile(id, { school_language: pendingLanguage });
+      await logAdminAction({
+        action: 'Admin changed a school\'s engraving language',
+        targetTable: 'profiles',
+        targetId: id,
+        before: { school_language: school.school_language || 'SK' },
+        after: { school_language: pendingLanguage },
+      });
+      setToast('School language updated.');
+      load();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
   const handleResetPassword = async () => {
     if (newPassword.length < 6) {
       setError('New password must be at least 6 characters.');
@@ -156,6 +179,20 @@ export default function AdminSchoolDetail() {
             <div>
               <span className="text-label-bold text-on-surface-variant mb-1 block">School Address</span>
               <p className="text-headline-sm text-on-surface-variant">{school.address || '—'}</p>
+            </div>
+          </div>
+
+          <div className="mb-10 bg-surface p-6 rounded-lg border border-outline-variant/50">
+            <span className="text-label-bold text-on-surface-variant uppercase tracking-widest block mb-1">Engraving Language</span>
+            <p className="text-body-sm text-on-surface-variant mb-4">Controls what language the MP THP 1/2 subject list is engraved in for this school's orders. Only change this if the school's medium of instruction is genuinely different — it does not affect already-submitted orders.</p>
+            <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+              <select className={`${inputClass} sm:w-2/3`} value={pendingLanguage} onChange={(e) => setPendingLanguage(e.target.value)}>
+                <option value="SK">SK (Malay)</option>
+                <option value="SJKC">SJKC (Chinese)</option>
+              </select>
+              <button type="button" disabled={pendingLanguage === (school.school_language || 'SK')} onClick={handleSaveLanguage} className={`${secondaryBtnClass} sm:w-1/3`}>
+                Save Language
+              </button>
             </div>
           </div>
 

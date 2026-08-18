@@ -24,8 +24,8 @@ export default function AddOn() {
   const updaters = useMemo(() => createDraftUpdaters(patch, DRAFT_FIELDS, true), [patch]);
 
   const { blocks, isPbdCategory } = useMemo(() => computeBlocks(
-    state.addOnCategory, state.addOnPbdVariant, state.addOnLineValues, state.addOnMatrixValues, state.addOnRowsByBlock, state.addOnPlakRows, state.addOnNamaKelasRows, updaters, state.plakCatalog,
-  ), [state.addOnCategory, state.addOnPbdVariant, state.addOnLineValues, state.addOnMatrixValues, state.addOnRowsByBlock, state.addOnPlakRows, state.addOnNamaKelasRows, updaters, state.plakCatalog]);
+    state.addOnCategory, state.addOnPbdVariant, state.addOnLineValues, state.addOnMatrixValues, state.addOnRowsByBlock, state.addOnPlakRows, state.addOnNamaKelasRows, updaters, state.plakCatalog, state.schoolLanguage,
+  ), [state.addOnCategory, state.addOnPbdVariant, state.addOnLineValues, state.addOnMatrixValues, state.addOnRowsByBlock, state.addOnPlakRows, state.addOnNamaKelasRows, updaters, state.plakCatalog, state.schoolLanguage]);
 
   const visiblePlakCatalog = useMemo(() => filterHiddenPlakCatalog(state.plakCatalog), [state.plakCatalog]);
 
