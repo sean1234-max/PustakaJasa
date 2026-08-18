@@ -4,7 +4,24 @@ import AdminLayout from '../components/AdminLayout';
 import { useAppState } from '../state/useAppState';
 import { fetchAllProfiles, fetchSalesmanAssignments, createAccount, logAdminAction } from '../lib/adminApi';
 
-const EMPTY_FORM = { sekolah: '', address: '', schoolLanguage: 'SK', displayName: '', email: '', password: '', assignedSalesmanId: '' };
+const EMPTY_FORM = { sekolah: '', address: '', displayName: '', email: '', password: '', assignedSalesmanId: '' };
+
+// Malaysian school-name convention: SK/SMK (Sekolah Kebangsaan / Menengah
+// Kebangsaan) are Malay-medium national schools; SJK(C) (Sekolah Jenis
+// Kebangsaan Cina, however punctuated/spaced — "SJKC", "SJK (C)", "S.J.K.
+// (C)") is the Chinese-medium national-type school. Stripping everything
+// but letters before matching makes the prefix check punctuation/spacing
+// -insensitive. Returns null when the name doesn't match either pattern
+// (e.g. SJK(T), religious/private/international schools) rather than
+// guessing — Admin can still set the language after creation from the
+// School Detail page.
+function detectSchoolLanguage(name) {
+  const compact = (name || '').toUpperCase().replace(/[^A-Z]/g, '');
+  if (!compact) return null;
+  if (compact.startsWith('SJKC')) return 'SJKC';
+  if (compact.startsWith('SK') || compact.startsWith('SMK')) return 'SK';
+  return null;
+}
 
 function Field({ label, htmlFor, children }) {
   return (
@@ -46,6 +63,7 @@ export default function AdminSchools() {
   const salesmenById = new Map((profiles || []).filter((p) => p.role === 'salesman').map((p) => [p.id, p]));
   const schools = (profiles || []).filter((p) => p.role === 'teacher');
   const salesmenOptions = (profiles || []).filter((p) => p.role === 'salesman');
+  const detectedLanguage = detectSchoolLanguage(form.sekolah);
 
   const filtered = schools.filter((s) => {
     const q = search.trim().toLowerCase();
@@ -70,11 +88,12 @@ export default function AdminSchools() {
     }
     setSaving(true);
     try {
+      const schoolLanguage = detectSchoolLanguage(form.sekolah) || 'SK';
       const result = await createAccount({
         role: 'teacher',
         sekolah: form.sekolah.trim(),
         address: form.address.trim() || null,
-        schoolLanguage: form.schoolLanguage,
+        schoolLanguage,
         displayName: form.displayName.trim(),
         email: form.email.trim(),
         password: form.password,
@@ -84,7 +103,7 @@ export default function AdminSchools() {
         action: 'Admin created a school account',
         targetTable: 'profiles',
         targetId: result.id,
-        after: { sekolah: form.sekolah, address: form.address, schoolLanguage: form.schoolLanguage, displayName: form.displayName, email: form.email },
+        after: { sekolah: form.sekolah, address: form.address, schoolLanguage, displayName: form.displayName, email: form.email },
       });
       setToast('School account created successfully.');
       setForm(EMPTY_FORM);
@@ -128,13 +147,14 @@ export default function AdminSchools() {
           <Field label="School Address" htmlFor="school-address">
             <input className={inputClass} id="school-address" placeholder="e.g. Jalan Puchong, 47100 Puchong, Selangor" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} />
           </Field>
-          <Field label="School Language *" htmlFor="school-language">
-            <select className={inputClass} id="school-language" value={form.schoolLanguage} onChange={(e) => setForm({ ...form, schoolLanguage: e.target.value })}>
-              <option value="SK">SK (Malay)</option>
-              <option value="SJKC">SJKC (Chinese)</option>
-            </select>
-            <p className="text-body-sm text-on-surface-variant mt-1">Controls what language the MP THP 1/2 subject list is engraved in — must match this school's actual medium of instruction.</p>
-          </Field>
+          <div className="mb-4">
+            <span className="block text-label-bold text-on-surface-variant mb-1">Engraving Language</span>
+            {detectedLanguage ? (
+              <p className="text-body-md text-on-surface">Detected: <strong>{detectedLanguage === 'SJKC' ? 'SJKC (Chinese)' : 'SK (Malay)'}</strong> — from the school name.</p>
+            ) : (
+              <p className="text-body-sm text-on-surface-variant">Could not detect from the school name (expects a name starting with SK, SMK, or SJK(C)) — will default to SK (Malay). You can correct this from the school's detail page after creating it.</p>
+            )}
+          </div>
           <Field label="Teacher Name *" htmlFor="teacher-name">
             <input className={inputClass} id="teacher-name" placeholder="e.g. Mr. Lim" value={form.displayName} onChange={(e) => setForm({ ...form, displayName: e.target.value })} />
           </Field>

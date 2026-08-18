@@ -161,11 +161,25 @@ export function AppStateProvider({ children }) {
     (async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('role, sekolah, school_language, display_name, status')
-          .eq('id', session.user.id)
-          .single();
+        // A failed profile fetch here used to be indistinguishable from
+        // "not logged in" — role never got set, sessionChecked still
+        // flipped true, and RequireRole bounced a perfectly-valid session
+        // back to Login. That's not hypothetical: this project is on
+        // Supabase's Free tier, where the database can take a moment to
+        // wake up after being idle, which is enough to fail this one
+        // query on an otherwise-valid refresh. Retry a few times with a
+        // short backoff before treating it as a real failure — a login
+        // that already succeeded shouldn't be undone by one slow query.
+        let profile, profileError;
+        for (let attempt = 0; attempt < 3 && !cancelled; attempt += 1) {
+          if (attempt > 0) await new Promise((r) => setTimeout(r, 800 * attempt));
+          ({ data: profile, error: profileError } = await supabase
+            .from('profiles')
+            .select('role, sekolah, school_language, display_name, status')
+            .eq('id', session.user.id)
+            .single());
+          if (profile || !profileError) break;
+        }
         if (!cancelled && profile) {
           if (profile.status && profile.status !== 'active') {
             await supabase.auth.signOut();
@@ -173,6 +187,14 @@ export function AppStateProvider({ children }) {
           } else {
             patch({ role: profile.role, sekolah: profile.sekolah || '', schoolLanguage: profile.school_language || 'SK', userAuthId: session.user.id });
           }
+        } else if (!cancelled && profileError) {
+          // Still failing after retries — rather than silently bouncing to
+          // Login with no explanation (looks like a random logout), leave
+          // the Supabase session intact and surface what actually
+          // happened, so the user can just retry instead of re-entering
+          // their password for no reason.
+          console.error('Failed to load profile on session restore:', profileError);
+          patch({ loginError: 'Could not verify your account (connection issue). Please try again.' });
         }
       }
       if (!cancelled) patch({ sessionChecked: true });
@@ -669,7 +691,10 @@ export function AppStateProvider({ children }) {
   // that aren't yet approved, blank input, and overwriting an existing
   // invoiceId — that paperwork is treated as immutable once recorded.
   const setInvoiceId = useCallback((orderId, invoiceId) => {
-    const trimmed = (invoiceId || '').trim();
+    // Strips every space (not just leading/trailing) before saving or
+    // comparing, so "INV 2026 090" and "INV2026090" are treated as the
+    // same invoice number for the duplicate check below.
+    const normalized = (invoiceId || '').replace(/\s+/g, '');
     setState((st) => {
       const order = st.orders.find((o) => o.id === orderId);
       if (!order || order.status !== 'In Production') {
@@ -678,14 +703,20 @@ export function AppStateProvider({ children }) {
       if (order.invoiceId) {
         return { ...st, productionToast: 'Invoice ID is already set for this order.' };
       }
-      if (!trimmed) {
+      if (!normalized) {
         return { ...st, productionToast: 'Enter a valid Invoice ID.' };
       }
-      updateOrder(orderId, { invoiceId: trimmed })
+      const isDuplicate = st.orders.some((o) => (
+        o.id !== orderId && o.invoiceId && o.invoiceId.replace(/\s+/g, '') === normalized
+      ));
+      if (isDuplicate) {
+        return { ...st, productionToast: 'Invoice ID invalid because repeated, please try again.' };
+      }
+      updateOrder(orderId, { invoiceId: normalized })
         .catch((err) => console.error('Failed to save invoice ID to Supabase:', err));
       return {
         ...st,
-        orders: st.orders.map((o) => (o.id === orderId ? { ...o, invoiceId: trimmed } : o)),
+        orders: st.orders.map((o) => (o.id === orderId ? { ...o, invoiceId: normalized } : o)),
         productionToast: 'Invoice ID saved — order is ready for export.',
       };
     });
