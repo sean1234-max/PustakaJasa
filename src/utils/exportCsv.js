@@ -118,13 +118,15 @@ function buildPbdRows(item, header, year, positionPart1) {
 }
 
 // Builds every CSV row for one category of one order — or, when `items` is
-// passed explicitly, just that subset (e.g. one order-detail group's items;
-// see reconstructOrderDetailGroups in computeBlocks.js and
-// ProductionOrderDetail.jsx). Items with no `detail` at all (legacy items
-// predating the real submit flow) are skipped (reported via
-// skippedItemIds) rather than producing blank rows.
+// passed explicitly, just that subset. `items` doesn't have to share one
+// category (each item's own category is looked up individually below), so
+// the same function also backs a Jenis-Plak-combined export that spans
+// multiple categories — see getOrderJenisPlakGroups and
+// reconstructOrderDetailGroups (computeBlocks.js) / ProductionOrderDetail.jsx.
+// Items with no `detail` at all (legacy items predating the real submit
+// flow) are skipped (reported via skippedItemIds) rather than producing
+// blank rows.
 export function buildCsvRows(order, categoryKey, items) {
-  const cat = CATEGORIES.find((c) => c.key === categoryKey);
   const schoolLanguage = order.schoolLanguage === 'SJKC' ? 'SJKC' : 'SK';
   const scopedItems = items || (order.items || []).filter((it) => it.categoryKey === categoryKey);
   const rows = [];
@@ -135,6 +137,7 @@ export function buildCsvRows(order, categoryKey, items) {
       skippedItemIds.push(item.id);
       return;
     }
+    const cat = CATEGORIES.find((c) => c.key === item.categoryKey);
     const header = getLine(item, 0);
     const year = getLine(item, 1);
 
@@ -150,6 +153,24 @@ export function buildCsvRows(order, categoryKey, items) {
   });
 
   return { rows, skippedItemIds };
+}
+
+// Groups an order's items by Jenis Plak, regardless of which category or
+// batch each came from — the CSV's own columns (event_header, year,
+// position, event_line_1, event_line_2) carry no Jenis Plak info at all,
+// so two items sharing the same Jenis Plak are, for export purposes,
+// interchangeable rows bound for the exact same physical AI file. Lets
+// Production export one combined CSV per Jenis Plak instead of one per
+// category/order-detail, when the same Jenis Plak was ordered in more than
+// one place.
+export function getOrderJenisPlakGroups(order) {
+  const byPlak = new Map();
+  (order.items || []).forEach((item) => {
+    if (!item.jenisPlak) return;
+    if (!byPlak.has(item.jenisPlak)) byPlak.set(item.jenisPlak, []);
+    byPlak.get(item.jenisPlak).push(item);
+  });
+  return [...byPlak.entries()].map(([jenisPlak, items]) => ({ jenisPlak, items }));
 }
 
 // RFC4180-quoted CSV text. Any value containing a newline, comma, or quote

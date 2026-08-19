@@ -6,7 +6,7 @@ import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import { useAppState } from '../state/useAppState';
 import { STATUS_STAGES, STATUS_BG, STATUS_TEXT, formatDate } from '../data/catalog';
 import { reconstructOrderDetailGroups } from '../utils/computeBlocks';
-import { getOrderCategories, buildCsvRows, rowsToCsv, buildCategoryCsvFilename } from '../utils/exportCsv';
+import { getOrderCategories, getOrderJenisPlakGroups, buildCsvRows, rowsToCsv, buildCategoryCsvFilename } from '../utils/exportCsv';
 import { downloadTextFile } from '../utils/downloadBlob';
 import { groupItemsByBatch } from '../utils/orderBatches';
 import { getOrderChangeStamp } from '../utils/orderStamp';
@@ -39,6 +39,12 @@ export default function ProductionOrderDetail() {
     return reconstructOrderDetailGroups(order, currentCat.key, state.plakCatalog);
   }, [order, currentCat, state.plakCatalog]);
 
+  // Order-wide, not scoped to the selected category tab — the CSV's own
+  // columns carry no Jenis Plak info, so two items sharing a Jenis Plak
+  // (even from different categories) are bound for the same physical AI
+  // file and can be exported as one combined CSV. See getOrderJenisPlakGroups.
+  const jenisPlakGroups = useMemo(() => (order ? getOrderJenisPlakGroups(order) : []), [order]);
+
   if (!order) return null;
 
   const idx = STATUS_STAGES.indexOf(order.status);
@@ -57,6 +63,16 @@ export default function ProductionOrderDetail() {
     const label = [group.blk.qtyLabel, group.batch !== 0 ? group.label : null, group.jenisPlak]
       .filter(Boolean).join(' - ');
     const filename = buildCategoryCsvFilename(order, label);
+    downloadTextFile(filename, csv);
+    setExportNote(`Exported ${csvRows.length} row(s) to ${filename}.`);
+    clearTimeout(exportNoteTimer.current);
+    exportNoteTimer.current = setTimeout(() => setExportNote(''), 4000);
+  };
+
+  const handleExportJenisPlak = (jenisPlak, csvRows) => {
+    if (csvRows.length === 0) return;
+    const csv = rowsToCsv(csvRows);
+    const filename = buildCategoryCsvFilename(order, jenisPlak);
     downloadTextFile(filename, csv);
     setExportNote(`Exported ${csvRows.length} row(s) to ${filename}.`);
     clearTimeout(exportNoteTimer.current);
@@ -183,7 +199,37 @@ export default function ProductionOrderDetail() {
 
             {order.invoiceId ? (
               <>
-                <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Export by Category</div>
+                <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Export by Jenis Plak</div>
+                <p className="hint-text" style={{ marginTop: 0 }}>
+                  Same Jenis Plak used in more than one place in this order? Export one combined CSV for it here instead of a separate file per order detail.
+                </p>
+                {jenisPlakGroups.length === 0 ? (
+                  <p className="hint-text">No Jenis Plak found for this order.</p>
+                ) : (
+                  <table className="table" style={{ margin: 'var(--space-3) 0' }}>
+                    <thead><tr><th>Jenis Plak</th><th style={{ width: 140 }}>Order Details</th><th style={{ width: 100 }}>Rows</th><th style={{ width: 140 }} /></tr></thead>
+                    <tbody>
+                      {jenisPlakGroups.map(({ jenisPlak, items }) => {
+                        const csvData = buildCsvRows(order, null, items);
+                        return (
+                          <tr key={jenisPlak}>
+                            <td>{jenisPlak}</td>
+                            <td>{items.length}</td>
+                            <td>{csvData.rows.length}</td>
+                            <td>
+                              <button type="button" className="btn btn-primary" disabled={csvData.rows.length === 0} onClick={() => handleExportJenisPlak(jenisPlak, csvData.rows)}>
+                                Export CSV
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+                {exportNote && <p className="hint-text">{exportNote}</p>}
+
+                <div className="hint-text" style={{ marginTop: 'var(--space-6)', fontWeight: 600, opacity: 0.8 }}>Export by Category (for review)</div>
                 {categories.length === 0 ? (
                   <p className="hint-text">No exportable categories found for this order.</p>
                 ) : (
