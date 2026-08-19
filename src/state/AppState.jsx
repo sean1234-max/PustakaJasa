@@ -340,7 +340,6 @@ export function AppStateProvider({ children }) {
 
   const addToCart = useCallback(() => {
     setState((st) => {
-      const currentCat = CATEGORIES.find((c) => c.key === st.category) || CATEGORIES[0];
       const { blocks, isMatrix } = computeBlocks(
         st.category, st.pbdVariant, st.lineValues, st.matrixValues, st.rowsByBlock, st.plakRows, st.namaKelasRows, noopUpdaters, st.plakCatalog, st.schoolLanguage,
       );
@@ -353,18 +352,18 @@ export function AppStateProvider({ children }) {
       // chosen); an untouched category is just skipped, same as before.
       const blk = blocks[0];
       if (blk) {
-        const secondLineRequired = blk.lines.some((l) => l.secondLine)
-          && !String(currentCat.positionLine2Placeholder || '').trim().startsWith('(pilihan)');
         const lineHasValue = (line) => Boolean(String(line.value).trim())
           || (line.secondLine && Boolean(String(line.secondLine.value).trim()));
-        const lineIsComplete = (line) => Boolean(String(line.value).trim())
-          && (!line.secondLine || !secondLineRequired || Boolean(String(line.secondLine.value).trim()));
+        // Only line 1 (the event name) is required — lines 2-4 (year,
+        // position, etc.) are reference-sample context the teacher may not
+        // always have yet, so they can stay blank.
+        const lineIsComplete = (line) => line.num !== 1 || Boolean(String(line.value).trim());
         const hasQty = blk.blockTotalQty > 0;
         const hasJenisPlak = blk.plakRows.some((pr) => pr.jenisPlak);
         const engaged = hasQty || hasJenisPlak || blk.lines.some(lineHasValue);
         if (engaged) {
           if (!blk.lines.every(lineIsComplete)) {
-            return { ...st, cartToast: `Please fill in all the reference lines for ${blk.qtyLabel} before adding to cart.` };
+            return { ...st, cartToast: `Please fill in line 1 for ${blk.qtyLabel} before adding to cart.` };
           }
           if (!hasQty) {
             return { ...st, cartToast: `Please enter a quantity for ${blk.qtyLabel} before adding to cart.` };
