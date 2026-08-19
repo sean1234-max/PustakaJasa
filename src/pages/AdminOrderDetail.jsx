@@ -53,7 +53,8 @@ export default function AdminOrderDetail() {
   const handleExportGroup = (group, csvRows) => {
     if (csvRows.length === 0) return;
     const csv = rowsToCsv(csvRows);
-    const label = group.batch === 0 ? group.blk.qtyLabel : `${group.blk.qtyLabel} - ${group.label}`;
+    const label = [group.blk.qtyLabel, group.batch !== 0 ? group.label : null, group.jenisPlak]
+      .filter(Boolean).join(' - ');
     const filename = buildCategoryCsvFilename(order, label);
     downloadTextFile(filename, csv);
     setExportNote(`Exported ${csvRows.length} row(s) to ${filename}.`);
@@ -203,9 +204,9 @@ export default function AdminOrderDetail() {
                       if (!group.blk) return null;
                       const csvData = buildCsvRows(order, currentCat.key, group.items);
                       return (
-                        <div key={`${group.blockIdx}-${group.batch}`} className={gi > 0 ? 'mt-8 pt-8 border-t border-outline-variant' : undefined}>
+                        <div key={group.items[0].id} className={gi > 0 ? 'mt-8 pt-8 border-t border-outline-variant' : undefined}>
                           <h4 className="text-label-bold text-on-surface-variant uppercase tracking-widest mb-2">
-                            {group.blk.qtyLabel}{group.batch !== 0 ? ` — ${group.label}` : ''}
+                            {group.blk.qtyLabel}{group.batch !== 0 ? ` — ${group.label}` : ''} — {group.jenisPlak}
                           </h4>
                           <OrderCategoryBlock blk={group.blk} editable={READONLY} refImageUrl={state.refImages?.[group.blk.sampleSlotId]} />
 

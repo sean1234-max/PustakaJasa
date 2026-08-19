@@ -9,6 +9,7 @@ import { reconstructOrderDetailGroups } from '../utils/computeBlocks';
 import { getOrderCategories, buildCsvRows, rowsToCsv, buildCategoryCsvFilename } from '../utils/exportCsv';
 import { downloadTextFile } from '../utils/downloadBlob';
 import { groupItemsByBatch } from '../utils/orderBatches';
+import { getOrderChangeStamp } from '../utils/orderStamp';
 
 const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: false, matrix: false, jenisPlak: false, namaKelas: false };
 
@@ -41,6 +42,7 @@ export default function ProductionOrderDetail() {
   if (!order) return null;
 
   const idx = STATUS_STAGES.indexOf(order.status);
+  const stamp = getOrderChangeStamp(order);
   const totalQty = order.items.reduce((sum, it) => sum + (Number(it.qty) || 0), 0);
   const itemGroups = groupItemsByBatch(order.items);
 
@@ -52,7 +54,8 @@ export default function ProductionOrderDetail() {
   const handleExportGroup = (group, csvRows) => {
     if (csvRows.length === 0) return;
     const csv = rowsToCsv(csvRows);
-    const label = group.batch === 0 ? group.blk.qtyLabel : `${group.blk.qtyLabel} - ${group.label}`;
+    const label = [group.blk.qtyLabel, group.batch !== 0 ? group.label : null, group.jenisPlak]
+      .filter(Boolean).join(' - ');
     const filename = buildCategoryCsvFilename(order, label);
     downloadTextFile(filename, csv);
     setExportNote(`Exported ${csvRows.length} row(s) to ${filename}.`);
@@ -91,7 +94,10 @@ export default function ProductionOrderDetail() {
             <div className="card-kicker">{page === 'summary' ? 'Summary' : 'Order Details'}</div>
             <div className="card-title">{order.id}</div>
           </div>
-          <span className="status-pill" style={{ background: STATUS_BG[idx], color: STATUS_TEXT[idx] }}>{order.status}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+            {stamp && <span className="order-stamp-inline">{stamp}</span>}
+            <span className="status-pill" style={{ background: STATUS_BG[idx], color: STATUS_TEXT[idx] }}>{order.status}</span>
+          </div>
         </div>
 
         {page === 'summary' ? (
@@ -192,11 +198,11 @@ export default function ProductionOrderDetail() {
                       const csvData = buildCsvRows(order, currentCat.key, group.items);
                       return (
                         <div
-                          key={`${group.blockIdx}-${group.batch}`}
+                          key={group.items[0].id}
                           style={gi > 0 ? { marginTop: 'var(--space-8)', paddingTop: 'var(--space-8)', borderTop: '1px solid var(--color-neutral-300)' } : undefined}
                         >
                           <div className="card-kicker">
-                            {group.blk.qtyLabel}{group.batch !== 0 ? ` — ${group.label}` : ''}
+                            {group.blk.qtyLabel}{group.batch !== 0 ? ` — ${group.label}` : ''} — {group.jenisPlak}
                           </div>
                           <OrderCategoryBlock blk={group.blk} editable={READONLY} refImageUrl={state.refImages?.[group.blk.sampleSlotId]} />
 

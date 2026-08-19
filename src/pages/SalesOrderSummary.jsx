@@ -9,6 +9,7 @@ import { useAppState } from '../state/useAppState';
 import { STATUS_STAGES, STATUS_BG, STATUS_TEXT, standardUnitPrice, formatDate } from '../data/catalog';
 import { reconstructBlocksForCategory } from '../utils/computeBlocks';
 import { getOrderCategories } from '../utils/exportCsv';
+import { getOrderChangeStamp } from '../utils/orderStamp';
 
 // Read-only everywhere — this page only ever displays what the teacher
 // already submitted, it never edits the underlying order/category data.
@@ -87,6 +88,9 @@ export default function SalesOrderSummary() {
   if (!order) return null;
 
   const idx = STATUS_STAGES.indexOf(order.status);
+  // Only shown once Sales has approved (matches the same `editable` gate
+  // the Print button itself uses) — see getOrderChangeStamp.
+  const stamp = !editable ? getOrderChangeStamp(order) : null;
   const totalQty = rows.reduce((sum, it) => sum + (Number(it.qty) || 0), 0);
   const totalHarga = rows.reduce((sum, it) => sum + it.harga, 0);
   const priceAdjusted = order.priceAdjusted || rows.some((it) => it.unitPrice !== standardUnitPrice(it.jenisPlak, state.plakCatalog));
@@ -156,7 +160,10 @@ export default function SalesOrderSummary() {
             <div className="card-kicker">{page === 'summary' ? 'Summary' : 'Order Details'}</div>
             <div className="card-title">{order.id}</div>
           </div>
-          <span className="status-pill" style={{ background: STATUS_BG[idx], color: STATUS_TEXT[idx] }}>{order.status}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+            {stamp && <span className="order-stamp-inline no-print">{stamp}</span>}
+            <span className="status-pill" style={{ background: STATUS_BG[idx], color: STATUS_TEXT[idx] }}>{order.status}</span>
+          </div>
         </div>
 
         <div className="screen-only">
@@ -276,6 +283,7 @@ export default function SalesOrderSummary() {
             full details into one printout, regardless of which tab is open
             on screen — see the "Print Order" button, only shown once approved. */}
         <div className="print-only">
+          {stamp && <div className="order-stamp">{stamp}</div>}
           <div className="form-grid-2" style={{ marginTop: 'var(--space-3)' }}>
             {order.sekolah && <div><div className="dim">Sekolah</div><div>{order.sekolah}</div></div>}
             {order.sales && <div><div className="dim">Sales</div><div>{order.sales}</div></div>}

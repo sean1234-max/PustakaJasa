@@ -220,44 +220,34 @@ export function reconstructBlocksForCategory(order, catKey, plakCatalog) {
 
 // Same idea as reconstructBlocksForCategory, but for Production
 // (src/pages/ProductionOrderDetail.jsx) — deliberately does NOT merge
-// across rounds. A later Add On round can pick a different Jenis Plak than
-// the original order for the exact same category/block, and each round
-// needs its own CSV exported separately, since the CSV becomes the text
-// layer for a specific Jenis Plak's AI file — merging two rounds into one
-// export would mix rows meant for two different physical templates with
-// no way to tell them apart. Groups by (blockIdx, batch) instead of
-// blockIdx alone; items within one group always share byte-identical
-// `detail` (snapshotted together from the same Add to Cart action), so no
-// merging is needed there — only plakRows accumulate, same as
-// reconstructBlocksForCategory's per-block case.
+// anything. One group per ITEM: different items must never share an
+// export even when they're the same block from the same round, because
+// each item's own Jenis Plak decides which physical AI file the exported
+// CSV's text gets dropped into (e.g. an MP399 file vs a VB/A file) — two
+// Jenis Plak rows sitting in one combined export would mix text meant for
+// two different files with no way to tell which rows belong to which.
 export function reconstructOrderDetailGroups(order, catKey, plakCatalog) {
   const schoolLanguage = order.schoolLanguage === 'SJKC' ? 'SJKC' : 'SK';
   const items = (order.items || []).filter((it) => it.categoryKey === catKey);
-  const groupKeys = [...new Set(items.map((it) => `${it.blockIdx ?? 0}::${it.batch || 0}`))];
 
-  return groupKeys.map((groupKey) => {
-    const [blockIdxStr, batchStr] = groupKey.split('::');
-    const blockIdx = Number(blockIdxStr);
-    const batch = Number(batchStr);
-    const groupItems = items.filter((it) => (it.blockIdx ?? 0) === blockIdx && (it.batch || 0) === batch);
-
+  return items.map((item) => {
+    const blockIdx = item.blockIdx ?? 0;
+    const batch = item.batch || 0;
     const lineValues = {};
     const matrixValues = {};
     const rowsByBlock = {};
     const plakRows = {};
     const key = `${catKey}::${blockIdx}`;
-    groupItems.forEach((it) => {
-      if (it.detail) {
-        Object.assign(lineValues, it.detail.lines || {});
-        if (it.detail.matrix) Object.assign(matrixValues, it.detail.matrix);
-        if (it.detail.rows) rowsByBlock[key] = it.detail.rows;
-      }
-      plakRows[key] = [...(plakRows[key] || []), { id: it.id, jenisPlak: it.jenisPlak, unitPrice: it.unitPrice }];
-    });
+    if (item.detail) {
+      Object.assign(lineValues, item.detail.lines || {});
+      if (item.detail.matrix) Object.assign(matrixValues, item.detail.matrix);
+      if (item.detail.rows) rowsByBlock[key] = item.detail.rows;
+    }
+    plakRows[key] = [{ id: item.id, jenisPlak: item.jenisPlak, unitPrice: item.unitPrice }];
 
     const result = computeBlocks(catKey, blockIdx, lineValues, matrixValues, rowsByBlock, plakRows, [], noopUpdaters, plakCatalog, schoolLanguage);
     return {
-      blockIdx, batch, items: groupItems,
+      blockIdx, batch, jenisPlak: item.jenisPlak, items: [item],
       label: batch === 0 ? 'Original Order' : `Tambahan #${batch}`,
       blk: result.blocks[0],
       isMatrix: result.isMatrix,

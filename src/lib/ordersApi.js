@@ -34,6 +34,8 @@ function toDbOrder(order) {
     pending_addon_items: order.pendingAddonItems ?? null,
     pending_addon_status: order.pendingAddonStatus ?? null,
     pending_addon_reject_reason: order.pendingAddonRejectReason ?? null,
+    original_total_qty: order.originalTotalQty ?? null,
+    amended: !!order.amended,
   };
 }
 
@@ -67,6 +69,8 @@ function fromDbOrder(row) {
     pendingAddonItems: row.pending_addon_items || null,
     pendingAddonStatus: row.pending_addon_status || null,
     pendingAddonRejectReason: row.pending_addon_reject_reason || null,
+    originalTotalQty: row.original_total_qty ?? null,
+    amended: !!row.amended,
   };
 }
 
