@@ -73,12 +73,17 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, refImag
                 <th>Subjek</th>
                 {blk.columns.map((col) => <th key={col} style={{ width: 90 }}>{col}</th>)}
                 <th style={{ width: 70 }}>Total</th>
+                {editable.addRemoveRows && <th style={{ width: 48 }} />}
               </tr>
             </thead>
             <tbody>
               {matrixRows.map((row) => (
-                <tr key={row.subject}>
-                  <td>{row.subject}</td>
+                <tr key={row.custom ? `custom-${row.id}` : row.subject}>
+                  <td>
+                    {row.custom && editable.addRemoveRows
+                      ? <input className="input" placeholder="e.g. SUKAN" value={row.subject} onChange={(e) => row.setSubject(e.target.value)} />
+                      : row.subject}
+                  </td>
                   {row.cells.map((cell) => (
                     <td key={cell.key}>
                       <input
@@ -93,15 +98,24 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, refImag
                     </td>
                   ))}
                   <td><strong>{row.rowTotal}</strong></td>
+                  {editable.addRemoveRows && (
+                    <td>{row.custom && <button type="button" className="btn btn-ghost btn-icon" aria-label="Remove row" onClick={row.remove}>✕</button>}</td>
+                  )}
                 </tr>
               ))}
               <tr>
                 <td><strong>TOTAL</strong></td>
                 {blk.colTotals.map((ct, i) => <td key={i}><strong>{ct.value}</strong></td>)}
                 <td><strong>{blk.grandTotal}</strong></td>
+                {editable.addRemoveRows && <td />}
               </tr>
             </tbody>
           </table>
+          {editable.addRemoveRows && (
+            <div className="row-actions">
+              <button type="button" className="btn btn-secondary" onClick={blk.addMatrixRow}>+ Add Row</button>
+            </div>
+          )}
         </div>
       ) : (
         <div>

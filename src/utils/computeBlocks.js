@@ -1,4 +1,7 @@
-import { CATEGORIES, flattenPlakCatalog, getCategorySubjects, getCategoryColumns } from '../data/catalog';
+import {
+  CATEGORIES, flattenPlakCatalog, getCategorySubjects, getCategoryColumns,
+  getCustomMatrixRowIds, customMatrixLabelKey, customMatrixCellKey,
+} from '../data/catalog';
 
 export function snapshotDetail(catKey, blockIdx, isMatrix, lineValues, matrixValues, rowsByBlockMap) {
   const detail = { lines: {}, matrix: null, rows: null };
@@ -66,8 +69,31 @@ export function computeBlocks(catKey, pbdVariant, lineValues, matrixValues, rows
           rowTotal += val; colTotals[ci] += val;
           return { key, col, value: matrixValues[key] || '', onChange: (v) => updaters.onMatrix(key, v) };
         });
-        return { subject: subj, cells, rowTotal };
+        return { subject: subj, cells, rowTotal, custom: false };
       });
+
+      // Teacher-added rows for a subject/award not on the fixed list above
+      // (see OrderCategoryBlock's matrix "+ Add Row") — same cell shape, just
+      // sourced from getCustomMatrixRowIds instead of the catalog list, and
+      // with an editable subject label instead of a fixed one.
+      matrixRows.push(...getCustomMatrixRowIds(catKey, matrixValues).map((rowId) => {
+        let rowTotal = 0;
+        const cells = columns.map((col, ci) => {
+          const key = customMatrixCellKey(catKey, rowId, col);
+          const val = Number(matrixValues[key]) || 0;
+          rowTotal += val; colTotals[ci] += val;
+          return { key, col, value: matrixValues[key] || '', onChange: (v) => updaters.onMatrix(key, v) };
+        });
+        const labelKey = customMatrixLabelKey(catKey, rowId);
+        return {
+          id: rowId,
+          subject: matrixValues[labelKey] || '',
+          setSubject: (v) => updaters.onMatrix(labelKey, v),
+          cells, rowTotal, custom: true,
+          remove: () => updaters.onMatrixRowRemove(catKey, rowId),
+        };
+      }));
+
       grandTotal = colTotals.reduce((a, b2) => a + b2, 0);
       blockTotalQty = grandTotal;
     } else {
@@ -120,6 +146,7 @@ export function computeBlocks(catKey, pbdVariant, lineValues, matrixValues, rows
       colTotals: colTotals.map((v) => ({ value: v })), grandTotal,
       rows,
       addRow: () => updaters.onAddRow(`${catKey}::${b}`),
+      addMatrixRow: () => updaters.onAddMatrixRow(catKey),
       blockTotalQty, plakRows, showNamaKelas, namaKelasRows: nkRows,
       addNamaKelasRow: updaters.onAddNamaKelas || (() => {}),
     });
@@ -130,7 +157,7 @@ export function computeBlocks(catKey, pbdVariant, lineValues, matrixValues, rows
 
 export const noopUpdaters = {
   onLine: () => {}, onMatrix: () => {}, onRowField: () => {}, onRowRemove: () => {},
-  onAddRow: () => {}, onPlakSelect: () => {},
+  onAddRow: () => {}, onPlakSelect: () => {}, onAddMatrixRow: () => {}, onMatrixRowRemove: () => {},
 };
 
 // Rebuilds read-only `blocks` (the same shape NewOrderStep2 renders live)

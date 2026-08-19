@@ -1,4 +1,7 @@
-import { CATEGORIES, getCategorySubjects, getCategoryColumns } from '../data/catalog';
+import {
+  CATEGORIES, getCategorySubjects, getCategoryColumns,
+  getCustomMatrixRowIds, customMatrixLabelKey, customMatrixCellKey,
+} from '../data/catalog';
 
 export const CSV_COLUMNS = ['event_header', 'year', 'position', 'event_line_1', 'event_line_2'];
 
@@ -32,15 +35,32 @@ function buildMatrixRows(item, cat, header, year, positionPart1, schoolLanguage)
   const rows = [];
   const matrix = item.detail?.matrix;
   if (!matrix) return rows;
+  const columns = getCategoryColumns(cat, schoolLanguage);
+
+  const emitRow = (subject, column, qty) => {
+    if (qty <= 0) return;
+    const position = positionPart1 ? `${positionPart1}\n${subject}` : subject;
+    const row = [header, year, position, column, ''];
+    for (let i = 0; i < qty; i++) rows.push(row);
+  };
+
   getCategorySubjects(cat, schoolLanguage).forEach((subject) => {
-    getCategoryColumns(cat, schoolLanguage).forEach((column) => {
-      const qty = Number(matrix[`${cat.key}::${subject}::${column}`]) || 0;
-      if (qty <= 0) return;
-      const position = positionPart1 ? `${positionPart1}\n${subject}` : subject;
-      const row = [header, year, position, column, ''];
-      for (let i = 0; i < qty; i++) rows.push(row);
+    columns.forEach((column) => {
+      emitRow(subject, column, Number(matrix[`${cat.key}::${subject}::${column}`]) || 0);
     });
   });
+
+  // Teacher-added rows for a subject/award not on the fixed list above (see
+  // OrderCategoryBlock's matrix "+ Add Row") — must be exported too, or
+  // Production would never see what to actually engrave for them.
+  getCustomMatrixRowIds(cat.key, matrix).forEach((rowId) => {
+    const subject = matrix[customMatrixLabelKey(cat.key, rowId)] || '';
+    if (!subject) return;
+    columns.forEach((column) => {
+      emitRow(subject, column, Number(matrix[customMatrixCellKey(cat.key, rowId, column)]) || 0);
+    });
+  });
+
   return rows;
 }
 
