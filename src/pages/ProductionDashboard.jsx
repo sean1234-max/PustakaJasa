@@ -31,13 +31,12 @@ function dueDateKey(dueDate) {
 }
 
 export default function ProductionDashboard() {
-  const { state, today, markProductionDone } = useAppState();
+  const { state, markProductionDone } = useAppState();
   const navigate = useNavigate();
   const [tab, setTab] = useState(TABS[0].key);
-  // Lets Production see, at a glance, everything that needs to go out on
-  // one delivery date — only relevant once an order has an invoice and is
-  // actually ready to ship, so this only applies on the "Ready for Export"
-  // tab.
+  // Lets Production see, at a glance, everything due out on one delivery
+  // date — useful across all three tabs (what's coming up in Pending
+  // Invoice, what's ready to ship today, what already went out).
   const [dueDateFilter, setDueDateFilter] = useState('');
 
   const handleMarkDone = (ord) => {
@@ -46,9 +45,17 @@ export default function ProductionDashboard() {
   };
 
   const activeTab = TABS.find((t) => t.key === tab);
-  const filteredOrders = state.orders
-    .filter(activeTab.match)
-    .filter((o) => tab !== 'ready' || !dueDateFilter || dueDateKey(o.dueDate) === dueDateFilter);
+  const ordersInTab = state.orders.filter(activeTab.match);
+  const filteredOrders = ordersInTab
+    .filter((o) => !dueDateFilter || dueDateKey(o.dueDate) === dueDateFilter);
+
+  // Only due dates that actually have an order in this tab are selectable —
+  // production shouldn't be able to pick a date with nothing to show.
+  const dueDateOptions = [...ordersInTab.reduce((map, o) => {
+    const key = dueDateKey(o.dueDate);
+    if (key && !map.has(key)) map.set(key, o.dueDate);
+    return map;
+  }, new Map())].sort(([a], [b]) => a.localeCompare(b));
 
   return (
     <div className="screen-wrap">
@@ -76,7 +83,7 @@ export default function ProductionDashboard() {
               key={t.key}
               type="button"
               className={`btn ${t.key === tab ? 'btn-primary' : 'btn-ghost'}`}
-              onClick={() => setTab(t.key)}
+              onClick={() => { setTab(t.key); setDueDateFilter(''); }}
             >
               {t.label} ({count})
             </button>
@@ -85,24 +92,21 @@ export default function ProductionDashboard() {
       </div>
 
       <div className="card-kicker">{activeTab.label}</div>
-      {tab === 'ready' && (
-        <div className="field" style={{ maxWidth: 260, margin: 'var(--space-3) 0 var(--space-4)' }}>
-          <label htmlFor="dueDateFilter">Filter by Due Date (delivery)</label>
-          <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
-            <input
-              className="input"
-              type="date"
-              id="dueDateFilter"
-              min={dueDateKey(today)}
-              value={dueDateFilter}
-              onChange={(e) => setDueDateFilter(e.target.value)}
-            />
-            {dueDateFilter && (
-              <button type="button" className="btn btn-ghost" onClick={() => setDueDateFilter('')}>Clear</button>
-            )}
-          </div>
-        </div>
-      )}
+      <div className="field" style={{ maxWidth: 260, margin: 'var(--space-3) 0 var(--space-4)' }}>
+        <label htmlFor="dueDateFilter">Filter by Due Date (delivery)</label>
+        <select
+          className="input"
+          id="dueDateFilter"
+          value={dueDateFilter}
+          onChange={(e) => setDueDateFilter(e.target.value)}
+          disabled={dueDateOptions.length === 0}
+        >
+          <option value="">All dates ({ordersInTab.length})</option>
+          {dueDateOptions.map(([key, rawDate]) => (
+            <option key={key} value={key}>{formatDate(new Date(rawDate))}</option>
+          ))}
+        </select>
+      </div>
       {filteredOrders.length === 0 && <p className="hint-text">No orders in this stage.</p>}
       <div className="order-grid">
         {filteredOrders.map((ord) => {
