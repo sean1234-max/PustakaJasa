@@ -117,16 +117,19 @@ export const CATEGORIES = [
   {
     key: 'LONJAKAN', label: 'LONJAKAN SAUJANA', mode: 'list', blocksCount: 1,
     rows: ['TAHUN 1', 'TAHUN 2', 'TAHUN 3', 'TAHUN 4', 'TAHUN 5', 'TAHUN 6'],
-    // No 4th line — like TOKOH, the quantity table only has one axis
-    // (TAHUN), so there's no second axis to source an event_line_1 from.
-    // "position" (index 2) is a CONTOH only — the real per-plaque position
-    // is each row's own description (TAHUN 1..6), see exportCsv.js.
+    // Line 3 ("LONJAKAN SAUJANA") is fixed/typed, same as PBD's line 3 —
+    // it prefixes the engraved position (see positionPrefixFromLine3 in
+    // exportCsv.js). Line 4 ("TAHUN 1") is a CONTOH only — the real
+    // per-plaque position is each row's own description (TAHUN 1..6),
+    // appended after line 3, see exportCsv.js.
     linePlaceholders: [
       'e.g. HARI ANUGERAH LONJAKAN SAUJANA',
       'e.g. 2026',
+      'e.g. LONJAKAN SAUJANA',
       'e.g. TAHUN 1',
     ],
     positionFromRows: true,
+    positionPrefixFromLine3: true,
   },
   {
     key: 'TOKOH', label: 'TOKOH', mode: 'list', blocksCount: 1,

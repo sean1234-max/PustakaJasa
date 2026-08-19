@@ -80,16 +80,21 @@ function buildFixedRows(item, header, year, positionPart1) {
 }
 
 // LONJAKAN, TOKOH (`positionFromRows` categories): the reference sample's
-// "position" line is only a CONTOH — the real per-plaque position is each
-// quantity-table row's own description (e.g. "TAHUN 3", "TOKOH NILAM"),
-// repeated that row's own qty times. There's no event_line_1 (the
+// last "position" line is only a CONTOH — the real per-plaque position is
+// each quantity-table row's own description (e.g. "TAHUN 3", "TOKOH
+// NILAM"), repeated that row's own qty times. There's no event_line_1 (the
 // quantity table only has one axis, unlike the matrix categories' two).
-function buildRowsFromDescriptionRows(item, header, year) {
+// LONJAKAN also has a fixed line 3 ("LONJAKAN SAUJANA") that prefixes the
+// engraved position — `positionPart1` carries it in for that category only
+// (TOKOH doesn't set positionPrefixFromLine3, so it stays row-desc-only,
+// same as before).
+function buildRowsFromDescriptionRows(item, header, year, positionPart1) {
   const rows = [];
   (item.detail?.rows || []).forEach((r) => {
     const qty = Number(r.qty) || 0;
     if (qty <= 0) return;
-    const row = [header, year, r.desc || '', '', ''];
+    const position = positionPart1 ? `${positionPart1}\n${r.desc || ''}` : (r.desc || '');
+    const row = [header, year, position, '', ''];
     for (let i = 0; i < qty; i++) rows.push(row);
   });
   return rows;
@@ -133,7 +138,7 @@ export function buildCsvRows(order, categoryKey) {
     if (cat?.mode === 'matrix') {
       rows.push(...buildMatrixRows(item, cat, header, year, getLine(item, 2), schoolLanguage));
     } else if (cat?.positionFromRows) {
-      rows.push(...buildRowsFromDescriptionRows(item, header, year));
+      rows.push(...buildRowsFromDescriptionRows(item, header, year, cat.positionPrefixFromLine3 ? getLine(item, 2) : ''));
     } else if (cat?.eventLine1FromRows) {
       rows.push(...buildPbdRows(item, header, year, getLine(item, 2)));
     } else {
