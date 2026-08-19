@@ -129,6 +129,7 @@ export default function ProductionDashboard() {
                 <div><div className="dim">Date Placed</div><div>{ord.datePlaced}</div></div>
                 <div><div className="dim">Sales</div><div>{ord.sales || '—'}</div></div>
                 <div><div className="dim">Due Date</div><div>{ord.dueDate ? formatDate(new Date(ord.dueDate)) : '—'}</div></div>
+                <div><div className="dim">Total QTY</div><div>{(ord.items || []).reduce((sum, it) => sum + (Number(it.qty) || 0), 0)}</div></div>
               </div>
 
               <div className="order-card-invoice"><span className="dim">Invoice ID:</span> {ord.invoiceId || '—'}</div>
