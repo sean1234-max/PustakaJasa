@@ -2,8 +2,8 @@ import { customMatrixLabelKey } from '../data/catalog';
 
 // Builds the block-editing callbacks (onLine, onMatrix, onRowField, ...) for
 // a given "draft" namespace inside global state — the same set of fields is
-// duplicated three times in state (main New Order draft, Amend draft, Add On
-// draft), so this factory avoids writing the wiring three times.
+// duplicated twice in state (main New Order draft, Add On draft), so this
+// factory avoids writing the wiring twice.
 export function createDraftUpdaters(patch, fields, includeNamaKelas) {
   const {
     lineValues, matrixValues, rowsByBlock, plakRows,

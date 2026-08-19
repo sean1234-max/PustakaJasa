@@ -4,7 +4,7 @@ import Nav from '../components/Nav';
 import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import { useAppState } from '../state/useAppState';
-import { CATEGORIES, filterHiddenPlakCatalog } from '../data/catalog';
+import { filterHiddenPlakCatalog, buildCategoryTabs, categoryTabKey, resolveCategoryTab } from '../data/catalog';
 import { computeBlocks } from '../utils/computeBlocks';
 import { createDraftUpdaters } from '../utils/draftUpdaters';
 
@@ -23,11 +23,12 @@ export default function AddOn() {
 
   const updaters = useMemo(() => createDraftUpdaters(patch, DRAFT_FIELDS, true), [patch]);
 
-  const { blocks, isPbdCategory } = useMemo(() => computeBlocks(
+  const { blocks } = useMemo(() => computeBlocks(
     state.addOnCategory, state.addOnPbdVariant, state.addOnLineValues, state.addOnMatrixValues, state.addOnRowsByBlock, state.addOnPlakRows, state.addOnNamaKelasRows, updaters, state.plakCatalog, state.schoolLanguage,
   ), [state.addOnCategory, state.addOnPbdVariant, state.addOnLineValues, state.addOnMatrixValues, state.addOnRowsByBlock, state.addOnPlakRows, state.addOnNamaKelasRows, updaters, state.plakCatalog, state.schoolLanguage]);
 
   const visiblePlakCatalog = useMemo(() => filterHiddenPlakCatalog(state.plakCatalog), [state.plakCatalog]);
+  const categoryTabs = useMemo(() => buildCategoryTabs(), []);
 
   if (!order) return null;
 
@@ -40,17 +41,15 @@ export default function AddOn() {
 
         <div className="card-kicker">Jenis Anugerah (Category)</div>
         <div style={{ margin: 'var(--space-3) 0 var(--space-8)' }}>
-          <CategoryTabs categories={CATEGORIES} active={state.addOnCategory} onSelect={(key) => patch({ addOnCategory: key })} />
+          <CategoryTabs
+            categories={categoryTabs}
+            active={categoryTabKey(state.addOnCategory, state.addOnPbdVariant)}
+            onSelect={(key) => {
+              const { category, pbdVariant } = resolveCategoryTab(key);
+              patch({ addOnCategory: category, addOnPbdVariant: pbdVariant });
+            }}
+          />
         </div>
-
-        {isPbdCategory && (
-          <div className="field" style={{ maxWidth: 340, marginBottom: 'var(--space-6)' }}>
-            <label htmlFor="addOnPbdVariant">PBD Item</label>
-            <select className="input" id="addOnPbdVariant" value={state.addOnPbdVariant} onChange={(e) => patch({ addOnPbdVariant: Number(e.target.value) })}>
-              {CATEGORIES.find((c) => c.key === 'PBD').variantLabels.map((label, i) => <option key={i} value={i}>{label}</option>)}
-            </select>
-          </div>
-        )}
 
         {blocks.map((blk) => (
           <OrderCategoryBlock key={blk.idx} blk={blk} editable={EDITABLE} plakOptions={visiblePlakCatalog} refImageUrl={state.refImages?.[blk.sampleSlotId]} />

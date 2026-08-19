@@ -658,8 +658,8 @@ a:hover { color: var(--color-accent-900); text-decoration: underline; }
   .print-only .table tr { break-inside: avoid; page-break-inside: avoid; }
 }
 
-/* Red "stamp" marking an already-approved order as ADD ON / AMEND /
-   UPDATED DETAILS — see getOrderChangeStamp in src/utils/orderStamp.js.
+/* Red "ADD ON" stamp marking an order that carries an approved Add-On
+   round — see getOrderChangeStamp in src/utils/orderStamp.js.
    Positioned absolute against its container's top-right corner: on the
    printed order (.print-only) that's the top of page 1, since it's the
    first thing in that container's normal flow; on Production's screen

@@ -107,14 +107,6 @@ function initialState() {
     plakCatalogLoaded: false,
 
     draftRestoredToast: '',
-    amendOrderId: null,
-    amendCategoriesUsed: [],
-    amendCategory: '',
-    amendPbdVariant: 0,
-    amendLineValues: {},
-    amendMatrixValues: {},
-    amendRowsByBlock: {},
-    amendPlakRows: {},
 
     addOnOrderId: null,
     addOnCategory: 'MP1',
@@ -441,11 +433,6 @@ export function AppStateProvider({ children }) {
     const newId = `${prefix}${String(seq).padStart(3, '0')}`;
 
     const totalAmt = st.cart.reduce((sum, ci) => sum + ci.harga, 0);
-    // Frozen baseline for the printed-order change stamp (see
-    // src/utils/orderStamp.js) — captured once here and never touched
-    // again, even by a later Amend, so it stays a stable "what was
-    // originally ordered" total to compare the current total against.
-    const originalTotalQty = st.cart.reduce((sum, ci) => sum + (Number(ci.qty) || 0), 0);
     // Only the category-draft portion needs to survive here — sekolah,
     // dates, etc. now live as top-level order fields below, so Sales can
     // rely on every order carrying them regardless of how it was created.
@@ -465,7 +452,6 @@ export function AppStateProvider({ children }) {
       dueDate: st.dueSelected, functionDate: st.funcSelected,
       logoDataUrl: st.logoDataUrl, logoFileName: st.logoFileName, logoRemark: st.logoRemark, schoolType: st.schoolType,
       snapshot, items: st.cart.map((ci) => ({ ...ci })),
-      originalTotalQty, amended: false,
     };
 
     try {
@@ -507,89 +493,6 @@ export function AppStateProvider({ children }) {
     });
   }, [patch]);
 
-  const openAmend = useCallback((ord) => {
-    const categoriesUsed = [];
-    const lineValues = {}, matrixValues = {}, rowsByBlock = {}, plakRows = {};
-    let pbdVariant = 0;
-    (ord.items || []).forEach((it) => {
-      if (!it.categoryKey) return;
-      if (!categoriesUsed.includes(it.categoryKey)) categoriesUsed.push(it.categoryKey);
-      if (it.categoryKey === 'PBD') pbdVariant = it.blockIdx;
-      const key = `${it.categoryKey}::${it.blockIdx}`;
-      if (it.detail) {
-        Object.assign(lineValues, it.detail.lines || {});
-        if (it.detail.matrix) Object.assign(matrixValues, it.detail.matrix);
-        // Items sharing a block always carry an identical copy of that
-        // block's row/qty breakdown when they came from the same Add to
-        // Cart round, so keeping the first one seen per key is a no-op in
-        // that (common) case — see the flagged cross-batch question below.
-        if (it.detail.rows && !rowsByBlock[key]) rowsByBlock[key] = JSON.parse(JSON.stringify(it.detail.rows));
-      }
-      // Was `plakRows[key] = [{ id: it.id, jenisPlak: it.jenisPlak }]` —
-      // overwrote instead of accumulating, so a block backed by more than
-      // one Jenis Plak line item (any category, not just PBD) silently
-      // lost every item but the last one the moment Amend was saved.
-      plakRows[key] = [...(plakRows[key] || []), { id: it.id, jenisPlak: it.jenisPlak }];
-    });
-    patch({
-      amendOrderId: ord.id, amendCategoriesUsed: categoriesUsed, amendCategory: categoriesUsed[0] || '',
-      amendPbdVariant: pbdVariant, amendLineValues: lineValues, amendMatrixValues: matrixValues,
-      amendRowsByBlock: rowsByBlock, amendPlakRows: plakRows,
-    });
-  }, [patch]);
-
-  const updateAmend = useCallback(() => {
-    setState((st) => {
-      const newItems = [];
-      st.amendCategoriesUsed.forEach((catKey) => {
-        // PBD is the only category with more than one block (its two
-        // variants, Kuantiti/Kedudukan) — computeBlocks only ever computes
-        // the single blockIdx passed as `pbdVariant`, so rebuilding with
-        // just `st.amendPbdVariant` (whichever variant the dropdown
-        // currently shows) silently dropped every item belonging to the
-        // *other* variant on save, even if it was never touched. Rebuilds
-        // every PBD blockIdx that actually has data in the draft instead of
-        // just the currently-viewed one.
-        const blockIndices = catKey === 'PBD'
-          ? [...new Set(
-            Object.keys(st.amendPlakRows)
-              .filter((k) => k.startsWith('PBD::'))
-              .map((k) => Number(k.split('::')[1])),
-          )]
-          : [0];
-        blockIndices.forEach((pbdV) => {
-          const { blocks: catBlocks, isMatrix: catIsMatrix } = computeBlocks(
-            catKey, pbdV, st.amendLineValues, st.amendMatrixValues, st.amendRowsByBlock, st.amendPlakRows, [], noopUpdaters, st.plakCatalog, st.schoolLanguage,
-          );
-          catBlocks.forEach((blk) => {
-            blk.plakRows.forEach((pr) => {
-              if (pr.jenisPlak) newItems.push({
-                id: pr.id, jenisPlak: pr.jenisPlak, qty: pr.qty, harga: pr.rawHarga, unitPrice: pr.unitPrice, categoryLabel: blk.qtyLabel,
-                categoryKey: catKey, blockIdx: blk.idx,
-                detail: snapshotDetail(catKey, blk.idx, catIsMatrix, st.amendLineValues, st.amendMatrixValues, st.amendRowsByBlock),
-              });
-            });
-          });
-        });
-      });
-      const amendedTotal = newItems.reduce((sum, it) => sum + it.harga, 0);
-      // `amended: true` is what tells the printed-order stamp (see
-      // src/utils/orderStamp.js) that this order's current total quantity
-      // should be compared against its frozen originalTotalQty at all —
-      // never reset back to false, since Amend can only ever run once per
-      // order anyway (only reachable pre-approval).
-      updateOrder(st.amendOrderId, { items: newItems, totalAmount: amendedTotal, amended: true })
-        .catch((err) => console.error('Failed to save amend to Supabase:', err));
-      return {
-        ...st,
-        orders: st.orders.map((o) => (o.id === st.amendOrderId ? { ...o, items: newItems, totalAmount: amendedTotal, amended: true } : o)),
-        updateToast: 'Update successful.',
-      };
-    });
-    clearTimeout(updateToastTimer.current);
-    updateToastTimer.current = setTimeout(() => patch({ updateToast: '' }), 2500);
-  }, [patch]);
-
   const openAddOn = useCallback((ord) => {
     patch({
       addOnOrderId: ord.id, addOnCategory: 'MP1', addOnPbdVariant: 0,
@@ -611,16 +514,34 @@ export function AppStateProvider({ children }) {
     setState((st) => {
       const newItems = [];
       CATEGORIES.forEach((cat) => {
-        const pbdV = cat.key === 'PBD' ? st.addOnPbdVariant : 0;
-        const { blocks: catBlocks, isMatrix: catIsMatrix } = computeBlocks(
-          cat.key, pbdV, st.addOnLineValues, st.addOnMatrixValues, st.addOnRowsByBlock, st.addOnPlakRows, [], noopUpdaters, st.plakCatalog, st.schoolLanguage,
-        );
-        catBlocks.forEach((blk) => {
-          blk.plakRows.forEach((pr) => {
-            if (pr.jenisPlak && pr.qty) newItems.push({
-              id: crypto.randomUUID(), jenisPlak: pr.jenisPlak, qty: pr.qty, harga: pr.rawHarga, unitPrice: pr.unitPrice, categoryLabel: blk.qtyLabel,
-              categoryKey: cat.key, blockIdx: blk.idx,
-              detail: snapshotDetail(cat.key, blk.idx, catIsMatrix, st.addOnLineValues, st.addOnMatrixValues, st.addOnRowsByBlock),
+        // PBD is the only category with more than one block (its two
+        // variants, now the "PBD TERBAIK" / "ALIRAN TERBAIK" tabs — see
+        // buildCategoryTabs in src/data/catalog.js). Add On has no
+        // per-category "commit" step — the teacher can freely switch
+        // between every category tab, including both PBD variants, before
+        // ever hitting Submit — so computing only the single
+        // currently-selected `addOnPbdVariant` silently dropped whichever
+        // variant wasn't selected at that moment. Same bug shape (and same
+        // fix) as the one already fixed in updateAmend. Rebuilds every PBD
+        // blockIdx that actually has data in the draft instead.
+        const blockIndices = cat.key === 'PBD'
+          ? [...new Set(
+            Object.keys(st.addOnPlakRows)
+              .filter((k) => k.startsWith('PBD::'))
+              .map((k) => Number(k.split('::')[1])),
+          )]
+          : [0];
+        blockIndices.forEach((pbdV) => {
+          const { blocks: catBlocks, isMatrix: catIsMatrix } = computeBlocks(
+            cat.key, pbdV, st.addOnLineValues, st.addOnMatrixValues, st.addOnRowsByBlock, st.addOnPlakRows, [], noopUpdaters, st.plakCatalog, st.schoolLanguage,
+          );
+          catBlocks.forEach((blk) => {
+            blk.plakRows.forEach((pr) => {
+              if (pr.jenisPlak && pr.qty) newItems.push({
+                id: crypto.randomUUID(), jenisPlak: pr.jenisPlak, qty: pr.qty, harga: pr.rawHarga, unitPrice: pr.unitPrice, categoryLabel: blk.qtyLabel,
+                categoryKey: cat.key, blockIdx: blk.idx,
+                detail: snapshotDetail(cat.key, blk.idx, catIsMatrix, st.addOnLineValues, st.addOnMatrixValues, st.addOnRowsByBlock),
+              });
             });
           });
         });
@@ -900,7 +821,7 @@ export function AppStateProvider({ children }) {
   const value = {
     state, patch, today: TODAY, login, logout,
     resetCurrentCategory, startNewOrder, addToCart, removeFromCart, submitOrder, reorderOrder,
-    openAmend, updateAmend, openAddOn, submitPendingAddOn, cancelPendingAddOn, rejectAddOn, approveAddOn, approveOrder, setInvoiceId,
+    openAddOn, submitPendingAddOn, cancelPendingAddOn, rejectAddOn, approveAddOn, approveOrder, setInvoiceId,
     markProductionDone,
     updateReferenceImage, addCatalogNode, removeCatalogNode, updateCatalogNodePrice, setCatalogNodeHidden, moveCatalogNode,
     reorderCatalogSiblings,

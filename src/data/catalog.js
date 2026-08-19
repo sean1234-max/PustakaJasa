@@ -111,7 +111,7 @@ export const CATEGORIES = [
     ],
     positionLine2Placeholder: '(pilihan) sambung baris ke-2',
     eventLine1FromRows: true,
-    variantLabels: ['PBD — Mengikut Kuantiti', 'PBD — Mengikut Kedudukan'],
+    variantLabels: ['PBD TERBAIK', 'ALIRAN TERBAIK'],
     qtyColumnLabels: ['KUANTITI', 'KEDUDUKAN'],
   },
   {
@@ -145,6 +145,30 @@ export const CATEGORIES = [
     positionFromRows: true,
   },
 ];
+
+// Category-selection tab list for New Order / Add On: PBD's two variants
+// (Kuantiti/Kedudukan) are exposed as their own top-level tabs — "PBD
+// TERBAIK" / "ALIRAN TERBAIK" — instead of one "PBD" tab plus a separate
+// "PBD Item" dropdown to pick the variant. Only how the teacher *picks* a
+// category changes; the underlying data model (item categoryKey/blockIdx,
+// reference image slot ids, CSV export) still runs on the single 'PBD'
+// category key with its two blocks — categoryTabKey/resolveCategoryTab
+// translate a tab click back to the real { category, pbdVariant } pair.
+export function buildCategoryTabs() {
+  return CATEGORIES.flatMap((cat) => {
+    if (cat.key === 'PBD') {
+      return cat.variantLabels.map((label, i) => ({ key: `PBD::${i}`, label }));
+    }
+    return [{ key: cat.key, label: cat.label }];
+  });
+}
+export function categoryTabKey(category, pbdVariant) {
+  return category === 'PBD' ? `PBD::${pbdVariant}` : category;
+}
+export function resolveCategoryTab(tabKey) {
+  if (tabKey.startsWith('PBD::')) return { category: 'PBD', pbdVariant: Number(tabKey.slice(5)) };
+  return { category: tabKey, pbdVariant: 0 };
+}
 
 // The Jenis Plak catalog now lives in Supabase (plak_catalog_nodes —
 // see supabase/migrations/0006_catalog_admin.sql) so Production can add,

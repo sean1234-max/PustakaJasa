@@ -12,7 +12,7 @@ const FILTERS = [
 ];
 
 export default function Dashboard() {
-  const { state, openAmend, openAddOn, reorderOrder, cancelPendingAddOn } = useAppState();
+  const { state, openAddOn, reorderOrder, cancelPendingAddOn } = useAppState();
   const navigate = useNavigate();
   const [filter, setFilter] = useState('Submitted to Sales');
   const [expandedAddOnId, setExpandedAddOnId] = useState(null);
@@ -69,7 +69,6 @@ export default function Dashboard() {
         {filteredOrders.map((ord) => {
           const idx = STATUS_STAGES.indexOf(ord.status);
           const invoiceIdLabel = idx >= 1 ? (ord.invoiceId || `INV-${ord.id.replace('ORD-', '')}`) : '-';
-          const canAmend = idx === 0;
           const canAddOn = idx === 1 && ord.pendingAddonStatus !== 'pending';
           const isCompleted = ord.status === 'Completed';
 
@@ -130,7 +129,6 @@ export default function Dashboard() {
 
               <div className="order-card-actions">
                 <button type="button" className="btn btn-ghost btn-block" onClick={() => navigate(`/orders/${ord.id}`)}>View Details</button>
-                {canAmend && <button type="button" className="btn btn-secondary btn-block" onClick={() => { openAmend(ord); navigate(`/amend/${ord.id}`); }}>Update Details</button>}
                 {canAddOn && <button type="button" className="btn btn-secondary btn-block" onClick={() => { openAddOn(ord); navigate(`/addon/${ord.id}`); }}>Add On</button>}
                 {isCompleted && <button type="button" className="btn btn-secondary btn-block" onClick={() => { reorderOrder(ord); navigate('/order/step1'); }}>Reorder</button>}
               </div>

@@ -3,12 +3,13 @@ import PlakPicker from './PlakPicker';
 // Renders one category "block": reference sample + numbered lines, the
 // quantity table (matrix or list mode), the optional Nama Kelas & Tahun
 // sub-table (PBD variant 0 only), and the Jenis Plak / QTY / Harga row.
-// Reused by New Order Step 2, Amend, and Add On — `editable` controls which
-// parts of the block are inputs vs read-only text for each of those.
-// The reference image itself is never editable here regardless of
-// `editable` — it's a fixed per-category example Production manages from
-// its own admin screen (Production → Reference Images), not per-order data.
-// `hideEmptyRows` (print only — the editable New Order / Amend / Add On
+// Reused by New Order Step 2, Add On, and every read-only order-review
+// screen (Sales/Production/Admin/teacher order details) — `editable`
+// controls which parts of the block are inputs vs read-only text for each
+// of those. The reference image itself is never editable here regardless
+// of `editable` — it's a fixed per-category example Production manages
+// from its own admin screen (Production → Reference Images), not per-order
+// data. `hideEmptyRows` (print only — the editable New Order / Add On
 // screens always show every subject/row so the teacher can fill any of
 // them in) drops subjects/rows nobody ordered from the printed quantity
 // table, so the printout only lists what was actually selected.

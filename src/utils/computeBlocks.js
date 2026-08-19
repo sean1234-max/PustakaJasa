@@ -117,8 +117,8 @@ export function computeBlocks(catKey, pbdVariant, lineValues, matrixValues, rows
       // as-is instead of re-deriving a price from the live catalog, which can
       // silently miss (e.g. the catalog code was since renamed) or simply not
       // reflect a negotiated price. Live order-creation flows (New Order,
-      // Amend, Add On) never set pr.unitPrice since no price exists yet there,
-      // so they keep falling back to the catalog lookup as before.
+      // Add On) never set pr.unitPrice since no price exists yet there, so
+      // they keep falling back to the catalog lookup as before.
       const unitPrice = pr.unitPrice != null ? pr.unitPrice : priceFor(pr.jenisPlak);
       const harga = unitPrice != null ? blockTotalQty * unitPrice : 0;
       return {

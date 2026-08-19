@@ -10,19 +10,32 @@ export default function AddOnSummary() {
   const navigate = useNavigate();
   const order = state.orders.find((o) => o.id === state.addOnOrderId);
 
+  // Must enumerate every PBD blockIdx that has data in the draft, not just
+  // the currently-selected `addOnPbdVariant` tab — otherwise this preview
+  // would silently hide whichever PBD variant isn't selected right now,
+  // even though submitPendingAddOn (src/state/AppState.jsx) submits both.
+  // See that function's comment for the full explanation.
   const addOnSummaryItems = useMemo(() => {
     const items = [];
     CATEGORIES.forEach((cat) => {
-      const pbdV = cat.key === 'PBD' ? state.addOnPbdVariant : 0;
-      const { blocks } = computeBlocks(cat.key, pbdV, state.addOnLineValues, state.addOnMatrixValues, state.addOnRowsByBlock, state.addOnPlakRows, [], noopUpdaters, state.plakCatalog, state.schoolLanguage);
-      blocks.forEach((blk) => {
-        blk.plakRows.forEach((pr) => {
-          if (pr.jenisPlak && pr.qty) items.push({ jenisPlak: pr.jenisPlak, qty: pr.qty, harga: pr.rawHarga, categoryLabel: blk.qtyLabel });
+      const blockIndices = cat.key === 'PBD'
+        ? [...new Set(
+          Object.keys(state.addOnPlakRows)
+            .filter((k) => k.startsWith('PBD::'))
+            .map((k) => Number(k.split('::')[1])),
+        )]
+        : [0];
+      blockIndices.forEach((pbdV) => {
+        const { blocks } = computeBlocks(cat.key, pbdV, state.addOnLineValues, state.addOnMatrixValues, state.addOnRowsByBlock, state.addOnPlakRows, [], noopUpdaters, state.plakCatalog, state.schoolLanguage);
+        blocks.forEach((blk) => {
+          blk.plakRows.forEach((pr) => {
+            if (pr.jenisPlak && pr.qty) items.push({ jenisPlak: pr.jenisPlak, qty: pr.qty, harga: pr.rawHarga, categoryLabel: blk.qtyLabel });
+          });
         });
       });
     });
     return items;
-  }, [state.addOnPbdVariant, state.addOnLineValues, state.addOnMatrixValues, state.addOnRowsByBlock, state.addOnPlakRows, state.plakCatalog, state.schoolLanguage]);
+  }, [state.addOnLineValues, state.addOnMatrixValues, state.addOnRowsByBlock, state.addOnPlakRows, state.plakCatalog, state.schoolLanguage]);
 
   if (!order) return null;
 

@@ -4,7 +4,7 @@ import Nav from '../components/Nav';
 import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import { useAppState } from '../state/useAppState';
-import { CATEGORIES, filterHiddenPlakCatalog } from '../data/catalog';
+import { filterHiddenPlakCatalog, buildCategoryTabs, categoryTabKey, resolveCategoryTab } from '../data/catalog';
 import { computeBlocks } from '../utils/computeBlocks';
 import { createDraftUpdaters } from '../utils/draftUpdaters';
 
@@ -29,7 +29,7 @@ export default function NewOrderStep2() {
     return u;
   }, [patch]);
 
-  const { blocks, isPbdCategory } = useMemo(() => computeBlocks(
+  const { blocks } = useMemo(() => computeBlocks(
     state.category, state.pbdVariant, state.lineValues, state.matrixValues, state.rowsByBlock, state.plakRows, state.namaKelasRows, updaters, state.plakCatalog, state.schoolLanguage,
   ), [state.category, state.pbdVariant, state.lineValues, state.matrixValues, state.rowsByBlock, state.plakRows, state.namaKelasRows, updaters, state.plakCatalog, state.schoolLanguage]);
 
@@ -37,7 +37,7 @@ export default function NewOrderStep2() {
   // teacher's picker — see filterHiddenPlakCatalog.
   const visiblePlakCatalog = useMemo(() => filterHiddenPlakCatalog(state.plakCatalog), [state.plakCatalog]);
 
-  const pbdCat = CATEGORIES.find((c) => c.key === 'PBD');
+  const categoryTabs = useMemo(() => buildCategoryTabs(), []);
 
   return (
     <div className="screen-wrap">
@@ -61,17 +61,12 @@ export default function NewOrderStep2() {
 
         <div className="card-kicker">Jenis Anugerah (Category)</div>
         <div style={{ margin: 'var(--space-3) 0 var(--space-8)' }}>
-          <CategoryTabs categories={CATEGORIES} active={state.category} onSelect={(key) => patch({ category: key })} />
+          <CategoryTabs
+            categories={categoryTabs}
+            active={categoryTabKey(state.category, state.pbdVariant)}
+            onSelect={(key) => patch(resolveCategoryTab(key))}
+          />
         </div>
-
-        {isPbdCategory && (
-          <div className="field" style={{ maxWidth: 340, marginBottom: 'var(--space-6)' }}>
-            <label htmlFor="pbdVariant">PBD Item</label>
-            <select className="input" id="pbdVariant" value={state.pbdVariant} onChange={(e) => patch({ pbdVariant: Number(e.target.value) })}>
-              {pbdCat.variantLabels.map((label, i) => <option key={i} value={i}>{label}</option>)}
-            </select>
-          </div>
-        )}
 
         {blocks.map((blk) => (
           <OrderCategoryBlock
