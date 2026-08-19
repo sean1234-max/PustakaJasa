@@ -597,7 +597,8 @@ a:hover { color: var(--color-accent-900); text-decoration: underline; }
 .order-dot { flex: 1; height: 4px; }
 .order-card-meta { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2); font-size: 12px; margin-bottom: var(--space-2); }
 .order-card-invoice { font-size: 12px; margin-bottom: var(--space-4); }
-.order-card-total { font-family: var(--font-heading); font-size: 20px; color: var(--color-accent-700); margin-bottom: var(--space-4); }
+.order-card-total { font-family: var(--font-heading); font-size: 20px; font-weight: 700; color: var(--color-accent-700); margin-bottom: var(--space-4); }
+.order-card-qty { font-family: var(--font-heading); font-size: 20px; font-weight: 700; color: var(--color-text); }
 .order-card-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; }
 .order-card-actions .btn { flex: 1; }
 
