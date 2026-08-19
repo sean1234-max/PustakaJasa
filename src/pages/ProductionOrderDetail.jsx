@@ -5,7 +5,7 @@ import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import { useAppState } from '../state/useAppState';
 import { STATUS_STAGES, STATUS_BG, STATUS_TEXT, formatDate } from '../data/catalog';
-import { reconstructBlocksForCategory } from '../utils/computeBlocks';
+import { reconstructOrderDetailGroups } from '../utils/computeBlocks';
 import { getOrderCategories, buildCsvRows, rowsToCsv, buildCategoryCsvFilename } from '../utils/exportCsv';
 import { downloadTextFile } from '../utils/downloadBlob';
 import { groupItemsByBatch } from '../utils/orderBatches';
@@ -27,15 +27,16 @@ export default function ProductionOrderDetail() {
   const [activeCat, setActiveCat] = useState(() => categories[0]?.key || '');
   const currentCat = categories.find((c) => c.key === activeCat) || categories[0];
 
-  const catBlocks = useMemo(() => {
+  // One entry per (block, batch) — a category can carry more than one
+  // distinct "order detail" (e.g. PBD's Kuantiti and Kedudukan variants, or
+  // the same variant reused by a later Add On with a different Jenis Plak),
+  // and each needs its own reference-sample view and its own CSV export —
+  // merging them would mix rows meant for different physical AI files into
+  // one file with no way to tell them apart. See reconstructOrderDetailGroups.
+  const detailGroups = useMemo(() => {
     if (!order || !currentCat) return [];
-    return reconstructBlocksForCategory(order, currentCat.key, state.plakCatalog).blocks;
+    return reconstructOrderDetailGroups(order, currentCat.key, state.plakCatalog);
   }, [order, currentCat, state.plakCatalog]);
-
-  const csvData = useMemo(() => {
-    if (!order || !currentCat) return { rows: [], skippedItemIds: [] };
-    return buildCsvRows(order, currentCat.key);
-  }, [order, currentCat]);
 
   if (!order) return null;
 
@@ -48,12 +49,13 @@ export default function ProductionOrderDetail() {
     setInvoiceDraft('');
   };
 
-  const handleExport = () => {
-    if (!currentCat || csvData.rows.length === 0) return;
-    const csv = rowsToCsv(csvData.rows);
-    const filename = buildCategoryCsvFilename(order, currentCat.label);
+  const handleExportGroup = (group, csvRows) => {
+    if (csvRows.length === 0) return;
+    const csv = rowsToCsv(csvRows);
+    const label = group.batch === 0 ? group.blk.qtyLabel : `${group.blk.qtyLabel} - ${group.label}`;
+    const filename = buildCategoryCsvFilename(order, label);
     downloadTextFile(filename, csv);
-    setExportNote(`Exported ${csvData.rows.length} row(s) to ${filename}.`);
+    setExportNote(`Exported ${csvRows.length} row(s) to ${filename}.`);
     clearTimeout(exportNoteTimer.current);
     exportNoteTimer.current = setTimeout(() => setExportNote(''), 4000);
   };
@@ -184,27 +186,40 @@ export default function ProductionOrderDetail() {
                       <CategoryTabs categories={categories} active={currentCat?.key} onSelect={setActiveCat} />
                     </div>
 
-                    {catBlocks.map((blk) => (
-                      <OrderCategoryBlock key={blk.idx} blk={blk} editable={READONLY} refImageUrl={state.refImages?.[blk.sampleSlotId]} />
-                    ))}
+                    {detailGroups.length === 0 && <p className="hint-text">No order details found for this category.</p>}
+                    {detailGroups.map((group, gi) => {
+                      if (!group.blk) return null;
+                      const csvData = buildCsvRows(order, currentCat.key, group.items);
+                      return (
+                        <div
+                          key={`${group.blockIdx}-${group.batch}`}
+                          style={gi > 0 ? { marginTop: 'var(--space-8)', paddingTop: 'var(--space-8)', borderTop: '1px solid var(--color-neutral-300)' } : undefined}
+                        >
+                          <div className="card-kicker">
+                            {group.blk.qtyLabel}{group.batch !== 0 ? ` — ${group.label}` : ''}
+                          </div>
+                          <OrderCategoryBlock blk={group.blk} editable={READONLY} refImageUrl={state.refImages?.[group.blk.sampleSlotId]} />
 
-                    {csvData.rows.length === 0 ? (
-                      <p className="hint-text">No reference sample data to export for this category.</p>
-                    ) : (
-                      <>
-                        {csvData.skippedItemIds.length > 0 && (
-                          <p className="hint-text">{csvData.skippedItemIds.length} item(s) skipped — no reference sample data.</p>
-                        )}
-                        <p className="hint-text">{csvData.rows.length} row(s) ready to export.</p>
-                      </>
-                    )}
+                          {csvData.rows.length === 0 ? (
+                            <p className="hint-text">No reference sample data to export for this order detail.</p>
+                          ) : (
+                            <>
+                              {csvData.skippedItemIds.length > 0 && (
+                                <p className="hint-text">{csvData.skippedItemIds.length} item(s) skipped — no reference sample data.</p>
+                              )}
+                              <p className="hint-text">{csvData.rows.length} row(s) ready to export.</p>
+                            </>
+                          )}
 
-                    <div className="row-split" style={{ marginTop: 'var(--space-3)' }}>
-                      <span />
-                      <button type="button" className="btn btn-primary" disabled={csvData.rows.length === 0} onClick={handleExport}>
-                        Export CSV
-                      </button>
-                    </div>
+                          <div className="row-split" style={{ marginTop: 'var(--space-3)' }}>
+                            <span />
+                            <button type="button" className="btn btn-primary" disabled={csvData.rows.length === 0} onClick={() => handleExportGroup(group, csvData.rows)}>
+                              Export CSV
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
                     {exportNote && <p className="hint-text">{exportNote}</p>}
                   </>
                 )}

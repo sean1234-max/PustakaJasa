@@ -117,17 +117,20 @@ function buildPbdRows(item, header, year, positionPart1) {
   return rows;
 }
 
-// Builds every CSV row for one category of one order. Items with no
-// `detail` at all (legacy items predating the real submit flow) are
-// skipped (reported via skippedItemIds) rather than producing blank rows.
-export function buildCsvRows(order, categoryKey) {
+// Builds every CSV row for one category of one order — or, when `items` is
+// passed explicitly, just that subset (e.g. one order-detail group's items;
+// see reconstructOrderDetailGroups in computeBlocks.js and
+// ProductionOrderDetail.jsx). Items with no `detail` at all (legacy items
+// predating the real submit flow) are skipped (reported via
+// skippedItemIds) rather than producing blank rows.
+export function buildCsvRows(order, categoryKey, items) {
   const cat = CATEGORIES.find((c) => c.key === categoryKey);
   const schoolLanguage = order.schoolLanguage === 'SJKC' ? 'SJKC' : 'SK';
-  const items = (order.items || []).filter((it) => it.categoryKey === categoryKey);
+  const scopedItems = items || (order.items || []).filter((it) => it.categoryKey === categoryKey);
   const rows = [];
   const skippedItemIds = [];
 
-  items.forEach((item) => {
+  scopedItems.forEach((item) => {
     if (!item.detail || !item.detail.lines || Object.keys(item.detail.lines).length === 0) {
       skippedItemIds.push(item.id);
       return;
