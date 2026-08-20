@@ -1,7 +1,9 @@
+import { customMatrixLabelKey } from '../data/catalog';
+
 // Builds the block-editing callbacks (onLine, onMatrix, onRowField, ...) for
 // a given "draft" namespace inside global state — the same set of fields is
-// duplicated three times in state (main New Order draft, Amend draft, Add On
-// draft), so this factory avoids writing the wiring three times.
+// duplicated twice in state (main New Order draft, Add On draft), so this
+// factory avoids writing the wiring twice.
 export function createDraftUpdaters(patch, fields) {
   const {
     lineValues, matrixValues, rowsByBlock, plakRows, columnsByBlock,
@@ -38,6 +40,8 @@ export function createDraftUpdaters(patch, fields) {
       },
     })),
     // Columns (Tahun + Nama Kelas) — dynamicMatrix categories only (PBD).
+    // "+ Add Tahun" — a genuinely new Tahun range, so both Tahun and Nama
+    // Kelas start blank for the teacher to fill in.
     onColumnField: (colsKey, id, field, val) => patch((st) => ({
       [columnsByBlock]: {
         ...st[columnsByBlock],
@@ -47,8 +51,6 @@ export function createDraftUpdaters(patch, fields) {
     onColumnRemove: (colsKey, id) => patch((st) => ({
       [columnsByBlock]: { ...st[columnsByBlock], [colsKey]: st[columnsByBlock][colsKey].filter((c) => c.id !== id) },
     })),
-    // "+ Add Tahun" — a genuinely new Tahun range, so both Tahun and Nama
-    // Kelas start blank for the teacher to fill in.
     onAddColumn: (colsKey) => patch((st) => ({
       [columnsByBlock]: {
         ...st[columnsByBlock],
@@ -74,6 +76,22 @@ export function createDraftUpdaters(patch, fields) {
         },
         [nextColumnId]: st[nextColumnId] + 1,
       };
+    }),
+    // Matrix "+ Add Row" (see OrderCategoryBlock / getCustomMatrixRowIds in
+    // src/data/catalog.js): a custom row's existence is just its
+    // `__label__` key being present in matrixValues, so adding one is a
+    // plain onMatrix write with a fresh id — no separate row-list state to
+    // keep in sync. Removing deletes every key under that row's id
+    // (label + every column cell) in one pass.
+    onAddMatrixRow: (catKey) => patch((st) => ({
+      [matrixValues]: { ...st[matrixValues], [customMatrixLabelKey(catKey, st[nextRowId])]: '' },
+      [nextRowId]: st[nextRowId] + 1,
+    })),
+    onMatrixRowRemove: (catKey, rowId) => patch((st) => {
+      const prefix = `${catKey}::custom-${rowId}::`;
+      const next = { ...st[matrixValues] };
+      Object.keys(next).forEach((k) => { if (k.startsWith(prefix)) delete next[k]; });
+      return { [matrixValues]: next };
     }),
   };
 }

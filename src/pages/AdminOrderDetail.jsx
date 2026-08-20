@@ -5,8 +5,8 @@ import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import { useAppState } from '../state/useAppState';
 import { STATUS_STAGES, STATUS_BG, STATUS_TEXT, formatDate } from '../data/catalog';
-import { reconstructBlocksForCategory } from '../utils/computeBlocks';
-import { getOrderCategories, buildCsvRows, rowsToCsv, buildCategoryCsvFilename } from '../utils/exportCsv';
+import { reconstructOrderDetailGroups } from '../utils/computeBlocks';
+import { getOrderCategories, getOrderJenisPlakGroups, buildCsvRows, rowsToCsv, buildCategoryCsvFilename } from '../utils/exportCsv';
 import { downloadTextFile } from '../utils/downloadBlob';
 import { groupItemsByBatch } from '../utils/orderBatches';
 
@@ -32,15 +32,16 @@ export default function AdminOrderDetail() {
   const [activeCat, setActiveCat] = useState(() => categories[0]?.key || '');
   const currentCat = categories.find((c) => c.key === activeCat) || categories[0];
 
-  const catBlocks = useMemo(() => {
+  // One entry per (block, batch) — see the matching comment in
+  // ProductionOrderDetail.jsx / reconstructOrderDetailGroups.
+  const detailGroups = useMemo(() => {
     if (!order || !currentCat) return [];
-    return reconstructBlocksForCategory(order, currentCat.key, state.plakCatalog).blocks;
+    return reconstructOrderDetailGroups(order, currentCat.key, state.plakCatalog);
   }, [order, currentCat, state.plakCatalog]);
 
-  const csvData = useMemo(() => {
-    if (!order || !currentCat) return { rows: [], skippedItemIds: [] };
-    return buildCsvRows(order, currentCat.key);
-  }, [order, currentCat]);
+  // Order-wide, not scoped to the selected category tab — see the matching
+  // comment in ProductionOrderDetail.jsx.
+  const jenisPlakGroups = useMemo(() => (order ? getOrderJenisPlakGroups(order) : []), [order]);
 
   if (!order) return <AdminLayout title="Order Details"><p className="text-body-md text-on-surface-variant">Order not found.</p></AdminLayout>;
 
@@ -53,12 +54,24 @@ export default function AdminOrderDetail() {
     setInvoiceDraft('');
   };
 
-  const handleExport = () => {
-    if (!currentCat || csvData.rows.length === 0) return;
-    const csv = rowsToCsv(csvData.rows);
-    const filename = buildCategoryCsvFilename(order, currentCat.label);
+  const handleExportGroup = (group, csvRows) => {
+    if (csvRows.length === 0) return;
+    const csv = rowsToCsv(csvRows);
+    const label = [group.blk.qtyLabel, group.batch !== 0 ? group.label : null, group.jenisPlak]
+      .filter(Boolean).join(' - ');
+    const filename = buildCategoryCsvFilename(order, label);
     downloadTextFile(filename, csv);
-    setExportNote(`Exported ${csvData.rows.length} row(s) to ${filename}.`);
+    setExportNote(`Exported ${csvRows.length} row(s) to ${filename}.`);
+    clearTimeout(exportNoteTimer.current);
+    exportNoteTimer.current = setTimeout(() => setExportNote(''), 4000);
+  };
+
+  const handleExportJenisPlak = (jenisPlak, csvRows) => {
+    if (csvRows.length === 0) return;
+    const csv = rowsToCsv(csvRows);
+    const filename = buildCategoryCsvFilename(order, jenisPlak);
+    downloadTextFile(filename, csv);
+    setExportNote(`Exported ${csvRows.length} row(s) to ${filename}.`);
     clearTimeout(exportNoteTimer.current);
     exportNoteTimer.current = setTimeout(() => setExportNote(''), 4000);
   };
@@ -191,7 +204,46 @@ export default function AdminOrderDetail() {
 
             {order.invoiceId ? (
               <>
-                <h3 className="text-label-bold text-on-surface-variant uppercase tracking-widest mt-8 mb-2">Export by Category</h3>
+                <h3 className="text-label-bold text-on-surface-variant uppercase tracking-widest mt-8 mb-2">Export by Jenis Plak</h3>
+                <p className="text-body-sm text-on-surface-variant mb-2">
+                  Same Jenis Plak used in more than one place in this order? Export one combined CSV for it here instead of a separate file per order detail.
+                </p>
+                {jenisPlakGroups.length === 0 ? (
+                  <p className="text-body-md text-on-surface-variant">No Jenis Plak found for this order.</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="border-b border-outline-variant">
+                          <th className="py-2 pr-4 text-label-bold text-on-surface-variant uppercase">Jenis Plak</th>
+                          <th className="py-2 pr-4 text-label-bold text-on-surface-variant uppercase w-32">Order Details</th>
+                          <th className="py-2 pr-4 text-label-bold text-on-surface-variant uppercase w-24">Rows</th>
+                          <th className="py-2 w-40" />
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-outline-variant text-body-md text-on-surface">
+                        {jenisPlakGroups.map(({ jenisPlak, items }) => {
+                          const csvData = buildCsvRows(order, null, items);
+                          return (
+                            <tr key={jenisPlak}>
+                              <td className="py-2 pr-4">{jenisPlak}</td>
+                              <td className="py-2 pr-4">{items.length}</td>
+                              <td className="py-2 pr-4">{csvData.rows.length}</td>
+                              <td className="py-2">
+                                <button type="button" disabled={csvData.rows.length === 0} onClick={() => handleExportJenisPlak(jenisPlak, csvData.rows)} className="bg-primary text-on-primary text-label-bold font-semibold px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50">
+                                  Export CSV
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                {exportNote && <p className="text-body-md text-on-surface-variant mt-2">{exportNote}</p>}
+
+                <h3 className="text-body-sm font-semibold text-on-surface-variant uppercase tracking-widest mt-8 mb-2 opacity-80">Export by Category (for review)</h3>
                 {categories.length === 0 ? (
                   <p className="text-body-md text-on-surface-variant">No exportable categories found for this order.</p>
                 ) : (
@@ -200,26 +252,36 @@ export default function AdminOrderDetail() {
                       <CategoryTabs categories={categories} active={currentCat?.key} onSelect={setActiveCat} />
                     </div>
 
-                    {catBlocks.map((blk) => (
-                      <OrderCategoryBlock key={blk.idx} blk={blk} editable={READONLY} refImageUrl={state.refImages?.[blk.sampleSlotId]} />
-                    ))}
+                    {detailGroups.length === 0 && <p className="text-body-md text-on-surface-variant">No order details found for this category.</p>}
+                    {detailGroups.map((group, gi) => {
+                      if (!group.blk) return null;
+                      const csvData = buildCsvRows(order, currentCat.key, group.items);
+                      return (
+                        <div key={group.items[0].id} className={gi > 0 ? 'mt-8 pt-8 border-t border-outline-variant' : undefined}>
+                          <h4 className="text-label-bold text-on-surface-variant uppercase tracking-widest mb-2">
+                            {group.blk.qtyLabel}{group.batch !== 0 ? ` — ${group.label}` : ''} — {group.jenisPlak}
+                          </h4>
+                          <OrderCategoryBlock blk={group.blk} editable={READONLY} refImageUrl={state.refImages?.[group.blk.sampleSlotId]} />
 
-                    {csvData.rows.length === 0 ? (
-                      <p className="text-body-md text-on-surface-variant">No reference sample data to export for this category.</p>
-                    ) : (
-                      <>
-                        {csvData.skippedItemIds.length > 0 && (
-                          <p className="text-body-md text-on-surface-variant">{csvData.skippedItemIds.length} item(s) skipped — no reference sample data.</p>
-                        )}
-                        <p className="text-body-md text-on-surface-variant">{csvData.rows.length} row(s) ready to export.</p>
-                      </>
-                    )}
+                          {csvData.rows.length === 0 ? (
+                            <p className="text-body-md text-on-surface-variant">No reference sample data to export for this order detail.</p>
+                          ) : (
+                            <>
+                              {csvData.skippedItemIds.length > 0 && (
+                                <p className="text-body-md text-on-surface-variant">{csvData.skippedItemIds.length} item(s) skipped — no reference sample data.</p>
+                              )}
+                              <p className="text-body-md text-on-surface-variant">{csvData.rows.length} row(s) ready to export.</p>
+                            </>
+                          )}
 
-                    <div className="flex justify-end mt-3">
-                      <button type="button" disabled={csvData.rows.length === 0} onClick={handleExport} className="bg-primary text-on-primary text-label-bold font-semibold px-6 py-2.5 rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50">
-                        Export CSV
-                      </button>
-                    </div>
+                          <div className="flex justify-end mt-3">
+                            <button type="button" disabled={csvData.rows.length === 0} onClick={() => handleExportGroup(group, csvData.rows)} className="bg-primary text-on-primary text-label-bold font-semibold px-6 py-2.5 rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50">
+                              Export CSV
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
                     {exportNote && <p className="text-body-md text-on-surface-variant mt-2">{exportNote}</p>}
                   </>
                 )}

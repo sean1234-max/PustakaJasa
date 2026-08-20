@@ -1,4 +1,7 @@
-import { CATEGORIES, getCategorySubjects, getCategoryColumns, tahunRangeYears } from '../data/catalog';
+import {
+  CATEGORIES, getCategorySubjects, getCategoryColumns, tahunRangeYears,
+  getCustomMatrixRowIds, customMatrixLabelKey, customMatrixCellKey,
+} from '../data/catalog';
 
 export const CSV_COLUMNS = ['event_header', 'year', 'position', 'event_line_1', 'event_line_2'];
 
@@ -32,15 +35,32 @@ function buildMatrixRows(item, cat, header, year, positionPart1, schoolLanguage)
   const rows = [];
   const matrix = item.detail?.matrix;
   if (!matrix) return rows;
+  const columns = getCategoryColumns(cat, schoolLanguage);
+
+  const emitRow = (subject, column, qty) => {
+    if (qty <= 0) return;
+    const position = positionPart1 ? `${positionPart1}\n${subject}` : subject;
+    const row = [header, year, position, column, ''];
+    for (let i = 0; i < qty; i++) rows.push(row);
+  };
+
   getCategorySubjects(cat, schoolLanguage).forEach((subject) => {
-    getCategoryColumns(cat, schoolLanguage).forEach((column) => {
-      const qty = Number(matrix[`${cat.key}::${subject}::${column}`]) || 0;
-      if (qty <= 0) return;
-      const position = positionPart1 ? `${positionPart1}\n${subject}` : subject;
-      const row = [header, year, position, column, ''];
-      for (let i = 0; i < qty; i++) rows.push(row);
+    columns.forEach((column) => {
+      emitRow(subject, column, Number(matrix[`${cat.key}::${subject}::${column}`]) || 0);
     });
   });
+
+  // Teacher-added rows for a subject/award not on the fixed list above (see
+  // OrderCategoryBlock's matrix "+ Add Row") — must be exported too, or
+  // Production would never see what to actually engrave for them.
+  getCustomMatrixRowIds(cat.key, matrix).forEach((rowId) => {
+    const subject = matrix[customMatrixLabelKey(cat.key, rowId)] || '';
+    if (!subject) return;
+    columns.forEach((column) => {
+      emitRow(subject, column, Number(matrix[customMatrixCellKey(cat.key, rowId, column)]) || 0);
+    });
+  });
+
   return rows;
 }
 
@@ -60,35 +80,41 @@ function buildFixedRows(item, header, year, positionPart1) {
 }
 
 // LONJAKAN, TOKOH (`positionFromRows` categories): the reference sample's
-// "position" line is only a CONTOH — the real per-plaque position is each
-// quantity-table row's own description (e.g. "TAHUN 3", "TOKOH NILAM"),
-// repeated that row's own qty times. There's no event_line_1 (the
+// last "position" line is only a CONTOH — the real per-plaque position is
+// each quantity-table row's own description (e.g. "TAHUN 3", "TOKOH
+// NILAM"), repeated that row's own qty times. There's no event_line_1 (the
 // quantity table only has one axis, unlike the matrix categories' two).
-function buildRowsFromDescriptionRows(item, header, year) {
+// LONJAKAN also has a fixed line 3 ("LONJAKAN SAUJANA") that prefixes the
+// engraved position — `positionPart1` carries it in for that category only
+// (TOKOH doesn't set positionPrefixFromLine3, so it stays row-desc-only,
+// same as before).
+function buildRowsFromDescriptionRows(item, header, year, positionPart1) {
   const rows = [];
   (item.detail?.rows || []).forEach((r) => {
     const qty = Number(r.qty) || 0;
     if (qty <= 0) return;
-    const row = [header, year, r.desc || '', '', ''];
+    const position = positionPart1 ? `${positionPart1}\n${r.desc || ''}` : (r.desc || '');
+    const row = [header, year, position, '', ''];
     for (let i = 0; i < qty; i++) rows.push(row);
   });
   return rows;
 }
 
-// PBD (dynamicMatrix): same shape as buildMatrixRows above, except both
-// axes are per-order data instead of catalog-fixed — subject rows (default
-// 13 + any teacher-added extras) come from item.detail.rows, and columns
-// (a Tahun range + Nama Kelas, entirely teacher-defined) from
-// item.detail.columns. Each (row, column) cell's qty is the total across
-// every Tahun the column's range covers (e.g. TAHUN 3 - TAHUN 6 needs at
-// least 4 — one per year, enforced at Add to Cart time) — split back out
-// as evenly as possible per individual year here (any remainder going to
-// the earliest years), each becoming its own CSV row: subject fills in for
-// the sample's second position line same as MP THP, that year + Nama Kelas
-// joined together fill in event_line_1. Tahun is optional (a teacher may
-// leave a class row's Dari/Hingga blank) — in that case there's nothing to
-// split by, so the full qty goes into a single set of rows using just Nama
-// Kelas for event_line_1, instead of being dropped entirely.
+// PBD TERBAIK / ALIRAN TERBAIK (dynamicMatrix): same shape as
+// buildMatrixRows above, except both axes are per-order data instead of
+// catalog-fixed — subject rows (default 13 + any teacher-added extras)
+// come from item.detail.rows, and columns (a Tahun range + Nama Kelas,
+// entirely teacher-defined) from item.detail.columns. Each (row, column)
+// cell's qty is the total across every Tahun the column's range covers
+// (e.g. TAHUN 3 - TAHUN 6 needs at least 4 — one per year, enforced at Add
+// to Cart time) — split back out as evenly as possible per individual year
+// here (any remainder going to the earliest years), each becoming its own
+// CSV row: subject fills in for the sample's second position line same as
+// MP THP, that year + Nama Kelas joined together fill in event_line_1.
+// Tahun is optional (a teacher may leave a class row's Dari/Hingga blank)
+// — in that case there's nothing to split by, so the full qty goes into a
+// single set of rows using just Nama Kelas for event_line_1, instead of
+// being dropped entirely.
 function buildPbdMatrixRows(item, header, year, positionPart1) {
   const rows = [];
   const subjectRows = item.detail?.rows || [];
@@ -120,21 +146,27 @@ function buildPbdMatrixRows(item, header, year, positionPart1) {
   return rows;
 }
 
-// Builds every CSV row for one category of one order. Items with no
-// `detail` at all (legacy items predating the real submit flow) are
-// skipped (reported via skippedItemIds) rather than producing blank rows.
-export function buildCsvRows(order, categoryKey) {
-  const cat = CATEGORIES.find((c) => c.key === categoryKey);
+// Builds every CSV row for one category of one order — or, when `items` is
+// passed explicitly, just that subset. `items` doesn't have to share one
+// category (each item's own category is looked up individually below), so
+// the same function also backs a Jenis-Plak-combined export that spans
+// multiple categories — see getOrderJenisPlakGroups and
+// reconstructOrderDetailGroups (computeBlocks.js) / ProductionOrderDetail.jsx.
+// Items with no `detail` at all (legacy items predating the real submit
+// flow) are skipped (reported via skippedItemIds) rather than producing
+// blank rows.
+export function buildCsvRows(order, categoryKey, items) {
   const schoolLanguage = order.schoolLanguage === 'SJKC' ? 'SJKC' : 'SK';
-  const items = (order.items || []).filter((it) => it.categoryKey === categoryKey);
+  const scopedItems = items || (order.items || []).filter((it) => it.categoryKey === categoryKey);
   const rows = [];
   const skippedItemIds = [];
 
-  items.forEach((item) => {
+  scopedItems.forEach((item) => {
     if (!item.detail || !item.detail.lines || Object.keys(item.detail.lines).length === 0) {
       skippedItemIds.push(item.id);
       return;
     }
+    const cat = CATEGORIES.find((c) => c.key === item.categoryKey);
     const header = getLine(item, 0);
     const year = getLine(item, 1);
 
@@ -143,13 +175,31 @@ export function buildCsvRows(order, categoryKey) {
     } else if (cat?.mode === 'dynamicMatrix') {
       rows.push(...buildPbdMatrixRows(item, header, year, getLine(item, 2)));
     } else if (cat?.positionFromRows) {
-      rows.push(...buildRowsFromDescriptionRows(item, header, year));
+      rows.push(...buildRowsFromDescriptionRows(item, header, year, cat.positionPrefixFromLine3 ? getLine(item, 2) : ''));
     } else {
       rows.push(...buildFixedRows(item, header, year, getLine(item, 2)));
     }
   });
 
   return { rows, skippedItemIds };
+}
+
+// Groups an order's items by Jenis Plak, regardless of which category or
+// batch each came from — the CSV's own columns (event_header, year,
+// position, event_line_1, event_line_2) carry no Jenis Plak info at all,
+// so two items sharing the same Jenis Plak are, for export purposes,
+// interchangeable rows bound for the exact same physical AI file. Lets
+// Production export one combined CSV per Jenis Plak instead of one per
+// category/order-detail, when the same Jenis Plak was ordered in more than
+// one place.
+export function getOrderJenisPlakGroups(order) {
+  const byPlak = new Map();
+  (order.items || []).forEach((item) => {
+    if (!item.jenisPlak) return;
+    if (!byPlak.has(item.jenisPlak)) byPlak.set(item.jenisPlak, []);
+    byPlak.get(item.jenisPlak).push(item);
+  });
+  return [...byPlak.entries()].map(([jenisPlak, items]) => ({ jenisPlak, items }));
 }
 
 // RFC4180-quoted CSV text. Any value containing a newline, comma, or quote

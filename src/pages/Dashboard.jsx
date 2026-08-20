@@ -12,9 +12,10 @@ const FILTERS = [
 ];
 
 export default function Dashboard() {
-  const { state, openAmend, openAddOn, reorderOrder, cancelPendingAddOn } = useAppState();
+  const { state, openAddOn, reorderOrder, cancelPendingAddOn } = useAppState();
   const navigate = useNavigate();
   const [filter, setFilter] = useState('Submitted to Sales');
+  const [expandedAddOnId, setExpandedAddOnId] = useState(null);
 
   const activeFilter = FILTERS.find((f) => f.key === filter) || FILTERS[0];
   const filteredOrders = state.orders.filter(activeFilter.match);
@@ -68,7 +69,6 @@ export default function Dashboard() {
         {filteredOrders.map((ord) => {
           const idx = STATUS_STAGES.indexOf(ord.status);
           const invoiceIdLabel = idx >= 1 ? (ord.invoiceId || `INV-${ord.id.replace('ORD-', '')}`) : '-';
-          const canAmend = idx === 0;
           const canAddOn = idx === 1 && ord.pendingAddonStatus !== 'pending';
           const isCompleted = ord.status === 'Completed';
 
@@ -99,7 +99,25 @@ export default function Dashboard() {
               {ord.pendingAddonStatus === 'pending' && (
                 <div style={{ background: 'var(--color-accent-100)', color: 'var(--color-accent-900)', fontSize: 12, padding: 'var(--space-2) var(--space-3)', marginTop: 'var(--space-2)' }}>
                   Add-on submitted — waiting for Sales approval.
+                  <button type="button" className="btn btn-ghost" style={{ marginLeft: 'var(--space-2)', padding: 0 }} onClick={() => setExpandedAddOnId(expandedAddOnId === ord.id ? null : ord.id)}>
+                    {expandedAddOnId === ord.id ? 'Hide' : 'View Add-On'}
+                  </button>
                   <button type="button" className="btn btn-ghost" style={{ marginLeft: 'var(--space-2)', padding: 0 }} onClick={() => cancelPendingAddOn(ord.id)}>Cancel</button>
+                  {expandedAddOnId === ord.id && (
+                    <table className="table" style={{ margin: 'var(--space-2) 0 0', background: '#fff' }}>
+                      <thead><tr><th>Category</th><th>Jenis Plak</th><th style={{ width: 80 }}>QTY</th><th style={{ width: 100 }}>Harga</th></tr></thead>
+                      <tbody>
+                        {(ord.pendingAddonItems || []).map((it) => (
+                          <tr key={it.id}>
+                            <td>{it.categoryLabel}</td>
+                            <td>{it.jenisPlak}</td>
+                            <td>{it.qty}</td>
+                            <td>RM {it.harga.toFixed(2)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
                 </div>
               )}
               {ord.pendingAddonStatus === 'rejected' && (
@@ -111,7 +129,6 @@ export default function Dashboard() {
 
               <div className="order-card-actions">
                 <button type="button" className="btn btn-ghost btn-block" onClick={() => navigate(`/orders/${ord.id}`)}>View Details</button>
-                {canAmend && <button type="button" className="btn btn-secondary btn-block" onClick={() => { openAmend(ord); navigate(`/amend/${ord.id}`); }}>Update Details</button>}
                 {canAddOn && <button type="button" className="btn btn-secondary btn-block" onClick={() => { openAddOn(ord); navigate(`/addon/${ord.id}`); }}>Add On</button>}
                 {isCompleted && <button type="button" className="btn btn-secondary btn-block" onClick={() => { reorderOrder(ord); navigate('/order/step1'); }}>Reorder</button>}
               </div>

@@ -4,14 +4,14 @@ const TAHUN_OPTIONS = ['TAHUN 1', 'TAHUN 2', 'TAHUN 3', 'TAHUN 4', 'TAHUN 5', 'T
 
 // Renders one category "block": reference sample + numbered lines, the
 // quantity table (fixed matrix / dynamic matrix / list mode), and the Jenis
-// Plak / QTY / Harga row. Reused by New Order Step 2, Amend, and Add On —
-// `editable` controls which parts of the block are inputs vs read-only text
-// for each of those.
+// Plak / QTY / Harga row. Reused by New Order Step 2, Add On, and every
+// read-only order-review screen (Sales/Production/Admin/teacher order
+// details) — `editable` controls which parts of the block are inputs vs
+// read-only text for each of those.
 // The reference image itself is never editable here regardless of
 // `editable` — it's a fixed per-category example Production manages from
 // its own admin screen (Production → Reference Images), not per-order data.
-// `hideEmptyRows` (print only — the editable New Order / Amend / Add On
-// screens always show every subject/row so the teacher can fill any of
+// `hideEmptyRows` (print only — the editable New Order / Add On
 // them in) drops subjects/rows/columns nobody ordered from the printed
 // quantity table, so the printout only lists what was actually selected.
 export default function OrderCategoryBlock({ blk, editable, plakOptions, refImageUrl, hideEmptyRows }) {
@@ -95,12 +95,17 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, refImag
                 <th>Subjek</th>
                 {blk.columns.map((col) => <th key={col} style={{ width: 90 }}>{col}</th>)}
                 <th style={{ width: 70 }}>Total</th>
+                {editable.addRemoveRows && <th style={{ width: 48 }} />}
               </tr>
             </thead>
             <tbody>
               {matrixRows.map((row) => (
-                <tr key={row.subject}>
-                  <td>{row.subject}</td>
+                <tr key={row.custom ? `custom-${row.id}` : row.subject}>
+                  <td>
+                    {row.custom && editable.addRemoveRows
+                      ? <input className="input" placeholder="e.g. SUKAN" value={row.subject} onChange={(e) => row.setSubject(e.target.value)} />
+                      : row.subject}
+                  </td>
                   {row.cells.map((cell) => (
                     <td key={cell.key}>
                       <input
@@ -115,15 +120,24 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, refImag
                     </td>
                   ))}
                   <td><strong>{row.rowTotal}</strong></td>
+                  {editable.addRemoveRows && (
+                    <td>{row.custom && <button type="button" className="btn btn-ghost btn-icon" aria-label="Remove row" onClick={row.remove}>✕</button>}</td>
+                  )}
                 </tr>
               ))}
               <tr>
                 <td><strong>TOTAL</strong></td>
                 {blk.colTotals.map((ct, i) => <td key={i}><strong>{ct.value}</strong></td>)}
                 <td><strong>{blk.grandTotal}</strong></td>
+                {editable.addRemoveRows && <td />}
               </tr>
             </tbody>
           </table>
+          {editable.addRemoveRows && (
+            <div className="row-actions">
+              <button type="button" className="btn btn-secondary" onClick={blk.addMatrixRow}>+ Add Row</button>
+            </div>
+          )}
         </div>
       ) : blk.isDynamicMatrix ? (
         <div>

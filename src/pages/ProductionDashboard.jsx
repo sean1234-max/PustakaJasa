@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import { useAppState } from '../state/useAppState';
 import { STATUS_STAGES, STATUS_BG, STATUS_TEXT, formatDate } from '../data/catalog';
+import { getOrderChangeStamp } from '../utils/orderStamp';
 
 // Production only ever works orders that are already 'In Production' —
 // split into two local tabs by whether the invoice ID (handed over on
@@ -111,6 +112,7 @@ export default function ProductionDashboard() {
       <div className="order-grid">
         {filteredOrders.map((ord) => {
           const idx = STATUS_STAGES.indexOf(ord.status);
+          const stamp = getOrderChangeStamp(ord);
 
           return (
             <div key={ord.id} className="card order-card">
@@ -121,6 +123,7 @@ export default function ProductionDashboard() {
                 </div>
                 <span className="status-pill" style={{ background: STATUS_BG[idx], color: STATUS_TEXT[idx] }}>{ord.status}</span>
               </div>
+              {stamp && <div className="order-stamp-inline" style={{ marginTop: 'var(--space-1)' }}>{stamp}</div>}
 
               <div className="order-card-meta" style={{ gridTemplateColumns: '1fr' }}>
                 <div><div className="dim">Sekolah</div><div>{ord.sekolah || '—'}</div></div>

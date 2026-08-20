@@ -4,7 +4,7 @@ import Nav from '../components/Nav';
 import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import { useAppState } from '../state/useAppState';
-import { CATEGORIES, filterHiddenPlakCatalog } from '../data/catalog';
+import { filterHiddenPlakCatalog, buildCategoryTabs, categoryTabKey, resolveCategoryTab } from '../data/catalog';
 import { computeBlocks } from '../utils/computeBlocks';
 import { createDraftUpdaters } from '../utils/draftUpdaters';
 
@@ -23,11 +23,12 @@ export default function AddOn() {
 
   const updaters = useMemo(() => createDraftUpdaters(patch, DRAFT_FIELDS), [patch]);
 
-  const { blocks } = useMemo(() => computeBlocks(
-    state.addOnCategory, state.addOnLineValues, state.addOnMatrixValues, state.addOnRowsByBlock, state.addOnPlakRows, state.addOnColumnsByBlock, updaters, state.plakCatalog, state.schoolLanguage,
-  ), [state.addOnCategory, state.addOnLineValues, state.addOnMatrixValues, state.addOnRowsByBlock, state.addOnPlakRows, state.addOnColumnsByBlock, updaters, state.plakCatalog, state.schoolLanguage]);
+  const { blocks, isPbdCategory } = useMemo(() => computeBlocks(
+    state.addOnCategory, state.addOnPbdVariant, state.addOnLineValues, state.addOnMatrixValues, state.addOnRowsByBlock, state.addOnPlakRows, state.addOnNamaKelasRows, updaters, state.plakCatalog, state.schoolLanguage,
+  ), [state.addOnCategory, state.addOnPbdVariant, state.addOnLineValues, state.addOnMatrixValues, state.addOnRowsByBlock, state.addOnPlakRows, state.addOnNamaKelasRows, updaters, state.plakCatalog, state.schoolLanguage]);
 
   const visiblePlakCatalog = useMemo(() => filterHiddenPlakCatalog(state.plakCatalog), [state.plakCatalog]);
+  const categoryTabs = useMemo(() => buildCategoryTabs(), []);
 
   if (!order) return null;
 
@@ -40,7 +41,14 @@ export default function AddOn() {
 
         <div className="card-kicker">Jenis Anugerah (Category)</div>
         <div style={{ margin: 'var(--space-3) 0 var(--space-8)' }}>
-          <CategoryTabs categories={CATEGORIES} active={state.addOnCategory} onSelect={(key) => patch({ addOnCategory: key })} />
+          <CategoryTabs
+            categories={categoryTabs}
+            active={categoryTabKey(state.addOnCategory, state.addOnPbdVariant)}
+            onSelect={(key) => {
+              const { category, pbdVariant } = resolveCategoryTab(key);
+              patch({ addOnCategory: category, addOnPbdVariant: pbdVariant });
+            }}
+          />
         </div>
 
         {blocks.map((blk) => (

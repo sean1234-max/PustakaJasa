@@ -112,14 +112,6 @@ function initialState() {
     plakCatalogLoaded: false,
 
     draftRestoredToast: '',
-    amendOrderId: null,
-    amendCategoriesUsed: [],
-    amendCategory: '',
-    amendLineValues: {},
-    amendMatrixValues: {},
-    amendRowsByBlock: {},
-    amendColumnsByBlock: {},
-    amendPlakRows: {},
 
     addOnOrderId: null,
     addOnCategory: 'MP1',
@@ -343,7 +335,6 @@ export function AppStateProvider({ children }) {
 
   const addToCart = useCallback(() => {
     setState((st) => {
-      const currentCat = CATEGORIES.find((c) => c.key === st.category) || CATEGORIES[0];
       const { blocks, isMatrix, isDynamicMatrix } = computeBlocks(
         st.category, st.lineValues, st.matrixValues, st.rowsByBlock, st.plakRows, st.columnsByBlock, noopUpdaters, st.plakCatalog, st.schoolLanguage,
       );
@@ -356,23 +347,18 @@ export function AppStateProvider({ children }) {
       // chosen); an untouched category is just skipped, same as before.
       const blk = blocks[0];
       if (blk) {
-        const secondLineRequired = blk.lines.some((l) => l.secondLine)
-          && !String(currentCat.positionLine2Placeholder || '').trim().startsWith('(pilihan)');
-        // A "(pilihan)" ("optional") prefix on a line's own placeholder
-        // (e.g. PBD/ALIRAN's year field) opts that line's primary value out
-        // of the same completeness requirement, same convention as
-        // secondLineRequired above for the position line's second box.
-        const linePlaceholderOptional = (line) => String(line.placeholder || '').trim().startsWith('(pilihan)');
         const lineHasValue = (line) => Boolean(String(line.value).trim())
           || (line.secondLine && Boolean(String(line.secondLine.value).trim()));
-        const lineIsComplete = (line) => (linePlaceholderOptional(line) || Boolean(String(line.value).trim()))
-          && (!line.secondLine || !secondLineRequired || Boolean(String(line.secondLine.value).trim()));
+        // Only line 1 (the event name) is required — lines 2-4 (year,
+        // position, etc.) are reference-sample context the teacher may not
+        // always have yet, so they can stay blank.
+        const lineIsComplete = (line) => line.num !== 1 || Boolean(String(line.value).trim());
         const hasQty = blk.blockTotalQty > 0;
         const hasJenisPlak = blk.plakRows.some((pr) => pr.jenisPlak);
         const engaged = hasQty || hasJenisPlak || blk.lines.some(lineHasValue);
         if (engaged) {
           if (!blk.lines.every(lineIsComplete)) {
-            return { ...st, cartToast: `Please fill in all the reference lines for ${blk.qtyLabel} before adding to cart.` };
+            return { ...st, cartToast: `Please fill in line 1 for ${blk.qtyLabel} before adding to cart.` };
           }
           if (!hasQty) {
             return { ...st, cartToast: `Please enter a quantity for ${blk.qtyLabel} before adding to cart.` };
@@ -524,58 +510,6 @@ export function AppStateProvider({ children }) {
     });
   }, [patch]);
 
-  const openAmend = useCallback((ord) => {
-    const categoriesUsed = [];
-    const lineValues = {}, matrixValues = {}, rowsByBlock = {}, columnsByBlock = {}, plakRows = {};
-    (ord.items || []).forEach((it) => {
-      if (!it.categoryKey) return;
-      if (!categoriesUsed.includes(it.categoryKey)) categoriesUsed.push(it.categoryKey);
-      const key = `${it.categoryKey}::${it.blockIdx}`;
-      if (it.detail) {
-        Object.assign(lineValues, it.detail.lines || {});
-        if (it.detail.matrix) Object.assign(matrixValues, it.detail.matrix);
-        if (it.detail.rows) rowsByBlock[key] = JSON.parse(JSON.stringify(it.detail.rows));
-        if (it.detail.columns) columnsByBlock[key] = JSON.parse(JSON.stringify(it.detail.columns));
-      }
-      plakRows[key] = [{ id: it.id, jenisPlak: it.jenisPlak }];
-    });
-    patch({
-      amendOrderId: ord.id, amendCategoriesUsed: categoriesUsed, amendCategory: categoriesUsed[0] || '',
-      amendLineValues: lineValues, amendMatrixValues: matrixValues,
-      amendRowsByBlock: rowsByBlock, amendColumnsByBlock: columnsByBlock, amendPlakRows: plakRows,
-    });
-  }, [patch]);
-
-  const updateAmend = useCallback(() => {
-    setState((st) => {
-      const newItems = [];
-      st.amendCategoriesUsed.forEach((catKey) => {
-        const { blocks: catBlocks, isMatrix: catIsMatrix, isDynamicMatrix: catIsDynamicMatrix } = computeBlocks(
-          catKey, st.amendLineValues, st.amendMatrixValues, st.amendRowsByBlock, st.amendPlakRows, st.amendColumnsByBlock, noopUpdaters, st.plakCatalog, st.schoolLanguage,
-        );
-        catBlocks.forEach((blk) => {
-          blk.plakRows.forEach((pr) => {
-            if (pr.jenisPlak) newItems.push({
-              id: pr.id, jenisPlak: pr.jenisPlak, qty: pr.qty, harga: pr.rawHarga, unitPrice: pr.unitPrice, categoryLabel: blk.qtyLabel,
-              categoryKey: catKey, blockIdx: blk.idx,
-              detail: snapshotDetail(catKey, blk.idx, catIsMatrix, catIsDynamicMatrix, st.amendLineValues, st.amendMatrixValues, st.amendRowsByBlock, st.amendColumnsByBlock),
-            });
-          });
-        });
-      });
-      const amendedTotal = newItems.reduce((sum, it) => sum + it.harga, 0);
-      updateOrder(st.amendOrderId, { items: newItems, totalAmount: amendedTotal })
-        .catch((err) => console.error('Failed to save amend to Supabase:', err));
-      return {
-        ...st,
-        orders: st.orders.map((o) => (o.id === st.amendOrderId ? { ...o, items: newItems, totalAmount: amendedTotal } : o)),
-        updateToast: 'Update successful.',
-      };
-    });
-    clearTimeout(updateToastTimer.current);
-    updateToastTimer.current = setTimeout(() => patch({ updateToast: '' }), 2500);
-  }, [patch]);
-
   const openAddOn = useCallback((ord) => {
     patch((st) => ({
       addOnOrderId: ord.id, addOnCategory: 'MP1',
@@ -596,6 +530,12 @@ export function AppStateProvider({ children }) {
     setState((st) => {
       const newItems = [];
       CATEGORIES.forEach((cat) => {
+        // Every category (including PBD/ALIRAN, split into their own
+        // top-level entries — see catalog.js) has exactly one block, so
+        // this naturally picks up whichever categories/blocks actually
+        // have data in the draft regardless of which category tab the
+        // teacher currently has open — no per-variant block-index
+        // bookkeeping needed here.
         const { blocks: catBlocks, isMatrix: catIsMatrix, isDynamicMatrix: catIsDynamicMatrix } = computeBlocks(
           cat.key, st.addOnLineValues, st.addOnMatrixValues, st.addOnRowsByBlock, st.addOnPlakRows, st.addOnColumnsByBlock, noopUpdaters, st.plakCatalog, st.schoolLanguage,
         );
@@ -884,7 +824,7 @@ export function AppStateProvider({ children }) {
   const value = {
     state, patch, today: TODAY, login, logout,
     resetCurrentCategory, startNewOrder, addToCart, removeFromCart, submitOrder, reorderOrder,
-    openAmend, updateAmend, openAddOn, submitPendingAddOn, cancelPendingAddOn, rejectAddOn, approveAddOn, approveOrder, setInvoiceId,
+    openAddOn, submitPendingAddOn, cancelPendingAddOn, rejectAddOn, approveAddOn, approveOrder, setInvoiceId,
     markProductionDone,
     updateReferenceImage, addCatalogNode, removeCatalogNode, updateCatalogNodePrice, setCatalogNodeHidden, moveCatalogNode,
     reorderCatalogSiblings,

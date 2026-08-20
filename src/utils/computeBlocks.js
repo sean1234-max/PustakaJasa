@@ -1,4 +1,7 @@
-import { CATEGORIES, flattenPlakCatalog, getCategorySubjects, getCategoryColumns, tahunRangeYears } from '../data/catalog';
+import {
+  CATEGORIES, flattenPlakCatalog, getCategorySubjects, getCategoryColumns, tahunRangeYears,
+  getCustomMatrixRowIds, customMatrixLabelKey, customMatrixCellKey,
+} from '../data/catalog';
 
 export function snapshotDetail(catKey, blockIdx, isMatrix, isDynamicMatrix, lineValues, matrixValues, rowsByBlockMap, columnsByBlockMap) {
   const detail = { lines: {}, matrix: null, rows: null, columns: null };
@@ -78,8 +81,31 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
           rowTotal += val; colTotals[ci] += val;
           return { key, col, value: matrixValues[key] || '', onChange: (v) => updaters.onMatrix(key, v) };
         });
-        return { subject: subj, cells, rowTotal };
+        return { subject: subj, cells, rowTotal, custom: false };
       });
+
+      // Teacher-added rows for a subject/award not on the fixed list above
+      // (see OrderCategoryBlock's matrix "+ Add Row") — same cell shape, just
+      // sourced from getCustomMatrixRowIds instead of the catalog list, and
+      // with an editable subject label instead of a fixed one.
+      matrixRows.push(...getCustomMatrixRowIds(catKey, matrixValues).map((rowId) => {
+        let rowTotal = 0;
+        const cells = columns.map((col, ci) => {
+          const key = customMatrixCellKey(catKey, rowId, col);
+          const val = Number(matrixValues[key]) || 0;
+          rowTotal += val; colTotals[ci] += val;
+          return { key, col, value: matrixValues[key] || '', onChange: (v) => updaters.onMatrix(key, v) };
+        });
+        const labelKey = customMatrixLabelKey(catKey, rowId);
+        return {
+          id: rowId,
+          subject: matrixValues[labelKey] || '',
+          setSubject: (v) => updaters.onMatrix(labelKey, v),
+          cells, rowTotal, custom: true,
+          remove: () => updaters.onMatrixRowRemove(catKey, rowId),
+        };
+      }));
+
       grandTotal = colTotals.reduce((a, b2) => a + b2, 0);
       blockTotalQty = grandTotal;
     } else if (isDynamicMatrix) {
@@ -146,8 +172,8 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
       // as-is instead of re-deriving a price from the live catalog, which can
       // silently miss (e.g. the catalog code was since renamed) or simply not
       // reflect a negotiated price. Live order-creation flows (New Order,
-      // Amend, Add On) never set pr.unitPrice since no price exists yet there,
-      // so they keep falling back to the catalog lookup as before.
+      // Add On) never set pr.unitPrice since no price exists yet there, so
+      // they keep falling back to the catalog lookup as before.
       const unitPrice = pr.unitPrice != null ? pr.unitPrice : priceFor(pr.jenisPlak);
       const harga = unitPrice != null ? blockTotalQty * unitPrice : 0;
       return {
@@ -161,7 +187,7 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
     blocks.push({
       idx: b,
       qtyLabel: currentCat.label,
-      qtyColHeader: currentCat.qtyColumnLabels ? currentCat.qtyColumnLabels[b] : 'QTY',
+      qtyColHeader: isMatrix ? 'QTY' : (currentCat.qtyColumnLabels ? currentCat.qtyColumnLabels[b] : 'QTY'),
       sampleSlotId: `sample-${catKey}-${b}`,
       lines, isMatrix, isDynamicMatrix, columns, matrixRows,
       colTotals: colTotals.map((v) => ({ value: v })), grandTotal,
@@ -169,6 +195,7 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
       addRow: () => updaters.onAddRow(`${catKey}::${b}`),
       addColumn: () => updaters.onAddColumn(`${catKey}::${b}`),
       addColumnSameTahun: () => updaters.onAddColumnSameTahun(`${catKey}::${b}`),
+      addMatrixRow: () => updaters.onAddMatrixRow(catKey),
       blockTotalQty, plakRows,
     });
   }
@@ -180,6 +207,7 @@ export const noopUpdaters = {
   onLine: () => {}, onMatrix: () => {}, onRowField: () => {}, onRowRemove: () => {},
   onAddRow: () => {}, onPlakSelect: () => {},
   onColumnField: () => {}, onColumnRemove: () => {}, onAddColumn: () => {}, onAddColumnSameTahun: () => {},
+  onAddMatrixRow: () => {}, onMatrixRowRemove: () => {},
 };
 
 // Rebuilds read-only `blocks` (the same shape NewOrderStep2 renders live)
@@ -189,6 +217,25 @@ export const noopUpdaters = {
 // of re-deriving a simplified summary. Groups items by blockIdx so a
 // category with more than one block renders every block, not just one
 // (every current category is single-block, but this stays generic).
+//
+// A block can be backed by more than one item — either several Jenis Plak
+// rows added in the same round, or an Add On that reused the same
+// category/block in a later round (see groupItemsByBatch in
+// src/utils/orderBatches.js). Every item sharing a block carries its own
+// full copy of that round's `detail.rows` (list-mode categories' per-desc
+// qty breakdown), so combining rounds means SUMMING matching-desc rows
+// together, not letting a later item's copy silently replace an earlier
+// one — the earlier bug here dropped every round but the last, understating
+// the on-screen quantity table (and, for Production, undercounting the
+// exported CSV) whenever a block spanned more than one round. dynamicMatrix
+// (PBD/ALIRAN) categories have the same class of risk across their three
+// detail pieces (rows = subjects, columns = classes, matrix = per-cell
+// qty), so rows/columns are upserted by id (a later round's edit to a
+// subject/class's own fields wins, but nothing already accumulated is
+// dropped) and matrix values are summed by key rather than overwritten —
+// this also covers the (fairly narrow) case where two rounds coincidentally
+// reuse the same generated ids, since both New Order and Add On seed the
+// same 13 default PBD subjects with the same deterministic ids.
 export function reconstructBlocksForCategory(order, catKey, plakCatalog) {
   const schoolLanguage = order.schoolLanguage === 'SJKC' ? 'SJKC' : 'SK';
   const items = (order.items || []).filter((it) => it.categoryKey === catKey);
@@ -207,9 +254,43 @@ export function reconstructBlocksForCategory(order, catKey, plakCatalog) {
     blockItems.forEach((it) => {
       if (it.detail) {
         Object.assign(lineValues, it.detail.lines || {});
-        if (it.detail.matrix) Object.assign(matrixValues, it.detail.matrix);
-        if (it.detail.rows) rowsByBlock[key] = it.detail.rows;
-        if (it.detail.columns) columnsByBlock[key] = it.detail.columns;
+        if (it.detail.matrix) {
+          Object.keys(it.detail.matrix).forEach((k) => {
+            matrixValues[k] = (Number(matrixValues[k]) || 0) + (Number(it.detail.matrix[k]) || 0);
+          });
+        }
+        if (it.detail.rows) {
+          if (!rowsByBlock[key]) {
+            rowsByBlock[key] = it.detail.rows.map((r) => ({ ...r }));
+          } else if (it.detail.columns) {
+            // dynamicMatrix: subjects have no qty of their own (it lives in
+            // detail.matrix, summed above) — upsert by id so a later
+            // round's edited desc/custom flag wins without duplicating or
+            // dropping subjects only present in one round.
+            it.detail.rows.forEach((r) => {
+              const existing = rowsByBlock[key].find((er) => er.id === r.id);
+              if (existing) Object.assign(existing, r);
+              else rowsByBlock[key].push({ ...r });
+            });
+          } else {
+            it.detail.rows.forEach((r) => {
+              const existing = rowsByBlock[key].find((er) => er.desc === r.desc);
+              if (existing) existing.qty = (Number(existing.qty) || 0) + (Number(r.qty) || 0);
+              else rowsByBlock[key].push({ ...r });
+            });
+          }
+        }
+        if (it.detail.columns) {
+          if (!columnsByBlock[key]) {
+            columnsByBlock[key] = it.detail.columns.map((c) => ({ ...c }));
+          } else {
+            it.detail.columns.forEach((c) => {
+              const existing = columnsByBlock[key].find((ec) => ec.id === c.id);
+              if (existing) Object.assign(existing, c);
+              else columnsByBlock[key].push({ ...c });
+            });
+          }
+        }
       }
       plakRows[key] = [...(plakRows[key] || []), { id: it.id, jenisPlak: it.jenisPlak, unitPrice: it.unitPrice }];
     });
@@ -219,4 +300,43 @@ export function reconstructBlocksForCategory(order, catKey, plakCatalog) {
   });
 
   return { blocks: allBlocks, isMatrix };
+}
+
+// Same idea as reconstructBlocksForCategory, but for Production
+// (src/pages/ProductionOrderDetail.jsx) — deliberately does NOT merge
+// anything. One group per ITEM: different items must never share an
+// export even when they're the same block from the same round, because
+// each item's own Jenis Plak decides which physical AI file the exported
+// CSV's text gets dropped into (e.g. an MP399 file vs a VB/A file) — two
+// Jenis Plak rows sitting in one combined export would mix text meant for
+// two different files with no way to tell which rows belong to which.
+export function reconstructOrderDetailGroups(order, catKey, plakCatalog) {
+  const schoolLanguage = order.schoolLanguage === 'SJKC' ? 'SJKC' : 'SK';
+  const items = (order.items || []).filter((it) => it.categoryKey === catKey);
+
+  return items.map((item) => {
+    const blockIdx = item.blockIdx ?? 0;
+    const batch = item.batch || 0;
+    const lineValues = {};
+    const matrixValues = {};
+    const rowsByBlock = {};
+    const columnsByBlock = {};
+    const plakRows = {};
+    const key = `${catKey}::${blockIdx}`;
+    if (item.detail) {
+      Object.assign(lineValues, item.detail.lines || {});
+      if (item.detail.matrix) Object.assign(matrixValues, item.detail.matrix);
+      if (item.detail.rows) rowsByBlock[key] = item.detail.rows;
+      if (item.detail.columns) columnsByBlock[key] = item.detail.columns;
+    }
+    plakRows[key] = [{ id: item.id, jenisPlak: item.jenisPlak, unitPrice: item.unitPrice }];
+
+    const result = computeBlocks(catKey, lineValues, matrixValues, rowsByBlock, plakRows, columnsByBlock, noopUpdaters, plakCatalog, schoolLanguage);
+    return {
+      blockIdx, batch, jenisPlak: item.jenisPlak, items: [item],
+      label: batch === 0 ? 'Original Order' : `Tambahan #${batch}`,
+      blk: result.blocks[0],
+      isMatrix: result.isMatrix,
+    };
+  }).sort((a, b) => (a.batch - b.batch) || (a.blockIdx - b.blockIdx));
 }

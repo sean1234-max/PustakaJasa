@@ -70,6 +70,32 @@ export function tahunRangeYears(from, to) {
   return TAHUN_ORDER.slice(lo, hi + 1);
 }
 
+// A matrix category's subject rows (MP THP 1/2) come from a fixed catalog
+// list, but the teacher can add extra rows for a subject/award not on that
+// list (see OrderCategoryBlock's matrix "+ Add Row"). Those live in the same
+// flat matrixValues store as the fixed rows, just under a synthetic
+// `custom-<id>` slot instead of a real subject name, with the typed label
+// text stored alongside the quantity cells under a parallel `__label__` key
+// — so a custom row's very existence, and which id backs it, can be read
+// straight off whichever `__label__` keys are present, with no separate
+// list of "active custom rows" to keep in sync.
+const CUSTOM_MATRIX_LABEL_SUFFIX = '::__label__';
+function customMatrixPrefix(catKey) {
+  return `${catKey}::custom-`;
+}
+export function customMatrixLabelKey(catKey, rowId) {
+  return `${customMatrixPrefix(catKey)}${rowId}${CUSTOM_MATRIX_LABEL_SUFFIX}`;
+}
+export function customMatrixCellKey(catKey, rowId, col) {
+  return `${customMatrixPrefix(catKey)}${rowId}::${col}`;
+}
+export function getCustomMatrixRowIds(catKey, matrixValues) {
+  const prefix = customMatrixPrefix(catKey);
+  return Object.keys(matrixValues || {})
+    .filter((k) => k.startsWith(prefix) && k.endsWith(CUSTOM_MATRIX_LABEL_SUFFIX))
+    .map((k) => k.slice(prefix.length, k.length - CUSTOM_MATRIX_LABEL_SUFFIX.length));
+}
+
 export const CATEGORIES = [
   {
     key: 'MP1', label: 'MP THP 1', mode: 'matrix', blocksCount: 1,
@@ -146,16 +172,19 @@ export const CATEGORIES = [
   {
     key: 'LONJAKAN', label: 'LONJAKAN SAUJANA', mode: 'list', blocksCount: 1,
     rows: ['TAHUN 1', 'TAHUN 2', 'TAHUN 3', 'TAHUN 4', 'TAHUN 5', 'TAHUN 6'],
-    // No 4th line — like TOKOH, the quantity table only has one axis
-    // (TAHUN), so there's no second axis to source an event_line_1 from.
-    // "position" (index 2) is a CONTOH only — the real per-plaque position
-    // is each row's own description (TAHUN 1..6), see exportCsv.js.
+    // Line 3 ("LONJAKAN SAUJANA") is fixed/typed, same as PBD's line 3 —
+    // it prefixes the engraved position (see positionPrefixFromLine3 in
+    // exportCsv.js). Line 4 ("TAHUN 1") is a CONTOH only — the real
+    // per-plaque position is each row's own description (TAHUN 1..6),
+    // appended after line 3, see exportCsv.js.
     linePlaceholders: [
       'e.g. HARI ANUGERAH LONJAKAN SAUJANA',
       'e.g. 2026',
+      'e.g. LONJAKAN SAUJANA',
       'e.g. TAHUN 1',
     ],
     positionFromRows: true,
+    positionPrefixFromLine3: true,
   },
   {
     key: 'TOKOH', label: 'TOKOH', mode: 'list', blocksCount: 1,
