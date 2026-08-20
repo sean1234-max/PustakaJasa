@@ -4,7 +4,7 @@ import Nav from '../components/Nav';
 import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import { useAppState } from '../state/useAppState';
-import { filterHiddenPlakCatalog, buildCategoryTabs, categoryTabKey, resolveCategoryTab } from '../data/catalog';
+import { CATEGORIES, filterHiddenPlakCatalog } from '../data/catalog';
 import { computeBlocks } from '../utils/computeBlocks';
 import { createDraftUpdaters } from '../utils/draftUpdaters';
 
@@ -22,15 +22,13 @@ export default function NewOrderStep2() {
 
   const updaters = useMemo(() => createDraftUpdaters(patch, DRAFT_FIELDS), [patch]);
 
-  const { blocks, isPbdCategory } = useMemo(() => computeBlocks(
-    state.category, state.pbdVariant, state.lineValues, state.matrixValues, state.rowsByBlock, state.plakRows, state.namaKelasRows, updaters, state.plakCatalog, state.schoolLanguage,
-  ), [state.category, state.pbdVariant, state.lineValues, state.matrixValues, state.rowsByBlock, state.plakRows, state.namaKelasRows, updaters, state.plakCatalog, state.schoolLanguage]);
+  const { blocks } = useMemo(() => computeBlocks(
+    state.category, state.lineValues, state.matrixValues, state.rowsByBlock, state.plakRows, state.columnsByBlock, updaters, state.plakCatalog, state.schoolLanguage,
+  ), [state.category, state.lineValues, state.matrixValues, state.rowsByBlock, state.plakRows, state.columnsByBlock, updaters, state.plakCatalog, state.schoolLanguage]);
 
   // Codes Production has hidden (e.g. out of stock) never appear in the
   // teacher's picker — see filterHiddenPlakCatalog.
   const visiblePlakCatalog = useMemo(() => filterHiddenPlakCatalog(state.plakCatalog), [state.plakCatalog]);
-
-  const pbdCat = CATEGORIES.find((c) => c.key === 'PBD');
 
   return (
     <div className="screen-wrap">
@@ -54,11 +52,7 @@ export default function NewOrderStep2() {
 
         <div className="card-kicker">Jenis Anugerah (Category)</div>
         <div style={{ margin: 'var(--space-3) 0 var(--space-8)' }}>
-          <CategoryTabs
-            categories={categoryTabs}
-            active={categoryTabKey(state.category, state.pbdVariant)}
-            onSelect={(key) => patch(resolveCategoryTab(key))}
-          />
+          <CategoryTabs categories={CATEGORIES} active={state.category} onSelect={(key) => patch({ category: key })} />
         </div>
 
         {blocks.map((blk) => (
