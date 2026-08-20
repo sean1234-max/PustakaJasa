@@ -11,33 +11,24 @@ import { createDraftUpdaters } from '../utils/draftUpdaters';
 const DRAFT_FIELDS = {
   lineValues: 'lineValues', matrixValues: 'matrixValues', rowsByBlock: 'rowsByBlock', plakRows: 'plakRows',
   nextRowId: 'nextRowId', nextPlakRowId: 'nextPlakRowId',
-  namaKelasRows: 'namaKelasRows', nextNamaKelasRowId: 'nextNamaKelasRowId',
+  columnsByBlock: 'columnsByBlock', nextColumnId: 'nextColumnId',
 };
 
-const EDITABLE = { lines: true, rowDesc: true, rowQty: true, addRemoveRows: true, matrix: true, jenisPlak: true, namaKelas: true };
+const EDITABLE = { lines: true, rowDesc: true, rowQty: true, addRemoveRows: true, matrix: true, jenisPlak: true };
 
 export default function NewOrderStep2() {
   const { state, patch, addToCart } = useAppState();
   const navigate = useNavigate();
 
-  const updaters = useMemo(() => {
-    const u = createDraftUpdaters(patch, DRAFT_FIELDS, true);
-    u.onAddNamaKelas = () => patch((st) => ({
-      namaKelasRows: [...st.namaKelasRows, { id: st.nextNamaKelasRowId, namaKelas: '', tahun: '' }],
-      nextNamaKelasRowId: st.nextNamaKelasRowId + 1,
-    }));
-    return u;
-  }, [patch]);
+  const updaters = useMemo(() => createDraftUpdaters(patch, DRAFT_FIELDS), [patch]);
 
-  const { blocks, isPbdCategory } = useMemo(() => computeBlocks(
-    state.category, state.pbdVariant, state.lineValues, state.matrixValues, state.rowsByBlock, state.plakRows, state.namaKelasRows, updaters, state.plakCatalog, state.schoolLanguage,
-  ), [state.category, state.pbdVariant, state.lineValues, state.matrixValues, state.rowsByBlock, state.plakRows, state.namaKelasRows, updaters, state.plakCatalog, state.schoolLanguage]);
+  const { blocks } = useMemo(() => computeBlocks(
+    state.category, state.lineValues, state.matrixValues, state.rowsByBlock, state.plakRows, state.columnsByBlock, updaters, state.plakCatalog, state.schoolLanguage,
+  ), [state.category, state.lineValues, state.matrixValues, state.rowsByBlock, state.plakRows, state.columnsByBlock, updaters, state.plakCatalog, state.schoolLanguage]);
 
   // Codes Production has hidden (e.g. out of stock) never appear in the
   // teacher's picker — see filterHiddenPlakCatalog.
   const visiblePlakCatalog = useMemo(() => filterHiddenPlakCatalog(state.plakCatalog), [state.plakCatalog]);
-
-  const pbdCat = CATEGORIES.find((c) => c.key === 'PBD');
 
   return (
     <div className="screen-wrap">
@@ -63,15 +54,6 @@ export default function NewOrderStep2() {
         <div style={{ margin: 'var(--space-3) 0 var(--space-8)' }}>
           <CategoryTabs categories={CATEGORIES} active={state.category} onSelect={(key) => patch({ category: key })} />
         </div>
-
-        {isPbdCategory && (
-          <div className="field" style={{ maxWidth: 340, marginBottom: 'var(--space-6)' }}>
-            <label htmlFor="pbdVariant">PBD Item</label>
-            <select className="input" id="pbdVariant" value={state.pbdVariant} onChange={(e) => patch({ pbdVariant: Number(e.target.value) })}>
-              {pbdCat.variantLabels.map((label, i) => <option key={i} value={i}>{label}</option>)}
-            </select>
-          </div>
-        )}
 
         {blocks.map((blk) => (
           <OrderCategoryBlock

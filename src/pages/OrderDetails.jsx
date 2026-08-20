@@ -9,7 +9,7 @@ import { STATUS_STAGES, STATUS_BG, STATUS_TEXT, formatDate, standardUnitPrice } 
 import { reconstructBlocksForCategory } from '../utils/computeBlocks';
 import { getOrderCategories } from '../utils/exportCsv';
 
-const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: false, matrix: false, jenisPlak: false, namaKelas: false };
+const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: false, matrix: false, jenisPlak: false };
 
 export default function OrderDetails() {
   const { state } = useAppState();

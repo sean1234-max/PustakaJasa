@@ -12,7 +12,7 @@ import { getOrderCategories } from '../utils/exportCsv';
 
 // Read-only everywhere — this page only ever displays what the teacher
 // already submitted, it never edits the underlying order/category data.
-const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: false, matrix: false, jenisPlak: false, namaKelas: false };
+const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: false, matrix: false, jenisPlak: false };
 
 export default function SalesOrderSummary() {
   const { state, today, approveOrder, approveAddOn, rejectAddOn } = useAppState();

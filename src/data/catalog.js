@@ -28,6 +28,21 @@ const CLASS_LEVELS_MY_UPPER = ['TAHUN 4', 'TAHUN 5', 'TAHUN 6'];
 const CLASS_LEVELS_CN = ['PPKI', '学前班', '一年级', '二年级', '三年级'];
 const CLASS_LEVELS_CN_UPPER = ['四年级', '五年级', '六年级'];
 
+// Shared by both PBD TERBAIK and ALIRAN TERBAIK below (same subject list,
+// only "Kuantiti" vs "Kedudukan" differs between them).
+const SUBJECTS_PBD = {
+  SK: [
+    'BAHASA MELAYU', 'BAHASA INGGERIS', 'MATEMATIK', 'SAINS', 'PENDIDIKAN ISLAM',
+    'BAHASA ARAB', 'PENDIDIKAN SENI VISUAL', 'SEJARAH', 'REKA BENTUK & TEKNOLOGI',
+    'PENDIDIKAN JASMANI', 'PENDIDIKAN KESIHATAN', 'PENDIDIKAN MUZIK', 'PENDIDIKAN MORAL',
+  ],
+  SJKC: [
+    '国语', '英语', '数学', '科学', '伊斯兰教育',
+    '阿拉伯语', '视觉艺术教育', '历史', '设计与工艺',
+    '体育教育', '健康教育', '音乐教育', '道德教育',
+  ],
+};
+
 // Resolves a matrix category's subject/column labels for the given school
 // language ('SK' | 'SJKC'), falling back to the Malay ('SK') list for any
 // language the category doesn't have a variant for, or an order placed
@@ -37,6 +52,22 @@ export function getCategorySubjects(cat, schoolLanguage) {
 }
 export function getCategoryColumns(cat, schoolLanguage) {
   return (cat.columnsByLanguage && cat.columnsByLanguage[schoolLanguage]) || cat.columnsByLanguage.SK;
+}
+
+const TAHUN_ORDER = ['TAHUN 1', 'TAHUN 2', 'TAHUN 3', 'TAHUN 4', 'TAHUN 5', 'TAHUN 6'];
+
+// Expands a PBD TERBAIK / ALIRAN TERBAIK class row's Tahun range into every
+// individual "TAHUN N" it covers — e.g. ('TAHUN 3', 'TAHUN 6') -> ['TAHUN 3',
+// 'TAHUN 4', 'TAHUN 5', 'TAHUN 6']. `to` may be blank/equal to `from` for a
+// single-year row; either order (from > to) is tolerated. Returns [] if
+// `from` isn't a recognized Tahun (row not filled in yet).
+export function tahunRangeYears(from, to) {
+  const fromIdx = TAHUN_ORDER.indexOf(from);
+  if (fromIdx === -1) return [];
+  const toIdx = to ? TAHUN_ORDER.indexOf(to) : fromIdx;
+  if (toIdx === -1) return [from];
+  const [lo, hi] = fromIdx <= toIdx ? [fromIdx, toIdx] : [toIdx, fromIdx];
+  return TAHUN_ORDER.slice(lo, hi + 1);
 }
 
 export const CATEGORIES = [
@@ -72,21 +103,45 @@ export const CATEGORIES = [
     positionLine2Placeholder: 'e.g. MATEMATIK',
   },
   {
-    key: 'PBD', label: 'PBD', mode: 'list', blocksCount: 2,
-    rows: ['TAHUN 1', 'TAHUN 2', 'TAHUN 3', 'TAHUN 4', 'TAHUN 5', 'TAHUN 6'],
-    // Lines 1-3 (header/year/position) are fixed as typed — only line 4
-    // (event_line_1) is a CONTOH: the real value is each quantity-table
-    // row's own description (TAHUN 1..6), see exportCsv.js.
+    key: 'PBD', label: 'PBD TERBAIK', mode: 'dynamicMatrix', blocksCount: 1,
+    // Subject columns are seeded from this list (editable per-order: teachers
+    // can add extra custom subject columns on top, but can't rename/remove
+    // these 13 — see computeBlocks.js/formDefaults.js). Rows (Tahun + Nama
+    // Kelas) are entirely teacher-defined per order, unlike MP THP's fixed
+    // columnsByLanguage, so PBD TERBAIK has no columnsByLanguage at all.
+    subjectsByLanguage: SUBJECTS_PBD,
+    // Line 3's second box is a CONTOH only (like MP THP) — the real value
+    // is each matrix column's own subject, see exportCsv.js buildPbdMatrixRows.
+    // Unlike MP THP's single fixed subject, PBD has up to 13+ subjects per
+    // order, so forcing a teacher to type one example subject name here adds
+    // friction without adding real data — the "(pilihan)" prefix opts this
+    // field out of AppState.jsx's addToCart "engaged" reference-line
+    // requirement (see secondLineRequired there). The year line (index 1)
+    // carries the same "(pilihan)" prefix on its own placeholder so it's
+    // likewise optional (see linePlaceholderOptional in AppState.jsx).
     linePlaceholders: [
       'e.g. HARI ANUGERAH KECEMERLANGAN MURID',
-      'e.g. 2025',
+      '(pilihan) e.g. 2025',
       'e.g. ANUGERAH KECEMERLANGAN PBD',
       'e.g. TAHUN 1 ADIL',
     ],
-    positionLine2Placeholder: '(pilihan) sambung baris ke-2',
-    eventLine1FromRows: true,
-    variantLabels: ['PBD — Mengikut Kuantiti', 'PBD — Mengikut Kedudukan'],
-    qtyColumnLabels: ['KUANTITI', 'KEDUDUKAN'],
+    positionLine2Placeholder: '(pilihan) e.g. BAHASA MELAYU',
+    qtyColumnLabels: ['KUANTITI'],
+  },
+  {
+    key: 'ALIRAN', label: 'ALIRAN TERBAIK', mode: 'dynamicMatrix', blocksCount: 1,
+    // Same shape as PBD TERBAIK above, just "Kedudukan" (ranking) instead of
+    // "Kuantiti" (count) — used to be the same PBD category's second variant,
+    // split into its own tab so there's no variant dropdown to pick between.
+    subjectsByLanguage: SUBJECTS_PBD,
+    linePlaceholders: [
+      'e.g. HARI ANUGERAH KECEMERLANGAN MURID',
+      '(pilihan) e.g. 2025',
+      'e.g. ANUGERAH KECEMERLANGAN PBD',
+      'e.g. TAHUN 1 ADIL',
+    ],
+    positionLine2Placeholder: '(pilihan) e.g. BAHASA MELAYU',
+    qtyColumnLabels: ['KEDUDUKAN'],
   },
   {
     key: 'LONJAKAN', label: 'LONJAKAN SAUJANA', mode: 'list', blocksCount: 1,
@@ -157,8 +212,8 @@ export function standardUnitPrice(code, plakCatalogTree) {
 export const REFERENCE_IMAGE_SLOTS = [
   { id: 'sample-MP1-0', label: 'MP THP 1' },
   { id: 'sample-MP2-0', label: 'MP THP 2' },
-  { id: 'sample-PBD-0', label: 'PBD — Mengikut Kuantiti' },
-  { id: 'sample-PBD-1', label: 'PBD — Mengikut Kedudukan' },
+  { id: 'sample-PBD-0', label: 'PBD Terbaik' },
+  { id: 'sample-ALIRAN-0', label: 'Aliran Terbaik' },
   { id: 'sample-LONJAKAN-0', label: 'Lonjakan Saujana' },
   { id: 'sample-TOKOH-0', label: 'Tokoh' },
 ];

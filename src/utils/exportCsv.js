@@ -1,4 +1,4 @@
-import { CATEGORIES, getCategorySubjects, getCategoryColumns } from '../data/catalog';
+import { CATEGORIES, getCategorySubjects, getCategoryColumns, tahunRangeYears } from '../data/catalog';
 
 export const CSV_COLUMNS = ['event_header', 'year', 'position', 'event_line_1', 'event_line_2'];
 
@@ -44,8 +44,8 @@ function buildMatrixRows(item, cat, header, year, positionPart1, schoolLanguage)
   return rows;
 }
 
-// Fallback for a category matching neither `positionFromRows` nor
-// `eventLine1FromRows` (defensively covers an unrecognized categoryKey):
+// Fallback for a category matching neither `mode` ('matrix'/'dynamicMatrix')
+// nor `positionFromRows` (defensively covers an unrecognized categoryKey):
 // every reference-sample line is fixed as typed, repeated once per unit
 // of the item's aggregate qty.
 function buildFixedRows(item, header, year, positionPart1) {
@@ -75,19 +75,47 @@ function buildRowsFromDescriptionRows(item, header, year) {
   return rows;
 }
 
-// PBD (`eventLine1FromRows`): header/year/position are fixed as typed
-// (including the optional second position box) — only event_line_1 is a
-// CONTOH, its real value is each quantity-table row's own description
-// (TAHUN 1..6), repeated that row's own qty times.
-function buildPbdRows(item, header, year, positionPart1) {
-  const position2 = getPositionLine2(item);
-  const position = position2 ? (positionPart1 ? `${positionPart1}\n${position2}` : position2) : positionPart1;
+// PBD (dynamicMatrix): same shape as buildMatrixRows above, except both
+// axes are per-order data instead of catalog-fixed — subject rows (default
+// 13 + any teacher-added extras) come from item.detail.rows, and columns
+// (a Tahun range + Nama Kelas, entirely teacher-defined) from
+// item.detail.columns. Each (row, column) cell's qty is the total across
+// every Tahun the column's range covers (e.g. TAHUN 3 - TAHUN 6 needs at
+// least 4 — one per year, enforced at Add to Cart time) — split back out
+// as evenly as possible per individual year here (any remainder going to
+// the earliest years), each becoming its own CSV row: subject fills in for
+// the sample's second position line same as MP THP, that year + Nama Kelas
+// joined together fill in event_line_1. Tahun is optional (a teacher may
+// leave a class row's Dari/Hingga blank) — in that case there's nothing to
+// split by, so the full qty goes into a single set of rows using just Nama
+// Kelas for event_line_1, instead of being dropped entirely.
+function buildPbdMatrixRows(item, header, year, positionPart1) {
   const rows = [];
-  (item.detail?.rows || []).forEach((r) => {
-    const qty = Number(r.qty) || 0;
-    if (qty <= 0) return;
-    const row = [header, year, position, r.desc || '', ''];
-    for (let i = 0; i < qty; i++) rows.push(row);
+  const subjectRows = item.detail?.rows || [];
+  const columns = item.detail?.columns || [];
+  const matrix = item.detail?.matrix || {};
+  subjectRows.forEach((subjectRow) => {
+    columns.forEach((col) => {
+      const key = `${item.categoryKey}::${item.blockIdx}::${subjectRow.id}::${col.id}`;
+      const qty = Number(matrix[key]) || 0;
+      if (qty <= 0) return;
+      const position = positionPart1 ? `${positionPart1}\n${subjectRow.desc}` : subjectRow.desc;
+      const tahunLabels = tahunRangeYears(col.tahunFrom, col.tahunTo);
+      if (tahunLabels.length === 0) {
+        const eventLine1 = col.namaKelas || '';
+        const row = [header, year, position, eventLine1, ''];
+        for (let n = 0; n < qty; n++) rows.push(row);
+        return;
+      }
+      const base = Math.floor(qty / tahunLabels.length);
+      const remainder = qty % tahunLabels.length;
+      tahunLabels.forEach((tahunLabel, i) => {
+        const count = base + (i < remainder ? 1 : 0);
+        const eventLine1 = [tahunLabel, col.namaKelas].filter(Boolean).join(' ');
+        const row = [header, year, position, eventLine1, ''];
+        for (let n = 0; n < count; n++) rows.push(row);
+      });
+    });
   });
   return rows;
 }
@@ -112,10 +140,10 @@ export function buildCsvRows(order, categoryKey) {
 
     if (cat?.mode === 'matrix') {
       rows.push(...buildMatrixRows(item, cat, header, year, getLine(item, 2), schoolLanguage));
+    } else if (cat?.mode === 'dynamicMatrix') {
+      rows.push(...buildPbdMatrixRows(item, header, year, getLine(item, 2)));
     } else if (cat?.positionFromRows) {
       rows.push(...buildRowsFromDescriptionRows(item, header, year));
-    } else if (cat?.eventLine1FromRows) {
-      rows.push(...buildPbdRows(item, header, year, getLine(item, 2)));
     } else {
       rows.push(...buildFixedRows(item, header, year, getLine(item, 2)));
     }

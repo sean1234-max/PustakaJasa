@@ -11,18 +11,20 @@ import { createDraftUpdaters } from '../utils/draftUpdaters';
 const DRAFT_FIELDS = {
   lineValues: 'amendLineValues', matrixValues: 'amendMatrixValues', rowsByBlock: 'amendRowsByBlock', plakRows: 'amendPlakRows',
   nextRowId: 'nextRowId', nextPlakRowId: 'nextPlakRowId',
+  columnsByBlock: 'amendColumnsByBlock', nextColumnId: 'nextColumnId',
 };
 
 // Only quantities and reference text can be adjusted pre-production —
-// row descriptions and Jenis Plak selection are locked to what was ordered.
-const EDITABLE = { lines: true, rowDesc: false, rowQty: true, addRemoveRows: false, matrix: true, jenisPlak: false, namaKelas: false };
+// row/column descriptions and Jenis Plak selection are locked to what was
+// ordered.
+const EDITABLE = { lines: true, rowDesc: false, rowQty: true, addRemoveRows: false, matrix: true, jenisPlak: false };
 
 export default function Amend() {
   const { state, patch } = useAppState();
   const navigate = useNavigate();
   const order = state.orders.find((o) => o.id === state.amendOrderId);
 
-  const updaters = useMemo(() => createDraftUpdaters(patch, DRAFT_FIELDS, false), [patch]);
+  const updaters = useMemo(() => createDraftUpdaters(patch, DRAFT_FIELDS), [patch]);
 
   const categoryTabs = state.amendCategoriesUsed.map((key) => {
     const cat = CATEGORIES.find((c) => c.key === key);
@@ -31,9 +33,9 @@ export default function Amend() {
 
   const { blocks } = useMemo(() => (
     state.amendCategory
-      ? computeBlocks(state.amendCategory, state.amendPbdVariant, state.amendLineValues, state.amendMatrixValues, state.amendRowsByBlock, state.amendPlakRows, [], updaters, state.plakCatalog, state.schoolLanguage)
+      ? computeBlocks(state.amendCategory, state.amendLineValues, state.amendMatrixValues, state.amendRowsByBlock, state.amendPlakRows, state.amendColumnsByBlock, updaters, state.plakCatalog, state.schoolLanguage)
       : { blocks: [] }
-  ), [state.amendCategory, state.amendPbdVariant, state.amendLineValues, state.amendMatrixValues, state.amendRowsByBlock, state.amendPlakRows, updaters, state.plakCatalog, state.schoolLanguage]);
+  ), [state.amendCategory, state.amendLineValues, state.amendMatrixValues, state.amendRowsByBlock, state.amendPlakRows, state.amendColumnsByBlock, updaters, state.plakCatalog, state.schoolLanguage]);
 
   if (!order) return null;
 
@@ -51,15 +53,6 @@ export default function Amend() {
         <div style={{ margin: 'var(--space-3) 0 var(--space-8)' }}>
           <CategoryTabs categories={categoryTabs} active={state.amendCategory} onSelect={(key) => patch({ amendCategory: key })} />
         </div>
-
-        {state.amendCategory === 'PBD' && (
-          <div className="field" style={{ maxWidth: 340, marginBottom: 'var(--space-6)' }}>
-            <label htmlFor="amendPbdVariant">PBD Item</label>
-            <select className="input" id="amendPbdVariant" value={state.amendPbdVariant} onChange={(e) => patch({ amendPbdVariant: Number(e.target.value) })}>
-              {CATEGORIES.find((c) => c.key === 'PBD').variantLabels.map((label, i) => <option key={i} value={i}>{label}</option>)}
-            </select>
-          </div>
-        )}
 
         {blocks.map((blk) => (
           <OrderCategoryBlock key={blk.idx} blk={blk} editable={EDITABLE} refImageUrl={state.refImages?.[blk.sampleSlotId]} />

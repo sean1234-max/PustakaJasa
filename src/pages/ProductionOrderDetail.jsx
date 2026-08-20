@@ -10,7 +10,7 @@ import { getOrderCategories, buildCsvRows, rowsToCsv, buildCategoryCsvFilename }
 import { downloadTextFile } from '../utils/downloadBlob';
 import { groupItemsByBatch } from '../utils/orderBatches';
 
-const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: false, matrix: false, jenisPlak: false, namaKelas: false };
+const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: false, matrix: false, jenisPlak: false };
 
 export default function ProductionOrderDetail() {
   const { state, setInvoiceId } = useAppState();

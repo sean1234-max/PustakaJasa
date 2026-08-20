@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { CATEGORIES, formatDate, standardUnitPrice } from '../data/catalog';
-import { buildInitialRowsByBlock, buildInitialPlakRows } from '../data/formDefaults';
+import { CATEGORIES, formatDate, standardUnitPrice, getCategorySubjects } from '../data/catalog';
+import { buildInitialRowsByBlock, buildInitialColumnsByBlock, buildInitialPlakRows } from '../data/formDefaults';
 import { computeBlocks, snapshotDetail, noopUpdaters } from '../utils/computeBlocks';
 import { AppStateContext } from './AppStateContext';
 import {
@@ -42,16 +42,22 @@ function resetCategoryFields(catKey, st) {
   const matrixValues = { ...st.matrixValues };
   Object.keys(matrixValues).forEach((k) => { if (k.startsWith(`${catKey}::`)) delete matrixValues[k]; });
   const rowsByBlock = { ...st.rowsByBlock };
+  const columnsByBlock = { ...st.columnsByBlock };
   const plakRows = { ...st.plakRows };
+  let nextColumnId = st.nextColumnId;
   for (let b = 0; b < (cat.blocksCount || 1); b++) {
     const key = `${catKey}::${b}`;
     if (cat.mode === 'list') rowsByBlock[key] = cat.rows.map((label, i) => ({ id: st.nextRowId + i, desc: label, qty: '' }));
+    if (cat.mode === 'dynamicMatrix') {
+      rowsByBlock[key] = getCategorySubjects(cat, st.schoolLanguage).map((subject, i) => ({ id: st.nextRowId + i, desc: subject, custom: false }));
+      columnsByBlock[key] = [{ id: nextColumnId, tahunFrom: '', tahunTo: '', namaKelas: '' }];
+      nextColumnId += 1;
+    }
     plakRows[key] = [{ id: st.nextPlakRowId + b, jenisPlak: '' }];
   }
-  const namaKelasRows = catKey === 'PBD' ? [{ id: st.nextNamaKelasRowId, namaKelas: '', tahun: '' }] : st.namaKelasRows;
   return {
-    lineValues, matrixValues, rowsByBlock, plakRows, namaKelasRows,
-    nextRowId: st.nextRowId + 10, nextPlakRowId: st.nextPlakRowId + 10, nextNamaKelasRowId: st.nextNamaKelasRowId + 1,
+    lineValues, matrixValues, rowsByBlock, columnsByBlock, plakRows,
+    nextRowId: st.nextRowId + 20, nextPlakRowId: st.nextPlakRowId + 10, nextColumnId,
   };
 }
 
@@ -83,15 +89,14 @@ function initialState() {
     stepError: '',
 
     category: 'MP1',
-    pbdVariant: 0,
     lineValues: {},
     matrixValues: {},
-    rowsByBlock: buildInitialRowsByBlock(),
+    rowsByBlock: buildInitialRowsByBlock('SK'),
+    columnsByBlock: buildInitialColumnsByBlock(),
     plakRows: buildInitialPlakRows(),
-    namaKelasRows: [{ id: 1, namaKelas: '', tahun: '' }],
     nextRowId: 1000,
     nextPlakRowId: 1000,
-    nextNamaKelasRowId: 2,
+    nextColumnId: 1000,
 
     cart: [],
     cartToast: '',
@@ -110,23 +115,22 @@ function initialState() {
     amendOrderId: null,
     amendCategoriesUsed: [],
     amendCategory: '',
-    amendPbdVariant: 0,
     amendLineValues: {},
     amendMatrixValues: {},
     amendRowsByBlock: {},
+    amendColumnsByBlock: {},
     amendPlakRows: {},
 
     addOnOrderId: null,
     addOnCategory: 'MP1',
-    addOnPbdVariant: 0,
     addOnLineValues: {},
     addOnMatrixValues: {},
-    addOnRowsByBlock: buildInitialRowsByBlock(),
+    addOnRowsByBlock: buildInitialRowsByBlock('SK'),
+    addOnColumnsByBlock: buildInitialColumnsByBlock(),
     addOnPlakRows: buildInitialPlakRows(),
-    addOnNamaKelasRows: [{ id: 1, namaKelas: '', tahun: '' }],
     addOnNextRowId: 1000,
     addOnNextPlakRowId: 1000,
-    addOnNextNamaKelasRowId: 2,
+    addOnNextColumnId: 1000,
   };
 }
 
@@ -323,26 +327,25 @@ export function AppStateProvider({ children }) {
   // Order" nav link or "Place Another Order" — every field except Sekolah,
   // which stays pinned to the account's school from login.
   const startNewOrder = useCallback(() => {
-    patch({
+    patch((st) => ({
       sales: '', picName: '', phone: '', ketuaPanitia: '', terms: '', remark: '',
       dueSelected: null, funcSelected: null,
       logoDataUrl: null, logoFileName: '', logoRemark: '', schoolType: null, stepError: '',
 
-      category: 'MP1', pbdVariant: 0,
+      category: 'MP1',
       lineValues: {}, matrixValues: {},
-      rowsByBlock: buildInitialRowsByBlock(), plakRows: buildInitialPlakRows(),
-      namaKelasRows: [{ id: 1, namaKelas: '', tahun: '' }],
-      nextRowId: 1000, nextPlakRowId: 1000, nextNamaKelasRowId: 2,
+      rowsByBlock: buildInitialRowsByBlock(st.schoolLanguage), columnsByBlock: buildInitialColumnsByBlock(), plakRows: buildInitialPlakRows(),
+      nextRowId: 1000, nextPlakRowId: 1000, nextColumnId: 1000,
 
       cart: [], cartToast: '',
-    });
+    }));
   }, [patch]);
 
   const addToCart = useCallback(() => {
     setState((st) => {
       const currentCat = CATEGORIES.find((c) => c.key === st.category) || CATEGORIES[0];
-      const { blocks, isMatrix } = computeBlocks(
-        st.category, st.pbdVariant, st.lineValues, st.matrixValues, st.rowsByBlock, st.plakRows, st.namaKelasRows, noopUpdaters, st.plakCatalog, st.schoolLanguage,
+      const { blocks, isMatrix, isDynamicMatrix } = computeBlocks(
+        st.category, st.lineValues, st.matrixValues, st.rowsByBlock, st.plakRows, st.columnsByBlock, noopUpdaters, st.plakCatalog, st.schoolLanguage,
       );
 
       // Catches the two ways a category can be left half-finished — a
@@ -355,9 +358,14 @@ export function AppStateProvider({ children }) {
       if (blk) {
         const secondLineRequired = blk.lines.some((l) => l.secondLine)
           && !String(currentCat.positionLine2Placeholder || '').trim().startsWith('(pilihan)');
+        // A "(pilihan)" ("optional") prefix on a line's own placeholder
+        // (e.g. PBD/ALIRAN's year field) opts that line's primary value out
+        // of the same completeness requirement, same convention as
+        // secondLineRequired above for the position line's second box.
+        const linePlaceholderOptional = (line) => String(line.placeholder || '').trim().startsWith('(pilihan)');
         const lineHasValue = (line) => Boolean(String(line.value).trim())
           || (line.secondLine && Boolean(String(line.secondLine.value).trim()));
-        const lineIsComplete = (line) => Boolean(String(line.value).trim())
+        const lineIsComplete = (line) => (linePlaceholderOptional(line) || Boolean(String(line.value).trim()))
           && (!line.secondLine || !secondLineRequired || Boolean(String(line.secondLine.value).trim()));
         const hasQty = blk.blockTotalQty > 0;
         const hasJenisPlak = blk.plakRows.some((pr) => pr.jenisPlak);
@@ -372,6 +380,20 @@ export function AppStateProvider({ children }) {
           if (!hasJenisPlak) {
             return { ...st, cartToast: `Please choose a Jenis Plak for ${blk.qtyLabel} before adding to cart.` };
           }
+          // A Tahun range spanning N years needs at least N medals per
+          // subject (one per year) — a qty below that would silently lose
+          // years when exportCsv.js splits it back out per-year.
+          if (isDynamicMatrix) {
+            const shortRow = blk.matrixRows.find((row) => row.cells.some((cell) => {
+              const qty = Number(cell.value) || 0;
+              return qty > 0 && qty < row.minQty;
+            }));
+            if (shortRow) {
+              const rangeLabel = shortRow.tahunTo && shortRow.tahunTo !== shortRow.tahunFrom
+                ? `${shortRow.tahunFrom} – ${shortRow.tahunTo}` : shortRow.tahunFrom;
+              return { ...st, cartToast: `${rangeLabel} ${shortRow.namaKelas} covers ${shortRow.minQty} year(s) — enter at least ${shortRow.minQty} for any subject you fill in.` };
+            }
+          }
         }
       }
 
@@ -381,7 +403,7 @@ export function AppStateProvider({ children }) {
           if (pr.jenisPlak && pr.qty) newItems.push({
             id: crypto.randomUUID(), jenisPlak: pr.jenisPlak, qty: pr.qty, harga: pr.rawHarga, unitPrice: pr.unitPrice,
             categoryLabel: b.qtyLabel, categoryKey: st.category, blockIdx: b.idx,
-            detail: snapshotDetail(st.category, b.idx, isMatrix, st.lineValues, st.matrixValues, st.rowsByBlock),
+            detail: snapshotDetail(st.category, b.idx, isMatrix, isDynamicMatrix, st.lineValues, st.matrixValues, st.rowsByBlock, st.columnsByBlock),
           });
         });
       });
@@ -446,11 +468,11 @@ export function AppStateProvider({ children }) {
     // dates, etc. now live as top-level order fields below, so Sales can
     // rely on every order carrying them regardless of how it was created.
     const snapshot = {
-      category: st.category, pbdVariant: st.pbdVariant,
+      category: st.category,
       lineValues: { ...st.lineValues }, matrixValues: { ...st.matrixValues },
       rowsByBlock: JSON.parse(JSON.stringify(st.rowsByBlock)),
       plakRows: JSON.parse(JSON.stringify(st.plakRows)),
-      namaKelasRows: JSON.parse(JSON.stringify(st.namaKelasRows)),
+      columnsByBlock: JSON.parse(JSON.stringify(st.columnsByBlock)),
     };
     const newOrder = {
       id: newId, invoiceId: null, datePlaced: formatDate(TODAY), deliveryDate: 'TBD',
@@ -493,35 +515,34 @@ export function AppStateProvider({ children }) {
       // is only available for orders placed through this app's New Order
       // flow — older/imported orders just prefill the school info above.
       ...(snap ? {
-        category: snap.category, pbdVariant: snap.pbdVariant,
+        category: snap.category,
         lineValues: { ...snap.lineValues }, matrixValues: { ...snap.matrixValues },
         rowsByBlock: JSON.parse(JSON.stringify(snap.rowsByBlock)),
         plakRows: JSON.parse(JSON.stringify(snap.plakRows)),
-        namaKelasRows: JSON.parse(JSON.stringify(snap.namaKelasRows)),
+        columnsByBlock: JSON.parse(JSON.stringify(snap.columnsByBlock || {})),
       } : {}),
     });
   }, [patch]);
 
   const openAmend = useCallback((ord) => {
     const categoriesUsed = [];
-    const lineValues = {}, matrixValues = {}, rowsByBlock = {}, plakRows = {};
-    let pbdVariant = 0;
+    const lineValues = {}, matrixValues = {}, rowsByBlock = {}, columnsByBlock = {}, plakRows = {};
     (ord.items || []).forEach((it) => {
       if (!it.categoryKey) return;
       if (!categoriesUsed.includes(it.categoryKey)) categoriesUsed.push(it.categoryKey);
-      if (it.categoryKey === 'PBD') pbdVariant = it.blockIdx;
       const key = `${it.categoryKey}::${it.blockIdx}`;
       if (it.detail) {
         Object.assign(lineValues, it.detail.lines || {});
         if (it.detail.matrix) Object.assign(matrixValues, it.detail.matrix);
         if (it.detail.rows) rowsByBlock[key] = JSON.parse(JSON.stringify(it.detail.rows));
+        if (it.detail.columns) columnsByBlock[key] = JSON.parse(JSON.stringify(it.detail.columns));
       }
       plakRows[key] = [{ id: it.id, jenisPlak: it.jenisPlak }];
     });
     patch({
       amendOrderId: ord.id, amendCategoriesUsed: categoriesUsed, amendCategory: categoriesUsed[0] || '',
-      amendPbdVariant: pbdVariant, amendLineValues: lineValues, amendMatrixValues: matrixValues,
-      amendRowsByBlock: rowsByBlock, amendPlakRows: plakRows,
+      amendLineValues: lineValues, amendMatrixValues: matrixValues,
+      amendRowsByBlock: rowsByBlock, amendColumnsByBlock: columnsByBlock, amendPlakRows: plakRows,
     });
   }, [patch]);
 
@@ -529,16 +550,15 @@ export function AppStateProvider({ children }) {
     setState((st) => {
       const newItems = [];
       st.amendCategoriesUsed.forEach((catKey) => {
-        const pbdV = catKey === 'PBD' ? st.amendPbdVariant : 0;
-        const { blocks: catBlocks, isMatrix: catIsMatrix } = computeBlocks(
-          catKey, pbdV, st.amendLineValues, st.amendMatrixValues, st.amendRowsByBlock, st.amendPlakRows, [], noopUpdaters, st.plakCatalog, st.schoolLanguage,
+        const { blocks: catBlocks, isMatrix: catIsMatrix, isDynamicMatrix: catIsDynamicMatrix } = computeBlocks(
+          catKey, st.amendLineValues, st.amendMatrixValues, st.amendRowsByBlock, st.amendPlakRows, st.amendColumnsByBlock, noopUpdaters, st.plakCatalog, st.schoolLanguage,
         );
         catBlocks.forEach((blk) => {
           blk.plakRows.forEach((pr) => {
             if (pr.jenisPlak) newItems.push({
               id: pr.id, jenisPlak: pr.jenisPlak, qty: pr.qty, harga: pr.rawHarga, unitPrice: pr.unitPrice, categoryLabel: blk.qtyLabel,
               categoryKey: catKey, blockIdx: blk.idx,
-              detail: snapshotDetail(catKey, blk.idx, catIsMatrix, st.amendLineValues, st.amendMatrixValues, st.amendRowsByBlock),
+              detail: snapshotDetail(catKey, blk.idx, catIsMatrix, catIsDynamicMatrix, st.amendLineValues, st.amendMatrixValues, st.amendRowsByBlock, st.amendColumnsByBlock),
             });
           });
         });
@@ -557,13 +577,12 @@ export function AppStateProvider({ children }) {
   }, [patch]);
 
   const openAddOn = useCallback((ord) => {
-    patch({
-      addOnOrderId: ord.id, addOnCategory: 'MP1', addOnPbdVariant: 0,
+    patch((st) => ({
+      addOnOrderId: ord.id, addOnCategory: 'MP1',
       addOnLineValues: {}, addOnMatrixValues: {},
-      addOnRowsByBlock: buildInitialRowsByBlock(), addOnPlakRows: buildInitialPlakRows(),
-      addOnNamaKelasRows: [{ id: 1, namaKelas: '', tahun: '' }],
-      addOnNextRowId: 1000, addOnNextPlakRowId: 1000, addOnNextNamaKelasRowId: 2,
-    });
+      addOnRowsByBlock: buildInitialRowsByBlock(st.schoolLanguage), addOnColumnsByBlock: buildInitialColumnsByBlock(), addOnPlakRows: buildInitialPlakRows(),
+      addOnNextRowId: 1000, addOnNextPlakRowId: 1000, addOnNextColumnId: 1000,
+    }));
   }, [patch]);
 
   // Teacher submits an add-on for Sales review — unlike the old
@@ -577,16 +596,15 @@ export function AppStateProvider({ children }) {
     setState((st) => {
       const newItems = [];
       CATEGORIES.forEach((cat) => {
-        const pbdV = cat.key === 'PBD' ? st.addOnPbdVariant : 0;
-        const { blocks: catBlocks, isMatrix: catIsMatrix } = computeBlocks(
-          cat.key, pbdV, st.addOnLineValues, st.addOnMatrixValues, st.addOnRowsByBlock, st.addOnPlakRows, [], noopUpdaters, st.plakCatalog, st.schoolLanguage,
+        const { blocks: catBlocks, isMatrix: catIsMatrix, isDynamicMatrix: catIsDynamicMatrix } = computeBlocks(
+          cat.key, st.addOnLineValues, st.addOnMatrixValues, st.addOnRowsByBlock, st.addOnPlakRows, st.addOnColumnsByBlock, noopUpdaters, st.plakCatalog, st.schoolLanguage,
         );
         catBlocks.forEach((blk) => {
           blk.plakRows.forEach((pr) => {
             if (pr.jenisPlak && pr.qty) newItems.push({
               id: crypto.randomUUID(), jenisPlak: pr.jenisPlak, qty: pr.qty, harga: pr.rawHarga, unitPrice: pr.unitPrice, categoryLabel: blk.qtyLabel,
               categoryKey: cat.key, blockIdx: blk.idx,
-              detail: snapshotDetail(cat.key, blk.idx, catIsMatrix, st.addOnLineValues, st.addOnMatrixValues, st.addOnRowsByBlock),
+              detail: snapshotDetail(cat.key, blk.idx, catIsMatrix, catIsDynamicMatrix, st.addOnLineValues, st.addOnMatrixValues, st.addOnRowsByBlock, st.addOnColumnsByBlock),
             });
           });
         });

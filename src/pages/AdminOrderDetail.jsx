@@ -15,7 +15,7 @@ import { groupItemsByBatch } from '../utils/orderBatches';
 // redesign. Kept separate rather than sharing one component with
 // /production/orders/:id because that route needs to keep Production's own
 // (unredesigned) look — see AdminLayout.jsx's header comment.
-const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: false, matrix: false, jenisPlak: false, namaKelas: false };
+const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: false, matrix: false, jenisPlak: false };
 
 export default function AdminOrderDetail() {
   const { state, setInvoiceId } = useAppState();

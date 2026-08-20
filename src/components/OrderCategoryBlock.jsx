@@ -1,20 +1,42 @@
 import PlakPicker from './PlakPicker';
 
+const TAHUN_OPTIONS = ['TAHUN 1', 'TAHUN 2', 'TAHUN 3', 'TAHUN 4', 'TAHUN 5', 'TAHUN 6'];
+
 // Renders one category "block": reference sample + numbered lines, the
-// quantity table (matrix or list mode), the optional Nama Kelas & Tahun
-// sub-table (PBD variant 0 only), and the Jenis Plak / QTY / Harga row.
-// Reused by New Order Step 2, Amend, and Add On — `editable` controls which
-// parts of the block are inputs vs read-only text for each of those.
+// quantity table (fixed matrix / dynamic matrix / list mode), and the Jenis
+// Plak / QTY / Harga row. Reused by New Order Step 2, Amend, and Add On —
+// `editable` controls which parts of the block are inputs vs read-only text
+// for each of those.
 // The reference image itself is never editable here regardless of
 // `editable` — it's a fixed per-category example Production manages from
 // its own admin screen (Production → Reference Images), not per-order data.
 // `hideEmptyRows` (print only — the editable New Order / Amend / Add On
 // screens always show every subject/row so the teacher can fill any of
-// them in) drops subjects/rows nobody ordered from the printed quantity
-// table, so the printout only lists what was actually selected.
+// them in) drops subjects/rows/columns nobody ordered from the printed
+// quantity table, so the printout only lists what was actually selected.
 export default function OrderCategoryBlock({ blk, editable, plakOptions, refImageUrl, hideEmptyRows }) {
   const matrixRows = hideEmptyRows ? blk.matrixRows.filter((row) => row.rowTotal > 0) : blk.matrixRows;
   const listRows = hideEmptyRows ? blk.rows.filter((row) => Number(row.qty) > 0) : blk.rows;
+  // Dynamic-matrix columns are teacher-added and can end up unused (added,
+  // then never filled in) — hide those on print the same way empty subject
+  // rows already are, keeping both the header and every row's cells in sync
+  // by index.
+  const keepColIdx = blk.isDynamicMatrix && hideEmptyRows
+    ? blk.columns.map((_, i) => (blk.colTotals[i]?.value || 0) > 0)
+    : blk.columns.map(() => true);
+  const dynColumns = blk.isDynamicMatrix ? blk.columns.filter((_, i) => keepColIdx[i]) : blk.columns;
+  const dynColTotals = blk.isDynamicMatrix ? blk.colTotals.filter((_, i) => keepColIdx[i]) : blk.colTotals;
+  // table-layout:auto (the .table default) computes column widths from
+  // content, which can't see the intended width of a `width:100%` input —
+  // it ends up squeezing every column of this often-13-columns-wide table
+  // down to a sliver instead of actually overflowing/scrolling. Switching
+  // to a fixed layout with an explicit total width (sum of every column's
+  // own width below) makes each column render at its real size and lets
+  // table-wrap's overflow-x do the scrolling.
+  const DYN_COL_WIDTHS = { tahun: 190, namaKelas: 150, subject: 110, total: 70 };
+  const dynTableWidth = DYN_COL_WIDTHS.tahun + DYN_COL_WIDTHS.namaKelas
+    + dynColumns.length * DYN_COL_WIDTHS.subject + DYN_COL_WIDTHS.total;
+
   return (
     <div>
       <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Reference Sample (Contoh)</div>
@@ -103,6 +125,105 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, refImag
             </tbody>
           </table>
         </div>
+      ) : blk.isDynamicMatrix ? (
+        <div>
+          <div className="table-wrap">
+            <table className="table" style={{ tableLayout: 'fixed', width: dynTableWidth }}>
+              <thead>
+                <tr>
+                  <th style={{ width: DYN_COL_WIDTHS.tahun }}>Tahun</th>
+                  <th style={{ width: DYN_COL_WIDTHS.namaKelas }}>Nama Kelas</th>
+                  {dynColumns.map((col) => (
+                    <th key={col.id} style={{ width: DYN_COL_WIDTHS.subject }}>
+                      {col.custom && editable.rowDesc ? (
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          <input className="input" style={{ flex: 1, minWidth: 0 }} placeholder="e.g. KEMAHIRAN HIDUP" value={col.subject} onChange={(e) => col.setSubject(e.target.value)} />
+                          {editable.addRemoveRows && (
+                            <button type="button" className="btn btn-ghost btn-icon" aria-label="Remove subject" onClick={col.remove}>✕</button>
+                          )}
+                        </div>
+                      ) : col.subject}
+                    </th>
+                  ))}
+                  <th style={{ width: DYN_COL_WIDTHS.total }}>Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {matrixRows.map((row) => (
+                  <tr key={row.id}>
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <select
+                          className="input"
+                          style={{ flex: 1, minWidth: 0 }}
+                          value={row.tahunFrom}
+                          disabled={!editable.rowDesc}
+                          onChange={editable.rowDesc ? (e) => row.setTahunFrom(e.target.value) : undefined}
+                        >
+                          <option value="">Dari</option>
+                          {TAHUN_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
+                        </select>
+                        <span>–</span>
+                        <select
+                          className="input"
+                          style={{ flex: 1, minWidth: 0 }}
+                          value={row.tahunTo}
+                          disabled={!editable.rowDesc}
+                          onChange={editable.rowDesc ? (e) => row.setTahunTo(e.target.value) : undefined}
+                        >
+                          <option value="">Hingga</option>
+                          {TAHUN_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
+                        </select>
+                      </div>
+                      {row.minQty > 1 && <div className="hint-text" style={{ margin: '2px 0 0' }}>min {row.minQty} setiap subjek</div>}
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        <input
+                          className="input"
+                          style={{ flex: 1, minWidth: 0 }}
+                          placeholder="Nama Kelas"
+                          value={row.namaKelas}
+                          readOnly={!editable.rowDesc}
+                          onChange={editable.rowDesc ? (e) => row.setNamaKelas(e.target.value) : undefined}
+                        />
+                        {editable.addRemoveRows && (
+                          <button type="button" className="btn btn-ghost btn-icon" aria-label="Remove class" onClick={row.remove}>✕</button>
+                        )}
+                      </div>
+                    </td>
+                    {row.cells.filter((_, i) => keepColIdx[i]).map((cell) => (
+                      <td key={cell.key}>
+                        <input
+                          className="input"
+                          type="number"
+                          min={row.minQty}
+                          placeholder="0"
+                          value={cell.value}
+                          readOnly={!editable.matrix}
+                          onChange={editable.matrix ? (e) => cell.onChange(e.target.value) : undefined}
+                        />
+                      </td>
+                    ))}
+                    <td><strong>{row.rowTotal}</strong></td>
+                  </tr>
+                ))}
+                <tr>
+                  <td colSpan={2}><strong>TOTAL ({blk.qtyColHeader})</strong></td>
+                  {dynColTotals.map((ct, i) => <td key={i}><strong>{ct.value}</strong></td>)}
+                  <td><strong>{blk.grandTotal}</strong></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          {editable.addRemoveRows && (
+            <div className="row-actions" style={{ display: 'flex', gap: 8, marginTop: 'var(--space-3)' }}>
+              <button type="button" className="btn btn-secondary" onClick={blk.addRow}>+ Add Subject</button>
+              <button type="button" className="btn btn-secondary" onClick={blk.addColumnSameTahun}>+ Add Kelas</button>
+              <button type="button" className="btn btn-secondary" onClick={blk.addColumn}>+ Add Tahun</button>
+            </div>
+          )}
+        </div>
       ) : (
         <div>
           <table className="table">
@@ -146,25 +267,6 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, refImag
             </div>
           )}
         </div>
-      )}
-
-      {blk.showNamaKelas && editable.namaKelas && (
-        <>
-          <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Nama Kelas &amp; Tahun</div>
-          <table className="table">
-            <thead><tr><th>Nama Kelas</th><th>Tahun</th><th style={{ width: 48 }} /></tr></thead>
-            <tbody>
-              {blk.namaKelasRows.map((nk) => (
-                <tr key={nk.id}>
-                  <td><input className="input" placeholder="e.g. 1 ADIL" value={nk.namaKelas} onChange={(e) => nk.setNamaKelas(e.target.value)} /></td>
-                  <td><input className="input" placeholder="e.g. TAHUN 1" value={nk.tahun} onChange={(e) => nk.setTahun(e.target.value)} /></td>
-                  <td><button type="button" className="btn btn-ghost btn-icon" aria-label="Remove row" onClick={nk.remove}>✕</button></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <button type="button" className="btn btn-secondary" style={{ marginTop: 'var(--space-3)' }} onClick={blk.addNamaKelasRow}>+ Add Row</button>
-        </>
       )}
 
       <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Jenis Plak / QTY / Harga</div>

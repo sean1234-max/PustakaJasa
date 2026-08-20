@@ -1,12 +1,23 @@
-import { CATEGORIES, flattenPlakCatalog, getCategorySubjects, getCategoryColumns } from '../data/catalog';
+import { CATEGORIES, flattenPlakCatalog, getCategorySubjects, getCategoryColumns, tahunRangeYears } from '../data/catalog';
 
-export function snapshotDetail(catKey, blockIdx, isMatrix, lineValues, matrixValues, rowsByBlockMap) {
-  const detail = { lines: {}, matrix: null, rows: null };
+export function snapshotDetail(catKey, blockIdx, isMatrix, isDynamicMatrix, lineValues, matrixValues, rowsByBlockMap, columnsByBlockMap) {
+  const detail = { lines: {}, matrix: null, rows: null, columns: null };
   const linePrefix = `${catKey}::${blockIdx}::`;
   Object.keys(lineValues).forEach((k) => { if (k.startsWith(linePrefix)) detail.lines[k] = lineValues[k]; });
   if (isMatrix) {
     detail.matrix = {};
     const matPrefix = `${catKey}::`;
+    Object.keys(matrixValues).forEach((k) => { if (k.startsWith(matPrefix)) detail.matrix[k] = matrixValues[k]; });
+  } else if (isDynamicMatrix) {
+    // PBD TERBAIK / ALIRAN TERBAIK: rows (subjects, including any
+    // teacher-added extras) and columns (Tahun + Nama Kelas) are both
+    // per-order data, unlike MP THP's fixed rows/columns — so both get
+    // snapshotted, plus the qty matrix keyed by this block
+    // (`${catKey}::${blockIdx}::${rowId}::${colId}`).
+    detail.rows = JSON.parse(JSON.stringify(rowsByBlockMap[`${catKey}::${blockIdx}`] || []));
+    detail.columns = JSON.parse(JSON.stringify((columnsByBlockMap && columnsByBlockMap[`${catKey}::${blockIdx}`]) || []));
+    detail.matrix = {};
+    const matPrefix = `${catKey}::${blockIdx}::`;
     Object.keys(matrixValues).forEach((k) => { if (k.startsWith(matPrefix)) detail.matrix[k] = matrixValues[k]; });
   } else {
     detail.rows = JSON.parse(JSON.stringify(rowsByBlockMap[`${catKey}::${blockIdx}`] || []));
@@ -19,8 +30,9 @@ export function snapshotDetail(catKey, blockIdx, isMatrix, lineValues, matrixVal
 // harga = qty * price) stay identical. `updaters` are callbacks the caller
 // wires to its own state setters; pass no-ops for read-only rendering.
 // `plakCatalog` is the live (Production-editable) catalog tree — flattened
-// once here rather than per plak row.
-export function computeBlocks(catKey, pbdVariant, lineValues, matrixValues, rowsByBlockMap, plakRowsMap, namaKelasRows, updaters, plakCatalog, schoolLanguage = 'SK') {
+// once here rather than per plak row. `columnsByBlockMap` only matters for
+// dynamicMatrix categories (PBD) — pass {} for anything else.
+export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, plakRowsMap, columnsByBlockMap, updaters, plakCatalog, schoolLanguage = 'SK') {
   const flatPrices = flattenPlakCatalog(plakCatalog);
   const priceFor = (code) => {
     const entry = flatPrices.find((p) => p.code === code);
@@ -28,9 +40,9 @@ export function computeBlocks(catKey, pbdVariant, lineValues, matrixValues, rows
   };
   const currentCat = CATEGORIES.find((c) => c.key === catKey) || CATEGORIES[0];
   const isMatrix = currentCat.mode === 'matrix';
+  const isDynamicMatrix = currentCat.mode === 'dynamicMatrix';
   const blocksCount = currentCat.blocksCount || 1;
-  const isPbdCategory = currentCat.key === 'PBD';
-  const activeIndices = isPbdCategory ? [pbdVariant] : Array.from({ length: blocksCount }, (_, i) => i);
+  const activeIndices = Array.from({ length: blocksCount }, (_, i) => i);
   const blocks = [];
 
   for (const b of activeIndices) {
@@ -70,6 +82,49 @@ export function computeBlocks(catKey, pbdVariant, lineValues, matrixValues, rows
       });
       grandTotal = colTotals.reduce((a, b2) => a + b2, 0);
       blockTotalQty = grandTotal;
+    } else if (isDynamicMatrix) {
+      // PBD TERBAIK / ALIRAN TERBAIK: subjects (default 13 + any
+      // teacher-added extras) and classes (Tahun + Nama Kelas) are both
+      // per-order/teacher-defined, unlike MP THP's fixed rows/columns from
+      // the catalog. Subjects render as COLUMN headers (across the top) and classes
+      // (Tahun + Nama Kelas) render as ROWS (down the left) — the opposite
+      // axis arrangement from MP THP's fixed matrix above. The underlying
+      // storage keeps rowsByBlockMap = subjects / columnsByBlockMap =
+      // classes either way (and the cell key stays `subjectId::classId`,
+      // matching exportCsv.js's buildPbdMatrixRows) — only which one is the
+      // UI row vs UI column is swapped here.
+      const rowsKey = `${catKey}::${b}`;
+      const colsKey = `${catKey}::${b}`;
+      const subjectDefs = rowsByBlockMap[rowsKey] || [];
+      const classDefs = (columnsByBlockMap && columnsByBlockMap[colsKey]) || [];
+      colTotals = subjectDefs.map(() => 0);
+      matrixRows = classDefs.map((cls) => {
+        let rowTotal = 0;
+        const cells = subjectDefs.map((subj, si) => {
+          const key = `${catKey}::${b}::${subj.id}::${cls.id}`;
+          const val = Number(matrixValues[key]) || 0;
+          rowTotal += val; colTotals[si] += val;
+          return { key, value: matrixValues[key] || '', onChange: (v) => updaters.onMatrix(key, v) };
+        });
+        // minQty: a Tahun range covering N years needs at least N medals per
+        // subject (one per year) — surfaced so the UI can enforce/hint it,
+        // and the actual per-year split happens on export (exportCsv.js).
+        const minQty = Math.max(1, tahunRangeYears(cls.tahunFrom, cls.tahunTo).length);
+        return {
+          id: cls.id, tahunFrom: cls.tahunFrom, tahunTo: cls.tahunTo, namaKelas: cls.namaKelas, cells, rowTotal, minQty,
+          setTahunFrom: (v) => updaters.onColumnField(colsKey, cls.id, 'tahunFrom', v),
+          setTahunTo: (v) => updaters.onColumnField(colsKey, cls.id, 'tahunTo', v),
+          setNamaKelas: (v) => updaters.onColumnField(colsKey, cls.id, 'namaKelas', v),
+          remove: () => updaters.onColumnRemove(colsKey, cls.id),
+        };
+      });
+      columns = subjectDefs.map((subj) => ({
+        id: subj.id, subject: subj.desc, custom: !!subj.custom,
+        setSubject: (v) => updaters.onRowField(rowsKey, subj.id, 'desc', v),
+        remove: () => updaters.onRowRemove(rowsKey, subj.id),
+      }));
+      grandTotal = colTotals.reduce((a, b2) => a + b2, 0);
+      blockTotalQty = grandTotal;
     } else {
       const rowsKey = `${catKey}::${b}`;
       const rawRows = rowsByBlockMap[rowsKey] || [];
@@ -103,34 +158,28 @@ export function computeBlocks(catKey, pbdVariant, lineValues, matrixValues, rows
       };
     });
 
-    const showNamaKelas = isPbdCategory && b === 0 && !!updaters.onNamaKelas;
-    const nkRows = showNamaKelas ? (namaKelasRows || []).map((nk) => ({
-      id: nk.id, namaKelas: nk.namaKelas, tahun: nk.tahun,
-      setNamaKelas: (v) => updaters.onNamaKelas('namaKelas', nk.id, v),
-      setTahun: (v) => updaters.onNamaKelas('tahun', nk.id, v),
-      remove: () => updaters.onNamaKelasRemove(nk.id),
-    })) : [];
-
     blocks.push({
       idx: b,
-      qtyLabel: currentCat.variantLabels ? currentCat.variantLabels[b] : currentCat.label,
-      qtyColHeader: isMatrix ? 'QTY' : (currentCat.qtyColumnLabels ? currentCat.qtyColumnLabels[b] : 'QTY'),
+      qtyLabel: currentCat.label,
+      qtyColHeader: currentCat.qtyColumnLabels ? currentCat.qtyColumnLabels[b] : 'QTY',
       sampleSlotId: `sample-${catKey}-${b}`,
-      lines, isMatrix, columns, matrixRows,
+      lines, isMatrix, isDynamicMatrix, columns, matrixRows,
       colTotals: colTotals.map((v) => ({ value: v })), grandTotal,
       rows,
       addRow: () => updaters.onAddRow(`${catKey}::${b}`),
-      blockTotalQty, plakRows, showNamaKelas, namaKelasRows: nkRows,
-      addNamaKelasRow: updaters.onAddNamaKelas || (() => {}),
+      addColumn: () => updaters.onAddColumn(`${catKey}::${b}`),
+      addColumnSameTahun: () => updaters.onAddColumnSameTahun(`${catKey}::${b}`),
+      blockTotalQty, plakRows,
     });
   }
 
-  return { blocks, isMatrix, isPbdCategory, blocksCount };
+  return { blocks, isMatrix, isDynamicMatrix, blocksCount };
 }
 
 export const noopUpdaters = {
   onLine: () => {}, onMatrix: () => {}, onRowField: () => {}, onRowRemove: () => {},
   onAddRow: () => {}, onPlakSelect: () => {},
+  onColumnField: () => {}, onColumnRemove: () => {}, onAddColumn: () => {}, onAddColumnSameTahun: () => {},
 };
 
 // Rebuilds read-only `blocks` (the same shape NewOrderStep2 renders live)
@@ -138,8 +187,8 @@ export const noopUpdaters = {
 // item's stored `detail` snapshot — lets Sales/Production reuse
 // OrderCategoryBlock to show exactly what the teacher filled in, instead
 // of re-deriving a simplified summary. Groups items by blockIdx so a
-// category with more than one block (e.g. both PBD variants used in the
-// same order) renders every block, not just one.
+// category with more than one block renders every block, not just one
+// (every current category is single-block, but this stays generic).
 export function reconstructBlocksForCategory(order, catKey, plakCatalog) {
   const schoolLanguage = order.schoolLanguage === 'SJKC' ? 'SJKC' : 'SK';
   const items = (order.items || []).filter((it) => it.categoryKey === catKey);
@@ -152,6 +201,7 @@ export function reconstructBlocksForCategory(order, catKey, plakCatalog) {
     const lineValues = {};
     const matrixValues = {};
     const rowsByBlock = {};
+    const columnsByBlock = {};
     const plakRows = {};
     const key = `${catKey}::${blockIdx}`;
     blockItems.forEach((it) => {
@@ -159,10 +209,11 @@ export function reconstructBlocksForCategory(order, catKey, plakCatalog) {
         Object.assign(lineValues, it.detail.lines || {});
         if (it.detail.matrix) Object.assign(matrixValues, it.detail.matrix);
         if (it.detail.rows) rowsByBlock[key] = it.detail.rows;
+        if (it.detail.columns) columnsByBlock[key] = it.detail.columns;
       }
       plakRows[key] = [...(plakRows[key] || []), { id: it.id, jenisPlak: it.jenisPlak, unitPrice: it.unitPrice }];
     });
-    const result = computeBlocks(catKey, blockIdx, lineValues, matrixValues, rowsByBlock, plakRows, [], noopUpdaters, plakCatalog, schoolLanguage);
+    const result = computeBlocks(catKey, lineValues, matrixValues, rowsByBlock, plakRows, columnsByBlock, noopUpdaters, plakCatalog, schoolLanguage);
     isMatrix = result.isMatrix;
     allBlocks.push(...result.blocks);
   });

@@ -150,7 +150,7 @@ a:hover { color: var(--color-accent-900); text-decoration: underline; }
 }
 
 .screen-wrap {
-  max-width: 760px;
+  max-width: 1200px;
   margin: 0 auto;
 }
 

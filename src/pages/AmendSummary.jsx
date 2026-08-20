@@ -12,8 +12,7 @@ export default function AmendSummary() {
   const amendSummaryItems = useMemo(() => {
     const items = [];
     state.amendCategoriesUsed.forEach((catKey) => {
-      const pbdV = catKey === 'PBD' ? state.amendPbdVariant : 0;
-      const { blocks } = computeBlocks(catKey, pbdV, state.amendLineValues, state.amendMatrixValues, state.amendRowsByBlock, state.amendPlakRows, [], noopUpdaters, state.plakCatalog, state.schoolLanguage);
+      const { blocks } = computeBlocks(catKey, state.amendLineValues, state.amendMatrixValues, state.amendRowsByBlock, state.amendPlakRows, state.amendColumnsByBlock, noopUpdaters, state.plakCatalog, state.schoolLanguage);
       blocks.forEach((blk) => {
         blk.plakRows.forEach((pr) => {
           if (pr.jenisPlak) items.push({ jenisPlak: pr.jenisPlak, qty: pr.qty, harga: pr.rawHarga, categoryLabel: blk.qtyLabel });
@@ -21,7 +20,7 @@ export default function AmendSummary() {
       });
     });
     return items;
-  }, [state.amendCategoriesUsed, state.amendPbdVariant, state.amendLineValues, state.amendMatrixValues, state.amendRowsByBlock, state.amendPlakRows, state.plakCatalog, state.schoolLanguage]);
+  }, [state.amendCategoriesUsed, state.amendLineValues, state.amendMatrixValues, state.amendRowsByBlock, state.amendPlakRows, state.amendColumnsByBlock, state.plakCatalog, state.schoolLanguage]);
 
   const totalQty = amendSummaryItems.reduce((sum, it) => sum + (Number(it.qty) || 0), 0);
   const totalHarga = amendSummaryItems.reduce((sum, it) => sum + it.harga, 0);

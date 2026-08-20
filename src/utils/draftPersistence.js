@@ -6,8 +6,8 @@ const STORAGE_KEY = 'schoolportal.orderDraft.v1';
 const DRAFT_FIELDS = [
   'sekolah', 'sales', 'picName', 'phone', 'ketuaPanitia', 'terms', 'remark', 'dueSelected', 'funcSelected',
   'logoDataUrl', 'logoFileName', 'logoRemark', 'schoolType',
-  'category', 'pbdVariant', 'lineValues', 'matrixValues', 'rowsByBlock', 'plakRows', 'namaKelasRows',
-  'nextRowId', 'nextPlakRowId', 'nextNamaKelasRowId',
+  'category', 'lineValues', 'matrixValues', 'rowsByBlock', 'plakRows', 'columnsByBlock',
+  'nextRowId', 'nextPlakRowId', 'nextColumnId',
   'cart',
 ];
 
