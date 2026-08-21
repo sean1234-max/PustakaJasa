@@ -36,11 +36,41 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, refImag
   const DYN_COL_WIDTHS = { tahun: 190, namaKelas: 150, subject: 110, total: 70 };
   const dynTableWidth = DYN_COL_WIDTHS.tahun + DYN_COL_WIDTHS.namaKelas
     + dynColumns.length * DYN_COL_WIDTHS.subject + DYN_COL_WIDTHS.total;
+  // isMatrix columns are fixed catalog-defined for MP THP 1/2, but a
+  // category can opt into teacher-addable columns too (OTHERS — see
+  // catalog.js's `freeColumns` flag) mirroring the existing custom-ROW
+  // mechanism (getCustomMatrixRowIds) on the other axis. Teacher-added
+  // columns can end up unused same as dynamic-matrix columns, so hide those
+  // on print the same way.
+  const keepMatrixColIdx = blk.isMatrix && blk.freeColumns && hideEmptyRows
+    ? blk.columns.map((_, i) => (blk.colTotals[i]?.value || 0) > 0)
+    : blk.columns.map(() => true);
+  const matrixCols = blk.isMatrix ? blk.columns.filter((_, i) => keepMatrixColIdx[i]) : blk.columns;
+  const matrixColTotals = blk.isMatrix ? blk.colTotals.filter((_, i) => keepMatrixColIdx[i]) : blk.colTotals;
 
   return (
     <div>
+      <div className="card-kicker">Jenis Plak / QTY / Harga</div>
+      <table className="table">
+        <thead><tr><th>Jenis Plak</th><th style={{ width: 130 }}>QTY</th><th style={{ width: 130 }}>Harga</th></tr></thead>
+        <tbody>
+          {blk.plakRows.map((pr) => (
+            <tr key={pr.id}>
+              <td>
+                {editable.jenisPlak ? (
+                  <PlakPicker value={pr.jenisPlak} onChange={pr.setJenisPlak} catalog={plakOptions} />
+                ) : (pr.jenisPlak || '—')}
+              </td>
+              <td><div className="input input-readonly">{pr.qty}</div></td>
+              <td><div className="input input-readonly input-price">{pr.hargaLabel}</div></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
       <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Reference Sample (Contoh)</div>
       <p className="hint-text">Fill each numbered line to match the sample layout — this tells us exactly how to place the text and sizing on the plaque.</p>
+      <p className="hint-text"><span style={{ color: '#c0392b' }}>★</span> = wording on this line is required and must be filled in.</p>
 
       <div className="ref-sample-grid">
         <div className="ref-sample-image">
@@ -53,6 +83,12 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, refImag
         <div className="ref-sample-lines">
           {blk.lines.map((ln) => (
             <div key={ln.key} className="ref-sample-line">
+              <span
+                style={{ color: '#c0392b', fontSize: 14, width: 14, textAlign: 'center', flex: 'none', visibility: ln.required ? 'visible' : 'hidden' }}
+                aria-label={ln.required ? 'required' : undefined}
+              >
+                ★
+              </span>
               <div className="line-num">{ln.num}</div>
               {ln.secondLine ? (
                 <div className="ref-sample-line-stack">
@@ -93,7 +129,20 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, refImag
             <thead>
               <tr>
                 <th>Subjek</th>
-                {blk.columns.map((col) => <th key={col} style={{ width: 90 }}>{col}</th>)}
+                {matrixCols.map((col) => (
+                  <th key={col.colKey} style={{ width: col.custom ? 220 : 90 }}>
+                    {col.custom && editable.addRemoveRows ? (
+                      <div>
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          <input className="input" style={{ flex: 1, minWidth: 0 }} placeholder={blk.customColumnTahunPlaceholder || 'e.g. 1-6'} value={col.tahun} onChange={(e) => col.setTahun(e.target.value)} />
+                          <button type="button" className="btn btn-ghost btn-icon" aria-label="Remove column" onClick={col.remove}>✕</button>
+                        </div>
+                        <input className="input" style={{ marginTop: 4 }} placeholder={blk.customColumnNamaKelasPlaceholder || 'e.g. ADIL'} value={col.namaKelas} onChange={(e) => col.setNamaKelas(e.target.value)} />
+                        {col.minQty > 1 && <div className="hint-text" style={{ margin: '2px 0 0', fontWeight: 400 }}>min {col.minQty} setiap subjek</div>}
+                      </div>
+                    ) : col.label}
+                  </th>
+                ))}
                 <th style={{ width: 70 }}>Total</th>
                 {editable.addRemoveRows && <th style={{ width: 48 }} />}
               </tr>
@@ -106,12 +155,12 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, refImag
                       ? <input className="input" placeholder="e.g. SUKAN" value={row.subject} onChange={(e) => row.setSubject(e.target.value)} />
                       : row.subject}
                   </td>
-                  {row.cells.map((cell) => (
+                  {row.cells.filter((_, i) => keepMatrixColIdx[i]).map((cell) => (
                     <td key={cell.key}>
                       <input
                         className="input"
                         type="number"
-                        min="0"
+                        min={cell.minQty > 1 ? cell.minQty : 0}
                         placeholder="0"
                         value={cell.value}
                         readOnly={!editable.matrix}
@@ -127,15 +176,21 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, refImag
               ))}
               <tr>
                 <td><strong>TOTAL</strong></td>
-                {blk.colTotals.map((ct, i) => <td key={i}><strong>{ct.value}</strong></td>)}
+                {matrixColTotals.map((ct, i) => <td key={i}><strong>{ct.value}</strong></td>)}
                 <td><strong>{blk.grandTotal}</strong></td>
                 {editable.addRemoveRows && <td />}
               </tr>
             </tbody>
           </table>
           {editable.addRemoveRows && (
-            <div className="row-actions">
+            <div className="row-actions" style={{ display: 'flex', gap: 8 }}>
               <button type="button" className="btn btn-secondary" onClick={blk.addMatrixRow}>+ Add Row</button>
+              {blk.freeColumns && (
+                <>
+                  <button type="button" className="btn btn-secondary" onClick={blk.addMatrixColumnSameTahun}>+ Add Kelas</button>
+                  <button type="button" className="btn btn-secondary" onClick={blk.addMatrixColumn}>+ Add Tahun</button>
+                </>
+              )}
             </div>
           )}
         </div>
@@ -282,24 +337,6 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, refImag
           )}
         </div>
       )}
-
-      <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Jenis Plak / QTY / Harga</div>
-      <table className="table">
-        <thead><tr><th>Jenis Plak</th><th style={{ width: 130 }}>QTY</th><th style={{ width: 130 }}>Harga</th></tr></thead>
-        <tbody>
-          {blk.plakRows.map((pr) => (
-            <tr key={pr.id}>
-              <td>
-                {editable.jenisPlak ? (
-                  <PlakPicker value={pr.jenisPlak} onChange={pr.setJenisPlak} catalog={plakOptions} />
-                ) : (pr.jenisPlak || '—')}
-              </td>
-              <td><div className="input input-readonly">{pr.qty}</div></td>
-              <td><div className="input input-readonly input-price">{pr.hargaLabel}</div></td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
     </div>
   );
 }

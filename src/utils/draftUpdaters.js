@@ -1,4 +1,6 @@
-import { customMatrixLabelKey } from '../data/catalog';
+import {
+  customMatrixLabelKey, customMatrixColumnTahunKey, getCustomMatrixColumnIds,
+} from '../data/catalog';
 
 // Builds the block-editing callbacks (onLine, onMatrix, onRowField, ...) for
 // a given "draft" namespace inside global state — the same set of fields is
@@ -91,6 +93,50 @@ export function createDraftUpdaters(patch, fields) {
       const prefix = `${catKey}::custom-${rowId}::`;
       const next = { ...st[matrixValues] };
       Object.keys(next).forEach((k) => { if (k.startsWith(prefix)) delete next[k]; });
+      return { [matrixValues]: next };
+    }),
+    // Matrix "+ Add Tahun" (`freeColumns` categories only — OTHERS) mirrors
+    // onAddMatrixRow above, on the column axis (see
+    // customMatrixColumnTahunKey/getCustomMatrixColumnIds in catalog.js) —
+    // a genuinely new Tahun range, so both Tahun and Nama Kelas start blank.
+    onAddMatrixColumn: (catKey) => patch((st) => ({
+      [matrixValues]: { ...st[matrixValues], [customMatrixColumnTahunKey(catKey, st[nextColumnId])]: '' },
+      [nextColumnId]: st[nextColumnId] + 1,
+    })),
+    // "+ Add Kelas" — another class under the same Tahun text as the last
+    // custom column, so Tahun carries over automatically and only Nama
+    // Kelas is left blank for the teacher to fill in. Every subject's qty
+    // against that last column carries over too (most classes under the
+    // same Tahun order the same spread) — the teacher only needs to type
+    // the new Nama Kelas and double-check/adjust individual qty cells,
+    // rather than re-typing the whole column from scratch.
+    onAddMatrixColumnSameTahun: (catKey) => patch((st) => {
+      const existingIds = getCustomMatrixColumnIds(catKey, st[matrixValues]);
+      const lastId = existingIds[existingIds.length - 1];
+      const newId = st[nextColumnId];
+      const next = { ...st[matrixValues] };
+      let lastTahun = '';
+      if (lastId != null) {
+        lastTahun = st[matrixValues][customMatrixColumnTahunKey(catKey, lastId)] || '';
+        const lastSuffix = `::col-${lastId}`;
+        const newSuffix = `::col-${newId}`;
+        Object.keys(st[matrixValues]).forEach((k) => {
+          if (k.endsWith(lastSuffix)) next[`${k.slice(0, -lastSuffix.length)}${newSuffix}`] = st[matrixValues][k];
+        });
+      }
+      next[customMatrixColumnTahunKey(catKey, newId)] = lastTahun;
+      return { [matrixValues]: next, [nextColumnId]: newId + 1 };
+    }),
+    // A custom column's own Tahun/Nama Kelas keys share the `${catKey}::
+    // col-<id>::` prefix (matched here), but its per-subject cell keys carry
+    // that `col-<id>` at the END instead (`${catKey}::<rowKey>::col-<id>`),
+    // not right after catKey like a custom row's cells — so those need a
+    // suffix match instead.
+    onMatrixColumnRemove: (catKey, colId) => patch((st) => {
+      const ownPrefix = `${catKey}::col-${colId}::`;
+      const cellSuffix = `::col-${colId}`;
+      const next = { ...st[matrixValues] };
+      Object.keys(next).forEach((k) => { if (k.startsWith(ownPrefix) || k.endsWith(cellSuffix)) delete next[k]; });
       return { [matrixValues]: next };
     }),
   };

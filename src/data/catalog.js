@@ -70,6 +70,27 @@ export function tahunRangeYears(from, to) {
   return TAHUN_ORDER.slice(lo, hi + 1);
 }
 
+// OTHERS' Tahun column is a single free-text field (not PBD's Dari/Hingga
+// dropdown pair) — the teacher types a range like "1-6" or "3-4", a single
+// year like "1", or a non-numeric label like "PPKI"/"Prasekolah". Numeric
+// input (single or range, either order, clamped to TAHUN 1-6) expands to
+// the same ['TAHUN 3', 'TAHUN 4', ...] shape tahunRangeYears returns, so it
+// feeds the same per-year minQty/CSV-split logic PBD already has. Anything
+// that doesn't parse as numeric (PPKI, blank, typos) returns [] — treated
+// downstream as a single opaque unit with no splitting, same as PBD's own
+// blank-Tahun fallback.
+export function parseTahunRangeText(text) {
+  const trimmed = (text || '').trim();
+  const match = trimmed.match(/^(\d{1,2})\s*-\s*(\d{1,2})$/) || trimmed.match(/^(\d{1,2})$/);
+  if (!match) return [];
+  const from = Number(match[1]);
+  const to = match[2] ? Number(match[2]) : from;
+  const [lo, hi] = from <= to ? [from, to] : [to, from];
+  const years = [];
+  for (let n = Math.max(1, lo); n <= Math.min(6, hi); n++) years.push(`TAHUN ${n}`);
+  return years;
+}
+
 // A matrix category's subject rows (MP THP 1/2) come from a fixed catalog
 // list, but the teacher can add extra rows for a subject/award not on that
 // list (see OrderCategoryBlock's matrix "+ Add Row"). Those live in the same
@@ -86,14 +107,51 @@ function customMatrixPrefix(catKey) {
 export function customMatrixLabelKey(catKey, rowId) {
   return `${customMatrixPrefix(catKey)}${rowId}${CUSTOM_MATRIX_LABEL_SUFFIX}`;
 }
-export function customMatrixCellKey(catKey, rowId, col) {
-  return `${customMatrixPrefix(catKey)}${rowId}::${col}`;
-}
 export function getCustomMatrixRowIds(catKey, matrixValues) {
   const prefix = customMatrixPrefix(catKey);
   return Object.keys(matrixValues || {})
     .filter((k) => k.startsWith(prefix) && k.endsWith(CUSTOM_MATRIX_LABEL_SUFFIX))
     .map((k) => k.slice(prefix.length, k.length - CUSTOM_MATRIX_LABEL_SUFFIX.length));
+}
+
+// Mirrors the custom-ROW mechanism above for the COLUMN axis — a category
+// can opt in via `freeColumns: true` (OTHERS) to let the teacher add
+// columns too, not just rows (MP THP 1/2's columns stay fixed/catalog-only).
+// Each custom column carries two teacher-typed fields — Tahun (free text,
+// e.g. "1-6" — see parseTahunRangeText above) and Nama Kelas — living under
+// its own `col-<id>` slot in the flat matrixValues store, same as a custom
+// row's `__label__`. No separate "active custom columns" list to keep in
+// sync — just whichever `__coltahun__` keys exist; the Tahun key doubles as
+// the existence marker (written blank by "+ Add Kelas"/"+ Add Tahun" even
+// before the teacher types anything).
+const CUSTOM_MATRIX_COLUMN_TAHUN_SUFFIX = '::__coltahun__';
+const CUSTOM_MATRIX_COLUMN_NAMAKELAS_SUFFIX = '::__colnamakelas__';
+function customMatrixColumnPrefix(catKey) {
+  return `${catKey}::col-`;
+}
+export function customMatrixColumnTahunKey(catKey, colId) {
+  return `${customMatrixColumnPrefix(catKey)}${colId}${CUSTOM_MATRIX_COLUMN_TAHUN_SUFFIX}`;
+}
+export function customMatrixColumnNamaKelasKey(catKey, colId) {
+  return `${customMatrixColumnPrefix(catKey)}${colId}${CUSTOM_MATRIX_COLUMN_NAMAKELAS_SUFFIX}`;
+}
+export function getCustomMatrixColumnIds(catKey, matrixValues) {
+  const prefix = customMatrixColumnPrefix(catKey);
+  return Object.keys(matrixValues || {})
+    .filter((k) => k.startsWith(prefix) && k.endsWith(CUSTOM_MATRIX_COLUMN_TAHUN_SUFFIX))
+    .map((k) => k.slice(prefix.length, k.length - CUSTOM_MATRIX_COLUMN_TAHUN_SUFFIX.length));
+}
+
+// Canonical matrix cell-key builder — `rowKey` is a fixed subject's own text
+// or `custom-<rowId>` for a teacher-added row; `colKey` is a fixed column's
+// own text or `col-<colId>` for a teacher-added column (see
+// customMatrixColumnLabelKey above). Every fixed×fixed, fixed×custom,
+// custom×fixed, and custom×custom combination reduces to this one call,
+// matching the exact key shape the fixed×fixed case always used
+// (`${catKey}::${subject}::${column}`) so existing orders' stored keys
+// still resolve.
+export function matrixCellKey(catKey, rowKey, colKey) {
+  return `${catKey}::${rowKey}::${colKey}`;
 }
 
 export const CATEGORIES = [
@@ -199,6 +257,42 @@ export const CATEGORIES = [
     ],
     positionFromRows: true,
   },
+  {
+    key: 'OTHERS', label: 'LAIN-LAIN (OTHERS)', mode: 'matrix', blocksCount: 1, freeColumns: true,
+    // A catch-all for any award/plaque shape not covered by the 5 categories
+    // above. Same table shape as MP THP 1/2 (fixed subject ROWS the teacher
+    // can add extras to via "+ Add Row" — see getCustomMatrixRowIds), but
+    // `freeColumns` additionally lets the teacher add the class/Tahun-level
+    // COLUMNS too — each a free-text Tahun field (e.g. "1-6", parsed by
+    // parseTahunRangeText above) + Nama Kelas, same idea as PBD/ALIRAN's
+    // Dari/Hingga + Nama Kelas rows but as a single typed range instead of
+    // two dropdowns, and living on the COLUMN axis instead of the row axis
+    // — see getCustomMatrixColumnIds/customMatrixColumnTahunKey above and
+    // OrderCategoryBlock's matrix "+ Add Kelas"/"+ Add Tahun".
+    // columnsByLanguage is deliberately empty: every column starts out
+    // teacher-defined.
+    columnsByLanguage: { SK: [], SJKC: [] },
+    subjectsByLanguage: { SK: SUBJECTS_CORE, SJKC: SUBJECTS_CORE_CN },
+    // Line 3 (index 2) gets the same optional second box as MP THP/PBD —
+    // box 1 is required, same as line 1 (see requiredLineIndices below);
+    // what box 2 should ultimately reflect is still TBD (placeholder only
+    // for now, and stays optional).
+    linePlaceholders: [
+      'e.g. HARI ANUGERAH ...',
+      '(pilihan) e.g. 2026',
+      'e.g. ANUGERAH ...',
+      '(pilihan) e.g. TAHUN 1',
+    ],
+    // Line 1 is always required for every category (computeBlocks.js
+    // defaults to [0]) — OTHERS additionally requires line 3's first box
+    // (index 2), since that's the fixed-wording award text every plaque
+    // needs regardless of category. Drives both the ★ marker in
+    // OrderCategoryBlock and the addToCart validation in AppState.jsx.
+    requiredLineIndices: [0, 2],
+    positionLine2Placeholder: '(pilihan) e.g. ...',
+    customColumnTahunPlaceholder: 'e.g. 1-6',
+    customColumnNamaKelasPlaceholder: 'e.g. ADIL',
+  },
 ];
 
 // The Jenis Plak catalog now lives in Supabase (plak_catalog_nodes —
@@ -245,6 +339,7 @@ export const REFERENCE_IMAGE_SLOTS = [
   { id: 'sample-ALIRAN-0', label: 'Aliran Terbaik' },
   { id: 'sample-LONJAKAN-0', label: 'Lonjakan Saujana' },
   { id: 'sample-TOKOH-0', label: 'Tokoh' },
+  { id: 'sample-OTHERS-0', label: 'Lain-lain (Others)' },
 ];
 
 // Prunes any node marked `hidden` (Production, out of stock) — hiding a

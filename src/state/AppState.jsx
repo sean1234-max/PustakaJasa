@@ -1,6 +1,8 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { CATEGORIES, formatDate, standardUnitPrice, getCategorySubjects } from '../data/catalog';
-import { buildInitialRowsByBlock, buildInitialColumnsByBlock, buildInitialPlakRows } from '../data/formDefaults';
+import { CATEGORIES, formatDate, standardUnitPrice, getCategorySubjects, customMatrixColumnTahunKey } from '../data/catalog';
+import {
+  buildInitialRowsByBlock, buildInitialColumnsByBlock, buildInitialPlakRows, buildInitialMatrixValues,
+} from '../data/formDefaults';
 import { computeBlocks, snapshotDetail, noopUpdaters } from '../utils/computeBlocks';
 import { AppStateContext } from './AppStateContext';
 import {
@@ -53,6 +55,15 @@ function resetCategoryFields(catKey, st) {
       columnsByBlock[key] = [{ id: nextColumnId, tahunFrom: '', tahunTo: '', namaKelas: '' }];
       nextColumnId += 1;
     }
+    // `freeColumns` matrix categories (OTHERS) keep columns in matrixValues,
+    // not columnsByBlock (see formDefaults.js buildInitialMatrixValues) —
+    // same "start with one blank column" seed, just re-applied here after
+    // the wipe above cleared it along with everything else under this
+    // category's prefix.
+    if (cat.mode === 'matrix' && cat.freeColumns) {
+      matrixValues[customMatrixColumnTahunKey(catKey, nextColumnId)] = '';
+      nextColumnId += 1;
+    }
     plakRows[key] = [{ id: st.nextPlakRowId + b, jenisPlak: '' }];
   }
   return {
@@ -90,7 +101,7 @@ function initialState() {
 
     category: 'MP1',
     lineValues: {},
-    matrixValues: {},
+    matrixValues: buildInitialMatrixValues(),
     rowsByBlock: buildInitialRowsByBlock('SK'),
     columnsByBlock: buildInitialColumnsByBlock(),
     plakRows: buildInitialPlakRows(),
@@ -116,7 +127,7 @@ function initialState() {
     addOnOrderId: null,
     addOnCategory: 'MP1',
     addOnLineValues: {},
-    addOnMatrixValues: {},
+    addOnMatrixValues: buildInitialMatrixValues(),
     addOnRowsByBlock: buildInitialRowsByBlock('SK'),
     addOnColumnsByBlock: buildInitialColumnsByBlock(),
     addOnPlakRows: buildInitialPlakRows(),
@@ -325,7 +336,7 @@ export function AppStateProvider({ children }) {
       logoDataUrl: null, logoFileName: '', logoRemark: '', schoolType: null, stepError: '',
 
       category: 'MP1',
-      lineValues: {}, matrixValues: {},
+      lineValues: {}, matrixValues: buildInitialMatrixValues(),
       rowsByBlock: buildInitialRowsByBlock(st.schoolLanguage), columnsByBlock: buildInitialColumnsByBlock(), plakRows: buildInitialPlakRows(),
       nextRowId: 1000, nextPlakRowId: 1000, nextColumnId: 1000,
 
@@ -349,16 +360,19 @@ export function AppStateProvider({ children }) {
       if (blk) {
         const lineHasValue = (line) => Boolean(String(line.value).trim())
           || (line.secondLine && Boolean(String(line.secondLine.value).trim()));
-        // Only line 1 (the event name) is required — lines 2-4 (year,
-        // position, etc.) are reference-sample context the teacher may not
-        // always have yet, so they can stay blank.
-        const lineIsComplete = (line) => line.num !== 1 || Boolean(String(line.value).trim());
+        // Line 1 (the event name) is always required; a category can mark
+        // extra lines required too (`line.required` — see computeBlocks.js's
+        // requiredLineIndices, e.g. OTHERS' line 3 first box) — everything
+        // else (year, position CONTOH, etc.) is reference-sample context the
+        // teacher may not always have yet, so it can stay blank.
+        const lineIsComplete = (line) => !line.required || Boolean(String(line.value).trim());
         const hasQty = blk.blockTotalQty > 0;
         const hasJenisPlak = blk.plakRows.some((pr) => pr.jenisPlak);
         const engaged = hasQty || hasJenisPlak || blk.lines.some(lineHasValue);
         if (engaged) {
-          if (!blk.lines.every(lineIsComplete)) {
-            return { ...st, cartToast: `Please fill in line 1 for ${blk.qtyLabel} before adding to cart.` };
+          const incompleteLine = blk.lines.find((line) => !lineIsComplete(line));
+          if (incompleteLine) {
+            return { ...st, cartToast: `Please fill in line ${incompleteLine.num} for ${blk.qtyLabel} before adding to cart.` };
           }
           if (!hasQty) {
             return { ...st, cartToast: `Please enter a quantity for ${blk.qtyLabel} before adding to cart.` };
@@ -378,6 +392,22 @@ export function AppStateProvider({ children }) {
               const rangeLabel = shortRow.tahunTo && shortRow.tahunTo !== shortRow.tahunFrom
                 ? `${shortRow.tahunFrom} – ${shortRow.tahunTo}` : shortRow.tahunFrom;
               return { ...st, cartToast: `${rangeLabel} ${shortRow.namaKelas} covers ${shortRow.minQty} year(s) — enter at least ${shortRow.minQty} for any subject you fill in.` };
+            }
+          }
+          // Same idea as PBD's per-row check above, but OTHERS' Tahun range
+          // lives on the COLUMN axis (see catalog.js's `freeColumns`) — a
+          // teacher-typed range like "1-6" needs at least that many per
+          // subject, checked across every row (subject) sharing that column.
+          if (isMatrix && blk.freeColumns) {
+            let shortColIdx = -1;
+            blk.matrixRows.forEach((row) => {
+              row.cells.forEach((cell, ci) => {
+                if (shortColIdx === -1 && Number(cell.value) > 0 && Number(cell.value) < cell.minQty) shortColIdx = ci;
+              });
+            });
+            if (shortColIdx !== -1) {
+              const col = blk.columns[shortColIdx];
+              return { ...st, cartToast: `${col.label || 'Column'} covers ${col.minQty} year(s) — enter at least ${col.minQty} for any subject you fill in.` };
             }
           }
         }
@@ -513,7 +543,7 @@ export function AppStateProvider({ children }) {
   const openAddOn = useCallback((ord) => {
     patch((st) => ({
       addOnOrderId: ord.id, addOnCategory: 'MP1',
-      addOnLineValues: {}, addOnMatrixValues: {},
+      addOnLineValues: {}, addOnMatrixValues: buildInitialMatrixValues(),
       addOnRowsByBlock: buildInitialRowsByBlock(st.schoolLanguage), addOnColumnsByBlock: buildInitialColumnsByBlock(), addOnPlakRows: buildInitialPlakRows(),
       addOnNextRowId: 1000, addOnNextPlakRowId: 1000, addOnNextColumnId: 1000,
     }));

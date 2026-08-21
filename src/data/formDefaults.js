@@ -1,4 +1,4 @@
-import { CATEGORIES, getCategorySubjects } from './catalog';
+import { CATEGORIES, getCategorySubjects, customMatrixColumnTahunKey } from './catalog';
 
 export function buildInitialRowsByBlock(schoolLanguage = 'SK') {
   const out = {};
@@ -32,6 +32,22 @@ export function buildInitialColumnsByBlock() {
     for (let b = 0; b < (cat.blocksCount || 1); b++) {
       out[`${cat.key}::${b}`] = [{ id: id++, tahunFrom: '', tahunTo: '', namaKelas: '' }];
     }
+  });
+  return out;
+}
+
+// `freeColumns` matrix categories (OTHERS) keep their columns in the flat
+// matrixValues store, not columnsByBlock (see catalog.js/computeBlocks.js),
+// so their "start with one blank column" seed lives here instead — one
+// blank Tahun key (existence marker, same as a fresh "+ Add Tahun") per
+// category, so a teacher opening the tab for the first time already has a
+// column ready to fill instead of an empty table.
+export function buildInitialMatrixValues() {
+  const out = {};
+  let id = 1;
+  CATEGORIES.filter((c) => c.mode === 'matrix' && c.freeColumns).forEach((cat) => {
+    out[customMatrixColumnTahunKey(cat.key, id)] = '';
+    id += 1;
   });
   return out;
 }

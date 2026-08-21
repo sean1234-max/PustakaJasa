@@ -1,6 +1,8 @@
 import {
   CATEGORIES, flattenPlakCatalog, getCategorySubjects, getCategoryColumns, tahunRangeYears,
-  getCustomMatrixRowIds, customMatrixLabelKey, customMatrixCellKey,
+  getCustomMatrixRowIds, customMatrixLabelKey,
+  getCustomMatrixColumnIds, customMatrixColumnTahunKey, customMatrixColumnNamaKelasKey,
+  parseTahunRangeText, matrixCellKey,
 } from '../data/catalog';
 
 export function snapshotDetail(catKey, blockIdx, isMatrix, isDynamicMatrix, lineValues, matrixValues, rowsByBlockMap, columnsByBlockMap) {
@@ -49,10 +51,17 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
   const blocks = [];
 
   for (const b of activeIndices) {
+    // Every category requires line 1 (the event name); a category can mark
+    // additional lines required too via `requiredLineIndices` (0-based —
+    // OTHERS requires line 3's first box, see catalog.js) instead of
+    // defaulting every field to optional. Read by OrderCategoryBlock (the
+    // ★ marker) and AppState.jsx's addToCart validation.
+    const requiredLineIndices = currentCat.requiredLineIndices || [0];
     const lines = currentCat.linePlaceholders.map((placeholder, i) => {
       const key = `${catKey}::${b}::${i}`;
       const line = {
         key, num: i + 1, placeholder, value: lineValues[key] || '',
+        required: requiredLineIndices.includes(i),
         onChange: (val) => updaters.onLine(key, val),
       };
       // "position" (index 2) gets an optional second box — both numbered
@@ -71,39 +80,63 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
     let matrixRows = [], columns = [], colTotals = [], grandTotal = 0, rows = [], blockTotalQty = 0;
 
     if (isMatrix) {
-      columns = getCategoryColumns(currentCat, schoolLanguage);
+      // Columns are the fixed catalog list (MP THP 1/2's class levels) plus,
+      // for a `freeColumns` category (OTHERS), any teacher-added columns on
+      // top — same idea as the custom-ROW mechanism below, mirrored onto the
+      // column axis (see getCustomMatrixColumnIds in catalog.js). Every
+      // column carries its own `colKey` (its own text for a fixed column,
+      // `col-<id>` for a custom one) so cell keys build the same way
+      // (matrixCellKey) regardless of which axis, or both, are custom.
+      const fixedColumns = getCategoryColumns(currentCat, schoolLanguage).map((col) => ({ colKey: col, label: col, custom: false, minQty: 1 }));
+      // Each custom column is a Tahun (free-text range, e.g. "1-6" — see
+      // parseTahunRangeText) + Nama Kelas pair, same idea as PBD/ALIRAN's
+      // Dari/Hingga + Nama Kelas rows but on the column axis and typed as
+      // one range instead of two dropdowns. `minQty`: a range covering N
+      // years needs at least N per subject (one per year) — same
+      // enforcement PBD's rows already get, just keyed by column here.
+      const customColumns = currentCat.freeColumns ? getCustomMatrixColumnIds(catKey, matrixValues).map((colId) => {
+        const tahunKey = customMatrixColumnTahunKey(catKey, colId);
+        const namaKelasKey = customMatrixColumnNamaKelasKey(catKey, colId);
+        const tahun = matrixValues[tahunKey] || '';
+        const namaKelas = matrixValues[namaKelasKey] || '';
+        const label = [tahun, namaKelas].filter(Boolean).join(' ');
+        return {
+          colKey: `col-${colId}`, id: colId, label, custom: true,
+          tahun, namaKelas, minQty: Math.max(1, parseTahunRangeText(tahun).length),
+          setTahun: (v) => updaters.onMatrix(tahunKey, v),
+          setNamaKelas: (v) => updaters.onMatrix(namaKelasKey, v),
+          remove: () => updaters.onMatrixColumnRemove(catKey, colId),
+        };
+      }) : [];
+      columns = [...fixedColumns, ...customColumns];
       colTotals = columns.map(() => 0);
-      matrixRows = getCategorySubjects(currentCat, schoolLanguage).map((subj) => {
+
+      const buildMatrixRow = (rowKey, subject, custom, rowId) => {
         let rowTotal = 0;
         const cells = columns.map((col, ci) => {
-          const key = `${catKey}::${subj}::${col}`;
+          const key = matrixCellKey(catKey, rowKey, col.colKey);
           const val = Number(matrixValues[key]) || 0;
           rowTotal += val; colTotals[ci] += val;
-          return { key, col, value: matrixValues[key] || '', onChange: (v) => updaters.onMatrix(key, v) };
+          return {
+            key, col: col.label, value: matrixValues[key] || '', minQty: col.minQty,
+            onChange: (v) => updaters.onMatrix(key, v),
+          };
         });
-        return { subject: subj, cells, rowTotal, custom: false };
-      });
+        return { id: rowId, subject, cells, rowTotal, custom };
+      };
+
+      matrixRows = getCategorySubjects(currentCat, schoolLanguage).map((subj) => buildMatrixRow(subj, subj, false));
 
       // Teacher-added rows for a subject/award not on the fixed list above
       // (see OrderCategoryBlock's matrix "+ Add Row") — same cell shape, just
       // sourced from getCustomMatrixRowIds instead of the catalog list, and
       // with an editable subject label instead of a fixed one.
       matrixRows.push(...getCustomMatrixRowIds(catKey, matrixValues).map((rowId) => {
-        let rowTotal = 0;
-        const cells = columns.map((col, ci) => {
-          const key = customMatrixCellKey(catKey, rowId, col);
-          const val = Number(matrixValues[key]) || 0;
-          rowTotal += val; colTotals[ci] += val;
-          return { key, col, value: matrixValues[key] || '', onChange: (v) => updaters.onMatrix(key, v) };
-        });
         const labelKey = customMatrixLabelKey(catKey, rowId);
-        return {
-          id: rowId,
-          subject: matrixValues[labelKey] || '',
-          setSubject: (v) => updaters.onMatrix(labelKey, v),
-          cells, rowTotal, custom: true,
-          remove: () => updaters.onMatrixRowRemove(catKey, rowId),
-        };
+        const row = buildMatrixRow(`custom-${rowId}`, matrixValues[labelKey] || '', true, rowId);
+        row.setSubject = (v) => updaters.onMatrix(labelKey, v);
+        row.remove = () => updaters.onMatrixRowRemove(catKey, rowId);
+        return row;
       }));
 
       grandTotal = colTotals.reduce((a, b2) => a + b2, 0);
@@ -189,13 +222,18 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
       qtyLabel: currentCat.label,
       qtyColHeader: isMatrix ? 'QTY' : (currentCat.qtyColumnLabels ? currentCat.qtyColumnLabels[b] : 'QTY'),
       sampleSlotId: `sample-${catKey}-${b}`,
-      lines, isMatrix, isDynamicMatrix, columns, matrixRows,
+      lines, isMatrix, isDynamicMatrix, freeColumns: !!currentCat.freeColumns,
+      customColumnTahunPlaceholder: currentCat.customColumnTahunPlaceholder,
+      customColumnNamaKelasPlaceholder: currentCat.customColumnNamaKelasPlaceholder,
+      columns, matrixRows,
       colTotals: colTotals.map((v) => ({ value: v })), grandTotal,
       rows,
       addRow: () => updaters.onAddRow(`${catKey}::${b}`),
       addColumn: () => updaters.onAddColumn(`${catKey}::${b}`),
       addColumnSameTahun: () => updaters.onAddColumnSameTahun(`${catKey}::${b}`),
       addMatrixRow: () => updaters.onAddMatrixRow(catKey),
+      addMatrixColumn: () => updaters.onAddMatrixColumn(catKey),
+      addMatrixColumnSameTahun: () => updaters.onAddMatrixColumnSameTahun(catKey),
       blockTotalQty, plakRows,
     });
   }
@@ -208,6 +246,7 @@ export const noopUpdaters = {
   onAddRow: () => {}, onPlakSelect: () => {},
   onColumnField: () => {}, onColumnRemove: () => {}, onAddColumn: () => {}, onAddColumnSameTahun: () => {},
   onAddMatrixRow: () => {}, onMatrixRowRemove: () => {},
+  onAddMatrixColumn: () => {}, onMatrixColumnRemove: () => {}, onAddMatrixColumnSameTahun: () => {},
 };
 
 // Rebuilds read-only `blocks` (the same shape NewOrderStep2 renders live)
