@@ -1,5 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { CATEGORIES, formatDate, standardUnitPrice, getCategorySubjects, customMatrixColumnTahunKey } from '../data/catalog';
+import {
+  CATEGORIES, formatDate, standardUnitPrice, getCategorySubjects, customMatrixColumnTahunKey, customMatrixLabelKey,
+} from '../data/catalog';
 import {
   buildInitialRowsByBlock, buildInitialColumnsByBlock, buildInitialPlakRows, buildInitialMatrixValues,
 } from '../data/formDefaults';
@@ -75,6 +77,13 @@ function resetCategoryFields(catKey, st) {
     if (cat.mode === 'matrix' && cat.freeColumns) {
       matrixValues[customMatrixColumnTahunKey(catKey, nextColumnId)] = '';
       nextColumnId += 1;
+    }
+    // Mirrors buildInitialMatrixValues' one-blank-row seed (formDefaults.js)
+    // for a matrix category with no fixed subjects (OTHERS) — otherwise
+    // "Add to Cart" would wipe the category back to a table with no rows
+    // at all instead of one ready to fill, like every other reset field.
+    if (cat.mode === 'matrix' && getCategorySubjects(cat, st.schoolLanguage).length === 0) {
+      matrixValues[customMatrixLabelKey(catKey, st.nextRowId + b)] = '';
     }
     plakRows[key] = [{ id: st.nextPlakRowId + b, jenisPlak: '' }];
   }

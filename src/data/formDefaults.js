@@ -1,4 +1,6 @@
-import { CATEGORIES, getCategorySubjects, customMatrixColumnTahunKey } from './catalog';
+import {
+  CATEGORIES, getCategorySubjects, customMatrixColumnTahunKey, customMatrixLabelKey,
+} from './catalog';
 
 export function buildInitialRowsByBlock(schoolLanguage = 'SK') {
   const out = {};
@@ -47,6 +49,15 @@ export function buildInitialMatrixValues() {
   let id = 1;
   CATEGORIES.filter((c) => c.mode === 'matrix' && c.freeColumns).forEach((cat) => {
     out[customMatrixColumnTahunKey(cat.key, id)] = '';
+    id += 1;
+  });
+  // A matrix category with no fixed subjects (OTHERS — see catalog.js)
+  // would otherwise render a completely empty quantity table with no
+  // obvious way in; seed one blank custom row (the same marker "+ Add
+  // Row" itself writes) so there's already a row ready to fill, same as
+  // the one blank column above.
+  CATEGORIES.filter((c) => c.mode === 'matrix' && getCategorySubjects(c, 'SK').length === 0).forEach((cat) => {
+    out[customMatrixLabelKey(cat.key, id)] = '';
     id += 1;
   });
   return out;

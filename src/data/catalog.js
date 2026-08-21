@@ -271,8 +271,13 @@ export const CATEGORIES = [
     // OrderCategoryBlock's matrix "+ Add Kelas"/"+ Add Tahun".
     // columnsByLanguage is deliberately empty: every column starts out
     // teacher-defined.
+    // Unlike MP THP 1/2 (which reuse SUBJECTS_CORE as a fixed starting
+    // list), OTHERS starts with no rows at all — it's the catch-all
+    // category for whatever doesn't fit the fixed ones, so the teacher
+    // types every subject/award line themselves via "+ Add Row" instead
+    // of being handed an irrelevant preset list to delete around.
     columnsByLanguage: { SK: [], SJKC: [] },
-    subjectsByLanguage: { SK: SUBJECTS_CORE, SJKC: SUBJECTS_CORE_CN },
+    subjectsByLanguage: { SK: [], SJKC: [] },
     // Line 3 (index 2) gets the same optional second box as MP THP/PBD —
     // box 1 is required, same as line 1 (see requiredLineIndices below);
     // what box 2 should ultimately reflect is still TBD (placeholder only

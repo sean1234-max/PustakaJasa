@@ -159,7 +159,7 @@ export default function NewOrderStep1() {
             <select className="input" id="terms" value={state.terms} onChange={(e) => patch({ terms: e.target.value })}>
               <option value="">Select terms</option>
               <option value="L/O">L/O</option>
-              <option value="Cheque">Cheque</option>
+              <option value="Cash">Cash</option>
             </select>
           </div>
         </div>
