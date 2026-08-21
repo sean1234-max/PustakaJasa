@@ -10,6 +10,21 @@ import { restrictToVerticalAxis } from '@dnd-kit/modifiers';
 import AdminLayout from '../components/AdminLayout';
 import { useAppState } from '../state/useAppState';
 import { logAdminAction } from '../lib/adminApi';
+import { stockZoneFor } from '../data/catalog';
+
+const STOCK_ZONE_COLOR = { red: '#c0392b', orange: '#d98c00', normal: undefined };
+
+// Collects the id of every node (at any depth) that has children — used to
+// seed collapsedIds so the catalog opens showing only top-level codes.
+function collectParentIds(nodes, out) {
+  (nodes || []).forEach((node) => {
+    if (Array.isArray(node.children) && node.children.length > 0) {
+      out.add(node.id);
+      collectParentIds(node.children, out);
+    }
+  });
+  return out;
+}
 
 // Admin-only fork of ProductionCatalog.jsx — same AppState handlers
 // (addCatalogNode/removeCatalogNode/updateCatalogNodePrice/
@@ -69,17 +84,31 @@ const catalogAnnouncements = {
 };
 
 function CatalogRow({
-  node, depth, parentId, canMoveUp, canMoveDown, onAddChild, onRemove, onPriceChange, onToggleHidden, onMove,
+  node, depth, parentId, canMoveUp, canMoveDown, onAddChild, onRemove, onPriceChange, onStockChange, onToggleHidden, onMove,
   collapsedIds, onToggleCollapsed, dragActive,
 }) {
   const [addingChild, setAddingChild] = useState(false);
   const [newCode, setNewCode] = useState('');
   const [newPrice, setNewPrice] = useState('');
   const [priceDraft, setPriceDraft] = useState(String(node.price ?? 0));
+  const [stockDraft, setStockDraft] = useState(node.stockQty == null ? '' : String(node.stockQty));
+
+  // Unlike price, stock changes constantly from a source outside this
+  // page — every teacher order deducts it — so the mount-only useState
+  // above goes stale the moment any other Production/Admin action
+  // refetches the catalog (e.g. hiding a different code) while this row
+  // stays mounted: the colour (computed fresh from `node` every render)
+  // would update but the number next to it wouldn't, showing a wrong
+  // count next to a correctly-alarming colour. Re-sync whenever the
+  // fetched value actually changes.
+  useEffect(() => {
+    setStockDraft(node.stockQty == null ? '' : String(node.stockQty));
+  }, [node.stockQty]);
 
   const hasChildren = Array.isArray(node.children) && node.children.length > 0;
   const collapsed = collapsedIds.has(node.id);
   const canReorder = canMoveUp || canMoveDown;
+  const zone = stockZoneFor(node.stockQty, node.stockBaseline);
 
   const { setNodeRef, attributes, listeners, transform, transition, isDragging } = useSortable({
     id: node.id,
@@ -102,6 +131,16 @@ function CatalogRow({
     const val = Number(priceDraft);
     if (!Number.isNaN(val) && val !== node.price) onPriceChange(node.id, val);
     else setPriceDraft(String(node.price ?? 0));
+  };
+
+  const commitStock = () => {
+    if (stockDraft.trim() === '') {
+      if (node.stockQty != null) onStockChange(node.id, null);
+      return;
+    }
+    const val = Math.round(Number(stockDraft));
+    if (!Number.isNaN(val) && val >= 0 && val !== node.stockQty) onStockChange(node.id, val);
+    else setStockDraft(node.stockQty == null ? '' : String(node.stockQty));
   };
 
   const submitAddChild = () => {
@@ -149,6 +188,20 @@ function CatalogRow({
             onChange={(e) => setPriceDraft(e.target.value)}
             onBlur={commitPrice}
           />
+          {!hasChildren && (
+            <input
+              className="w-20 px-3 py-1 border border-outline-variant rounded text-right text-body-md focus:ring-1 focus:ring-primary outline-none"
+              type="number"
+              step="1"
+              min="0"
+              placeholder="Stock"
+              title="Stock Qty — setting a new number resets the 15%/25% warning thresholds against it"
+              value={stockDraft}
+              style={zone !== 'normal' ? { color: STOCK_ZONE_COLOR[zone], fontWeight: 700 } : undefined}
+              onChange={(e) => setStockDraft(e.target.value)}
+              onBlur={commitStock}
+            />
+          )}
           <button
             type="button"
             {...attributes}
@@ -197,6 +250,7 @@ function CatalogRow({
               onAddChild={onAddChild}
               onRemove={onRemove}
               onPriceChange={onPriceChange}
+              onStockChange={onStockChange}
               onToggleHidden={onToggleHidden}
               onMove={onMove}
               collapsedIds={collapsedIds}
@@ -212,12 +266,18 @@ function CatalogRow({
 
 export default function AdminCatalog() {
   const {
-    state, addCatalogNode, removeCatalogNode, updateCatalogNodePrice, setCatalogNodeHidden, moveCatalogNode, reorderCatalogSiblings,
+    state, addCatalogNode, removeCatalogNode, updateCatalogNodePrice, updateCatalogNodeStock, setCatalogNodeHidden, moveCatalogNode, reorderCatalogSiblings,
   } = useAppState();
   const [newTopCode, setNewTopCode] = useState('');
   const [newTopPrice, setNewTopPrice] = useState('');
-  const [collapsedIds, setCollapsedIds] = useState(() => new Set());
+  // Seeded lazily (once, on first non-empty load) rather than derived fresh
+  // every render — that would fight any group Admin manually expanded back
+  // closed on the very next catalog refresh.
+  const [collapsedIds, setCollapsedIds] = useState(null);
   const [draggingId, setDraggingId] = useState(null);
+  if (collapsedIds === null && state.plakCatalog.length > 0) {
+    setCollapsedIds(collectParentIds(state.plakCatalog, new Set()));
+  }
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -241,6 +301,10 @@ export default function AdminCatalog() {
     updateCatalogNodePrice(id, price);
     logCatalogAction('Admin updated a catalog price', id, { price });
   };
+  const handleStockChange = (id, stockQty) => {
+    updateCatalogNodeStock(id, stockQty);
+    logCatalogAction('Admin updated a catalog stock qty', id, { stockQty });
+  };
   const handleToggleHidden = (id, hidden) => {
     setCatalogNodeHidden(id, hidden);
     logCatalogAction(hidden ? 'Admin hid a catalog code' : 'Admin unhid a catalog code', id);
@@ -251,7 +315,7 @@ export default function AdminCatalog() {
   };
   const toggleCollapsed = (id) => {
     setCollapsedIds((prev) => {
-      const next = new Set(prev);
+      const next = new Set(prev || []);
       if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
@@ -288,7 +352,7 @@ export default function AdminCatalog() {
   return (
     <AdminLayout
       title="Jenis Plak Catalog"
-      subtitle="Add, remove, reprice, or hide a code (or just one of its variants) — changes apply for every teacher immediately. Hiding is safer than removing when stock runs out, since it's a one-click undo once restocked. Drag the handle icon (or use the ▲▼ buttons) to reorder within a group, and use the chevron to collapse a group while you work."
+      subtitle="Add, remove, reprice, or hide a code (or just one of its variants) — changes apply for every teacher immediately. Groups open collapsed to just their top-level code; use the chevron to expand one. Set Stock Qty on a code to start tracking its inventory — it turns orange under 25% and red under 15% of what you last entered, orders are automatically capped once stock runs low, and the code auto-hides at 0 (leave it blank to skip stock tracking). Drag the handle icon (or use the ▲▼ buttons) to reorder within a group."
     >
       <div className="bg-surface-container rounded-lg p-4 border border-outline-variant/50 flex flex-col sm:flex-row gap-4 items-center shadow-sm mb-6">
         <input
@@ -337,9 +401,10 @@ export default function AdminCatalog() {
                   onAddChild={(parentId, code, price) => handleAddChild(parentId, code, price, 0)}
                   onRemove={handleRemove}
                   onPriceChange={handlePriceChange}
+                  onStockChange={handleStockChange}
                   onToggleHidden={handleToggleHidden}
                   onMove={handleMove}
-                  collapsedIds={collapsedIds}
+                  collapsedIds={collapsedIds || new Set()}
                   onToggleCollapsed={toggleCollapsed}
                   dragActive={draggingId !== null}
                 />

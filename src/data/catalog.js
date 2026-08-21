@@ -314,10 +314,53 @@ export function flattenPlakCatalog(nodes, prefix = [], priceSoFar = 0) {
     const path = [...prefix, node.code];
     const total = priceSoFar + (Number(node.price) || 0);
     if (!node.children || node.children.length === 0) {
-      return [{ code: path.join(' / '), price: total }];
+      return [{
+        code: path.join(' / '), price: total,
+        stockQty: node.stockQty ?? null, stockBaseline: node.stockBaseline ?? null,
+      }];
     }
     return flattenPlakCatalog(node.children, path, total);
   });
+}
+
+// Shared by getStockStatus below (teacher-facing, looks a leaf up by its
+// full path) and the catalog admin pages (already holding the node
+// object directly, no path lookup needed) — one formula so the colour
+// shown to Production/Admin and the cap enforced on teachers can never
+// drift apart.
+export function stockZoneFor(stockQty, stockBaseline) {
+  if (stockQty == null) return 'normal';
+  if (stockBaseline > 0) {
+    const lowThreshold = stockBaseline * 0.15;
+    const highThreshold = stockBaseline * 0.25;
+    if (stockQty <= lowThreshold) return 'red';
+    if (stockQty <= highThreshold) return 'orange';
+  }
+  return 'normal';
+}
+
+// Stock status for one leaf code (its full " / "-joined path) — the single
+// source of truth both the teacher-facing qty warning (OrderCategoryBlock)
+// and the Cart/AddOnSummary submit guard read, so they can never disagree
+// about where the line is. The server-side plak_stock_deduct function
+// (supabase/migrations/0032_add_plak_stock.sql) enforces the same formula
+// atomically at submit time — this is only a live preview against
+// whatever catalog snapshot the client last fetched.
+//
+// Returns null when stock isn't tracked for this code (stockQty is null —
+// e.g. Production hasn't entered a count yet) or the code isn't found, in
+// which case no stock UI/limit applies at all.
+export function getStockStatus(code, plakCatalogTree) {
+  const entry = flattenPlakCatalog(plakCatalogTree).find((p) => p.code === code);
+  if (!entry || entry.stockQty == null) return null;
+  const { stockQty, stockBaseline } = entry;
+  const zone = stockZoneFor(stockQty, stockBaseline);
+  let maxOrderable = stockQty;
+  if (zone === 'red') {
+    const reserve = Math.ceil(stockBaseline * 0.15 * 0.10);
+    maxOrderable = Math.max(stockQty - reserve, 0);
+  }
+  return { stockQty, stockBaseline, zone, maxOrderable };
 }
 
 // Standard list price for a plaque code (its full " / "-joined path) —
@@ -352,7 +395,14 @@ export function filterHiddenPlakCatalog(nodes) {
   return (nodes || []).flatMap((node) => {
     if (node.hidden) return [];
     const hadChildren = Array.isArray(node.children) && node.children.length > 0;
-    if (!hadChildren) return [node];
+    if (!hadChildren) {
+      // stockQty === 0 (not null — null means stock isn't tracked for this
+      // code) auto-hides it from teachers the moment it sells out, same as
+      // Production manually flipping `hidden`. It naturally reappears once
+      // restocked since this is computed live, not a stored flag.
+      if (node.stockQty === 0) return [];
+      return [node];
+    }
     const children = filterHiddenPlakCatalog(node.children);
     if (children.length === 0) return [];
     return [{ ...node, children }];

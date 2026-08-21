@@ -10,7 +10,8 @@ import {
 } from '../lib/ordersApi';
 import {
   fetchReferenceImages, saveReferenceImage,
-  fetchPlakCatalog, addPlakNode, removePlakNode, updatePlakNode, updatePlakNodeOrder,
+  fetchPlakCatalog, addPlakNode, removePlakNode, updatePlakNode, updatePlakNodeOrder, updatePlakNodeStock,
+  deductPlakStock, restorePlakStock,
 } from '../lib/catalogAdminApi';
 import { supabase } from '../lib/supabaseClient';
 
@@ -18,6 +19,17 @@ import { supabase } from '../lib/supabaseClient';
 // midnight-constructed dates the calendar cells and date-math use.
 const now = new Date();
 const TODAY = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+// plak_stock_deduct (supabase/migrations/0032_add_plak_stock.sql) raises a
+// plain-text exception shaped 'INSUFFICIENT_STOCK:<full path>:<max
+// orderable>' when a line would breach the reserve floor — turns that into
+// the "contact your salesman" message the teacher actually needs, falling
+// back to the raw error for anything else (unknown code, connection issue).
+function describeStockError(err) {
+  const m = /^INSUFFICIENT_STOCK:(.*):(\d+)$/.exec(err?.message || '');
+  if (m) return `Not enough stock for "${m[1]}" — only ${m[2]} left available to order. Please lower the quantity or contact your salesman.`;
+  return `Could not check stock: ${err?.message || 'unknown error'}. Please try again.`;
+}
 
 // Finds a catalog node by id anywhere in the tree, along with the sibling
 // array it lives in (its parent's `children`, or the root array for a
@@ -501,10 +513,25 @@ export function AppStateProvider({ children }) {
       snapshot, items: st.cart.map((ci) => ({ ...ci })),
     };
 
+    // Deducted before the insert so a stock failure never creates an order
+    // with items it can't actually fulfil. If the insert itself then fails
+    // for some other reason, the deduction is compensated (added back)
+    // rather than left silently stuck against a school that never got an
+    // order — see the catch block below.
+    try {
+      await deductPlakStock(st.cart.map((ci) => ({ full_path: ci.jenisPlak, qty: ci.qty })));
+    } catch (err) {
+      console.error('Stock deduction failed for New Order:', err);
+      patch({ cartToast: describeStockError(err) });
+      return null;
+    }
+
     try {
       await insertOrder(newOrder);
     } catch (err) {
       console.error('Failed to save order to Supabase:', err);
+      restorePlakStock(st.cart.map((ci) => ({ full_path: ci.jenisPlak, qty: ci.qty })))
+        .catch((restoreErr) => console.error('Failed to restore stock after a failed order insert:', restoreErr));
       // A row-level-security rejection here means the salesman assignment
       // this submission relied on no longer matches the database (e.g.
       // Admin reassigned the school between page load and submit) — the
@@ -556,47 +583,100 @@ export function AppStateProvider({ children }) {
   // approveAddOn; Sales can also send it back via rejectAddOn, and the
   // teacher can withdraw it with cancelPendingAddOn — see
   // supabase/migrations/0021_addon_approval_workflow.sql.
-  const submitPendingAddOn = useCallback(() => {
-    setState((st) => {
-      const newItems = [];
-      CATEGORIES.forEach((cat) => {
-        // Every category (including PBD/ALIRAN, split into their own
-        // top-level entries — see catalog.js) has exactly one block, so
-        // this naturally picks up whichever categories/blocks actually
-        // have data in the draft regardless of which category tab the
-        // teacher currently has open — no per-variant block-index
-        // bookkeeping needed here.
-        const { blocks: catBlocks, isMatrix: catIsMatrix, isDynamicMatrix: catIsDynamicMatrix } = computeBlocks(
-          cat.key, st.addOnLineValues, st.addOnMatrixValues, st.addOnRowsByBlock, st.addOnPlakRows, st.addOnColumnsByBlock, noopUpdaters, st.plakCatalog, st.schoolLanguage,
-        );
-        catBlocks.forEach((blk) => {
-          blk.plakRows.forEach((pr) => {
-            if (pr.jenisPlak && pr.qty) newItems.push({
-              id: crypto.randomUUID(), jenisPlak: pr.jenisPlak, qty: pr.qty, harga: pr.rawHarga, unitPrice: pr.unitPrice, categoryLabel: blk.qtyLabel,
-              categoryKey: cat.key, blockIdx: blk.idx,
-              detail: snapshotDetail(cat.key, blk.idx, catIsMatrix, catIsDynamicMatrix, st.addOnLineValues, st.addOnMatrixValues, st.addOnRowsByBlock, st.addOnColumnsByBlock),
-            });
+  // Now async (it used to be a synchronous setState updater) because stock
+  // must be deducted — an await-able network round trip — before the
+  // add-on is committed as 'pending'. Returns true on success, false
+  // otherwise, so AddOnSummary can decide whether it's safe to navigate
+  // away. Reads/writes via stateRef.current + patch (submitOrder's
+  // pattern above) rather than setState, since the stock calls in the
+  // middle need a stable snapshot of the draft, not a re-run on every
+  // render.
+  const submitPendingAddOn = useCallback(async () => {
+    const st = stateRef.current;
+    const newItems = [];
+    // Every category (including PBD/ALIRAN, split into their own
+    // top-level entries — see catalog.js) has exactly one block, so this
+    // naturally picks up whichever categories/blocks actually have data
+    // in the draft regardless of which category tab the teacher currently
+    // has open — no per-variant block-index bookkeeping needed here.
+    CATEGORIES.forEach((cat) => {
+      const { blocks: catBlocks, isMatrix: catIsMatrix, isDynamicMatrix: catIsDynamicMatrix } = computeBlocks(
+        cat.key, st.addOnLineValues, st.addOnMatrixValues, st.addOnRowsByBlock, st.addOnPlakRows, st.addOnColumnsByBlock, noopUpdaters, st.plakCatalog, st.schoolLanguage,
+      );
+      catBlocks.forEach((blk) => {
+        blk.plakRows.forEach((pr) => {
+          if (pr.jenisPlak && pr.qty) newItems.push({
+            id: crypto.randomUUID(), jenisPlak: pr.jenisPlak, qty: pr.qty, harga: pr.rawHarga, unitPrice: pr.unitPrice, categoryLabel: blk.qtyLabel,
+            categoryKey: cat.key, blockIdx: blk.idx,
+            detail: snapshotDetail(cat.key, blk.idx, catIsMatrix, catIsDynamicMatrix, st.addOnLineValues, st.addOnMatrixValues, st.addOnRowsByBlock, st.addOnColumnsByBlock),
           });
         });
       });
-      if (newItems.length === 0) return { ...st, updateToast: 'No add-on items to submit.' };
-      updateOrder(st.addOnOrderId, { pendingAddonItems: newItems, pendingAddonStatus: 'pending', pendingAddonRejectReason: null })
-        .catch((err) => console.error('Failed to submit add-on to Supabase:', err));
-      return {
-        ...st,
-        orders: st.orders.map((o) => (
-          o.id === st.addOnOrderId ? { ...o, pendingAddonItems: newItems, pendingAddonStatus: 'pending', pendingAddonRejectReason: null } : o
-        )),
-        updateToast: 'Add-on submitted — waiting for Sales approval.',
-      };
     });
-    clearTimeout(updateToastTimer.current);
-    updateToastTimer.current = setTimeout(() => patch({ updateToast: '' }), 2500);
+    const flashToast = (msg) => {
+      patch({ updateToast: msg });
+      clearTimeout(updateToastTimer.current);
+      updateToastTimer.current = setTimeout(() => patch({ updateToast: '' }), 2500);
+    };
+    if (newItems.length === 0) {
+      flashToast('No add-on items to submit.');
+      return false;
+    }
+
+    const order = st.orders.find((o) => o.id === st.addOnOrderId);
+    // A still-'pending' add-on being overwritten by this fresh submission
+    // already had its own stock deducted once (below, on its own earlier
+    // call) — restore that first so resubmitting can never leave the
+    // earlier batch's deduction stranded on top of the new one. A
+    // 'rejected' add-on was already restored when it was rejected (see
+    // rejectAddOn), so this only fires for 'pending'.
+    if (order?.pendingAddonStatus === 'pending' && order.pendingAddonItems?.length) {
+      try {
+        await restorePlakStock(order.pendingAddonItems.map((it) => ({ full_path: it.jenisPlak, qty: it.qty })));
+      } catch (err) {
+        console.error('Failed to restore stock for the add-on being replaced:', err);
+      }
+    }
+
+    try {
+      await deductPlakStock(newItems.map((it) => ({ full_path: it.jenisPlak, qty: it.qty })));
+    } catch (err) {
+      console.error('Stock deduction failed for Add On:', err);
+      flashToast(describeStockError(err));
+      return false;
+    }
+
+    try {
+      await updateOrder(st.addOnOrderId, { pendingAddonItems: newItems, pendingAddonStatus: 'pending', pendingAddonRejectReason: null });
+    } catch (err) {
+      console.error('Failed to submit add-on to Supabase:', err);
+      restorePlakStock(newItems.map((it) => ({ full_path: it.jenisPlak, qty: it.qty })))
+        .catch((restoreErr) => console.error('Failed to restore stock after a failed add-on submit:', restoreErr));
+      flashToast(`Could not submit the add-on: ${err.message || 'unknown error'}. Please try again.`);
+      return false;
+    }
+
+    patch((latest) => ({
+      orders: latest.orders.map((o) => (
+        o.id === st.addOnOrderId ? { ...o, pendingAddonItems: newItems, pendingAddonStatus: 'pending', pendingAddonRejectReason: null } : o
+      )),
+    }));
+    flashToast('Add-on submitted — waiting for Sales approval.');
+    return true;
   }, [patch]);
 
   // Teacher withdraws a pending or rejected add-on before/without Sales
   // acting on it further — clears it back to no-add-on-in-flight.
   const cancelPendingAddOn = useCallback((orderId) => {
+    const order = stateRef.current.orders.find((o) => o.id === orderId);
+    // A 'rejected' add-on already had its stock restored when it was
+    // rejected (see rejectAddOn) — only a still-'pending' one (withdrawn
+    // before Sales acted on it) still has its submission-time deduction
+    // outstanding here.
+    if (order?.pendingAddonStatus === 'pending' && order.pendingAddonItems?.length) {
+      restorePlakStock(order.pendingAddonItems.map((it) => ({ full_path: it.jenisPlak, qty: it.qty })))
+        .catch((err) => console.error('Failed to restore stock for a cancelled add-on:', err));
+    }
     updateOrder(orderId, { pendingAddonItems: null, pendingAddonStatus: null, pendingAddonRejectReason: null })
       .catch((err) => console.error('Failed to cancel add-on in Supabase:', err));
     patch((st) => ({
@@ -611,6 +691,11 @@ export function AppStateProvider({ children }) {
   // the teacher can see what was submitted; only cancelPendingAddOn or a
   // fresh submitPendingAddOn (which overwrites it) clears it from here.
   const rejectAddOn = useCallback((orderId, reason) => {
+    const order = stateRef.current.orders.find((o) => o.id === orderId);
+    if (order?.pendingAddonItems?.length) {
+      restorePlakStock(order.pendingAddonItems.map((it) => ({ full_path: it.jenisPlak, qty: it.qty })))
+        .catch((err) => console.error('Failed to restore stock for a rejected add-on:', err));
+    }
     updateOrder(orderId, { pendingAddonStatus: 'rejected', pendingAddonRejectReason: reason || '' })
       .catch((err) => console.error('Failed to reject add-on in Supabase:', err));
     patch((st) => ({
@@ -793,6 +878,20 @@ export function AppStateProvider({ children }) {
     }
   }, [refreshPlakCatalog]);
 
+  // Sets a leaf's current stock count — also resets stock_baseline to the
+  // same value (see updatePlakNodeStock), so every time Production/Admin
+  // types a new number here (first count, restock, or correction) the
+  // 15%/25% thresholds recalibrate against it rather than staying pinned
+  // to whatever was entered before.
+  const updateCatalogNodeStock = useCallback(async (id, stockQty) => {
+    try {
+      await updatePlakNodeStock(id, stockQty);
+      await refreshPlakCatalog();
+    } catch (err) {
+      console.error('Failed to update Jenis Plak stock in Supabase:', err);
+    }
+  }, [refreshPlakCatalog]);
+
   // Hiding is per-node, not per-path — hiding a group hides everything
   // beneath it (see filterHiddenPlakCatalog), but each node's hidden state
   // is stored and toggled independently, so unhiding a group later doesn't
@@ -856,7 +955,7 @@ export function AppStateProvider({ children }) {
     resetCurrentCategory, startNewOrder, addToCart, removeFromCart, submitOrder, reorderOrder,
     openAddOn, submitPendingAddOn, cancelPendingAddOn, rejectAddOn, approveAddOn, approveOrder, setInvoiceId,
     markProductionDone,
-    updateReferenceImage, addCatalogNode, removeCatalogNode, updateCatalogNodePrice, setCatalogNodeHidden, moveCatalogNode,
+    updateReferenceImage, addCatalogNode, removeCatalogNode, updateCatalogNodePrice, updateCatalogNodeStock, setCatalogNodeHidden, moveCatalogNode,
     reorderCatalogSiblings,
     refreshAssignedSalesman,
   };

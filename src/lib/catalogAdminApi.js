@@ -24,7 +24,9 @@ export async function saveReferenceImage(slotId, dataUrl) {
 // actually stores.
 export function buildPlakTree(rows) {
   const byId = new Map(rows.map((r) => [r.id, {
-    id: r.id, code: r.code, price: Number(r.price) || 0, hidden: !!r.hidden, children: [],
+    id: r.id, code: r.code, price: Number(r.price) || 0, hidden: !!r.hidden,
+    stockQty: r.stock_qty ?? null, stockBaseline: r.stock_baseline ?? null,
+    children: [],
   }]));
   const roots = [];
   rows.forEach((r) => {
@@ -46,7 +48,7 @@ export function buildPlakTree(rows) {
 export async function fetchPlakCatalog() {
   const { data, error } = await supabase
     .from('plak_catalog_nodes')
-    .select('id, parent_id, code, price, hidden, sort_order')
+    .select('id, parent_id, code, price, hidden, sort_order, stock_qty, stock_baseline')
     .order('sort_order', { ascending: true });
   if (error) throw error;
   return buildPlakTree(data || []);
@@ -71,6 +73,40 @@ export async function removePlakNode(id) {
 
 export async function updatePlakNode(id, patch) {
   const { error } = await supabase.from('plak_catalog_nodes').update(patch).eq('id', id);
+  if (error) throw error;
+}
+
+// Setting a new Stock Qty always resets stock_baseline to the same value —
+// the 15%/25% thresholds are measured against whatever number Production
+// last typed in here (a restock, a correction, or the first-ever count for
+// this code), never a number carried over from before. See
+// 0032_add_plak_stock.sql's header for why NULL (never touched) is kept
+// distinct from 0 (deliberately out of stock).
+export async function updatePlakNodeStock(id, stockQty) {
+  const { error } = await supabase
+    .from('plak_catalog_nodes')
+    .update({ stock_qty: stockQty, stock_baseline: stockQty })
+    .eq('id', id);
+  if (error) throw error;
+}
+
+// Atomic, all-or-nothing stock deduction/restoration — see
+// supabase/migrations/0032_add_plak_stock.sql for the enforcement rules.
+// `items` is [{ full_path, qty }] where full_path is exactly an order
+// item's `jenisPlak` (the " / "-joined catalog path PlakPicker commits).
+export async function deductPlakStock(items) {
+  const payload = (items || []).filter((it) => it.full_path && Number(it.qty) > 0)
+    .map((it) => ({ full_path: it.full_path, qty: Math.round(Number(it.qty)) }));
+  if (payload.length === 0) return;
+  const { error } = await supabase.rpc('plak_stock_deduct', { p_items: payload });
+  if (error) throw error;
+}
+
+export async function restorePlakStock(items) {
+  const payload = (items || []).filter((it) => it.full_path && Number(it.qty) > 0)
+    .map((it) => ({ full_path: it.full_path, qty: Math.round(Number(it.qty)) }));
+  if (payload.length === 0) return;
+  const { error } = await supabase.rpc('plak_stock_restore', { p_items: payload });
   if (error) throw error;
 }
 

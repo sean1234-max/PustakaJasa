@@ -1,4 +1,5 @@
 import PlakPicker from './PlakPicker';
+import { getStockStatus } from '../data/catalog';
 
 const TAHUN_OPTIONS = ['TAHUN 1', 'TAHUN 2', 'TAHUN 3', 'TAHUN 4', 'TAHUN 5', 'TAHUN 6'];
 
@@ -54,17 +55,35 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, refImag
       <table className="table">
         <thead><tr><th>Jenis Plak</th><th style={{ width: 130 }}>QTY</th><th style={{ width: 130 }}>Harga</th></tr></thead>
         <tbody>
-          {blk.plakRows.map((pr) => (
-            <tr key={pr.id}>
-              <td>
-                {editable.jenisPlak ? (
-                  <PlakPicker value={pr.jenisPlak} onChange={pr.setJenisPlak} catalog={plakOptions} />
-                ) : (pr.jenisPlak || '—')}
-              </td>
-              <td><div className="input input-readonly">{pr.qty}</div></td>
-              <td><div className="input input-readonly input-price">{pr.hargaLabel}</div></td>
-            </tr>
-          ))}
+          {blk.plakRows.map((pr) => {
+            // Live preview of the server-enforced cap (plak_stock_deduct,
+            // supabase/migrations/0032_add_plak_stock.sql) — this can only
+            // warn early using the last-fetched catalog snapshot; the
+            // actual submit (Cart/AddOnSummary) re-checks and the database
+            // function is the real backstop against a stale/racing read.
+            const stockStatus = pr.jenisPlak ? getStockStatus(pr.jenisPlak, plakOptions) : null;
+            const overStock = !!stockStatus && Number(pr.qty) > stockStatus.maxOrderable;
+            return (
+              <tr key={pr.id}>
+                <td>
+                  {editable.jenisPlak ? (
+                    <PlakPicker value={pr.jenisPlak} onChange={pr.setJenisPlak} catalog={plakOptions} />
+                  ) : (pr.jenisPlak || '—')}
+                </td>
+                <td>
+                  <div className="input input-readonly" style={overStock ? { color: '#c0392b', fontWeight: 700 } : undefined}>
+                    {pr.qty}
+                  </div>
+                  {overStock && (
+                    <div className="hint-text" style={{ color: '#c0392b', margin: '2px 0 0' }}>
+                      Stock tidak cukup — baki {stockStatus.maxOrderable} sahaja boleh ditempah. Sila hubungi Salesman.
+                    </div>
+                  )}
+                </td>
+                <td><div className="input input-readonly input-price">{pr.hargaLabel}</div></td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
 
