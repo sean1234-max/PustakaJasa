@@ -293,6 +293,28 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
     });
   }
 
+  // hasNamaKelasList categories (OTHERS) can have several duplicated Tahun
+  // blocks that all share ONE Jenis Plak choice (see draftUpdaters.js's
+  // onDuplicateBlock) — but only block 0's Jenis Plak/QTY/Harga table is
+  // ever shown (showSharedSections in OrderCategoryBlock.jsx), so without
+  // this its displayed QTY/Harga would look like just block 0's own Tahun
+  // part, hiding however many more plaques the other duplicated blocks add.
+  // Each block still becomes its OWN cart item with its own qty when added
+  // (needed so every Tahun's own Description/Nama Kelas rows export
+  // separately, see AppState.jsx's addToCart) — this combined figure is
+  // display-only, attached to every block's own first plakRow so whichever
+  // block is actually rendered shows the true grand total instead.
+  if (currentCat.hasNamaKelasList) {
+    const combinedQty = blocks.reduce((sum, blk) => sum + blk.blockTotalQty, 0);
+    const pricedRows = blocks.flatMap((blk) => blk.plakRows).filter((pr) => pr.unitPrice != null);
+    const combinedHargaLabel = pricedRows.length
+      ? `RM ${pricedRows.reduce((sum, pr) => sum + pr.rawHarga, 0).toFixed(2)}`
+      : '—';
+    blocks.forEach((blk) => {
+      blk.plakRows = blk.plakRows.map((pr, i) => (i === 0 ? { ...pr, combinedQty, combinedHargaLabel } : pr));
+    });
+  }
+
   return { blocks, isMatrix, isDynamicMatrix, blocksCount };
 }
 

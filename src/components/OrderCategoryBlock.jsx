@@ -68,13 +68,22 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, refImag
             <thead><tr><th>Jenis Plak</th><th style={{ width: 130 }}>QTY</th><th style={{ width: 130 }}>Harga</th></tr></thead>
             <tbody>
               {blk.plakRows.map((pr) => {
+                // hasNamaKelasList categories (OTHERS) can have several
+                // duplicated Tahun blocks sharing this one Jenis Plak choice
+                // (see computeBlocks.js) — pr.combinedQty/combinedHargaLabel,
+                // when present, is the grand total across every one of
+                // those blocks, not just this row's own Tahun part, so the
+                // teacher sees (and gets warned against) the real total
+                // before adding to cart.
+                const displayQty = pr.combinedQty != null ? pr.combinedQty : pr.qty;
+                const displayHargaLabel = pr.combinedHargaLabel != null ? pr.combinedHargaLabel : pr.hargaLabel;
                 // Live preview of the server-enforced cap (plak_stock_deduct,
                 // supabase/migrations/0032_add_plak_stock.sql) — this can only
                 // warn early using the last-fetched catalog snapshot; the
                 // actual submit (Cart/AddOnSummary) re-checks and the database
                 // function is the real backstop against a stale/racing read.
                 const stockStatus = pr.jenisPlak ? getStockStatus(pr.jenisPlak, plakOptions) : null;
-                const overStock = !!stockStatus && Number(pr.qty) > stockStatus.maxOrderable;
+                const overStock = !!stockStatus && Number(displayQty) > stockStatus.maxOrderable;
                 return (
                   <tr key={pr.id}>
                     <td>
@@ -84,7 +93,7 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, refImag
                     </td>
                     <td>
                       <div className="input input-readonly" style={overStock ? { color: '#c0392b', fontWeight: 700 } : undefined}>
-                        {pr.qty}
+                        {displayQty}
                       </div>
                       {overStock && (
                         <div className="hint-text" style={{ color: '#c0392b', margin: '2px 0 0' }}>
@@ -92,7 +101,7 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, refImag
                         </div>
                       )}
                     </td>
-                    <td><div className="input input-readonly input-price">{pr.hargaLabel}</div></td>
+                    <td><div className="input input-readonly input-price">{displayHargaLabel}</div></td>
                   </tr>
                 );
               })}
