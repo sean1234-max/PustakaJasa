@@ -259,7 +259,15 @@ export const CATEGORIES = [
     // Every field here is teacher-typed free text already (no restriction
     // on what language they type), so this only affects which language
     // the field LABELS themselves show in — not what a school can enter.
-    tahunPlaceholderByLanguage: { SK: 'e.g. 1', SJKC: '例如 1' },
+    // No fixed "TAHUN:" label on this field (see OrderCategoryBlock.jsx) —
+    // not every block is a Tahun grade (PRASEKOLAH/PPKI are common too), so
+    // the teacher just types whatever should appear on the plaque for this
+    // block, e.g. "TAHUN 1" or "PRASEKOLAH". Whether the exported text gets
+    // a literal "TAHUN " prefix depends only on whether the teacher's own
+    // Reference Sample row 5 text contains that word (see exportCsv.js's
+    // buildOthersRows) — typing "PRASEKOLAH" here with that row left blank
+    // exports as-is, with no prefix forced on.
+    tahunPlaceholderByLanguage: { SK: 'e.g. TAHUN 1 / PRASEKOLAH / PPKI', SJKC: '例如 一年级 / 学前班 / PPKI' },
     namaKelasPlaceholderByLanguage: { SK: 'e.g. ADIF', SJKC: '例如 甲班' },
     // Line 3 (index 2) gets the same optional second box as MP THP/PBD —
     // box 1 is required, same as line 1 (see requiredLineIndices below);

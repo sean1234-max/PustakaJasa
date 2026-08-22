@@ -314,13 +314,12 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, refImag
       ) : blk.hasNamaKelasList ? (
         <div>
           {blk.tahun && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 'var(--space-4)' }}>
-              <label htmlFor={`tahun-${blk.idx}`} style={{ fontWeight: 600 }}>TAHUN:</label>
+            <div style={{ marginBottom: 'var(--space-4)' }}>
               <input
                 id={`tahun-${blk.idx}`}
                 className="input"
-                style={{ width: 140 }}
-                placeholder={blk.tahunPlaceholder || 'e.g. 1'}
+                style={{ width: 260 }}
+                placeholder={blk.tahunPlaceholder || 'e.g. TAHUN 1 / PRASEKOLAH / PPKI'}
                 value={blk.tahun.value}
                 readOnly={!editable.lines}
                 onChange={editable.lines ? (e) => blk.tahun.onChange(e.target.value) : undefined}
