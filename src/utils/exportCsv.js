@@ -1,7 +1,6 @@
 import {
   CATEGORIES, getCategorySubjects, getCategoryColumns, tahunRangeYears,
   getCustomMatrixRowIds, customMatrixLabelKey, matrixCellKey,
-  getCustomMatrixColumnIds, customMatrixColumnTahunKey, customMatrixColumnNamaKelasKey, parseTahunRangeText,
 } from '../data/catalog';
 
 export const CSV_COLUMNS = ['event_header', 'year', 'position', 'event_line_1', 'event_line_2'];
@@ -27,66 +26,35 @@ function getPositionLine2(item) {
   return item.detail?.lines?.[key] || '';
 }
 
-// Matrix categories (MP THP 1/2, OTHERS): the reference sample's second
-// position box and 4th line are only a CONTOH of layout — the real
-// per-plaque data comes from the quantity matrix itself. Each (subject,
-// column) cell with qty > 0 becomes its own row: subject fills in for the
-// sample's second position line, column fills in for event_line_1, repeated
-// `qty` times. Columns are the fixed catalog list plus, for a `freeColumns`
-// category (OTHERS), any teacher-added columns on top (see
-// getCustomMatrixColumnIds in catalog.js) — same idea as the teacher-added
-// ROWS already handled below, mirrored onto the column axis. A custom
-// column's Tahun is free text (e.g. "1-6" — see parseTahunRangeText) rather
-// than PBD's Dari/Hingga dropdowns, but once parsed it drives the exact same
-// per-year qty split PBD's buildPbdMatrixRows below does — a column with no
-// parseable Tahun (blank, or a non-numeric label like "PPKI") just emits
-// its full qty as one block, same as PBD's blank-Tahun fallback.
+// The new per-Tahun-block TAHUN value (OTHERS' hasTahunField — see
+// catalog.js/computeBlocks.js), stored under a synthetic `tahun` line key
+// distinct from the numbered reference-sample lines (0-3/2b) above.
+function getTahunField(item) {
+  const key = `${item.categoryKey}::${item.blockIdx}::tahun`;
+  return item.detail?.lines?.[key] || '';
+}
+
+// Matrix categories (MP THP 1/2): the reference sample's second position
+// box and 4th line are only a CONTOH of layout — the real per-plaque data
+// comes from the quantity matrix itself. Each (subject, column) cell with
+// qty > 0 becomes its own row: subject fills in for the sample's second
+// position line, column fills in for event_line_1, repeated `qty` times.
 function buildMatrixRows(item, cat, header, year, positionPart1, schoolLanguage) {
   const rows = [];
   const matrix = item.detail?.matrix;
   if (!matrix) return rows;
-  // OTHERS' line 4 is a teacher-typed CONTOH of the Tahun+Nama Kelas format
-  // they want (e.g. "1 ADIL" or "TAHUN 1 ADIL") — its only export role is a
-  // format toggle: if it contains the word "TAHUN", every per-year split
-  // row below keeps "TAHUN N" in event_line_1; if not, only the bare number
-  // is kept (a plain "1 ADIL" instead of "TAHUN 1 ADIL"). The actual
-  // Tahun/Nama Kelas VALUES always come from the Kuantiti column, never
-  // parsed out of this line — it only decides the word's presence.
-  const includeTahunWord = /tahun/i.test(getLine(item, 3));
-  const columns = [
-    ...getCategoryColumns(cat, schoolLanguage).map((col) => ({ colKey: col, label: col, tahunYears: [], namaKelas: '' })),
-    ...(cat.freeColumns ? getCustomMatrixColumnIds(cat.key, matrix).map((colId) => {
-      const tahun = matrix[customMatrixColumnTahunKey(cat.key, colId)] || '';
-      const namaKelas = matrix[customMatrixColumnNamaKelasKey(cat.key, colId)] || '';
-      return {
-        colKey: `col-${colId}`, label: [tahun, namaKelas].filter(Boolean).join(' '),
-        tahunYears: parseTahunRangeText(tahun), namaKelas,
-      };
-    }) : []),
-  ];
+  const columns = getCategoryColumns(cat, schoolLanguage);
 
-  const emitForColumn = (subject, col, qty) => {
+  const emitRow = (subject, column, qty) => {
     if (qty <= 0) return;
     const position = positionPart1 ? `${positionPart1}\n${subject}` : subject;
-    if (col.tahunYears.length === 0) {
-      const row = [header, year, position, col.label, ''];
-      for (let i = 0; i < qty; i++) rows.push(row);
-      return;
-    }
-    const base = Math.floor(qty / col.tahunYears.length);
-    const remainder = qty % col.tahunYears.length;
-    col.tahunYears.forEach((tahunLabel, i) => {
-      const count = base + (i < remainder ? 1 : 0);
-      const yearLabel = includeTahunWord ? tahunLabel : tahunLabel.replace(/^TAHUN\s+/i, '');
-      const eventLine1 = [yearLabel, col.namaKelas].filter(Boolean).join(' ');
-      const row = [header, year, position, eventLine1, ''];
-      for (let n = 0; n < count; n++) rows.push(row);
-    });
+    const row = [header, year, position, column, ''];
+    for (let i = 0; i < qty; i++) rows.push(row);
   };
 
   getCategorySubjects(cat, schoolLanguage).forEach((subject) => {
-    columns.forEach((col) => {
-      emitForColumn(subject, col, Number(matrix[matrixCellKey(cat.key, subject, col.colKey)]) || 0);
+    columns.forEach((column) => {
+      emitRow(subject, column, Number(matrix[matrixCellKey(cat.key, subject, column)]) || 0);
     });
   });
 
@@ -96,8 +64,48 @@ function buildMatrixRows(item, cat, header, year, positionPart1, schoolLanguage)
   getCustomMatrixRowIds(cat.key, matrix).forEach((rowId) => {
     const subject = matrix[customMatrixLabelKey(cat.key, rowId)] || '';
     if (!subject) return;
-    columns.forEach((col) => {
-      emitForColumn(subject, col, Number(matrix[matrixCellKey(cat.key, `custom-${rowId}`, col.colKey)]) || 0);
+    columns.forEach((column) => {
+      emitRow(subject, column, Number(matrix[matrixCellKey(cat.key, `custom-${rowId}`, column)]) || 0);
+    });
+  });
+
+  return rows;
+}
+
+// OTHERS' Kuantiti (`hasNamaKelasList`/`hasTahunField` — see catalog.js):
+// one TAHUN value for the whole block + a Description/QTY list + a separate
+// Nama Kelas name list. Each Description row's QTY is meant to equal the
+// Nama Kelas count (one plaque per class, enforced at Add to Cart time —
+// see AppState.jsx) — split as evenly as possible across the Nama Kelas
+// list here (any remainder to the earliest ones), same idea as PBD's
+// per-year split, just keyed by class name instead of Tahun. A block with
+// no Nama Kelas filled in yet just emits its TAHUN value alone, instead of
+// being dropped entirely. Line 4 (the CONTOH toggle — see buildMatrixRows'
+// old comment, still true here) controls whether "TAHUN" is prefixed to
+// the block's own TAHUN value.
+function buildOthersRows(item, header, year, positionPart1) {
+  const rows = [];
+  const tahunValue = getTahunField(item);
+  const includeTahunWord = /tahun/i.test(getLine(item, 3));
+  const tahunPart = tahunValue ? (includeTahunWord ? `TAHUN ${tahunValue}` : tahunValue) : '';
+  const namaKelasRows = (item.detail?.columns || []).filter((nk) => (nk.name || '').trim());
+
+  (item.detail?.rows || []).forEach((row) => {
+    const qty = Number(row.qty) || 0;
+    if (qty <= 0) return;
+    const position = positionPart1 ? `${positionPart1}\n${row.desc || ''}` : (row.desc || '');
+    if (namaKelasRows.length === 0) {
+      const csvRow = [header, year, position, tahunPart, ''];
+      for (let i = 0; i < qty; i++) rows.push(csvRow);
+      return;
+    }
+    const base = Math.floor(qty / namaKelasRows.length);
+    const remainder = qty % namaKelasRows.length;
+    namaKelasRows.forEach((nk, i) => {
+      const count = base + (i < remainder ? 1 : 0);
+      const eventLine1 = [tahunPart, nk.name].filter(Boolean).join(' ');
+      const csvRow = [header, year, position, eventLine1, ''];
+      for (let n = 0; n < count; n++) rows.push(csvRow);
     });
   });
 
@@ -214,6 +222,8 @@ export function buildCsvRows(order, categoryKey, items) {
       rows.push(...buildMatrixRows(item, cat, header, year, getLine(item, 2), schoolLanguage));
     } else if (cat?.mode === 'dynamicMatrix') {
       rows.push(...buildPbdMatrixRows(item, header, year, getLine(item, 2)));
+    } else if (cat?.hasNamaKelasList) {
+      rows.push(...buildOthersRows(item, header, year, getLine(item, 2)));
     } else if (cat?.positionFromRows) {
       rows.push(...buildRowsFromDescriptionRows(item, header, year, cat.positionPrefixFromLine3 ? getLine(item, 2) : ''));
     } else {

@@ -1,10 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import {
-  CATEGORIES, formatDate, standardUnitPrice, getCategorySubjects, customMatrixColumnTahunKey, customMatrixLabelKey,
-} from '../data/catalog';
-import {
-  buildInitialRowsByBlock, buildInitialColumnsByBlock, buildInitialPlakRows, buildInitialMatrixValues,
-} from '../data/formDefaults';
+import { CATEGORIES, formatDate, standardUnitPrice, getCategorySubjects } from '../data/catalog';
+import { buildInitialRowsByBlock, buildInitialColumnsByBlock, buildInitialPlakRows } from '../data/formDefaults';
 import { computeBlocks, snapshotDetail, noopUpdaters } from '../utils/computeBlocks';
 import { AppStateContext } from './AppStateContext';
 import {
@@ -50,8 +46,11 @@ function findNodeAndSiblings(nodes, id, siblings) {
 
 // Clears one category's draft fields back to blank (used after "Add to Cart"
 // and by the standalone reset action) — extracted so both call sites share
-// the id-counter bookkeeping instead of drifting apart.
-function resetCategoryFields(catKey, st) {
+// the id-counter bookkeeping instead of drifting apart. `visibleField` is
+// whichever state key tracks per-category visible-block counts
+// (visibleBlocksByCategory for New Order, addOnVisibleBlocksByCategory for
+// Add On) — passed in so this helper works for both draft namespaces.
+function resetCategoryFields(catKey, st, visibleField) {
   const cat = CATEGORIES.find((c) => c.key === catKey);
   const lineValues = { ...st.lineValues };
   Object.keys(lineValues).forEach((k) => { if (k.startsWith(`${catKey}::`)) delete lineValues[k]; });
@@ -63,33 +62,31 @@ function resetCategoryFields(catKey, st) {
   let nextColumnId = st.nextColumnId;
   for (let b = 0; b < (cat.blocksCount || 1); b++) {
     const key = `${catKey}::${b}`;
-    if (cat.mode === 'list') rowsByBlock[key] = cat.rows.map((label, i) => ({ id: st.nextRowId + i, desc: label, qty: '' }));
+    if (cat.mode === 'list') {
+      // TOKOH/LONJAKAN reset back to their fixed preset rows; OTHERS (no
+      // `rows` preset — see catalog.js) resets to one blank teacher-typed
+      // row instead, same as formDefaults.js's initial seed.
+      rowsByBlock[key] = cat.rows && cat.rows.length > 0
+        ? cat.rows.map((label, i) => ({ id: st.nextRowId + i, desc: label, qty: '' }))
+        : [{ id: st.nextRowId, desc: '', qty: '', custom: true }];
+      if (cat.hasNamaKelasList) {
+        columnsByBlock[key] = [{ id: nextColumnId, name: '' }];
+        nextColumnId += 1;
+      }
+    }
     if (cat.mode === 'dynamicMatrix') {
       rowsByBlock[key] = getCategorySubjects(cat, st.schoolLanguage).map((subject, i) => ({ id: st.nextRowId + i, desc: subject, custom: false }));
       columnsByBlock[key] = [{ id: nextColumnId, tahunFrom: '', tahunTo: '', namaKelas: '' }];
       nextColumnId += 1;
-    }
-    // `freeColumns` matrix categories (OTHERS) keep columns in matrixValues,
-    // not columnsByBlock (see formDefaults.js buildInitialMatrixValues) —
-    // same "start with one blank column" seed, just re-applied here after
-    // the wipe above cleared it along with everything else under this
-    // category's prefix.
-    if (cat.mode === 'matrix' && cat.freeColumns) {
-      matrixValues[customMatrixColumnTahunKey(catKey, nextColumnId)] = '';
-      nextColumnId += 1;
-    }
-    // Mirrors buildInitialMatrixValues' one-blank-row seed (formDefaults.js)
-    // for a matrix category with no fixed subjects (OTHERS) — otherwise
-    // "Add to Cart" would wipe the category back to a table with no rows
-    // at all instead of one ready to fill, like every other reset field.
-    if (cat.mode === 'matrix' && getCategorySubjects(cat, st.schoolLanguage).length === 0) {
-      matrixValues[customMatrixLabelKey(catKey, st.nextRowId + b)] = '';
     }
     plakRows[key] = [{ id: st.nextPlakRowId + b, jenisPlak: '' }];
   }
   return {
     lineValues, matrixValues, rowsByBlock, columnsByBlock, plakRows,
     nextRowId: st.nextRowId + 20, nextPlakRowId: st.nextPlakRowId + 10, nextColumnId,
+    // Back to just block 0 visible for next round's "Duplicate" reveals —
+    // no-op for every other category (they never touch visibleField).
+    [visibleField]: { ...st[visibleField], [catKey]: 1 },
   };
 }
 
@@ -122,13 +119,20 @@ function initialState() {
 
     category: 'MP1',
     lineValues: {},
-    matrixValues: buildInitialMatrixValues(),
+    matrixValues: {},
     rowsByBlock: buildInitialRowsByBlock('SK'),
     columnsByBlock: buildInitialColumnsByBlock(),
     plakRows: buildInitialPlakRows(),
     nextRowId: 1000,
     nextPlakRowId: 1000,
     nextColumnId: 1000,
+    // How many of a category's pre-allocated blocks (see catalog.js's
+    // blocksCount — only OTHERS has more than 1) are currently revealed —
+    // keyed by category so it generalizes if another category ever needs
+    // more than one block too. Absent/undefined reads as 1 everywhere this
+    // is consulted (computeBlocks itself doesn't need it — every block is
+    // always computed; only NewOrderStep2/AddOn's rendering slices by it).
+    visibleBlocksByCategory: {},
 
     cart: [],
     cartToast: '',
@@ -148,13 +152,14 @@ function initialState() {
     addOnOrderId: null,
     addOnCategory: 'MP1',
     addOnLineValues: {},
-    addOnMatrixValues: buildInitialMatrixValues(),
+    addOnMatrixValues: {},
     addOnRowsByBlock: buildInitialRowsByBlock('SK'),
     addOnColumnsByBlock: buildInitialColumnsByBlock(),
     addOnPlakRows: buildInitialPlakRows(),
     addOnNextRowId: 1000,
     addOnNextPlakRowId: 1000,
     addOnNextColumnId: 1000,
+    addOnVisibleBlocksByCategory: {},
   };
 }
 
@@ -343,7 +348,7 @@ export function AppStateProvider({ children }) {
   }, []);
 
   const resetCurrentCategory = useCallback((catKey) => {
-    patch((st) => resetCategoryFields(catKey, st));
+    patch((st) => resetCategoryFields(catKey, st, 'visibleBlocksByCategory'));
   }, [patch]);
 
   // Wipes the New Order draft (Function Details + Order Details + cart)
@@ -357,9 +362,9 @@ export function AppStateProvider({ children }) {
       logoDataUrl: null, logoFileName: '', logoRemark: '', schoolType: null, stepError: '',
 
       category: 'MP1',
-      lineValues: {}, matrixValues: buildInitialMatrixValues(),
+      lineValues: {}, matrixValues: {},
       rowsByBlock: buildInitialRowsByBlock(st.schoolLanguage), columnsByBlock: buildInitialColumnsByBlock(), plakRows: buildInitialPlakRows(),
-      nextRowId: 1000, nextPlakRowId: 1000, nextColumnId: 1000,
+      nextRowId: 1000, nextPlakRowId: 1000, nextColumnId: 1000, visibleBlocksByCategory: {},
 
       cart: [], cartToast: '',
     }));
@@ -374,11 +379,12 @@ export function AppStateProvider({ children }) {
       // Catches the two ways a category can be left half-finished — a
       // reference line (or the qty table / Jenis Plak) forgotten — before
       // it's silently either dropped or added without the info Production
-      // needs. Only fires once the teacher has actually touched this
-      // category (any line typed, any qty entered, or a Jenis Plak
-      // chosen); an untouched category is just skipped, same as before.
-      const blk = blocks[0];
-      if (blk) {
+      // needs. Checked across every block (OTHERS can have up to 6, one per
+      // Tahun — see catalog.js's blocksCount), but only fires once a given
+      // block has actually been touched (any line typed, any qty entered, or
+      // a Jenis Plak chosen); an untouched block (every category but OTHERS
+      // only ever has one) is just skipped, same as before.
+      for (const blk of blocks) {
         const lineHasValue = (line) => Boolean(String(line.value).trim())
           || (line.secondLine && Boolean(String(line.secondLine.value).trim()));
         // Line 1 (the event name) is always required; a category can mark
@@ -390,46 +396,39 @@ export function AppStateProvider({ children }) {
         const hasQty = blk.blockTotalQty > 0;
         const hasJenisPlak = blk.plakRows.some((pr) => pr.jenisPlak);
         const engaged = hasQty || hasJenisPlak || blk.lines.some(lineHasValue);
-        if (engaged) {
-          const incompleteLine = blk.lines.find((line) => !lineIsComplete(line));
-          if (incompleteLine) {
-            return { ...st, cartToast: `Please fill in line ${incompleteLine.num} for ${blk.qtyLabel} before adding to cart.` };
+        if (!engaged) continue;
+        const incompleteLine = blk.lines.find((line) => !lineIsComplete(line));
+        if (incompleteLine) {
+          return { ...st, cartToast: `Please fill in line ${incompleteLine.num} for ${blk.qtyLabel} before adding to cart.` };
+        }
+        if (!hasQty) {
+          return { ...st, cartToast: `Please enter a quantity for ${blk.qtyLabel} before adding to cart.` };
+        }
+        if (!hasJenisPlak) {
+          return { ...st, cartToast: `Please choose a Jenis Plak for ${blk.qtyLabel} before adding to cart.` };
+        }
+        // A Tahun range spanning N years needs at least N medals per
+        // subject (one per year) — a qty below that would silently lose
+        // years when exportCsv.js splits it back out per-year.
+        if (isDynamicMatrix) {
+          const shortRow = blk.matrixRows.find((row) => row.cells.some((cell) => {
+            const qty = Number(cell.value) || 0;
+            return qty > 0 && qty < row.minQty;
+          }));
+          if (shortRow) {
+            const rangeLabel = shortRow.tahunTo && shortRow.tahunTo !== shortRow.tahunFrom
+              ? `${shortRow.tahunFrom} – ${shortRow.tahunTo}` : shortRow.tahunFrom;
+            return { ...st, cartToast: `${rangeLabel} ${shortRow.namaKelas} covers ${shortRow.minQty} year(s) — enter at least ${shortRow.minQty} for any subject you fill in.` };
           }
-          if (!hasQty) {
-            return { ...st, cartToast: `Please enter a quantity for ${blk.qtyLabel} before adding to cart.` };
-          }
-          if (!hasJenisPlak) {
-            return { ...st, cartToast: `Please choose a Jenis Plak for ${blk.qtyLabel} before adding to cart.` };
-          }
-          // A Tahun range spanning N years needs at least N medals per
-          // subject (one per year) — a qty below that would silently lose
-          // years when exportCsv.js splits it back out per-year.
-          if (isDynamicMatrix) {
-            const shortRow = blk.matrixRows.find((row) => row.cells.some((cell) => {
-              const qty = Number(cell.value) || 0;
-              return qty > 0 && qty < row.minQty;
-            }));
-            if (shortRow) {
-              const rangeLabel = shortRow.tahunTo && shortRow.tahunTo !== shortRow.tahunFrom
-                ? `${shortRow.tahunFrom} – ${shortRow.tahunTo}` : shortRow.tahunFrom;
-              return { ...st, cartToast: `${rangeLabel} ${shortRow.namaKelas} covers ${shortRow.minQty} year(s) — enter at least ${shortRow.minQty} for any subject you fill in.` };
-            }
-          }
-          // Same idea as PBD's per-row check above, but OTHERS' Tahun range
-          // lives on the COLUMN axis (see catalog.js's `freeColumns`) — a
-          // teacher-typed range like "1-6" needs at least that many per
-          // subject, checked across every row (subject) sharing that column.
-          if (isMatrix && blk.freeColumns) {
-            let shortColIdx = -1;
-            blk.matrixRows.forEach((row) => {
-              row.cells.forEach((cell, ci) => {
-                if (shortColIdx === -1 && Number(cell.value) > 0 && Number(cell.value) < cell.minQty) shortColIdx = ci;
-              });
-            });
-            if (shortColIdx !== -1) {
-              const col = blk.columns[shortColIdx];
-              return { ...st, cartToast: `${col.label || 'Column'} covers ${col.minQty} year(s) — enter at least ${col.minQty} for any subject you fill in.` };
-            }
+        }
+        // OTHERS (`hasNamaKelasList`): each Description row's QTY is meant to
+        // equal how many Nama Kelas are filled in (one plaque per class) —
+        // a mismatch usually means the teacher forgot to update one side
+        // after editing the other.
+        if (blk.hasNamaKelasList) {
+          const mismatchRow = blk.rows.find((row) => row.qtyMismatch);
+          if (mismatchRow) {
+            return { ...st, cartToast: `${mismatchRow.desc || 'Description'} has QTY ${mismatchRow.qty}, but ${blk.namaKelasCount} Nama Kelas filled in for ${blk.qtyLabel}${blk.tahun?.value ? ` (Tahun ${blk.tahun.value})` : ''} — please make them match.` };
           }
         }
       }
@@ -452,7 +451,7 @@ export function AppStateProvider({ children }) {
       // must never wipe out what the teacher already typed.
       return {
         ...st, cart: [...st.cart, ...newItems], cartToast: `Added ${newItems.length} item(s) to cart.`,
-        ...resetCategoryFields(st.category, st),
+        ...resetCategoryFields(st.category, st, 'visibleBlocksByCategory'),
       };
     });
     clearTimeout(toastTimer.current);
@@ -579,9 +578,9 @@ export function AppStateProvider({ children }) {
   const openAddOn = useCallback((ord) => {
     patch((st) => ({
       addOnOrderId: ord.id, addOnCategory: 'MP1',
-      addOnLineValues: {}, addOnMatrixValues: buildInitialMatrixValues(),
+      addOnLineValues: {}, addOnMatrixValues: {},
       addOnRowsByBlock: buildInitialRowsByBlock(st.schoolLanguage), addOnColumnsByBlock: buildInitialColumnsByBlock(), addOnPlakRows: buildInitialPlakRows(),
-      addOnNextRowId: 1000, addOnNextPlakRowId: 1000, addOnNextColumnId: 1000,
+      addOnNextRowId: 1000, addOnNextPlakRowId: 1000, addOnNextColumnId: 1000, addOnVisibleBlocksByCategory: {},
     }));
   }, [patch]);
 

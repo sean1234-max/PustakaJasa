@@ -12,6 +12,7 @@ const DRAFT_FIELDS = {
   lineValues: 'lineValues', matrixValues: 'matrixValues', rowsByBlock: 'rowsByBlock', plakRows: 'plakRows',
   nextRowId: 'nextRowId', nextPlakRowId: 'nextPlakRowId',
   columnsByBlock: 'columnsByBlock', nextColumnId: 'nextColumnId',
+  visibleBlocksByCategory: 'visibleBlocksByCategory',
 };
 
 const EDITABLE = { lines: true, rowDesc: true, rowQty: true, addRemoveRows: true, matrix: true, jenisPlak: true };
@@ -22,9 +23,15 @@ export default function NewOrderStep2() {
 
   const updaters = useMemo(() => createDraftUpdaters(patch, DRAFT_FIELDS), [patch]);
 
-  const { blocks } = useMemo(() => computeBlocks(
+  const { blocks: allBlocks } = useMemo(() => computeBlocks(
     state.category, state.lineValues, state.matrixValues, state.rowsByBlock, state.plakRows, state.columnsByBlock, updaters, state.plakCatalog, state.schoolLanguage,
   ), [state.category, state.lineValues, state.matrixValues, state.rowsByBlock, state.plakRows, state.columnsByBlock, updaters, state.plakCatalog, state.schoolLanguage]);
+
+  // Only OTHERS (see catalog.js's blocksCount: 6, one per Tahun) ever
+  // computes more than one block — the rest stay revealed until the
+  // teacher clicks "Duplicate" (see draftUpdaters.js's onDuplicateBlock).
+  const visibleCount = state.visibleBlocksByCategory[state.category] || 1;
+  const blocks = allBlocks.slice(0, visibleCount);
 
   // Codes Production has hidden (e.g. out of stock) never appear in the
   // teacher's picker — see filterHiddenPlakCatalog.
@@ -55,13 +62,14 @@ export default function NewOrderStep2() {
           <CategoryTabs categories={CATEGORIES} active={state.category} onSelect={(key) => patch({ category: key })} />
         </div>
 
-        {blocks.map((blk) => (
+        {blocks.map((blk, i) => (
           <OrderCategoryBlock
             key={blk.idx}
             blk={blk}
             editable={EDITABLE}
             plakOptions={visiblePlakCatalog}
             refImageUrl={state.refImages?.[blk.sampleSlotId]}
+            isLastBlock={i === blocks.length - 1}
           />
         ))}
 

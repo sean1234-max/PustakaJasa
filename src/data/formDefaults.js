@@ -1,13 +1,18 @@
-import {
-  CATEGORIES, getCategorySubjects, customMatrixColumnTahunKey, customMatrixLabelKey,
-} from './catalog';
+import { CATEGORIES, getCategorySubjects } from './catalog';
 
 export function buildInitialRowsByBlock(schoolLanguage = 'SK') {
   const out = {};
   let id = 1;
   CATEGORIES.filter((c) => c.mode === 'list').forEach((cat) => {
     for (let b = 0; b < (cat.blocksCount || 1); b++) {
-      out[`${cat.key}::${b}`] = cat.rows.map((label) => ({ id: id++, desc: label, qty: '' }));
+      // TOKOH/LONJAKAN seed a fixed preset list; OTHERS has no fixed rows
+      // (`rows` is omitted in catalog.js) — it's the catch-all category, so
+      // the teacher types every Description themselves via "+ Add
+      // Description", starting from one blank row instead of an irrelevant
+      // preset to delete around.
+      out[`${cat.key}::${b}`] = cat.rows && cat.rows.length > 0
+        ? cat.rows.map((label) => ({ id: id++, desc: label, qty: '' }))
+        : [{ id: id++, desc: '', qty: '', custom: true }];
     }
   });
   // dynamicMatrix categories (PBD): seed each block with the fixed default
@@ -22,11 +27,11 @@ export function buildInitialRowsByBlock(schoolLanguage = 'SK') {
   return out;
 }
 
-// Column definitions (Tahun range + Nama Kelas) for dynamicMatrix
-// categories — each block starts with one blank column, same as a fresh
-// +Add Kelas. tahunFrom/tahunTo let one row cover several year levels at
-// once (e.g. TAHUN 3 - TAHUN 6) sharing the same Nama Kelas and subject
-// quantities, split back out per-year on export — see exportCsv.js.
+// Column definitions for dynamicMatrix categories (Tahun range + Nama
+// Kelas — PBD/ALIRAN) and for `hasNamaKelasList` list categories (a
+// simpler {id, name} shape — OTHERS, see catalog.js/computeBlocks.js).
+// Either way each block starts with one blank entry, same as a fresh
+// "+ Add Tahun"/"+ Add Nama Kelas".
 export function buildInitialColumnsByBlock() {
   const out = {};
   let id = 1;
@@ -35,30 +40,10 @@ export function buildInitialColumnsByBlock() {
       out[`${cat.key}::${b}`] = [{ id: id++, tahunFrom: '', tahunTo: '', namaKelas: '' }];
     }
   });
-  return out;
-}
-
-// `freeColumns` matrix categories (OTHERS) keep their columns in the flat
-// matrixValues store, not columnsByBlock (see catalog.js/computeBlocks.js),
-// so their "start with one blank column" seed lives here instead — one
-// blank Tahun key (existence marker, same as a fresh "+ Add Tahun") per
-// category, so a teacher opening the tab for the first time already has a
-// column ready to fill instead of an empty table.
-export function buildInitialMatrixValues() {
-  const out = {};
-  let id = 1;
-  CATEGORIES.filter((c) => c.mode === 'matrix' && c.freeColumns).forEach((cat) => {
-    out[customMatrixColumnTahunKey(cat.key, id)] = '';
-    id += 1;
-  });
-  // A matrix category with no fixed subjects (OTHERS — see catalog.js)
-  // would otherwise render a completely empty quantity table with no
-  // obvious way in; seed one blank custom row (the same marker "+ Add
-  // Row" itself writes) so there's already a row ready to fill, same as
-  // the one blank column above.
-  CATEGORIES.filter((c) => c.mode === 'matrix' && getCategorySubjects(c, 'SK').length === 0).forEach((cat) => {
-    out[customMatrixLabelKey(cat.key, id)] = '';
-    id += 1;
+  CATEGORIES.filter((c) => c.mode === 'list' && c.hasNamaKelasList).forEach((cat) => {
+    for (let b = 0; b < (cat.blocksCount || 1); b++) {
+      out[`${cat.key}::${b}`] = [{ id: id++, name: '' }];
+    }
   });
   return out;
 }

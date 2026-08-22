@@ -12,6 +12,7 @@ const DRAFT_FIELDS = {
   lineValues: 'addOnLineValues', matrixValues: 'addOnMatrixValues', rowsByBlock: 'addOnRowsByBlock', plakRows: 'addOnPlakRows',
   nextRowId: 'addOnNextRowId', nextPlakRowId: 'addOnNextPlakRowId',
   columnsByBlock: 'addOnColumnsByBlock', nextColumnId: 'addOnNextColumnId',
+  visibleBlocksByCategory: 'addOnVisibleBlocksByCategory',
 };
 
 const EDITABLE = { lines: true, rowDesc: true, rowQty: true, addRemoveRows: true, matrix: true, jenisPlak: true };
@@ -23,9 +24,12 @@ export default function AddOn() {
 
   const updaters = useMemo(() => createDraftUpdaters(patch, DRAFT_FIELDS), [patch]);
 
-  const { blocks } = useMemo(() => computeBlocks(
+  const { blocks: allBlocks } = useMemo(() => computeBlocks(
     state.addOnCategory, state.addOnLineValues, state.addOnMatrixValues, state.addOnRowsByBlock, state.addOnPlakRows, state.addOnColumnsByBlock, updaters, state.plakCatalog, state.schoolLanguage,
   ), [state.addOnCategory, state.addOnLineValues, state.addOnMatrixValues, state.addOnRowsByBlock, state.addOnPlakRows, state.addOnColumnsByBlock, updaters, state.plakCatalog, state.schoolLanguage]);
+
+  const visibleCount = state.addOnVisibleBlocksByCategory[state.addOnCategory] || 1;
+  const blocks = allBlocks.slice(0, visibleCount);
 
   const visiblePlakCatalog = useMemo(() => filterHiddenPlakCatalog(state.plakCatalog), [state.plakCatalog]);
 
@@ -43,8 +47,8 @@ export default function AddOn() {
           <CategoryTabs categories={CATEGORIES} active={state.addOnCategory} onSelect={(key) => patch({ addOnCategory: key })} />
         </div>
 
-        {blocks.map((blk) => (
-          <OrderCategoryBlock key={blk.idx} blk={blk} editable={EDITABLE} plakOptions={visiblePlakCatalog} refImageUrl={state.refImages?.[blk.sampleSlotId]} />
+        {blocks.map((blk, i) => (
+          <OrderCategoryBlock key={blk.idx} blk={blk} editable={EDITABLE} plakOptions={visiblePlakCatalog} refImageUrl={state.refImages?.[blk.sampleSlotId]} isLastBlock={i === blocks.length - 1} />
         ))}
 
         <div className="row-split" style={{ marginTop: 'var(--space-6)' }}>

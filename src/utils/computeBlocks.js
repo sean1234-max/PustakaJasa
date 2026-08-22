@@ -1,8 +1,6 @@
 import {
   CATEGORIES, flattenPlakCatalog, getCategorySubjects, getCategoryColumns, tahunRangeYears,
-  getCustomMatrixRowIds, customMatrixLabelKey,
-  getCustomMatrixColumnIds, customMatrixColumnTahunKey, customMatrixColumnNamaKelasKey,
-  parseTahunRangeText, matrixCellKey,
+  getCustomMatrixRowIds, customMatrixLabelKey, matrixCellKey,
 } from '../data/catalog';
 
 export function snapshotDetail(catKey, blockIdx, isMatrix, isDynamicMatrix, lineValues, matrixValues, rowsByBlockMap, columnsByBlockMap) {
@@ -26,6 +24,13 @@ export function snapshotDetail(catKey, blockIdx, isMatrix, isDynamicMatrix, line
     Object.keys(matrixValues).forEach((k) => { if (k.startsWith(matPrefix)) detail.matrix[k] = matrixValues[k]; });
   } else {
     detail.rows = JSON.parse(JSON.stringify(rowsByBlockMap[`${catKey}::${blockIdx}`] || []));
+    // list-mode categories with a Nama Kelas list (OTHERS' hasNamaKelasList)
+    // also need their columnsByBlock snapshotted — same storage slot
+    // dynamicMatrix uses for Tahun+Nama Kelas, just holding {id, name}
+    // objects here instead. Left null (as before) for TOKOH/LONJAKAN, which
+    // never write anything into columnsByBlock under their own key.
+    const colsForBlock = columnsByBlockMap && columnsByBlockMap[`${catKey}::${blockIdx}`];
+    if (colsForBlock) detail.columns = JSON.parse(JSON.stringify(colsForBlock));
   }
   return detail;
 }
@@ -78,37 +83,14 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
     });
 
     let matrixRows = [], columns = [], colTotals = [], grandTotal = 0, rows = [], blockTotalQty = 0;
+    let namaKelasRows = [], namaKelasCount = 0, tahunField = null;
 
     if (isMatrix) {
-      // Columns are the fixed catalog list (MP THP 1/2's class levels) plus,
-      // for a `freeColumns` category (OTHERS), any teacher-added columns on
-      // top — same idea as the custom-ROW mechanism below, mirrored onto the
-      // column axis (see getCustomMatrixColumnIds in catalog.js). Every
-      // column carries its own `colKey` (its own text for a fixed column,
-      // `col-<id>` for a custom one) so cell keys build the same way
-      // (matrixCellKey) regardless of which axis, or both, are custom.
-      const fixedColumns = getCategoryColumns(currentCat, schoolLanguage).map((col) => ({ colKey: col, label: col, custom: false, minQty: 1 }));
-      // Each custom column is a Tahun (free-text range, e.g. "1-6" — see
-      // parseTahunRangeText) + Nama Kelas pair, same idea as PBD/ALIRAN's
-      // Dari/Hingga + Nama Kelas rows but on the column axis and typed as
-      // one range instead of two dropdowns. `minQty`: a range covering N
-      // years needs at least N per subject (one per year) — same
-      // enforcement PBD's rows already get, just keyed by column here.
-      const customColumns = currentCat.freeColumns ? getCustomMatrixColumnIds(catKey, matrixValues).map((colId) => {
-        const tahunKey = customMatrixColumnTahunKey(catKey, colId);
-        const namaKelasKey = customMatrixColumnNamaKelasKey(catKey, colId);
-        const tahun = matrixValues[tahunKey] || '';
-        const namaKelas = matrixValues[namaKelasKey] || '';
-        const label = [tahun, namaKelas].filter(Boolean).join(' ');
-        return {
-          colKey: `col-${colId}`, id: colId, label, custom: true,
-          tahun, namaKelas, minQty: Math.max(1, parseTahunRangeText(tahun).length),
-          setTahun: (v) => updaters.onMatrix(tahunKey, v),
-          setNamaKelas: (v) => updaters.onMatrix(namaKelasKey, v),
-          remove: () => updaters.onMatrixColumnRemove(catKey, colId),
-        };
-      }) : [];
-      columns = [...fixedColumns, ...customColumns];
+      // Columns are the fixed catalog list (MP THP 1/2's class levels) —
+      // OTHERS used to add teacher-defined columns here too but has since
+      // moved to `list` mode (see the final branch below), so every isMatrix
+      // category left has fixed columns only.
+      columns = getCategoryColumns(currentCat, schoolLanguage).map((col) => ({ colKey: col, label: col, custom: false, minQty: 1 }));
       colTotals = columns.map(() => 0);
 
       const buildMatrixRow = (rowKey, subject, custom, rowId) => {
@@ -187,8 +169,32 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
     } else {
       const rowsKey = `${catKey}::${b}`;
       const rawRows = rowsByBlockMap[rowsKey] || [];
+      // `hasNamaKelasList` categories (OTHERS) keep a second, qty-less list
+      // of class names alongside the Description/QTY rows — reusing
+      // dynamicMatrix's columnsByBlock storage slot, just with a simpler
+      // {id, name} shape — plus one TAHUN value for the whole block
+      // (`hasTahunField`, stored as a synthetic `${catKey}::${b}::tahun`
+      // line key so snapshotDetail's generic line-copying picks it up for
+      // free). Each Description row's QTY is meant to equal how many Nama
+      // Kelas are filled in (one plaque per class) — `qtyMismatch` flags a
+      // row whose QTY disagrees, for OrderCategoryBlock's red-bold warning
+      // and AppState.jsx's addToCart guard.
+      if (currentCat.hasNamaKelasList) {
+        const rawNamaKelas = (columnsByBlockMap && columnsByBlockMap[rowsKey]) || [];
+        namaKelasCount = rawNamaKelas.filter((nk) => (nk.name || '').trim()).length;
+        namaKelasRows = rawNamaKelas.map((nk) => ({
+          id: nk.id, name: nk.name,
+          setName: (v) => updaters.onColumnField(rowsKey, nk.id, 'name', v),
+          remove: () => updaters.onColumnRemove(rowsKey, nk.id),
+        }));
+      }
+      if (currentCat.hasTahunField) {
+        const tahunKey = `${catKey}::${b}::tahun`;
+        tahunField = { value: lineValues[tahunKey] || '', onChange: (v) => updaters.onLine(tahunKey, v) };
+      }
       rows = rawRows.map((row) => ({
         id: row.id, desc: row.desc, qty: row.qty,
+        qtyMismatch: namaKelasCount > 0 && Number(row.qty) > 0 && Number(row.qty) !== namaKelasCount,
         setDesc: (v) => updaters.onRowField(rowsKey, row.id, 'desc', v),
         setQty: (v) => updaters.onRowField(rowsKey, row.id, 'qty', v),
         remove: () => updaters.onRowRemove(rowsKey, row.id),
@@ -222,18 +228,25 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
       qtyLabel: currentCat.label,
       qtyColHeader: isMatrix ? 'QTY' : (currentCat.qtyColumnLabels ? currentCat.qtyColumnLabels[b] : 'QTY'),
       sampleSlotId: `sample-${catKey}-${b}`,
-      lines, isMatrix, isDynamicMatrix, freeColumns: !!currentCat.freeColumns,
-      customColumnTahunPlaceholder: currentCat.customColumnTahunPlaceholder,
-      customColumnNamaKelasPlaceholder: currentCat.customColumnNamaKelasPlaceholder,
+      lines, isMatrix, isDynamicMatrix,
       columns, matrixRows,
       colTotals: colTotals.map((v) => ({ value: v })), grandTotal,
       rows,
+      hasNamaKelasList: !!currentCat.hasNamaKelasList,
+      namaKelasRows, namaKelasCount, tahun: tahunField,
+      namaKelasPlaceholder: currentCat.namaKelasPlaceholder,
+      tahunPlaceholder: currentCat.tahunPlaceholder,
       addRow: () => updaters.onAddRow(`${catKey}::${b}`),
       addColumn: () => updaters.onAddColumn(`${catKey}::${b}`),
       addColumnSameTahun: () => updaters.onAddColumnSameTahun(`${catKey}::${b}`),
+      addNamaKelas: () => updaters.onAddNamaKelas(`${catKey}::${b}`),
       addMatrixRow: () => updaters.onAddMatrixRow(catKey),
-      addMatrixColumn: () => updaters.onAddMatrixColumn(catKey),
-      addMatrixColumnSameTahun: () => updaters.onAddMatrixColumnSameTahun(catKey),
+      // Only the last currently-computed block can offer "Duplicate" (there's
+      // nowhere further to duplicate into once every pre-allocated slot,
+      // e.g. TAHUN 1-6 for OTHERS, is used) — see draftUpdaters.js's
+      // onDuplicateBlock and NewOrderStep2/AddOn's visible-block slicing,
+      // which is what actually reveals block b+1 once this copies into it.
+      duplicateBlock: currentCat.hasNamaKelasList && b < blocksCount - 1 ? () => updaters.onDuplicateBlock(catKey, b) : null,
       blockTotalQty, plakRows,
     });
   }
@@ -245,8 +258,8 @@ export const noopUpdaters = {
   onLine: () => {}, onMatrix: () => {}, onRowField: () => {}, onRowRemove: () => {},
   onAddRow: () => {}, onPlakSelect: () => {},
   onColumnField: () => {}, onColumnRemove: () => {}, onAddColumn: () => {}, onAddColumnSameTahun: () => {},
+  onAddNamaKelas: () => {}, onDuplicateBlock: () => {},
   onAddMatrixRow: () => {}, onMatrixRowRemove: () => {},
-  onAddMatrixColumn: () => {}, onMatrixColumnRemove: () => {}, onAddMatrixColumnSameTahun: () => {},
 };
 
 // Rebuilds read-only `blocks` (the same shape NewOrderStep2 renders live)
@@ -301,11 +314,15 @@ export function reconstructBlocksForCategory(order, catKey, plakCatalog) {
         if (it.detail.rows) {
           if (!rowsByBlock[key]) {
             rowsByBlock[key] = it.detail.rows.map((r) => ({ ...r }));
-          } else if (it.detail.columns) {
-            // dynamicMatrix: subjects have no qty of their own (it lives in
-            // detail.matrix, summed above) — upsert by id so a later
-            // round's edited desc/custom flag wins without duplicating or
-            // dropping subjects only present in one round.
+          } else if (it.detail.matrix) {
+            // dynamicMatrix (detail.matrix present): subjects have no qty of
+            // their own (it lives in detail.matrix, summed above) — upsert
+            // by id so a later round's edited desc/custom flag wins without
+            // duplicating or dropping subjects only present in one round.
+            // (Checked via detail.matrix rather than detail.columns — OTHERS'
+            // hasNamaKelasList rows also carry a detail.columns [Nama Kelas]
+            // but, like TOKOH/LONJAKAN, have no detail.matrix and need the
+            // qty-summing branch below instead.)
             it.detail.rows.forEach((r) => {
               const existing = rowsByBlock[key].find((er) => er.id === r.id);
               if (existing) Object.assign(existing, r);
@@ -335,7 +352,14 @@ export function reconstructBlocksForCategory(order, catKey, plakCatalog) {
     });
     const result = computeBlocks(catKey, lineValues, matrixValues, rowsByBlock, plakRows, columnsByBlock, noopUpdaters, plakCatalog, schoolLanguage);
     isMatrix = result.isMatrix;
-    allBlocks.push(...result.blocks);
+    // computeBlocks always computes every one of the category's
+    // `blocksCount` slots (up to 6 for OTHERS — see catalog.js), not just
+    // this iteration's own `blockIdx`, since the other slots' data (if any)
+    // lives under a different order item entirely — take only the one that
+    // actually matches, or every OTHERS review screen would show up to 6
+    // blocks per real block, most of them blank.
+    const matchedBlock = result.blocks.find((blk) => blk.idx === blockIdx);
+    if (matchedBlock) allBlocks.push(matchedBlock);
   });
 
   return { blocks: allBlocks, isMatrix };
@@ -374,7 +398,12 @@ export function reconstructOrderDetailGroups(order, catKey, plakCatalog) {
     return {
       blockIdx, batch, jenisPlak: item.jenisPlak, items: [item],
       label: batch === 0 ? 'Original Order' : `Tambahan #${batch}`,
-      blk: result.blocks[0],
+      // computeBlocks computes every one of the category's `blocksCount`
+      // slots (up to 6 for OTHERS), not just this item's own blockIdx — pick
+      // the matching one out, same reasoning as reconstructBlocksForCategory
+      // above (was a harmless `blocks[0]` when every category was
+      // single-block; OTHERS no longer is).
+      blk: result.blocks.find((blk) => blk.idx === blockIdx) || result.blocks[0],
       isMatrix: result.isMatrix,
     };
   }).sort((a, b) => (a.batch - b.batch) || (a.blockIdx - b.blockIdx));
