@@ -19,7 +19,11 @@ function toDbOrder(order) {
     pic_name: order.picName ?? null,
     phone: order.phone ?? null,
     ketua_panitia: order.ketuaPanitia ?? null,
-    terms: order.terms ?? null,
+    // `?? null` alone leaves an empty string as-is — orders_terms_check
+    // (0024_add_ketua_panitia_and_terms.sql) rejects '' (only NULL or one of
+    // 'L/O'/'Cheque'/'Cash' passes), so a blank Terms value must normalize
+    // to null here, not just undefined/null.
+    terms: order.terms || null,
     remark: order.remark ?? null,
     due_date: order.dueDate ?? null,
     function_date: order.functionDate ?? null,

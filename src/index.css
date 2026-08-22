@@ -434,6 +434,10 @@ a:hover { color: var(--color-accent-900); text-decoration: underline; }
 .catalog-admin-code { flex: 1; font-size: 13px; }
 .catalog-admin-code-hidden { opacity: 0.4; text-decoration: line-through; }
 .catalog-admin-price { width: 90px; flex: none; padding: 6px 8px; font-size: 13px; }
+.catalog-admin-header-row {
+  font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em;
+  opacity: 0.55; border-bottom: 1px solid var(--color-neutral-300);
+}
 .catalog-admin-actions { display: flex; gap: var(--space-2); flex: none; }
 .catalog-admin-actions .btn, .catalog-admin-add-row .btn { padding: 5px 12px; font-size: 12px; }
 .catalog-admin-add-row { background: var(--color-neutral-100); gap: var(--space-2); }
@@ -536,6 +540,16 @@ a:hover { color: var(--color-accent-900); text-decoration: underline; }
 .plak-menu-item-leaf { cursor: pointer; }
 .plak-menu-item-wrap:hover > .plak-menu-item { background: var(--color-accent-100); }
 .plak-menu-arrow { opacity: 0.5; font-size: 12px; }
+/* Nested-code search results (PlakPicker's deepMatches) — a code typed
+   several levels deep in the tree, shown with its full path since there's
+   no drill-down flyout context to place it in. */
+.plak-menu-deep-matches {
+  border-top: 1px solid var(--color-neutral-300);
+  margin-top: var(--space-1);
+  max-height: 240px;
+  overflow-y: auto;
+}
+.plak-menu-deep-matches .plak-menu-item:hover { background: var(--color-accent-100); }
 .plak-menu-flyout {
   position: absolute;
   top: -5px; left: 100%; z-index: 31;

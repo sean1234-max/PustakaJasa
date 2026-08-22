@@ -103,7 +103,7 @@ export function tahunRangeYears(from, to) {
 // — so a custom row's very existence, and which id backs it, can be read
 // straight off whichever `__label__` keys are present, with no separate
 // list of "active custom rows" to keep in sync.
-const CUSTOM_MATRIX_LABEL_SUFFIX = '::__label__';
+export const CUSTOM_MATRIX_LABEL_SUFFIX = '::__label__';
 function customMatrixPrefix(catKey) {
   return `${catKey}::custom-`;
 }
@@ -128,22 +128,27 @@ export function matrixCellKey(catKey, rowKey, colKey) {
   return `${catKey}::${rowKey}::${colKey}`;
 }
 
+// Shared reference-sample shape for the four matrix-style categories
+// (MP THP 1/2, PBD/ALIRAN TERBAIK) — TAJUK BESAR / YEAR / ACARA (★, red —
+// the position text that actually gets engraved) / a CONTOH-only "( TAHUN
+// ? )" line, same generic-label style OTHERS uses rather than each
+// category's own worked "e.g. ..." example. The old subject/position
+// second box (e.g. "BAHASA MELAYU") is dropped entirely — it was already
+// only ever a CONTOH (the real per-cell/per-column subject always comes
+// from the fixed subject list or the teacher's own PBD columns, see
+// exportCsv.js's buildMatrixRows/buildPbdMatrixRows — the reference-sample
+// text was never read), so losing it doesn't change what exports.
+const STANDARD_REFERENCE_LINES = ['TAJUK BESAR', 'YEAR', 'ACARA', '( TAHUN ? )'];
+
 export const CATEGORIES = [
   {
     key: 'MP1', label: 'MP THP 1', mode: 'matrix', blocksCount: 1,
     columnsByLanguage: { SK: CLASS_LEVELS_MY, SJKC: CLASS_LEVELS_CN },
     subjectsByLanguage: { SK: SUBJECTS_CORE, SJKC: SUBJECTS_CORE_CN },
-    // Line 3 (index 2) is "position" — rendered as two stacked boxes (both
-    // numbered "3") so the teacher doesn't need to know to press Enter to
-    // split it; see OrderCategoryBlock's secondLine rendering. Combined with
-    // a line break when exported.
-    linePlaceholders: [
-      'e.g. HARI ANUGERAH KECEMERLANGAN MURID',
-      'e.g. 2025',
-      'e.g. TERBAIK MATA PELAJARAN',
-      'e.g. TAHUN 1',
-    ],
-    positionLine2Placeholder: 'e.g. BAHASA MELAYU',
+    linePlaceholders: STANDARD_REFERENCE_LINES,
+    requiredLineIndices: [0, 2],
+    positionFieldsRedText: true,
+    draggableReferenceSample: true,
   },
   {
     key: 'MP2', label: 'MP THP 2', mode: 'matrix', blocksCount: 1,
@@ -152,13 +157,10 @@ export const CATEGORIES = [
       SK: [...SUBJECTS_CORE, 'SEJARAH', 'REKA BENTUK & TEKNOLOGI'],
       SJKC: [...SUBJECTS_CORE_CN, '历史', '设计与工艺'],
     },
-    linePlaceholders: [
-      'e.g. HARI ANUGERAH KECEMERLANGAN MURID',
-      'e.g. 2025',
-      'e.g. TERBAIK MATA PELAJARAN',
-      'e.g. TAHUN 4',
-    ],
-    positionLine2Placeholder: 'e.g. MATEMATIK',
+    linePlaceholders: STANDARD_REFERENCE_LINES,
+    requiredLineIndices: [0, 2],
+    positionFieldsRedText: true,
+    draggableReferenceSample: true,
   },
   {
     key: 'PBD', label: 'PBD TERBAIK', mode: 'dynamicMatrix', blocksCount: 1,
@@ -168,22 +170,10 @@ export const CATEGORIES = [
     // Kelas) are entirely teacher-defined per order, unlike MP THP's fixed
     // columnsByLanguage, so PBD TERBAIK has no columnsByLanguage at all.
     subjectsByLanguage: SUBJECTS_PBD,
-    // Line 3's second box is a CONTOH only (like MP THP) — the real value
-    // is each matrix column's own subject, see exportCsv.js buildPbdMatrixRows.
-    // Unlike MP THP's single fixed subject, PBD has up to 13+ subjects per
-    // order, so forcing a teacher to type one example subject name here adds
-    // friction without adding real data — the "(pilihan)" prefix opts this
-    // field out of AppState.jsx's addToCart "engaged" reference-line
-    // requirement (see secondLineRequired there). The year line (index 1)
-    // carries the same "(pilihan)" prefix on its own placeholder so it's
-    // likewise optional (see linePlaceholderOptional in AppState.jsx).
-    linePlaceholders: [
-      'e.g. HARI ANUGERAH KECEMERLANGAN MURID',
-      '(pilihan) e.g. 2025',
-      'e.g. ANUGERAH KECEMERLANGAN PBD',
-      'e.g. TAHUN 1 ADIL',
-    ],
-    positionLine2Placeholder: '(pilihan) e.g. BAHASA MELAYU',
+    linePlaceholders: STANDARD_REFERENCE_LINES,
+    requiredLineIndices: [0, 2],
+    positionFieldsRedText: true,
+    draggableReferenceSample: true,
     qtyColumnLabels: ['KUANTITI'],
   },
   {
@@ -192,43 +182,36 @@ export const CATEGORIES = [
     // "Kuantiti" (count) — used to be the same PBD category's second variant,
     // split into its own tab so there's no variant dropdown to pick between.
     subjectsByLanguage: SUBJECTS_PBD,
-    linePlaceholders: [
-      'e.g. HARI ANUGERAH KECEMERLANGAN MURID',
-      '(pilihan) e.g. 2025',
-      'e.g. ANUGERAH KECEMERLANGAN PBD',
-      'e.g. TAHUN 1 ADIL',
-    ],
-    positionLine2Placeholder: '(pilihan) e.g. BAHASA MELAYU',
+    linePlaceholders: STANDARD_REFERENCE_LINES,
+    requiredLineIndices: [0, 2],
+    positionFieldsRedText: true,
+    draggableReferenceSample: true,
     qtyColumnLabels: ['KEDUDUKAN'],
   },
   {
     key: 'LONJAKAN', label: 'LONJAKAN SAUJANA', mode: 'list', blocksCount: 1,
     rows: ['TAHUN 1', 'TAHUN 2', 'TAHUN 3', 'TAHUN 4', 'TAHUN 5', 'TAHUN 6'],
-    // Line 3 ("LONJAKAN SAUJANA") is fixed/typed, same as PBD's line 3 —
-    // it prefixes the engraved position (see positionPrefixFromLine3 in
-    // exportCsv.js). Line 4 ("TAHUN 1") is a CONTOH only — the real
-    // per-plaque position is each row's own description (TAHUN 1..6),
-    // appended after line 3, see exportCsv.js.
-    linePlaceholders: [
-      'e.g. HARI ANUGERAH LONJAKAN SAUJANA',
-      'e.g. 2026',
-      'e.g. LONJAKAN SAUJANA',
-      'e.g. TAHUN 1',
-    ],
+    // Line 3 used to be fixed/typed text ("LONJAKAN SAUJANA") prefixed
+    // literally onto the engraved position (positionPrefixFromLine3) — now
+    // relabeled "( SUBJEK/POSITION )" in red to match OTHERS' flexible-field
+    // convention, so it's CONTOH-only like TOKOH's own line 3 instead:
+    // positionPrefixFromLine3 is dropped along with it. The real per-plaque
+    // position is still each row's own description (TAHUN 1..6), see
+    // exportCsv.js's buildRowsFromDescriptionRows.
+    linePlaceholders: ['TAJUK BESAR', 'YEAR', '( SUBJEK/POSITION )'],
+    positionFieldsRedText: true,
+    draggableReferenceSample: true,
     positionFromRows: true,
-    positionPrefixFromLine3: true,
   },
   {
     key: 'TOKOH', label: 'TOKOH', mode: 'list', blocksCount: 1,
     rows: ['TOKOH MURID', 'TOKOH NILAM', 'TOKOH KURIKULUM', 'TOKOH KOKURIKULUM', 'TOKOH AKADEMIK'],
-    // No 4th line for TOKOH — "position" (index 2) is its last line, and is
-    // itself only a CONTOH — the real per-plaque position is each row's own
-    // description (TOKOH MURID, TOKOH NILAM, ...), see exportCsv.js.
-    linePlaceholders: [
-      'e.g. HARI ANUGERAH TOKOH',
-      'e.g. 2026',
-      'e.g. TOKOH AKADEMIK',
-    ],
+    // Line 3 is CONTOH-only (red, like OTHERS/LONJAKAN's own flexible
+    // field) — the real per-plaque position is each row's own description
+    // (TOKOH MURID, TOKOH NILAM, ...), see exportCsv.js.
+    linePlaceholders: ['TAJUK BESAR', 'YEAR', '( SUBJEK/POSITION )'],
+    positionFieldsRedText: true,
+    draggableReferenceSample: true,
     positionFromRows: true,
   },
   {
@@ -281,11 +264,14 @@ export const CATEGORIES = [
       SJKC: ['大标题', '年份', '活动', '（年级？）'],
     },
     // Line 1 is always required for every category (computeBlocks.js
-    // defaults to [0]) — OTHERS additionally requires line 3's first box
-    // (index 2), since that's the fixed-wording award text every plaque
-    // needs regardless of category. Drives both the ★ marker in
-    // OrderCategoryBlock and the addToCart validation in AppState.jsx.
-    requiredLineIndices: [0, 2],
+    // defaults to [0]). ACARA (line 3's first box) used to be unconditionally
+    // required too, but some orders have no fixed ACARA wording at all — the
+    // real position text comes entirely from each Kuantiti Description row
+    // instead (see exportCsv.js's buildOthersRows, which already falls back
+    // to just the row's own desc when ACARA is blank) — so ACARA is simply
+    // optional now, same as SUBJEK/POSITION always was; if the teacher
+    // leaves it blank, it's skipped, nothing else is required in its place.
+    requiredLineIndices: [0],
     positionLine2PlaceholderByLanguage: { SK: '( SUBJEK/POSITION )', SJKC: '（科目/位置）' },
     // Line 3's two boxes (ACARA / SUBJEK-POSITION) render in red — a pale
     // tint for the placeholder, solid once the teacher actually types
@@ -302,6 +288,17 @@ export const CATEGORIES = [
     draggableReferenceSample: true,
   },
 ];
+
+// A teacher-typed catch-all pick (PlakPicker.jsx's "OTHER" leaf, committed
+// as "OTHER - <whatever the teacher typed>") is never a real catalog path,
+// so it can't resolve to a plak_catalog_nodes row at all — stock tracking
+// simply doesn't apply to it, same as a code with stockQty left null.
+// Filtered out of every stock deduct/restore payload in catalogAdminApi.js
+// (calling plak_stock_deduct with an unresolvable path raises "Unknown
+// Jenis Plak code" — see supabase/migrations/0032_add_plak_stock.sql).
+export function isCustomPlakCode(code) {
+  return /^OTHERS?\s*-/i.test((code || '').trim());
+}
 
 // The Jenis Plak catalog now lives in Supabase (plak_catalog_nodes —
 // see supabase/migrations/0006_catalog_admin.sql) so Production can add,

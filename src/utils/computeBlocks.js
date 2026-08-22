@@ -1,6 +1,6 @@
 import {
   CATEGORIES, flattenPlakCatalog, getCategorySubjects, getCategoryColumns, tahunRangeYears,
-  getCustomMatrixRowIds, customMatrixLabelKey, matrixCellKey,
+  getCustomMatrixRowIds, customMatrixLabelKey, matrixCellKey, CUSTOM_MATRIX_LABEL_SUFFIX,
   getCategoryLinePlaceholders, getCategoryPositionLine2Placeholder,
   getCategoryTahunPlaceholder, getCategoryNamaKelasPlaceholder,
 } from '../data/catalog';
@@ -77,8 +77,9 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
     const refOrderKey = `${catKey}::${b}::refOrder`;
     const rawLines = catLinePlaceholders.map((placeholder, i) => {
       const key = `${catKey}::${b}::${i}`;
+      const slotId = `${i}`;
       const line = {
-        key, slotId: `${i}`, placeholder, value: lineValues[key] || '',
+        key, slotId, placeholder, value: lineValues[key] || '',
         required: requiredLineIndices.includes(i),
         // Line 3's own text renders red on some categories (OTHERS — see
         // catalog.js's positionFieldsRedText) since it's the position text
@@ -353,6 +354,61 @@ export const noopUpdaters = {
 // this also covers the (fairly narrow) case where two rounds coincidentally
 // reuse the same generated ids, since both New Order and Add On seed the
 // same 13 default PBD subjects with the same deterministic ids.
+// Merges one order item's `detail` snapshot into the accumulating
+// lineValues/matrixValues/rowsByBlock/columnsByBlock maps for its own
+// block key — shared by reconstructBlocksForCategory (read-only review)
+// and buildDraftFromOrder (the "Reorder" button's draft rebuild, see
+// AppState.jsx), so the two never drift apart on how multiple items
+// sharing one block get combined. See reconstructBlocksForCategory's own
+// comment below for why upsert-by-id vs sum-by-desc is chosen per detail
+// shape.
+function mergeItemDetailIntoMaps(it, key, lineValues, matrixValues, rowsByBlock, columnsByBlock) {
+  if (!it.detail) return;
+  Object.assign(lineValues, it.detail.lines || {});
+  if (it.detail.matrix) {
+    Object.keys(it.detail.matrix).forEach((k) => {
+      // A custom matrix row's own `__label__` key holds the teacher-typed
+      // subject text, not a quantity — numeric-summing it (like every real
+      // cell key below) silently corrupted it to 0 the moment two rounds
+      // shared a block, or even on a single round once read back. Same
+      // text every round writes it as, so the latest copy simply wins.
+      if (k.endsWith(CUSTOM_MATRIX_LABEL_SUFFIX)) {
+        matrixValues[k] = it.detail.matrix[k];
+      } else {
+        matrixValues[k] = (Number(matrixValues[k]) || 0) + (Number(it.detail.matrix[k]) || 0);
+      }
+    });
+  }
+  if (it.detail.rows) {
+    if (!rowsByBlock[key]) {
+      rowsByBlock[key] = it.detail.rows.map((r) => ({ ...r }));
+    } else if (it.detail.matrix) {
+      it.detail.rows.forEach((r) => {
+        const existing = rowsByBlock[key].find((er) => er.id === r.id);
+        if (existing) Object.assign(existing, r);
+        else rowsByBlock[key].push({ ...r });
+      });
+    } else {
+      it.detail.rows.forEach((r) => {
+        const existing = rowsByBlock[key].find((er) => er.desc === r.desc);
+        if (existing) existing.qty = (Number(existing.qty) || 0) + (Number(r.qty) || 0);
+        else rowsByBlock[key].push({ ...r });
+      });
+    }
+  }
+  if (it.detail.columns) {
+    if (!columnsByBlock[key]) {
+      columnsByBlock[key] = it.detail.columns.map((c) => ({ ...c }));
+    } else {
+      it.detail.columns.forEach((c) => {
+        const existing = columnsByBlock[key].find((ec) => ec.id === c.id);
+        if (existing) Object.assign(existing, c);
+        else columnsByBlock[key].push({ ...c });
+      });
+    }
+  }
+}
+
 export function reconstructBlocksForCategory(order, catKey, plakCatalog) {
   const schoolLanguage = order.schoolLanguage === 'SJKC' ? 'SJKC' : 'SK';
   const items = (order.items || []).filter((it) => it.categoryKey === catKey);
@@ -368,51 +424,15 @@ export function reconstructBlocksForCategory(order, catKey, plakCatalog) {
     const columnsByBlock = {};
     const plakRows = {};
     const key = `${catKey}::${blockIdx}`;
+    // dynamicMatrix (detail.matrix present): subjects have no qty of their
+    // own (it lives in detail.matrix, summed inside the shared helper) —
+    // upserted by id so a later round's edited desc/custom flag wins
+    // without duplicating or dropping subjects only present in one round.
+    // Every other list-mode category (including OTHERS' hasNamaKelasList,
+    // which also carries detail.columns but no detail.matrix) sums rows by
+    // desc instead — see mergeItemDetailIntoMaps above.
     blockItems.forEach((it) => {
-      if (it.detail) {
-        Object.assign(lineValues, it.detail.lines || {});
-        if (it.detail.matrix) {
-          Object.keys(it.detail.matrix).forEach((k) => {
-            matrixValues[k] = (Number(matrixValues[k]) || 0) + (Number(it.detail.matrix[k]) || 0);
-          });
-        }
-        if (it.detail.rows) {
-          if (!rowsByBlock[key]) {
-            rowsByBlock[key] = it.detail.rows.map((r) => ({ ...r }));
-          } else if (it.detail.matrix) {
-            // dynamicMatrix (detail.matrix present): subjects have no qty of
-            // their own (it lives in detail.matrix, summed above) — upsert
-            // by id so a later round's edited desc/custom flag wins without
-            // duplicating or dropping subjects only present in one round.
-            // (Checked via detail.matrix rather than detail.columns — OTHERS'
-            // hasNamaKelasList rows also carry a detail.columns [Nama Kelas]
-            // but, like TOKOH/LONJAKAN, have no detail.matrix and need the
-            // qty-summing branch below instead.)
-            it.detail.rows.forEach((r) => {
-              const existing = rowsByBlock[key].find((er) => er.id === r.id);
-              if (existing) Object.assign(existing, r);
-              else rowsByBlock[key].push({ ...r });
-            });
-          } else {
-            it.detail.rows.forEach((r) => {
-              const existing = rowsByBlock[key].find((er) => er.desc === r.desc);
-              if (existing) existing.qty = (Number(existing.qty) || 0) + (Number(r.qty) || 0);
-              else rowsByBlock[key].push({ ...r });
-            });
-          }
-        }
-        if (it.detail.columns) {
-          if (!columnsByBlock[key]) {
-            columnsByBlock[key] = it.detail.columns.map((c) => ({ ...c }));
-          } else {
-            it.detail.columns.forEach((c) => {
-              const existing = columnsByBlock[key].find((ec) => ec.id === c.id);
-              if (existing) Object.assign(existing, c);
-              else columnsByBlock[key].push({ ...c });
-            });
-          }
-        }
-      }
+      mergeItemDetailIntoMaps(it, key, lineValues, matrixValues, rowsByBlock, columnsByBlock);
       plakRows[key] = [...(plakRows[key] || []), { id: it.id, jenisPlak: it.jenisPlak, unitPrice: it.unitPrice }];
     });
     const result = computeBlocks(catKey, lineValues, matrixValues, rowsByBlock, plakRows, columnsByBlock, noopUpdaters, plakCatalog, schoolLanguage);
@@ -428,6 +448,78 @@ export function reconstructBlocksForCategory(order, catKey, plakCatalog) {
   });
 
   return { blocks: allBlocks, isMatrix };
+}
+
+// Rebuilds a fresh New Order draft from an already-submitted order's
+// `items` — backs the "Reorder" button (Dashboard.jsx/AppState.jsx's
+// reorderOrder) for a teacher placing essentially the same order again
+// (a new school year, a repeat function) with a few edits. The order's
+// own `snapshot` field looked like it would do this, but it's captured
+// from the live draft at Submit time — and addToCart always resets that
+// category's fields back to blank the moment it's added (see
+// AppState.jsx's resetCategoryFields), so by Submit the snapshot is
+// whatever was left over, not what was actually ordered. Reading straight
+// from `items` (the same reliable source reconstructBlocksForCategory
+// already uses for read-only review) restores every category actually in
+// the order, not just whichever tab happened to be open.
+//
+// Every category in the order gets its own lineValues/rowsByBlock/etc
+// merged in (same per-block merge as reconstructBlocksForCategory, via
+// mergeItemDetailIntoMaps), plus visibleBlocksByCategory so a
+// hasNamaKelasList category's duplicated blocks (OTHERS' extra Tahun
+// parts) come back revealed instead of collapsed to just the first one.
+// next*Id counters are pushed past every restored row/column id so a
+// freshly-added row in the new draft can never collide with a restored
+// one's id.
+export function buildDraftFromOrder(order) {
+  const categories = CATEGORIES.filter((cat) => (order.items || []).some((it) => it.categoryKey === cat.key));
+  const lineValues = {};
+  const matrixValues = {};
+  const rowsByBlock = {};
+  const columnsByBlock = {};
+  const plakRows = {};
+  const visibleBlocksByCategory = {};
+  let maxId = 999;
+
+  const trackMaxId = (list) => {
+    (list || []).forEach((item) => {
+      const n = Number(item.id);
+      if (Number.isFinite(n)) maxId = Math.max(maxId, n);
+    });
+  };
+
+  categories.forEach((cat) => {
+    const items = (order.items || []).filter((it) => it.categoryKey === cat.key);
+    const blockIdxs = [...new Set(items.map((it) => it.blockIdx ?? 0))];
+    let maxBlockIdx = 0;
+    blockIdxs.forEach((blockIdx) => {
+      maxBlockIdx = Math.max(maxBlockIdx, blockIdx);
+      const key = `${cat.key}::${blockIdx}`;
+      const blockItems = items.filter((it) => (it.blockIdx ?? 0) === blockIdx);
+      blockItems.forEach((it) => {
+        mergeItemDetailIntoMaps(it, key, lineValues, matrixValues, rowsByBlock, columnsByBlock);
+      });
+      plakRows[key] = blockItems.map((it) => ({ id: it.id, jenisPlak: it.jenisPlak }));
+      trackMaxId(rowsByBlock[key]);
+      trackMaxId(columnsByBlock[key]);
+    });
+    visibleBlocksByCategory[cat.key] = Math.min(cat.blocksCount || 1, maxBlockIdx + 1);
+    // A matrix category's teacher-added rows (MP THP's "+ Add Row") live
+    // as a synthetic `custom-<id>` id embedded in matrixValues' own keys,
+    // not in rowsByBlock/columnsByBlock — trackMaxId alone would miss
+    // them, letting a freshly-added row reuse (and silently merge into)
+    // a restored custom row's id.
+    getCustomMatrixRowIds(cat.key, matrixValues).forEach((rowId) => {
+      const n = Number(rowId);
+      if (Number.isFinite(n)) maxId = Math.max(maxId, n);
+    });
+  });
+
+  return {
+    category: categories[0]?.key || null,
+    lineValues, matrixValues, rowsByBlock, columnsByBlock, plakRows, visibleBlocksByCategory,
+    nextId: maxId + 1,
+  };
 }
 
 // Same idea as reconstructBlocksForCategory, but for Production

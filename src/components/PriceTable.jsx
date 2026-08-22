@@ -66,11 +66,17 @@ export default function PriceTable({
                             onChange={(e) => setPrice(it.ids, e.target.value)}
                           />
                         ) : (
-                          <span className={adjusted ? 'amount-adjusted' : undefined}>RM {it.unitPrice.toFixed(2)}</span>
+                          <span className={adjusted ? 'amount-adjusted' : undefined}>
+                            {it.unitPrice != null ? `RM ${it.unitPrice.toFixed(2)}` : '—'}
+                          </span>
                         )}
                       </td>
                       <td>{it.qty}</td>
-                      <td><strong className={adjusted ? 'amount-adjusted' : undefined}>RM {it.harga.toFixed(2)}</strong></td>
+                      <td>
+                        <strong className={adjusted ? 'amount-adjusted' : undefined}>
+                          {it.unitPrice != null ? `RM ${it.harga.toFixed(2)}` : '—'}
+                        </strong>
+                      </td>
                     </tr>
                   );
                 })}

@@ -1,7 +1,9 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { CATEGORIES, formatDate, standardUnitPrice, getCategorySubjects } from '../data/catalog';
 import { buildInitialRowsByBlock, buildInitialColumnsByBlock, buildInitialPlakRows } from '../data/formDefaults';
-import { computeBlocks, snapshotDetail, noopUpdaters } from '../utils/computeBlocks';
+import {
+  computeBlocks, snapshotDetail, noopUpdaters, buildDraftFromOrder,
+} from '../utils/computeBlocks';
 import { AppStateContext } from './AppStateContext';
 import {
   fetchOrders, insertOrder, updateOrder, nextOrderSeq, fetchMyAssignedSalesmen,
@@ -385,19 +387,17 @@ export function AppStateProvider({ children }) {
       // a Jenis Plak chosen); an untouched block (every category but OTHERS
       // only ever has one) is just skipped, same as before.
       for (const blk of blocks) {
-        const lineHasValue = (line) => Boolean(String(line.value).trim())
-          || (line.secondLine && Boolean(String(line.secondLine.value).trim()));
+        const lineHasValue = (line) => Boolean(String(line.value).trim());
         // Line 1 (the event name) is always required; a category can mark
         // extra lines required too (`line.required` — see computeBlocks.js's
-        // requiredLineIndices, e.g. OTHERS' line 3 first box) — everything
-        // else (year, position CONTOH, etc.) is reference-sample context the
-        // teacher may not always have yet, so it can stay blank.
-        const lineIsComplete = (line) => !line.required || Boolean(String(line.value).trim());
+        // requiredLineIndices) — everything else (year, ACARA, position
+        // CONTOH, etc.) is reference-sample context the teacher may not
+        // always have yet, so it can stay blank.
         const hasQty = blk.blockTotalQty > 0;
         const hasJenisPlak = blk.plakRows.some((pr) => pr.jenisPlak);
         const engaged = hasQty || hasJenisPlak || blk.lines.some(lineHasValue);
         if (!engaged) continue;
-        const incompleteLine = blk.lines.find((line) => !lineIsComplete(line));
+        const incompleteLine = blk.lines.find((line) => line.required && !lineHasValue(line));
         if (incompleteLine) {
           return { ...st, cartToast: `Please fill in line ${incompleteLine.num} for ${blk.qtyLabel} before adding to cart.` };
         }
@@ -556,23 +556,37 @@ export function AppStateProvider({ children }) {
     return newId;
   }, [patch]);
 
+  // Rebuilds a full New Order draft straight from the order's own `items`
+  // (buildDraftFromOrder — see computeBlocks.js for why the old snapshot-
+  // based restore didn't actually work: addToCart always blanks a
+  // category's fields the moment it's added, so by Submit time the
+  // snapshot was whatever was left over, never what was really ordered).
+  // Every category in the order comes back — every field, every
+  // duplicated OTHERS Tahun block — so the teacher sees the same order
+  // they placed before and can edit whatever needs to change, category by
+  // category, the same as any other New Order draft. Starts from the same
+  // blank slate startNewOrder does (buildInitial*), then layers the
+  // restored categories on top, so nothing from an unrelated in-progress
+  // draft leaks in and every other category still has its normal default
+  // rows to fall back to.
   const reorderOrder = useCallback((ord) => {
-    const snap = ord.snapshot;
-    patch({
+    const restored = buildDraftFromOrder(ord);
+    patch((st) => ({
       sekolah: ord.sekolah, sales: ord.sales, picName: ord.picName, phone: ord.phone, ketuaPanitia: ord.ketuaPanitia || '', terms: ord.terms || '', remark: ord.remark,
       dueSelected: ord.dueDate || null, funcSelected: ord.functionDate || null,
       logoDataUrl: ord.logoDataUrl || null, logoFileName: ord.logoFileName || '', logoRemark: ord.logoRemark || '', schoolType: ord.schoolType || null,
-      // The category-draft (which award category + its filled-in fields)
-      // is only available for orders placed through this app's New Order
-      // flow — older/imported orders just prefill the school info above.
-      ...(snap ? {
-        category: snap.category,
-        lineValues: { ...snap.lineValues }, matrixValues: { ...snap.matrixValues },
-        rowsByBlock: JSON.parse(JSON.stringify(snap.rowsByBlock)),
-        plakRows: JSON.parse(JSON.stringify(snap.plakRows)),
-        columnsByBlock: JSON.parse(JSON.stringify(snap.columnsByBlock || {})),
-      } : {}),
-    });
+      stepError: '',
+
+      category: restored.category || 'MP1',
+      lineValues: restored.lineValues, matrixValues: restored.matrixValues,
+      rowsByBlock: { ...buildInitialRowsByBlock(st.schoolLanguage), ...restored.rowsByBlock },
+      columnsByBlock: { ...buildInitialColumnsByBlock(), ...restored.columnsByBlock },
+      plakRows: { ...buildInitialPlakRows(), ...restored.plakRows },
+      nextRowId: Math.max(1000, restored.nextId), nextPlakRowId: 1000, nextColumnId: Math.max(1000, restored.nextId),
+      visibleBlocksByCategory: restored.visibleBlocksByCategory,
+
+      cart: [], cartToast: '',
+    }));
   }, [patch]);
 
   const openAddOn = useCallback((ord) => {

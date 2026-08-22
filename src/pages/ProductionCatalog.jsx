@@ -1,26 +1,111 @@
 import { useEffect, useState } from 'react';
+import {
+  DndContext, closestCenter, PointerSensor, TouchSensor, KeyboardSensor, useSensor, useSensors,
+} from '@dnd-kit/core';
+import {
+  SortableContext, useSortable, arrayMove, verticalListSortingStrategy, sortableKeyboardCoordinates,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import { restrictToVerticalAxis } from '@dnd-kit/modifiers';
 import Nav from '../components/Nav';
 import { useAppState } from '../state/useAppState';
 import { stockZoneFor } from '../data/catalog';
 
 const STOCK_ZONE_COLOR = { red: '#c0392b', orange: '#d98c00', normal: undefined };
 
+// Same constraint the old ▲/▼ buttons enforced: a drag can only ever
+// preview/complete a drop among rows sharing the dragged row's own
+// parentId — see AdminCatalog.jsx, which this drag-and-drop is ported from.
+function sameParentClosestCenter(args) {
+  const activeParentId = args.active.data.current?.parentId ?? null;
+  const filtered = args.droppableContainers.filter(
+    (c) => (c.data.current?.parentId ?? null) === activeParentId,
+  );
+  return closestCenter({ ...args, droppableContainers: filtered });
+}
+
+// Walks the tree looking for the children array (or the root list, for
+// parentId === null) that a given parentId owns — the sibling group a drag
+// needs to reorder within.
+function findSiblingsByParentId(nodes, parentId) {
+  if (parentId === null) return nodes;
+  for (const node of nodes) {
+    if (node.id === parentId) return node.children || [];
+    if (node.children) {
+      const found = findSiblingsByParentId(node.children, parentId);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+const catalogAnnouncements = {
+  onDragStart({ active }) {
+    return `Picked up ${active.data.current?.code ?? 'item'}.`;
+  },
+  onDragOver({ active, over }) {
+    if (!over) return 'Not over a droppable area.';
+    return `${active.data.current?.code ?? 'Item'} is over ${over.data.current?.code ?? 'another item'}.`;
+  },
+  onDragEnd({ active, over }) {
+    return over ? `${active.data.current?.code ?? 'Item'} was moved.` : `${active.data.current?.code ?? 'Item'} was dropped.`;
+  },
+  onDragCancel({ active }) {
+    return `Reordering ${active.data.current?.code ?? 'item'} was cancelled.`;
+  },
+};
+
+// A parent code has no stock of its own — only its leaf variants do — but
+// Production still wants to see at a glance how much is left across all of
+// them without expanding the group. Sums every tracked descendant leaf
+// (any depth), returning null (rendered as "—") when none of them track
+// stock at all, same "not tracked" meaning a single leaf's own null does.
+function sumDescendantStock(node) {
+  if (!Array.isArray(node.children) || node.children.length === 0) {
+    return node.stockQty == null ? null : node.stockQty;
+  }
+  let total = 0;
+  let anyTracked = false;
+  node.children.forEach((child) => {
+    const childTotal = sumDescendantStock(child);
+    if (childTotal != null) { total += childTotal; anyTracked = true; }
+  });
+  return anyTracked ? total : null;
+}
+
 // One row per catalog node, recursing into its children. Each row can add
 // a variant beneath it, edit its own price/stock, hide/unhide it, remove it
-// (and everything beneath it), or move it up/down among its own siblings —
+// (and everything beneath it), or drag it up/down among its own siblings —
 // that's what controls which variant a teacher sees listed first. Groups
 // with children start collapsed (see ProductionCatalog's collapsedIds) so
 // opening the catalog shows only top-level codes, not every nested variant
 // at once.
 function CatalogRow({
-  node, depth, canMoveUp, canMoveDown, onAddChild, onRemove, onPriceChange, onStockChange, onToggleHidden, onMove,
-  collapsedIds, onToggleCollapsed,
+  node, depth, parentId, canReorder, onAddChild, onRemove, onPriceChange, onStockChange, onToggleHidden,
+  collapsedIds, onToggleCollapsed, dragActive,
 }) {
   const [addingChild, setAddingChild] = useState(false);
   const [newCode, setNewCode] = useState('');
   const [newPrice, setNewPrice] = useState('');
   const [priceDraft, setPriceDraft] = useState(String(node.price ?? 0));
   const [stockDraft, setStockDraft] = useState(node.stockQty == null ? '' : String(node.stockQty));
+
+  const { setNodeRef, attributes, listeners, transform, transition, isDragging } = useSortable({
+    id: node.id,
+    data: { parentId, code: node.code },
+  });
+  const rowStyle = {
+    paddingLeft: depth * 20,
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : 1,
+  };
+
+  // A drag starting anywhere nearby can shift this row's vertical position
+  // — closing an open inline form avoids the row heights jumping mid-drag.
+  useEffect(() => {
+    if (dragActive) setAddingChild(false);
+  }, [dragActive]);
 
   // Unlike price, stock changes constantly from a source outside this
   // page — every teacher order deducts it — so the mount-only useState
@@ -37,6 +122,7 @@ function CatalogRow({
   const hasChildren = Array.isArray(node.children) && node.children.length > 0;
   const collapsed = collapsedIds.has(node.id);
   const zone = stockZoneFor(node.stockQty, node.stockBaseline);
+  const descendantStock = hasChildren ? sumDescendantStock(node) : null;
 
   const commitPrice = () => {
     const val = Number(priceDraft);
@@ -69,7 +155,7 @@ function CatalogRow({
 
   return (
     <>
-      <div className="catalog-admin-row" style={{ paddingLeft: depth * 20 }}>
+      <div ref={setNodeRef} className="catalog-admin-row" style={rowStyle}>
         {hasChildren ? (
           <button
             type="button"
@@ -103,9 +189,23 @@ function CatalogRow({
             onBlur={commitStock}
           />
         )}
+        {hasChildren && (
+          <div className="input input-readonly catalog-admin-price" title="Total stock across all variants beneath this code">
+            {descendantStock != null ? descendantStock : '—'}
+          </div>
+        )}
         <div className="catalog-admin-actions">
-          <button type="button" className="btn btn-ghost btn-icon" aria-label="Move up" disabled={!canMoveUp} onClick={() => onMove(node.id, 'up')}>▲</button>
-          <button type="button" className="btn btn-ghost btn-icon" aria-label="Move down" disabled={!canMoveDown} onClick={() => onMove(node.id, 'down')}>▼</button>
+          <button
+            type="button"
+            {...attributes}
+            {...listeners}
+            className="btn btn-ghost btn-icon"
+            disabled={!canReorder}
+            aria-label={`Reorder ${node.code}`}
+            style={{ cursor: canReorder ? 'grab' : 'not-allowed', touchAction: 'none' }}
+          >
+            ⠿
+          </button>
           <button type="button" className="btn btn-ghost" onClick={() => setAddingChild((v) => !v)}>+ Variant</button>
           <button type="button" className={`btn ${node.hidden ? 'btn-secondary' : 'btn-ghost'}`} onClick={() => onToggleHidden(node.id, !node.hidden)}>
             {node.hidden ? 'Unhide' : 'Hide'}
@@ -123,23 +223,27 @@ function CatalogRow({
         </div>
       )}
 
-      {hasChildren && !collapsed && node.children.map((child, i) => (
-        <CatalogRow
-          key={child.id}
-          node={child}
-          depth={depth + 1}
-          canMoveUp={i > 0}
-          canMoveDown={i < node.children.length - 1}
-          onAddChild={onAddChild}
-          onRemove={onRemove}
-          onPriceChange={onPriceChange}
-          onStockChange={onStockChange}
-          onToggleHidden={onToggleHidden}
-          onMove={onMove}
-          collapsedIds={collapsedIds}
-          onToggleCollapsed={onToggleCollapsed}
-        />
-      ))}
+      {hasChildren && !collapsed && (
+        <SortableContext items={node.children.map((c) => c.id)} strategy={verticalListSortingStrategy}>
+          {node.children.map((child) => (
+            <CatalogRow
+              key={child.id}
+              node={child}
+              depth={depth + 1}
+              parentId={node.id}
+              canReorder={node.children.length > 1}
+              onAddChild={onAddChild}
+              onRemove={onRemove}
+              onPriceChange={onPriceChange}
+              onStockChange={onStockChange}
+              onToggleHidden={onToggleHidden}
+              collapsedIds={collapsedIds}
+              onToggleCollapsed={onToggleCollapsed}
+              dragActive={dragActive}
+            />
+          ))}
+        </SortableContext>
+      )}
     </>
   );
 }
@@ -158,7 +262,7 @@ function collectParentIds(nodes, out) {
 
 export default function ProductionCatalog() {
   const {
-    state, addCatalogNode, removeCatalogNode, updateCatalogNodePrice, updateCatalogNodeStock, setCatalogNodeHidden, moveCatalogNode,
+    state, addCatalogNode, removeCatalogNode, updateCatalogNodePrice, updateCatalogNodeStock, setCatalogNodeHidden, reorderCatalogSiblings,
   } = useAppState();
   const [newTopCode, setNewTopCode] = useState('');
   const [newTopPrice, setNewTopPrice] = useState('');
@@ -166,9 +270,16 @@ export default function ProductionCatalog() {
   // every render — that would fight any group a Production user manually
   // expanded back closed on the very next catalog refresh.
   const [collapsedIds, setCollapsedIds] = useState(null);
+  const [draggingId, setDraggingId] = useState(null);
   if (collapsedIds === null && state.plakCatalog.length > 0) {
     setCollapsedIds(collectParentIds(state.plakCatalog, new Set()));
   }
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
 
   const handleAddChild = (parentId, code, price, siblingCount) => {
     addCatalogNode(parentId, code, price, siblingCount);
@@ -185,15 +296,32 @@ export default function ProductionCatalog() {
   const handleToggleHidden = (id, hidden) => {
     setCatalogNodeHidden(id, hidden);
   };
-  const handleMove = (id, direction) => {
-    moveCatalogNode(id, direction);
-  };
   const toggleCollapsed = (id) => {
     setCollapsedIds((prev) => {
       const next = new Set(prev || []);
       if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
+  };
+
+  const handleDragStart = (event) => {
+    setDraggingId(event.active.id);
+  };
+
+  const handleDragEnd = (event) => {
+    setDraggingId(null);
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const parentId = active.data.current?.parentId ?? null;
+    const overParentId = over.data.current?.parentId ?? null;
+    if (parentId !== overParentId) return;
+    const siblings = findSiblingsByParentId(state.plakCatalog, parentId);
+    if (!siblings) return;
+    const oldIndex = siblings.findIndex((n) => n.id === active.id);
+    const newIndex = siblings.findIndex((n) => n.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+    const newOrderIds = arrayMove(siblings, oldIndex, newIndex).map((n) => n.id);
+    reorderCatalogSiblings(newOrderIds);
   };
 
   const addTopLevel = () => {
@@ -226,23 +354,45 @@ export default function ProductionCatalog() {
           <p className="hint-text">No codes yet — add one above.</p>
         ) : (
           <div className="catalog-admin-list">
-            {state.plakCatalog.map((node, i) => (
-              <CatalogRow
-                key={node.id}
-                node={node}
-                depth={0}
-                canMoveUp={i > 0}
-                canMoveDown={i < state.plakCatalog.length - 1}
-                onAddChild={(parentId, code, price) => handleAddChild(parentId, code, price, 0)}
-                onRemove={handleRemove}
-                onPriceChange={handlePriceChange}
-                onStockChange={handleStockChange}
-                onToggleHidden={handleToggleHidden}
-                onMove={handleMove}
-                collapsedIds={collapsedIds || new Set()}
-                onToggleCollapsed={toggleCollapsed}
-              />
-            ))}
+            {/* Price and Stock Qty are two identical-looking plain number
+                boxes side by side once filled in (the "Stock" placeholder
+                only shows while empty) — this header labels the columns so
+                it's obvious at a glance which is which. */}
+            <div className="catalog-admin-row catalog-admin-header-row">
+              <span style={{ display: 'inline-block', width: 28 }} />
+              <span className="catalog-admin-code">Code</span>
+              <span className="catalog-admin-price">Price (RM)</span>
+              <span className="catalog-admin-price">Stock Qty</span>
+            </div>
+            <DndContext
+              sensors={sensors}
+              collisionDetection={sameParentClosestCenter}
+              modifiers={[restrictToVerticalAxis]}
+              onDragStart={handleDragStart}
+              onDragEnd={handleDragEnd}
+              onDragCancel={() => setDraggingId(null)}
+              accessibility={{ announcements: catalogAnnouncements }}
+            >
+              <SortableContext items={state.plakCatalog.map((n) => n.id)} strategy={verticalListSortingStrategy}>
+                {state.plakCatalog.map((node) => (
+                  <CatalogRow
+                    key={node.id}
+                    node={node}
+                    depth={0}
+                    parentId={null}
+                    canReorder={state.plakCatalog.length > 1}
+                    onAddChild={(parentId, code, price) => handleAddChild(parentId, code, price, 0)}
+                    onRemove={handleRemove}
+                    onPriceChange={handlePriceChange}
+                    onStockChange={handleStockChange}
+                    onToggleHidden={handleToggleHidden}
+                    collapsedIds={collapsedIds || new Set()}
+                    onToggleCollapsed={toggleCollapsed}
+                    dragActive={draggingId !== null}
+                  />
+                ))}
+              </SortableContext>
+            </DndContext>
           </div>
         )}
       </div>

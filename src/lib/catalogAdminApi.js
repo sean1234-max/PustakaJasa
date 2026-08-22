@@ -1,4 +1,5 @@
 import { supabase } from './supabaseClient';
+import { isCustomPlakCode } from '../data/catalog';
 
 // Reference sample images and the Jenis Plak catalog are global settings
 // (not scoped to a single order or account) — Production manages both,
@@ -95,7 +96,7 @@ export async function updatePlakNodeStock(id, stockQty) {
 // `items` is [{ full_path, qty }] where full_path is exactly an order
 // item's `jenisPlak` (the " / "-joined catalog path PlakPicker commits).
 export async function deductPlakStock(items) {
-  const payload = (items || []).filter((it) => it.full_path && Number(it.qty) > 0)
+  const payload = (items || []).filter((it) => it.full_path && Number(it.qty) > 0 && !isCustomPlakCode(it.full_path))
     .map((it) => ({ full_path: it.full_path, qty: Math.round(Number(it.qty)) }));
   if (payload.length === 0) return;
   const { error } = await supabase.rpc('plak_stock_deduct', { p_items: payload });
@@ -103,21 +104,29 @@ export async function deductPlakStock(items) {
 }
 
 export async function restorePlakStock(items) {
-  const payload = (items || []).filter((it) => it.full_path && Number(it.qty) > 0)
+  const payload = (items || []).filter((it) => it.full_path && Number(it.qty) > 0 && !isCustomPlakCode(it.full_path))
     .map((it) => ({ full_path: it.full_path, qty: Math.round(Number(it.qty)) }));
   if (payload.length === 0) return;
   const { error } = await supabase.rpc('plak_stock_restore', { p_items: payload });
   if (error) throw error;
 }
 
-// Batched sort_order write for drag-and-drop reordering (see AdminCatalog.jsx)
-// — a drag can shift many siblings' indices at once, unlike the arrow
-// buttons' single adjacent swap, so this is one upsert instead of N
-// sequential updatePlakNode calls. Only ever targets existing ids (a
-// reorder never creates or deletes rows), so the upsert's ON CONFLICT DO
-// UPDATE path only ever touches the sort_order column passed in — it
-// can't null out a row's parent_id/code/price/hidden.
+// Batched sort_order write for drag-and-drop reordering (see
+// AdminCatalog.jsx / ProductionCatalog.jsx) — a drag can shift many
+// siblings' indices at once, unlike the arrow buttons' single adjacent
+// swap. This used to be a single upsert({id, sort_order}) call, which
+// looked like it should only ever touch sort_order on the ON CONFLICT DO
+// UPDATE path — but Postgres validates an upsert's NOT NULL constraints
+// (code has none) against its INSERT shape before it ever evaluates the
+// conflict, regardless of whether the row already exists, so every
+// reorder failed with "null value in column code violates not-null
+// constraint". Plain per-row updates (still fired in parallel, so it's
+// still one batch of concurrent requests, just not one SQL statement)
+// only ever touch the column actually being set.
 export async function updatePlakNodeOrder(rows) {
-  const { error } = await supabase.from('plak_catalog_nodes').upsert(rows);
-  if (error) throw error;
+  const results = await Promise.all(
+    rows.map(({ id, sort_order }) => supabase.from('plak_catalog_nodes').update({ sort_order }).eq('id', id)),
+  );
+  const failed = results.find((r) => r.error);
+  if (failed) throw failed.error;
 }

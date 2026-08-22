@@ -339,7 +339,7 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, refImag
             <table className="table" style={{ flex: '1 1 320px' }}>
               <thead>
                 <tr>
-                  <th>Description</th>
+                  <th>SUBJEK/POSITION</th>
                   <th style={{ width: 140 }}>{blk.qtyColHeader}</th>
                   {editable.addRemoveRows && <th style={{ width: 48 }} />}
                 </tr>
@@ -402,7 +402,7 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, refImag
           </div>
           {editable.addRemoveRows && (
             <div className="row-actions" style={{ display: 'flex', gap: 8, marginTop: 'var(--space-3)' }}>
-              <button type="button" className="btn btn-secondary" onClick={blk.addRowSameQty}>+ Add Description</button>
+              <button type="button" className="btn btn-secondary" onClick={blk.addRowSameQty}>+ Add Subjek/Position</button>
               <button type="button" className="btn btn-secondary" onClick={blk.addNamaKelas}>+ Add Nama Kelas</button>
               {blk.duplicateBlock && isLastBlock && (
                 <button type="button" className="btn btn-secondary" onClick={blk.duplicateBlock}>Duplicate</button>

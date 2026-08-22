@@ -27,12 +27,16 @@ export default function Cart() {
       const key = `${ci.categoryKey}::${ci.jenisPlak}`;
       let row = byKey.get(key);
       if (!row) {
-        row = { key, jenisPlak: ci.jenisPlak, qty: 0, harga: 0, ids: [] };
+        // hasPrice stays false for a code with no resolvable catalog price
+        // (Production's OTHER catch-all — see PlakPicker.jsx) — RM 0.00
+        // would otherwise read as a free item instead of "price not set".
+        row = { key, jenisPlak: ci.jenisPlak, qty: 0, harga: 0, hasPrice: false, ids: [] };
         byKey.set(key, row);
         rows.push(row);
       }
       row.qty += Number(ci.qty) || 0;
       row.harga += ci.harga;
+      if (ci.unitPrice != null) row.hasPrice = true;
       row.ids.push(ci.id);
     });
     return rows;
@@ -106,7 +110,7 @@ export default function Cart() {
                 <tr key={row.key}>
                   <td>{row.jenisPlak}</td>
                   <td style={overStock ? { color: '#c0392b', fontWeight: 700 } : undefined}>{row.qty}</td>
-                  <td>RM {row.harga.toFixed(2)}</td>
+                  <td>{row.hasPrice ? `RM ${row.harga.toFixed(2)}` : '—'}</td>
                   <td><button type="button" className="btn btn-ghost btn-icon" aria-label="Remove" onClick={() => row.ids.forEach(removeFromCart)}>✕</button></td>
                 </tr>
               );
