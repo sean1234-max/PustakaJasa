@@ -109,21 +109,31 @@ export function createDraftUpdaters(patch, fields) {
     }),
     // "Duplicate" (`hasNamaKelasList` categories only — OTHERS, see
     // catalog.js's blocksCount: 6 pre-allocating one slot per Malaysian
-    // primary grade): clones only the Kuantiti part of block `fromBlockIdx`
-    // — its TAHUN value, Description/QTY rows, and Nama Kelas list — into
-    // the next block, then reveals that block (see NewOrderStep2/AddOn's
-    // visible-block slicing). Reference Sample and Jenis Plak are left
-    // blank for the teacher to fill in fresh on the new block; only TAHUN
-    // needs changing afterward. IDs are carried over as-is rather than
-    // reminted — each block's rowsByBlock/columnsByBlock entry is its own
-    // independently-keyed array, so ids only ever need to be unique within
-    // one block's own array, never across blocks.
+    // primary grade): clones every field of block `fromBlockIdx` — its
+    // Reference Sample lines and Jenis Plak selection (needed so each
+    // duplicated block's own cart item/CSV export still carries a real
+    // event header/position/Jenis Plak, even though OrderCategoryBlock only
+    // ever *displays* those two sections on the first block — they're
+    // meant to apply to every Tahun part, not be re-entered each time) plus
+    // its Kuantiti (TAHUN value, Description/QTY rows, Nama Kelas list) —
+    // into the next block, then reveals that block (see NewOrderStep2/
+    // AddOn's visible-block slicing). The teacher only needs to change
+    // TAHUN afterward; editing Reference Sample/Jenis Plak again means
+    // going back to the first block; changes there won't retroactively
+    // reach already-duplicated blocks. IDs are carried over as-is rather
+    // than reminted — each block's rowsByBlock/columnsByBlock entry is its
+    // own independently-keyed array, so ids only ever need to be unique
+    // within one block's own array, never across blocks.
     onDuplicateBlock: (catKey, fromBlockIdx) => patch((st) => {
       const cat = CATEGORIES.find((c) => c.key === catKey);
       const toBlockIdx = fromBlockIdx + 1;
       if (!cat || toBlockIdx >= (cat.blocksCount || 1)) return {};
-      const tahunKey = `${catKey}::${fromBlockIdx}::tahun`;
-      const newLineValues = { ...st[lineValues], [`${catKey}::${toBlockIdx}::tahun`]: st[lineValues][tahunKey] || '' };
+      const fromLinePrefix = `${catKey}::${fromBlockIdx}::`;
+      const toLinePrefix = `${catKey}::${toBlockIdx}::`;
+      const newLineValues = { ...st[lineValues] };
+      Object.keys(st[lineValues]).forEach((k) => {
+        if (k.startsWith(fromLinePrefix)) newLineValues[`${toLinePrefix}${k.slice(fromLinePrefix.length)}`] = st[lineValues][k];
+      });
       const fromKey = `${catKey}::${fromBlockIdx}`;
       const toKey = `${catKey}::${toBlockIdx}`;
       const newRowsByBlock = {
@@ -134,6 +144,11 @@ export function createDraftUpdaters(patch, fields) {
         ...st[columnsByBlock],
         [toKey]: JSON.parse(JSON.stringify((st[columnsByBlock] && st[columnsByBlock][fromKey]) || [])),
       };
+      const fromPlak = (st[plakRows][fromKey] || [])[0];
+      const newPlakRows = {
+        ...st[plakRows],
+        [toKey]: (st[plakRows][toKey] || []).map((pr, i) => (i === 0 && fromPlak ? { ...pr, jenisPlak: fromPlak.jenisPlak } : pr)),
+      };
       const currentVisible = (st[visibleBlocksByCategory] && st[visibleBlocksByCategory][catKey]) || 1;
       const newVisibleBlocksByCategory = {
         ...st[visibleBlocksByCategory],
@@ -141,7 +156,7 @@ export function createDraftUpdaters(patch, fields) {
       };
       return {
         [lineValues]: newLineValues, [rowsByBlock]: newRowsByBlock, [columnsByBlock]: newColumnsByBlock,
-        [visibleBlocksByCategory]: newVisibleBlocksByCategory,
+        [plakRows]: newPlakRows, [visibleBlocksByCategory]: newVisibleBlocksByCategory,
       };
     }),
   };

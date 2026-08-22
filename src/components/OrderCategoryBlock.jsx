@@ -42,97 +42,109 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, refImag
   const dynTableWidth = DYN_COL_WIDTHS.tahun + DYN_COL_WIDTHS.namaKelas
     + dynColumns.length * DYN_COL_WIDTHS.subject + DYN_COL_WIDTHS.total;
   const namaKelasRows = hideEmptyRows ? blk.namaKelasRows.filter((nk) => (nk.name || '').trim()) : blk.namaKelasRows;
+  // `hasNamaKelasList` categories (OTHERS) apply ONE Jenis Plak + Reference
+  // Sample to every Tahun part — Duplicate copies both under the hood (see
+  // draftUpdaters.js's onDuplicateBlock) so each block's own cart item/CSV
+  // export still carries them, but showing those two sections again on
+  // every duplicated block would just be the same read-back values
+  // repeated for no reason — only the first block ever displays them; every
+  // later block goes straight to its own Kuantiti part.
+  const showSharedSections = !blk.hasNamaKelasList || blk.idx === 0;
 
   return (
     <div>
-      <div className="card-kicker">Jenis Plak / QTY / Harga</div>
-      <table className="table">
-        <thead><tr><th>Jenis Plak</th><th style={{ width: 130 }}>QTY</th><th style={{ width: 130 }}>Harga</th></tr></thead>
-        <tbody>
-          {blk.plakRows.map((pr) => {
-            // Live preview of the server-enforced cap (plak_stock_deduct,
-            // supabase/migrations/0032_add_plak_stock.sql) — this can only
-            // warn early using the last-fetched catalog snapshot; the
-            // actual submit (Cart/AddOnSummary) re-checks and the database
-            // function is the real backstop against a stale/racing read.
-            const stockStatus = pr.jenisPlak ? getStockStatus(pr.jenisPlak, plakOptions) : null;
-            const overStock = !!stockStatus && Number(pr.qty) > stockStatus.maxOrderable;
-            return (
-              <tr key={pr.id}>
-                <td>
-                  {editable.jenisPlak ? (
-                    <PlakPicker value={pr.jenisPlak} onChange={pr.setJenisPlak} catalog={plakOptions} />
-                  ) : (pr.jenisPlak || '—')}
-                </td>
-                <td>
-                  <div className="input input-readonly" style={overStock ? { color: '#c0392b', fontWeight: 700 } : undefined}>
-                    {pr.qty}
-                  </div>
-                  {overStock && (
-                    <div className="hint-text" style={{ color: '#c0392b', margin: '2px 0 0' }}>
-                      Stock tidak cukup — baki {stockStatus.maxOrderable} sahaja boleh ditempah. Sila hubungi Salesman.
-                    </div>
-                  )}
-                </td>
-                <td><div className="input input-readonly input-price">{pr.hargaLabel}</div></td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+      {showSharedSections && (
+        <>
+          <div className="card-kicker">Jenis Plak / QTY / Harga</div>
+          <table className="table">
+            <thead><tr><th>Jenis Plak</th><th style={{ width: 130 }}>QTY</th><th style={{ width: 130 }}>Harga</th></tr></thead>
+            <tbody>
+              {blk.plakRows.map((pr) => {
+                // Live preview of the server-enforced cap (plak_stock_deduct,
+                // supabase/migrations/0032_add_plak_stock.sql) — this can only
+                // warn early using the last-fetched catalog snapshot; the
+                // actual submit (Cart/AddOnSummary) re-checks and the database
+                // function is the real backstop against a stale/racing read.
+                const stockStatus = pr.jenisPlak ? getStockStatus(pr.jenisPlak, plakOptions) : null;
+                const overStock = !!stockStatus && Number(pr.qty) > stockStatus.maxOrderable;
+                return (
+                  <tr key={pr.id}>
+                    <td>
+                      {editable.jenisPlak ? (
+                        <PlakPicker value={pr.jenisPlak} onChange={pr.setJenisPlak} catalog={plakOptions} />
+                      ) : (pr.jenisPlak || '—')}
+                    </td>
+                    <td>
+                      <div className="input input-readonly" style={overStock ? { color: '#c0392b', fontWeight: 700 } : undefined}>
+                        {pr.qty}
+                      </div>
+                      {overStock && (
+                        <div className="hint-text" style={{ color: '#c0392b', margin: '2px 0 0' }}>
+                          Stock tidak cukup — baki {stockStatus.maxOrderable} sahaja boleh ditempah. Sila hubungi Salesman.
+                        </div>
+                      )}
+                    </td>
+                    <td><div className="input input-readonly input-price">{pr.hargaLabel}</div></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
 
-      <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Reference Sample (Contoh)</div>
-      <p className="hint-text">Fill each numbered line to match the sample layout — this tells us exactly how to place the text and sizing on the plaque.</p>
-      <p className="hint-text"><span style={{ color: '#c0392b' }}>★</span> = Wording dalam column ini tak boleh ditukar.</p>
+          <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Reference Sample (Contoh)</div>
+          <p className="hint-text">Fill each numbered line to match the sample layout — this tells us exactly how to place the text and sizing on the plaque.</p>
+          <p className="hint-text"><span style={{ color: '#c0392b' }}>★</span> = Wording dalam column ini tak boleh ditukar.</p>
 
-      <div className="ref-sample-grid">
-        <div className="ref-sample-image">
-          {refImageUrl ? (
-            <img src={refImageUrl} alt="Reference sample" className="ref-sample-img" />
-          ) : (
-            <div className="ref-sample-placeholder">No reference image set yet</div>
-          )}
-        </div>
-        <div className="ref-sample-lines">
-          {blk.lines.map((ln) => (
-            <div key={ln.key} className="ref-sample-line">
-              <span
-                style={{ color: '#c0392b', fontSize: 14, width: 14, textAlign: 'center', flex: 'none', visibility: ln.required ? 'visible' : 'hidden' }}
-                aria-label={ln.required ? 'required' : undefined}
-              >
-                ★
-              </span>
-              <div className="line-num">{ln.num}</div>
-              {ln.secondLine ? (
-                <div className="ref-sample-line-stack">
-                  <input
-                    className="input"
-                    placeholder={ln.placeholder}
-                    value={ln.value}
-                    readOnly={!editable.lines}
-                    onChange={editable.lines ? (e) => ln.onChange(e.target.value) : undefined}
-                  />
-                  <input
-                    className="input"
-                    placeholder={ln.secondLine.placeholder}
-                    value={ln.secondLine.value}
-                    readOnly={!editable.lines}
-                    onChange={editable.lines ? (e) => ln.secondLine.onChange(e.target.value) : undefined}
-                  />
-                </div>
+          <div className="ref-sample-grid">
+            <div className="ref-sample-image">
+              {refImageUrl ? (
+                <img src={refImageUrl} alt="Reference sample" className="ref-sample-img" />
               ) : (
-                <input
-                  className="input"
-                  placeholder={ln.placeholder}
-                  value={ln.value}
-                  readOnly={!editable.lines}
-                  onChange={editable.lines ? (e) => ln.onChange(e.target.value) : undefined}
-                />
+                <div className="ref-sample-placeholder">No reference image set yet</div>
               )}
             </div>
-          ))}
-        </div>
-      </div>
+            <div className="ref-sample-lines">
+              {blk.lines.map((ln) => (
+                <div key={ln.key} className="ref-sample-line">
+                  <span
+                    style={{ color: '#c0392b', fontSize: 14, width: 14, textAlign: 'center', flex: 'none', visibility: ln.required ? 'visible' : 'hidden' }}
+                    aria-label={ln.required ? 'required' : undefined}
+                  >
+                    ★
+                  </span>
+                  <div className="line-num">{ln.num}</div>
+                  {ln.secondLine ? (
+                    <div className="ref-sample-line-stack">
+                      <input
+                        className="input"
+                        placeholder={ln.placeholder}
+                        value={ln.value}
+                        readOnly={!editable.lines}
+                        onChange={editable.lines ? (e) => ln.onChange(e.target.value) : undefined}
+                      />
+                      <input
+                        className="input"
+                        placeholder={ln.secondLine.placeholder}
+                        value={ln.secondLine.value}
+                        readOnly={!editable.lines}
+                        onChange={editable.lines ? (e) => ln.secondLine.onChange(e.target.value) : undefined}
+                      />
+                    </div>
+                  ) : (
+                    <input
+                      className="input"
+                      placeholder={ln.placeholder}
+                      value={ln.value}
+                      readOnly={!editable.lines}
+                      onChange={editable.lines ? (e) => ln.onChange(e.target.value) : undefined}
+                    />
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
 
       <div className="card-kicker">Kuantiti — {blk.qtyLabel}</div>
 
