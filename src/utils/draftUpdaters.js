@@ -33,6 +33,23 @@ export function createDraftUpdaters(patch, fields) {
       },
       [nextRowId]: st[nextRowId] + 1,
     })),
+    // "+ Add Description" (`hasNamaKelasList` categories only — OTHERS):
+    // every Description row in a Tahun block is almost always the same QTY
+    // (one plaque per class, same class list for every subject) — carrying
+    // the previous row's QTY over, same idea as onAddColumnSameTahun below,
+    // saves re-typing it for every subject and only leaves it blank if the
+    // teacher hasn't filled one in yet.
+    onAddRowSameQty: (rowsKey) => patch((st) => {
+      const existing = st[rowsByBlock][rowsKey] || [];
+      const last = existing[existing.length - 1];
+      return {
+        [rowsByBlock]: {
+          ...st[rowsByBlock],
+          [rowsKey]: [...existing, { id: st[nextRowId], desc: '', qty: last ? last.qty : '', custom: true }],
+        },
+        [nextRowId]: st[nextRowId] + 1,
+      };
+    }),
     onPlakSelect: (rowsKey, id, val) => patch((st) => ({
       [plakRows]: {
         ...st[plakRows],
