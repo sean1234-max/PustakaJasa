@@ -62,20 +62,24 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
     // defaulting every field to optional. Read by OrderCategoryBlock (the
     // ★ marker) and AppState.jsx's addToCart validation.
     const requiredLineIndices = currentCat.requiredLineIndices || [0];
+    // Line 3's optional second box (below) gets its own number now instead
+    // of sharing "3" with its first box — so every line after it shifts up
+    // by one (e.g. OTHERS numbers 1,2,3,4(=3's second box),5 instead of
+    // 1,2,3,4). Only categories with a second box at all are affected;
+    // LONJAKAN/TOKOH (no positionLine2Placeholder) keep plain 1-per-line
+    // numbering.
     const lines = currentCat.linePlaceholders.map((placeholder, i) => {
       const key = `${catKey}::${b}::${i}`;
+      const num = currentCat.positionLine2Placeholder && i > 2 ? i + 2 : i + 1;
       const line = {
-        key, num: i + 1, placeholder, value: lineValues[key] || '',
+        key, num, placeholder, value: lineValues[key] || '',
         required: requiredLineIndices.includes(i),
         onChange: (val) => updaters.onLine(key, val),
       };
-      // "position" (index 2) gets an optional second box — both numbered
-      // "3" — so the teacher can split it without needing to know to press
-      // Enter inside a single field. Combined with a line break on export.
       if (i === 2 && currentCat.positionLine2Placeholder) {
         const key2 = `${catKey}::${b}::2b`;
         line.secondLine = {
-          key: key2, placeholder: currentCat.positionLine2Placeholder, value: lineValues[key2] || '',
+          key: key2, num: i + 2, placeholder: currentCat.positionLine2Placeholder, value: lineValues[key2] || '',
           onChange: (val) => updaters.onLine(key2, val),
         };
       }

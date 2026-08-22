@@ -104,41 +104,27 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, refImag
               )}
             </div>
             <div className="ref-sample-lines">
-              {blk.lines.map((ln) => (
+              {/* Line 3's optional second box now carries its own number
+                  (see computeBlocks.js) — flatten it out into its own
+                  independent row here so it gets its own ★/circle at the
+                  same left edge as every other line, instead of nesting
+                  under line 3's row unnumbered. */}
+              {blk.lines.flatMap((ln) => (ln.secondLine ? [ln, ln.secondLine] : [ln])).map((ln) => (
                 <div key={ln.key} className="ref-sample-line">
                   <span
-                    style={{ color: '#c0392b', fontSize: 14, width: 14, textAlign: 'center', flex: 'none', visibility: ln.required ? 'visible' : 'hidden' }}
+                    style={{ color: '#c0392b', fontSize: 14, width: 14, textAlign: 'center', flex: 'none', marginTop: 7, visibility: ln.required ? 'visible' : 'hidden' }}
                     aria-label={ln.required ? 'required' : undefined}
                   >
                     ★
                   </span>
                   <div className="line-num">{ln.num}</div>
-                  {ln.secondLine ? (
-                    <div className="ref-sample-line-stack">
-                      <input
-                        className="input"
-                        placeholder={ln.placeholder}
-                        value={ln.value}
-                        readOnly={!editable.lines}
-                        onChange={editable.lines ? (e) => ln.onChange(e.target.value) : undefined}
-                      />
-                      <input
-                        className="input"
-                        placeholder={ln.secondLine.placeholder}
-                        value={ln.secondLine.value}
-                        readOnly={!editable.lines}
-                        onChange={editable.lines ? (e) => ln.secondLine.onChange(e.target.value) : undefined}
-                      />
-                    </div>
-                  ) : (
-                    <input
-                      className="input"
-                      placeholder={ln.placeholder}
-                      value={ln.value}
-                      readOnly={!editable.lines}
-                      onChange={editable.lines ? (e) => ln.onChange(e.target.value) : undefined}
-                    />
-                  )}
+                  <input
+                    className="input"
+                    placeholder={ln.placeholder}
+                    value={ln.value}
+                    readOnly={!editable.lines}
+                    onChange={editable.lines ? (e) => ln.onChange(e.target.value) : undefined}
+                  />
                 </div>
               ))}
             </div>
