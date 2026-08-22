@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import PlakPicker from './PlakPicker';
 import { getStockStatus } from '../data/catalog';
 
@@ -20,6 +21,13 @@ const TAHUN_OPTIONS = ['TAHUN 1', 'TAHUN 2', 'TAHUN 3', 'TAHUN 4', 'TAHUN 5', 'T
 // visible-block slicing) can duplicate itself into the next one, so an
 // earlier already-duplicated-from block doesn't confusingly overwrite it.
 export default function OrderCategoryBlock({ blk, editable, plakOptions, refImageUrl, hideEmptyRows, isLastBlock }) {
+  // Drag-and-drop reordering of Reference Sample rows (OTHERS — see
+  // catalog.js's draggableReferenceSample / computeBlocks.js's
+  // reorderReferenceSample). Only offered when actually editable (never on
+  // read-only review screens) — dragSlotId tracks which row is mid-drag so
+  // it can be visually dimmed while dragging.
+  const [dragSlotId, setDragSlotId] = useState(null);
+  const referenceSampleDraggable = !!blk.reorderReferenceSample && editable.lines;
   const matrixRows = hideEmptyRows ? blk.matrixRows.filter((row) => row.rowTotal > 0) : blk.matrixRows;
   const listRows = hideEmptyRows ? blk.rows.filter((row) => Number(row.qty) > 0) : blk.rows;
   // Dynamic-matrix columns are teacher-added and can end up unused (added,
@@ -94,6 +102,9 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, refImag
           <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Reference Sample (Contoh)</div>
           <p className="hint-text">Fill each numbered line to match the sample layout — this tells us exactly how to place the text and sizing on the plaque.</p>
           <p className="hint-text"><span style={{ color: '#c0392b' }}>★</span> = Wording dalam column ini tak boleh ditukar.</p>
+          {referenceSampleDraggable && (
+            <p className="hint-text">Drag the number beside each row to arrange them in whatever order matches your plaque — Production will follow the order you choose.</p>
+          )}
 
           <div className="ref-sample-grid">
             <div className="ref-sample-image">
@@ -104,20 +115,35 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, refImag
               )}
             </div>
             <div className="ref-sample-lines">
-              {/* Line 3's optional second box now carries its own number
-                  (see computeBlocks.js) — flatten it out into its own
-                  independent row here so it gets its own ★/circle at the
-                  same left edge as every other line, instead of nesting
-                  under line 3's row unnumbered. */}
-              {blk.lines.flatMap((ln) => (ln.secondLine ? [ln, ln.secondLine] : [ln])).map((ln) => (
-                <div key={ln.key} className="ref-sample-line">
+              {blk.lines.map((ln) => (
+                <div
+                  key={ln.key}
+                  className={`ref-sample-line${referenceSampleDraggable && dragSlotId === ln.slotId ? ' ref-sample-line-dragging' : ''}`}
+                  draggable={referenceSampleDraggable}
+                  onDragStart={referenceSampleDraggable ? () => setDragSlotId(ln.slotId) : undefined}
+                  onDragOver={referenceSampleDraggable ? (e) => e.preventDefault() : undefined}
+                  onDrop={referenceSampleDraggable ? () => {
+                    if (!dragSlotId || dragSlotId === ln.slotId) return;
+                    const order = blk.lines.map((l) => l.slotId);
+                    const fromIdx = order.indexOf(dragSlotId);
+                    const toIdx = order.indexOf(ln.slotId);
+                    if (fromIdx === -1 || toIdx === -1) return;
+                    order.splice(fromIdx, 1);
+                    order.splice(toIdx, 0, dragSlotId);
+                    blk.reorderReferenceSample(order);
+                    setDragSlotId(null);
+                  } : undefined}
+                  onDragEnd={referenceSampleDraggable ? () => setDragSlotId(null) : undefined}
+                >
                   <span
                     style={{ color: '#c0392b', fontSize: 14, width: 14, textAlign: 'center', flex: 'none', marginTop: 7, visibility: ln.required ? 'visible' : 'hidden' }}
                     aria-label={ln.required ? 'required' : undefined}
                   >
                     ★
                   </span>
-                  <div className="line-num">{ln.num}</div>
+                  <div className={referenceSampleDraggable ? 'line-num line-num-draggable' : 'line-num'} title={referenceSampleDraggable ? 'Drag to reorder' : undefined}>
+                    {ln.num}
+                  </div>
                   <input
                     className={ln.redText ? 'input input-red' : 'input'}
                     placeholder={ln.placeholder}

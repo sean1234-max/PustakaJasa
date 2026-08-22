@@ -70,17 +70,15 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
     // resolvers).
     const catLinePlaceholders = getCategoryLinePlaceholders(currentCat, schoolLanguage);
     const catPositionLine2Placeholder = getCategoryPositionLine2Placeholder(currentCat, schoolLanguage);
-    // Line 3's optional second box (below) gets its own number now instead
-    // of sharing "3" with its first box — so every line after it shifts up
-    // by one (e.g. OTHERS numbers 1,2,3,4(=3's second box),5 instead of
-    // 1,2,3,4). Only categories with a second box at all are affected;
-    // LONJAKAN/TOKOH (no positionLine2Placeholder) keep plain 1-per-line
-    // numbering.
-    const lines = catLinePlaceholders.map((placeholder, i) => {
+    // Line 3's optional second box gets its own slotId ('2b') alongside
+    // every other line's own index — flattened below (secondLine, if any,
+    // right after its own first box) and numbered sequentially, so plain
+    // categories (no second box) end up numbered 1..N exactly as before.
+    const refOrderKey = `${catKey}::${b}::refOrder`;
+    const rawLines = catLinePlaceholders.map((placeholder, i) => {
       const key = `${catKey}::${b}::${i}`;
-      const num = catPositionLine2Placeholder && i > 2 ? i + 2 : i + 1;
       const line = {
-        key, num, placeholder, value: lineValues[key] || '',
+        key, slotId: `${i}`, placeholder, value: lineValues[key] || '',
         required: requiredLineIndices.includes(i),
         // Line 3's own text renders red on some categories (OTHERS — see
         // catalog.js's positionFieldsRedText) since it's the position text
@@ -91,13 +89,34 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
       if (i === 2 && catPositionLine2Placeholder) {
         const key2 = `${catKey}::${b}::2b`;
         line.secondLine = {
-          key: key2, num: i + 2, placeholder: catPositionLine2Placeholder, value: lineValues[key2] || '',
+          key: key2, slotId: '2b', placeholder: catPositionLine2Placeholder, value: lineValues[key2] || '',
           redText: !!currentCat.positionFieldsRedText,
           onChange: (val) => updaters.onLine(key2, val),
         };
       }
       return line;
     });
+    let flatLines = rawLines.flatMap((ln) => (ln.secondLine ? [ln, ln.secondLine] : [ln]));
+    // Draggable categories (OTHERS): the teacher can freely reorder these
+    // rows on screen — purely a display/numbering convenience so Production
+    // knows which row to expect where on the reference-sample artwork, not
+    // a change to what each field means or where its value is stored (see
+    // catalog.js's draggableReferenceSample). The chosen order is kept as a
+    // plain lineValues entry (a comma-joined slotId list under refOrderKey)
+    // so it rides along with every existing lineValues mechanism —
+    // snapshot, reset, cart-to-order reconstruction — for free, with no new
+    // state field or call-site plumbing needed. Unrecognized/missing
+    // slotIds just fall back to the natural order.
+    if (currentCat.draggableReferenceSample) {
+      const storedOrder = (lineValues[refOrderKey] || '').split(',').filter(Boolean);
+      if (storedOrder.length) {
+        const bySlot = new Map(flatLines.map((ln) => [ln.slotId, ln]));
+        const ordered = storedOrder.map((id) => bySlot.get(id)).filter(Boolean);
+        const seen = new Set(ordered.map((ln) => ln.slotId));
+        flatLines = [...ordered, ...flatLines.filter((ln) => !seen.has(ln.slotId))];
+      }
+    }
+    const lines = flatLines.map((ln, i) => ({ ...ln, num: i + 1 }));
 
     let matrixRows = [], columns = [], colTotals = [], grandTotal = 0, rows = [], blockTotalQty = 0;
     let namaKelasRows = [], namaKelasCount = 0, tahunField = null;
@@ -264,6 +283,12 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
       // onDuplicateBlock and NewOrderStep2/AddOn's visible-block slicing,
       // which is what actually reveals block b+1 once this copies into it.
       duplicateBlock: currentCat.hasNamaKelasList && b < blocksCount - 1 ? () => updaters.onDuplicateBlock(catKey, b) : null,
+      // Draggable Reference Sample (OTHERS — see catalog.js): pass the full
+      // new slotId order after a drag; OrderCategoryBlock derives it from
+      // `lines` current order plus the moved item's new position.
+      reorderReferenceSample: currentCat.draggableReferenceSample
+        ? (newSlotIdOrder) => updaters.onLine(refOrderKey, newSlotIdOrder.join(','))
+        : null,
       blockTotalQty, plakRows,
     });
   }

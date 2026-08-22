@@ -411,6 +411,13 @@ a:hover { color: var(--color-accent-900); text-decoration: underline; }
    re-centers them against that first box's own height for every line,
    stacked or not. */
 .ref-sample-line { display: flex; align-items: flex-start; gap: var(--space-3); }
+/* Draggable Reference Sample rows (OTHERS — see catalog.js's
+   draggableReferenceSample): dim the row mid-drag so the teacher can see
+   which one they picked up; the number circle itself signals it's the
+   drag handle. */
+.ref-sample-line-dragging { opacity: 0.4; }
+.line-num-draggable { cursor: grab; }
+.line-num-draggable:active { cursor: grabbing; }
 .ref-image-admin-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));

@@ -284,6 +284,14 @@ export const CATEGORIES = [
     // something — see computeBlocks.js's `redText` and OrderCategoryBlock's
     // `.input-red` class (index.css).
     positionFieldsRedText: true,
+    // Every order's plaque layout can differ (some need only TAJUK
+    // BESAR/TAHUN/ACARA, others all five) — rather than a fixed catalog
+    // order, the teacher can drag each numbered row into whatever position
+    // matches their own plaque design, and Production follows that same
+    // numbering on the artwork. This only reorders the DISPLAY/numbering —
+    // see computeBlocks.js: each field's underlying key/meaning never
+    // changes, so exportCsv.js needs no changes at all.
+    draggableReferenceSample: true,
   },
 ];
 
