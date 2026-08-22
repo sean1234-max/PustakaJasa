@@ -210,6 +210,13 @@ a:hover { color: var(--color-accent-900); text-decoration: underline; }
   background: var(--color-neutral-100);
   opacity: 0.85;
 }
+/* Reference Sample line 3 (ACARA / SUBJEK-POSITION on OTHERS — see
+   catalog.js's positionFieldsRedText): typed text is solid red — this is
+   the position text that actually gets engraved — while the empty
+   placeholder is only a pale tint of the same red, not the usual gray, so
+   the field visually hints at its role even before the teacher types. */
+.input-red { color: #c0392b; }
+.input-red::placeholder { color: rgba(192, 57, 43, 0.45); opacity: 1; }
 .input-price {
   color: var(--color-accent-700);
   font-weight: 600;

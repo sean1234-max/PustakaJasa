@@ -119,7 +119,7 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, refImag
                   </span>
                   <div className="line-num">{ln.num}</div>
                   <input
-                    className="input"
+                    className={ln.redText ? 'input input-red' : 'input'}
                     placeholder={ln.placeholder}
                     value={ln.value}
                     readOnly={!editable.lines}

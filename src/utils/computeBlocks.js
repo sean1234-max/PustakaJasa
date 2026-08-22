@@ -1,6 +1,8 @@
 import {
   CATEGORIES, flattenPlakCatalog, getCategorySubjects, getCategoryColumns, tahunRangeYears,
   getCustomMatrixRowIds, customMatrixLabelKey, matrixCellKey,
+  getCategoryLinePlaceholders, getCategoryPositionLine2Placeholder,
+  getCategoryTahunPlaceholder, getCategoryNamaKelasPlaceholder,
 } from '../data/catalog';
 
 export function snapshotDetail(catKey, blockIdx, isMatrix, isDynamicMatrix, lineValues, matrixValues, rowsByBlockMap, columnsByBlockMap) {
@@ -62,24 +64,35 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
     // defaulting every field to optional. Read by OrderCategoryBlock (the
     // ★ marker) and AppState.jsx's addToCart validation.
     const requiredLineIndices = currentCat.requiredLineIndices || [0];
+    // Resolved per school (SK/SJKC) — plain pass-through for every category
+    // except OTHERS, whose labels are generic placeholders with real
+    // translations (see catalog.js's *ByLanguage fields / getCategory*
+    // resolvers).
+    const catLinePlaceholders = getCategoryLinePlaceholders(currentCat, schoolLanguage);
+    const catPositionLine2Placeholder = getCategoryPositionLine2Placeholder(currentCat, schoolLanguage);
     // Line 3's optional second box (below) gets its own number now instead
     // of sharing "3" with its first box — so every line after it shifts up
     // by one (e.g. OTHERS numbers 1,2,3,4(=3's second box),5 instead of
     // 1,2,3,4). Only categories with a second box at all are affected;
     // LONJAKAN/TOKOH (no positionLine2Placeholder) keep plain 1-per-line
     // numbering.
-    const lines = currentCat.linePlaceholders.map((placeholder, i) => {
+    const lines = catLinePlaceholders.map((placeholder, i) => {
       const key = `${catKey}::${b}::${i}`;
-      const num = currentCat.positionLine2Placeholder && i > 2 ? i + 2 : i + 1;
+      const num = catPositionLine2Placeholder && i > 2 ? i + 2 : i + 1;
       const line = {
         key, num, placeholder, value: lineValues[key] || '',
         required: requiredLineIndices.includes(i),
+        // Line 3's own text renders red on some categories (OTHERS — see
+        // catalog.js's positionFieldsRedText) since it's the position text
+        // that actually gets engraved; every other line stays plain.
+        redText: i === 2 && !!currentCat.positionFieldsRedText,
         onChange: (val) => updaters.onLine(key, val),
       };
-      if (i === 2 && currentCat.positionLine2Placeholder) {
+      if (i === 2 && catPositionLine2Placeholder) {
         const key2 = `${catKey}::${b}::2b`;
         line.secondLine = {
-          key: key2, num: i + 2, placeholder: currentCat.positionLine2Placeholder, value: lineValues[key2] || '',
+          key: key2, num: i + 2, placeholder: catPositionLine2Placeholder, value: lineValues[key2] || '',
+          redText: !!currentCat.positionFieldsRedText,
           onChange: (val) => updaters.onLine(key2, val),
         };
       }
@@ -238,8 +251,8 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
       rows,
       hasNamaKelasList: !!currentCat.hasNamaKelasList,
       namaKelasRows, namaKelasCount, tahun: tahunField,
-      namaKelasPlaceholder: currentCat.namaKelasPlaceholder,
-      tahunPlaceholder: currentCat.tahunPlaceholder,
+      namaKelasPlaceholder: getCategoryNamaKelasPlaceholder(currentCat, schoolLanguage),
+      tahunPlaceholder: getCategoryTahunPlaceholder(currentCat, schoolLanguage),
       addRow: () => updaters.onAddRow(`${catKey}::${b}`),
       addColumn: () => updaters.onAddColumn(`${catKey}::${b}`),
       addColumnSameTahun: () => updaters.onAddColumnSameTahun(`${catKey}::${b}`),

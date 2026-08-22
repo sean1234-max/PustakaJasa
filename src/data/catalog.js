@@ -54,6 +54,30 @@ export function getCategoryColumns(cat, schoolLanguage) {
   return (cat.columnsByLanguage && cat.columnsByLanguage[schoolLanguage]) || cat.columnsByLanguage.SK;
 }
 
+// Same fallback-to-SK pattern as getCategorySubjects/getCategoryColumns
+// above, for OTHERS' Reference Sample field labels — the only category
+// whose labels are generic placeholders rather than a single worked
+// example, so per-language text is worth having (see catalog.js's OTHERS
+// entry). Every other category keeps a plain `linePlaceholders`/
+// `positionLine2Placeholder`/etc. (no *ByLanguage variant), so these just
+// fall through to that unchanged.
+export function getCategoryLinePlaceholders(cat, schoolLanguage) {
+  if (!cat.linePlaceholdersByLanguage) return cat.linePlaceholders;
+  return cat.linePlaceholdersByLanguage[schoolLanguage] || cat.linePlaceholdersByLanguage.SK;
+}
+export function getCategoryPositionLine2Placeholder(cat, schoolLanguage) {
+  if (!cat.positionLine2PlaceholderByLanguage) return cat.positionLine2Placeholder;
+  return cat.positionLine2PlaceholderByLanguage[schoolLanguage] || cat.positionLine2PlaceholderByLanguage.SK;
+}
+export function getCategoryTahunPlaceholder(cat, schoolLanguage) {
+  if (!cat.tahunPlaceholderByLanguage) return cat.tahunPlaceholder;
+  return cat.tahunPlaceholderByLanguage[schoolLanguage] || cat.tahunPlaceholderByLanguage.SK;
+}
+export function getCategoryNamaKelasPlaceholder(cat, schoolLanguage) {
+  if (!cat.namaKelasPlaceholderByLanguage) return cat.namaKelasPlaceholder;
+  return cat.namaKelasPlaceholderByLanguage[schoolLanguage] || cat.namaKelasPlaceholderByLanguage.SK;
+}
+
 const TAHUN_ORDER = ['TAHUN 1', 'TAHUN 2', 'TAHUN 3', 'TAHUN 4', 'TAHUN 5', 'TAHUN 6'];
 
 // Expands a PBD TERBAIK / ALIRAN TERBAIK class row's Tahun range into every
@@ -228,25 +252,38 @@ export const CATEGORIES = [
     // start blank there, same as any other new block.
     hasTahunField: true,
     hasNamaKelasList: true,
-    tahunPlaceholder: 'e.g. 1',
-    namaKelasPlaceholder: 'e.g. ADIF',
+    // *ByLanguage — resolved per school via getCategoryTahunPlaceholder/
+    // getCategoryLinePlaceholders/getCategoryPositionLine2Placeholder/
+    // getCategoryNamaKelasPlaceholder above, same SK/SJKC fallback pattern
+    // getCategorySubjects already uses for MP THP/PBD's subject names.
+    // Every field here is teacher-typed free text already (no restriction
+    // on what language they type), so this only affects which language
+    // the field LABELS themselves show in — not what a school can enter.
+    tahunPlaceholderByLanguage: { SK: 'e.g. 1', SJKC: '例如 1' },
+    namaKelasPlaceholderByLanguage: { SK: 'e.g. ADIF', SJKC: '例如 甲班' },
     // Line 3 (index 2) gets the same optional second box as MP THP/PBD —
     // box 1 is required, same as line 1 (see requiredLineIndices below);
     // what box 2 should ultimately reflect is still TBD (placeholder only
-    // for now, and stays optional).
-    linePlaceholders: [
-      'e.g. HARI ANUGERAH ...',
-      '(pilihan) e.g. 2026',
-      'e.g. ANUGERAH ...',
-      '(pilihan) e.g. TAHUN 1',
-    ],
+    // for now, and stays optional). Placeholders here are short field
+    // labels (TAJUK BESAR/YEAR/ACARA/...) rather than the "e.g. ..."
+    // worked examples every other category uses, since OTHERS has no
+    // single representative example to show.
+    linePlaceholdersByLanguage: {
+      SK: ['TAJUK BESAR', 'YEAR', 'ACARA', '( TAHUN ? )'],
+      SJKC: ['大标题', '年份', '活动', '（年级？）'],
+    },
     // Line 1 is always required for every category (computeBlocks.js
     // defaults to [0]) — OTHERS additionally requires line 3's first box
     // (index 2), since that's the fixed-wording award text every plaque
     // needs regardless of category. Drives both the ★ marker in
     // OrderCategoryBlock and the addToCart validation in AppState.jsx.
     requiredLineIndices: [0, 2],
-    positionLine2Placeholder: '(pilihan) e.g. ...',
+    positionLine2PlaceholderByLanguage: { SK: '( SUBJEK/POSITION )', SJKC: '（科目/位置）' },
+    // Line 3's two boxes (ACARA / SUBJEK-POSITION) render in red — a pale
+    // tint for the placeholder, solid once the teacher actually types
+    // something — see computeBlocks.js's `redText` and OrderCategoryBlock's
+    // `.input-red` class (index.css).
+    positionFieldsRedText: true,
   },
 ];
 
