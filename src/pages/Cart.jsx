@@ -12,17 +12,46 @@ export default function Cart() {
   const cartTotalQty = state.cart.reduce((sum, ci) => sum + (Number(ci.qty) || 0), 0);
   const cartTotalHarga = state.cart.reduce((sum, ci) => sum + ci.harga, 0);
 
+  // A category that spans several cart items (OTHERS' duplicated Tahun
+  // blocks each become their own item — see AppState.jsx's addToCart) is
+  // still just one "order details" from the teacher's point of view, so
+  // this table shows one combined row per (category, Jenis Plak) instead
+  // of one row per underlying item — a different category landing on the
+  // same Jenis Plak code stays its own row, since it's a separate order
+  // details even if the code coincides. Removing a merged row removes
+  // every item folded into it.
+  const groupedCartRows = useMemo(() => {
+    const rows = [];
+    const byKey = new Map();
+    state.cart.forEach((ci) => {
+      const key = `${ci.categoryKey}::${ci.jenisPlak}`;
+      let row = byKey.get(key);
+      if (!row) {
+        row = { key, jenisPlak: ci.jenisPlak, qty: 0, harga: 0, ids: [] };
+        byKey.set(key, row);
+        rows.push(row);
+      }
+      row.qty += Number(ci.qty) || 0;
+      row.harga += ci.harga;
+      row.ids.push(ci.id);
+    });
+    return rows;
+  }, [state.cart]);
+
   // Re-checked here (not just on the picker in OrderCategoryBlock) since a
   // cart item can sit for a while — another school may have bought into
   // the same low-stock code since it was added. This is still only a
   // preview against the last-fetched catalog; plak_stock_deduct is the
-  // real, race-safe enforcement at submit time.
-  const stockViolation = useMemo(() => state.cart
-    .map((ci) => {
-      const status = getStockStatus(ci.jenisPlak, state.plakCatalog);
-      return status && Number(ci.qty) > status.maxOrderable ? { ...ci, maxOrderable: status.maxOrderable } : null;
+  // real, race-safe enforcement at submit time. Checked against each
+  // group's combined qty, not each underlying item's own qty, so a stock
+  // cap breached only once several duplicated blocks are added together
+  // still gets caught here.
+  const stockViolation = useMemo(() => groupedCartRows
+    .map((row) => {
+      const status = getStockStatus(row.jenisPlak, state.plakCatalog);
+      return status && Number(row.qty) > status.maxOrderable ? { ...row, maxOrderable: status.maxOrderable } : null;
     })
-    .find(Boolean), [state.cart, state.plakCatalog]);
+    .find(Boolean), [groupedCartRows, state.plakCatalog]);
 
   const handleSubmit = async () => {
     if (state.cart.length === 0 || submitting || stockViolation) return;
@@ -70,19 +99,19 @@ export default function Cart() {
         <table className="table" style={{ margin: 'var(--space-3) 0 var(--space-8)' }}>
           <thead><tr><th>Jenis Plak</th><th style={{ width: 110 }}>QTY</th><th style={{ width: 130 }}>Harga</th><th style={{ width: 44 }} /></tr></thead>
           <tbody>
-            {state.cart.map((ci) => {
-              const status = getStockStatus(ci.jenisPlak, state.plakCatalog);
-              const overStock = !!status && Number(ci.qty) > status.maxOrderable;
+            {groupedCartRows.map((row) => {
+              const status = getStockStatus(row.jenisPlak, state.plakCatalog);
+              const overStock = !!status && Number(row.qty) > status.maxOrderable;
               return (
-                <tr key={ci.id}>
-                  <td>{ci.jenisPlak}</td>
-                  <td style={overStock ? { color: '#c0392b', fontWeight: 700 } : undefined}>{ci.qty}</td>
-                  <td>RM {ci.harga.toFixed(2)}</td>
-                  <td><button type="button" className="btn btn-ghost btn-icon" aria-label="Remove" onClick={() => removeFromCart(ci.id)}>✕</button></td>
+                <tr key={row.key}>
+                  <td>{row.jenisPlak}</td>
+                  <td style={overStock ? { color: '#c0392b', fontWeight: 700 } : undefined}>{row.qty}</td>
+                  <td>RM {row.harga.toFixed(2)}</td>
+                  <td><button type="button" className="btn btn-ghost btn-icon" aria-label="Remove" onClick={() => row.ids.forEach(removeFromCart)}>✕</button></td>
                 </tr>
               );
             })}
-            {state.cart.length === 0 && (
+            {groupedCartRows.length === 0 && (
               <tr><td colSpan={4} style={{ textAlign: 'center', opacity: 0.5, padding: 'var(--space-4)' }}>No items yet — add categories from New Order → Order Details.</td></tr>
             )}
             <tr><td><strong>TOTAL</strong></td><td><strong>{cartTotalQty}</strong></td><td><strong>RM {cartTotalHarga.toFixed(2)}</strong></td><td /></tr>
