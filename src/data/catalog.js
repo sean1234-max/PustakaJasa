@@ -263,15 +263,12 @@ export const CATEGORIES = [
       SK: ['TAJUK BESAR', 'YEAR', 'ACARA', '( TAHUN ? )'],
       SJKC: ['大标题', '年份', '活动', '（年级？）'],
     },
-    // Line 1 is always required for every category (computeBlocks.js
-    // defaults to [0]). ACARA (line 3's first box) used to be unconditionally
-    // required too, but some orders have no fixed ACARA wording at all — the
-    // real position text comes entirely from each Kuantiti Description row
-    // instead (see exportCsv.js's buildOthersRows, which already falls back
-    // to just the row's own desc when ACARA is blank) — so ACARA is simply
-    // optional now, same as SUBJEK/POSITION always was; if the teacher
-    // leaves it blank, it's skipped, nothing else is required in its place.
-    requiredLineIndices: [0],
+    // Line 1 and ACARA (line 3's first box) are both required, matching
+    // every other category's own ACARA line. Note exportCsv.js's
+    // buildOthersRows still falls back to just each Kuantiti row's own
+    // desc if ACARA somehow ends up blank on an older order — this just
+    // stops a *new* order from being added to cart that way.
+    requiredLineIndices: [0, 2],
     positionLine2PlaceholderByLanguage: { SK: '( SUBJEK/POSITION )', SJKC: '（科目/位置）' },
     // Line 3's two boxes (ACARA / SUBJEK-POSITION) render in red — a pale
     // tint for the placeholder, solid once the teacher actually types
