@@ -1,15 +1,45 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import DatePicker from '../components/DatePicker';
 import ImageDrop from '../components/ImageDrop';
 import { useAppState } from '../state/useAppState';
 import { formatDate, addDays } from '../data/catalog';
+import { uploadLogo } from '../lib/storageApi';
 
 export default function NewOrderStep1() {
   const { state, patch, today, refreshAssignedSalesman } = useAppState();
   const navigate = useNavigate();
   const dueMinDate = addDays(today, 3);
+  // Local, not AppState — this only matters while the teacher is on this
+  // one screen (Next is blocked below until it settles), and doesn't need
+  // to survive a navigation the way the rest of the draft does.
+  const [logoUploading, setLogoUploading] = useState(false);
+
+  // ImageDrop hands back a data URL for an instant local preview (it's
+  // shared with Production/Admin's own reference-image uploaders, which
+  // still store that data URL directly — see ImageDrop.jsx) — this
+  // uploads it to Storage in the background and swaps state.logoDataUrl
+  // to the real public URL once that finishes, so what actually gets
+  // saved on the order is a small URL, not the whole image.
+  const handleLogoChange = async (dataUrl, fileName) => {
+    patch({ logoDataUrl: dataUrl, logoFileName: fileName, stepError: '' });
+    setLogoUploading(true);
+    try {
+      const publicUrl = await uploadLogo(dataUrl, fileName);
+      // Only apply the finished upload if the teacher is still on this same
+      // pick — they may have switched back to "SK" (no logo needed) or
+      // picked a different file while this one was still uploading.
+      patch((st) => (st.schoolType === 'NOT_SK' && st.logoFileName === fileName ? { logoDataUrl: publicUrl } : {}));
+    } catch (err) {
+      console.error('Failed to upload logo to Storage:', err);
+      patch((st) => (st.logoFileName === fileName
+        ? { logoDataUrl: null, logoFileName: '', stepError: 'Could not upload the logo. Please try again.' }
+        : {}));
+    } finally {
+      setLogoUploading(false);
+    }
+  };
 
   // Re-checks the database every time the New Order flow starts (not just
   // once at login) — School->Salesman is admin-managed and can change
@@ -58,6 +88,10 @@ export default function NewOrderStep1() {
     }
     if (!state.schoolType) {
       patch({ stepError: 'Please select whether the school is SK or Others.' });
+      return;
+    }
+    if (state.schoolType === 'NOT_SK' && logoUploading) {
+      patch({ stepError: 'Please wait for the logo to finish uploading.' });
       return;
     }
     if (state.schoolType === 'NOT_SK' && !state.logoDataUrl) {
@@ -209,8 +243,8 @@ export default function NewOrderStep1() {
               <label>Logo</label>
               <ImageDrop
                 value={state.logoDataUrl}
-                fileName={state.logoFileName}
-                onChange={(url, fileName) => patch({ logoDataUrl: url, logoFileName: fileName, stepError: '' })}
+                fileName={logoUploading ? `Uploading ${state.logoFileName}…` : state.logoFileName}
+                onChange={handleLogoChange}
                 placeholder="Upload logo"
                 subtext="PNG or JPG, click to browse"
               />
