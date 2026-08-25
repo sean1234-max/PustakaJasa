@@ -136,6 +136,24 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, refImag
               ) : (
                 <div className="ref-sample-placeholder">No reference image set yet</div>
               )}
+              {/* Live text preview — just a plain list of whatever's been
+                  typed so far, updating live. The image above stays a
+                  static artwork sample; Production doesn't configure
+                  anything for this. */}
+              <div className="ref-sample-live-preview">
+                {blk.lines.some((ln) => String(ln.value || '').trim()) ? (
+                  blk.lines
+                    .filter((ln) => String(ln.value || '').trim())
+                    .map((ln) => (
+                      <div key={ln.key} className="ref-sample-live-line">
+                        <span className="ref-sample-live-num">{ln.num}</span>
+                        <span>{ln.value}</span>
+                      </div>
+                    ))
+                ) : (
+                  <span style={{ opacity: 0.5 }}>Live preview will appear here as the lines are filled in.</span>
+                )}
+              </div>
             </div>
             <div className="ref-sample-lines">
               {blk.lines.map((ln) => (

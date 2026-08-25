@@ -404,6 +404,21 @@ a:hover { color: var(--color-accent-900); text-decoration: underline; }
   border: 1px dashed var(--color-neutral-500);
   background: #fafafa; color: var(--color-text); opacity: 0.5; font-size: 13px;
 }
+/* Live text preview under the reference image — lists whatever the
+   teacher has typed into the numbered lines so far, updating as they
+   type. The image itself stays a plain static artwork sample (Production
+   doesn't need to configure anything for this). */
+.ref-sample-live-preview {
+  margin-top: var(--space-2); padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-neutral-300); background: #fff;
+  font-size: 12px; line-height: 1.5;
+}
+.ref-sample-live-line { display: flex; gap: 6px; }
+.ref-sample-live-num {
+  flex: none; width: 16px; height: 16px; border-radius: 50%;
+  background: var(--color-accent-700); color: #fff;
+  font-size: 10px; font-weight: 700; line-height: 16px; text-align: center;
+}
 .ref-sample-lines { display: flex; flex-direction: column; gap: var(--space-3); }
 /* align-items: flex-start (not center) so the ★/number sit next to line 3's
    FIRST box specifically, not centered across both of its stacked boxes —
