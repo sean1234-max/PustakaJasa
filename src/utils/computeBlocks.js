@@ -87,11 +87,15 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
     // blank placeholder (no fixed meaning) and flow through the exact same
     // rawLines/flatLines/numbering/drag-reorder/required-index logic below
     // as any catalog-defined line.
-    if (currentCat.extendableReferenceSample) {
-      const extraCount = Number(lineValues[`${catKey}::${b}::extraRefLines`]) || 0;
-      if (extraCount > 0) {
-        catLinePlaceholders = [...catLinePlaceholders, ...Array.from({ length: extraCount }, () => '( Additional Line )')];
-      }
+    // Captured outside the `if` below so the Kuantiti column-building
+    // further down (extraRefColumns) can reuse the same base-length/count
+    // without recomputing getCategoryLinePlaceholders a second time.
+    const baseLineLen = catLinePlaceholders.length;
+    const extraRefCount = currentCat.extendableReferenceSample
+      ? Number(lineValues[`${catKey}::${b}::extraRefLines`]) || 0
+      : 0;
+    if (extraRefCount > 0) {
+      catLinePlaceholders = [...catLinePlaceholders, ...Array.from({ length: extraRefCount }, () => '( Additional Line )')];
     }
     const catPositionLine2Placeholder = getCategoryPositionLine2Placeholder(currentCat, schoolLanguage);
     // Line 3's optional second box gets its own slotId ('2b') alongside
@@ -145,7 +149,7 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
     const lines = flatLines.map((ln, i) => ({ ...ln, num: i + 1 }));
 
     let matrixRows = [], columns = [], colTotals = [], grandTotal = 0, rows = [], blockTotalQty = 0;
-    let namaKelasRows = [], namaKelasCount = 0, tahunField = null;
+    let namaKelasRows = [], namaKelasCount = 0, tahunField = null, extraRefColumns = [];
 
     if (isMatrix) {
       // Columns are the fixed catalog list (MP THP 1/2's class levels) —
@@ -254,12 +258,29 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
         const tahunKey = `${catKey}::${b}::tahun`;
         tahunField = { value: lineValues[tahunKey] || '', onChange: (v) => updaters.onLine(tahunKey, v) };
       }
+      // Main Template only (extendableReferenceSample): each Reference
+      // Sample row added past the base 3 (via "+ Add Reference Row") gets
+      // its own Kuantiti column too — `refCol{N}` on the row, N being the
+      // 1-based Reference Sample row number it corresponds to (matches the
+      // "Row N" header shown on both sections). Stored directly on the
+      // Kuantiti row object (rowsByBlockMap) via the existing onRowField
+      // updater — no new updater needed, same mechanism `desc`/`qty` use.
+      extraRefColumns = currentCat.extendableReferenceSample
+        ? Array.from({ length: extraRefCount }, (_, i) => {
+          const num = baseLineLen + i + 1;
+          return { key: `refCol${num}`, label: `Row ${num}` };
+        })
+        : [];
       rows = rawRows.map((row) => ({
         id: row.id, desc: row.desc, qty: row.qty,
         qtyMismatch: namaKelasCount > 0 && Number(row.qty) > 0 && Number(row.qty) !== namaKelasCount,
         setDesc: (v) => updaters.onRowField(rowsKey, row.id, 'desc', v),
         setQty: (v) => updaters.onRowField(rowsKey, row.id, 'qty', v),
         remove: () => updaters.onRowRemove(rowsKey, row.id),
+        extraRefValues: extraRefColumns.map((col) => ({
+          key: col.key, value: row[col.key] || '',
+          onChange: (v) => updaters.onRowField(rowsKey, row.id, col.key, v),
+        })),
       }));
       blockTotalQty = rawRows.reduce((sum, r) => sum + (Number(r.qty) || 0), 0);
     }
@@ -296,6 +317,15 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
       // capped at 5 total per catalog.js's capRowsAt5/extendableReferenceSample.
       addReferenceLine: currentCat.extendableReferenceSample ? () => updaters.onAddReferenceLine(catKey, b) : null,
       canAddReferenceLine: !!currentCat.extendableReferenceSample && lines.length < 5,
+      // "Delete Reference Row" — removes the LAST added Reference Sample
+      // row and its matching Kuantiti column together (draftUpdaters.js's
+      // onRemoveReferenceLine); only ever offered once at least one has
+      // actually been added (extraRefCount > 0) — the base 3 lines are
+      // never removable this way.
+      removeReferenceLine: currentCat.extendableReferenceSample ? () => updaters.onRemoveReferenceLine(catKey, b) : null,
+      canRemoveReferenceLine: extraRefCount > 0,
+      descColumnLabel: currentCat.descColumnLabel,
+      extraRefColumns,
       canAddRow: !currentCat.capRowsAt5 || rows.length < 5,
       columns, matrixRows,
       colTotals: colTotals.map((v) => ({ value: v })), grandTotal,
@@ -361,7 +391,8 @@ export const noopUpdaters = {
   onAddRow: () => {}, onAddRowSameQty: () => {}, onPlakSelect: () => {},
   onColumnField: () => {}, onColumnRemove: () => {}, onAddColumn: () => {}, onAddColumnSameTahun: () => {},
   onAddNamaKelas: () => {}, onDuplicateBlock: () => {}, onRemoveBlock: () => {},
-  onAddMatrixRow: () => {}, onMatrixRowRemove: () => {}, onAddReferenceLine: () => {},
+  onAddMatrixRow: () => {}, onMatrixRowRemove: () => {},
+  onAddReferenceLine: () => {}, onRemoveReferenceLine: () => {},
 };
 
 // Rebuilds read-only `blocks` (the same shape NewOrderStep2 renders live)

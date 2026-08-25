@@ -111,6 +111,36 @@ export function createDraftUpdaters(patch, fields) {
       if (baseLen + current >= 5) return {};
       return { [lineValues]: { ...st[lineValues], [key]: String(current + 1) } };
     }),
+    // "Delete Reference Row" — the reverse of onAddReferenceLine: removes
+    // the LAST added Reference Sample row and, in the same step, deletes
+    // that row's matching Kuantiti column (`refCol{N}`, N = the row's own
+    // 1-based number — see computeBlocks.js's extraRefColumns) from every
+    // Kuantiti row in this block, so a later re-add doesn't resurrect
+    // stale column data under a reused number.
+    onRemoveReferenceLine: (catKey, blockIdx) => patch((st) => {
+      const cat = CATEGORIES.find((c) => c.key === catKey);
+      if (!cat?.extendableReferenceSample) return {};
+      const baseLen = (cat.linePlaceholders || []).length + (cat.positionLine2Placeholder ? 1 : 0);
+      const key = `${catKey}::${blockIdx}::extraRefLines`;
+      const current = Number(st[lineValues][key]) || 0;
+      if (current <= 0) return {};
+      const removedLineIdx = baseLen + current - 1;
+      const removedNum = removedLineIdx + 1;
+      const newLineValues = { ...st[lineValues], [key]: String(current - 1) };
+      delete newLineValues[`${catKey}::${blockIdx}::${removedLineIdx}`];
+      const rowsKey = `${catKey}::${blockIdx}`;
+      const refColKey = `refCol${removedNum}`;
+      const newRowsByBlock = {
+        ...st[rowsByBlock],
+        [rowsKey]: (st[rowsByBlock][rowsKey] || []).map((r) => {
+          if (!(refColKey in r)) return r;
+          const next = { ...r };
+          delete next[refColKey];
+          return next;
+        }),
+      };
+      return { [lineValues]: newLineValues, [rowsByBlock]: newRowsByBlock };
+    }),
     // Jenis Plak (`hasNamaKelasList` categories — OTHERS) has the exact same
     // shared-on-block-0-only/stale-copy problem as onLine above: the picker
     // is only ever shown for block 0 (showSharedSections), but each

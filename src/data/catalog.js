@@ -228,6 +228,12 @@ export const CATEGORIES = [
     capRowsAt5: true,
     defaultRowDescFromPosition: true,
     hideQtyLabelSuffix: true,
+    // Kuantiti's Description column always corresponds to Reference
+    // Sample's own row 3 (SUBJEK/POSITION) — this category's
+    // positionFromRows already reads each Kuantiti row's `desc` as the
+    // actual engraved position text, so the header spells that
+    // relationship out for the teacher instead of a generic "Description".
+    descColumnLabel: 'Row 3 Subjek/Position',
   },
   {
     key: 'OTHERS', label: 'Mata Pelajaran / Klas', mode: 'list', blocksCount: 6,

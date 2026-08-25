@@ -178,9 +178,14 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, refImag
               ))}
             </div>
           </div>
-          {blk.addReferenceLine && editable.lines && blk.canAddReferenceLine && (
-            <div className="row-actions" style={{ marginTop: 'var(--space-2)' }}>
-              <button type="button" className="btn btn-secondary" onClick={blk.addReferenceLine}>+ Add Reference Row</button>
+          {blk.addReferenceLine && editable.lines && (
+            <div className="row-actions" style={{ marginTop: 'var(--space-2)', display: 'flex', gap: 8 }}>
+              {blk.canAddReferenceLine && (
+                <button type="button" className="btn btn-secondary" onClick={blk.addReferenceLine}>+ Add Reference Row</button>
+              )}
+              {blk.canRemoveReferenceLine && (
+                <button type="button" className="btn btn-ghost" onClick={blk.removeReferenceLine}>− Delete Reference Row</button>
+              )}
             </div>
           )}
         </>
@@ -450,7 +455,8 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, refImag
           <table className="table">
             <thead>
               <tr>
-                <th>Description</th>
+                <th>{blk.descColumnLabel || 'Description'}</th>
+                {blk.extraRefColumns.map((col) => <th key={col.key}>{col.label}</th>)}
                 <th style={{ width: 140 }}>{blk.qtyColHeader}</th>
                 {editable.addRemoveRows && <th style={{ width: 48 }} />}
               </tr>
@@ -463,6 +469,13 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, refImag
                       ? <input className="input" placeholder="e.g. TAHUN 1" value={row.desc} onChange={(e) => row.setDesc(e.target.value)} />
                       : row.desc}
                   </td>
+                  {row.extraRefValues.map((rv) => (
+                    <td key={rv.key}>
+                      {editable.rowDesc
+                        ? <input className="input" value={rv.value} onChange={(e) => rv.onChange(e.target.value)} />
+                        : rv.value}
+                    </td>
+                  ))}
                   <td>
                     <input
                       className="input"
@@ -479,7 +492,12 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, refImag
                   )}
                 </tr>
               ))}
-              <tr><td><strong>TOTAL</strong></td><td><strong>{blk.blockTotalQty}</strong></td>{editable.addRemoveRows && <td />}</tr>
+              <tr>
+                <td><strong>TOTAL</strong></td>
+                {blk.extraRefColumns.map((col) => <td key={col.key} />)}
+                <td><strong>{blk.blockTotalQty}</strong></td>
+                {editable.addRemoveRows && <td />}
+              </tr>
             </tbody>
           </table>
           {editable.addRemoveRows && blk.canAddRow && (
