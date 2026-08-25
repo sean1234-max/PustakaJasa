@@ -9,7 +9,7 @@ import {
   fetchOrders, insertOrder, updateOrder, nextOrderSeq, fetchMyAssignedSalesmen,
 } from '../lib/ordersApi';
 import {
-  fetchReferenceImages, saveReferenceImage,
+  fetchReferenceImages, saveReferenceImage, saveReferenceImagePositions,
   fetchPlakCatalog, addPlakNode, removePlakNode, updatePlakNode, updatePlakNodeOrder, updatePlakNodeStock,
   deductPlakStock, restorePlakStock,
 } from '../lib/catalogAdminApi';
@@ -146,6 +146,7 @@ function initialState() {
     productionToast: '',
 
     refImages: {},
+    refImagePositions: {},
     plakCatalog: [],
     plakCatalogLoaded: false,
 
@@ -308,7 +309,9 @@ export function AppStateProvider({ children }) {
     if (!state.role) return undefined;
     let cancelled = false;
     Promise.all([fetchReferenceImages(), fetchPlakCatalog()])
-      .then(([refImages, plakCatalog]) => { if (!cancelled) patch({ refImages, plakCatalog, plakCatalogLoaded: true }); })
+      .then(([refData, plakCatalog]) => {
+        if (!cancelled) patch({ refImages: refData.urls, refImagePositions: refData.positions, plakCatalog, plakCatalogLoaded: true });
+      })
       .catch((err) => {
         console.error('Failed to load catalog settings from Supabase:', err);
         if (!cancelled) patch({ plakCatalogLoaded: true });
@@ -965,6 +968,15 @@ export function AppStateProvider({ children }) {
     saveReferenceImage(slotId, dataUrl).catch((err) => console.error('Failed to save reference image to Supabase:', err));
   }, [patch]);
 
+  // Production/Admin: where each numbered Reference Sample line's text
+  // should overlay on this slot's image (ReferenceImagePositionEditor.jsx)
+  // — same optimistic-update-then-persist shape as updateReferenceImage
+  // above.
+  const updateReferenceImagePositions = useCallback((slotId, positions) => {
+    patch((st) => ({ refImagePositions: { ...st.refImagePositions, [slotId]: positions } }));
+    saveReferenceImagePositions(slotId, positions).catch((err) => console.error('Failed to save reference image positions to Supabase:', err));
+  }, [patch]);
+
   // Production: signals the order is physically finished and handed off to
   // delivery. Only offered once an invoice ID is on record (production's own
   // dashboard groups orders into "Pending Invoice" vs "Ready for Export" —
@@ -1119,7 +1131,7 @@ export function AppStateProvider({ children }) {
     openAddOn, submitPendingAddOn, cancelPendingAddOn, rejectAddOn, approveAddOn, approveOrder, setInvoiceId,
     recordPrint,
     markProductionDone,
-    updateReferenceImage, addCatalogNode, removeCatalogNode, updateCatalogNodePrice, updateCatalogNodeStock, setCatalogNodeHidden, moveCatalogNode,
+    updateReferenceImage, updateReferenceImagePositions, addCatalogNode, removeCatalogNode, updateCatalogNodePrice, updateCatalogNodeStock, setCatalogNodeHidden, moveCatalogNode,
     reorderCatalogSiblings,
     refreshAssignedSalesman,
   };

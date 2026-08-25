@@ -157,7 +157,7 @@ export default function InvoicingOrderDetail() {
                   <CategoryTabs categories={categories} active={currentCat?.key} onSelect={setActiveCat} />
                 </div>
                 {catBlocks.map((blk) => (
-                  <OrderCategoryBlock key={blk.idx} blk={blk} editable={READONLY} refImageUrl={state.refImages?.[blk.sampleSlotId]} />
+                  <OrderCategoryBlock key={blk.idx} blk={blk} editable={READONLY} refImageUrl={state.refImages?.[blk.sampleSlotId]} refPositions={state.refImagePositions?.[blk.sampleSlotId]} />
                 ))}
               </>
             )}

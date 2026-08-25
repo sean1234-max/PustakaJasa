@@ -234,6 +234,11 @@ export const CATEGORIES = [
     // actual engraved position text, so the header spells that
     // relationship out for the teacher instead of a generic "Description".
     descColumnLabel: 'Row 3 Subjek/Position',
+    // Reference image can show the teacher's typed text live, overlaid at
+    // Production-configured positions (ReferenceImagePositionEditor.jsx /
+    // ReferenceImageOverlay.jsx) — see supabase/migrations/
+    // 0037_add_reference_image_text_positions.sql.
+    showReferenceImageOverlay: true,
   },
   {
     key: 'OTHERS', label: 'Mata Pelajaran / Klas', mode: 'list', blocksCount: 6,
@@ -308,6 +313,8 @@ export const CATEGORIES = [
     // see computeBlocks.js: each field's underlying key/meaning never
     // changes, so exportCsv.js needs no changes at all.
     draggableReferenceSample: true,
+    // See TOKOH's own note above.
+    showReferenceImageOverlay: true,
   },
 ];
 

@@ -6,17 +6,32 @@ import { isCustomPlakCode } from '../data/catalog';
 // everyone else just reads them. See supabase/migrations/0006_catalog_admin.sql.
 
 export async function fetchReferenceImages() {
-  const { data, error } = await supabase.from('catalog_reference_images').select('slot_id, image_data_url');
+  const { data, error } = await supabase.from('catalog_reference_images').select('slot_id, image_data_url, text_positions');
   if (error) throw error;
-  const map = {};
-  (data || []).forEach((row) => { map[row.slot_id] = row.image_data_url; });
-  return map;
+  const urls = {};
+  const positions = {};
+  (data || []).forEach((row) => {
+    urls[row.slot_id] = row.image_data_url;
+    if (row.text_positions) positions[row.slot_id] = row.text_positions;
+  });
+  return { urls, positions };
 }
 
 export async function saveReferenceImage(slotId, dataUrl) {
   const { error } = await supabase
     .from('catalog_reference_images')
     .upsert({ slot_id: slotId, image_data_url: dataUrl, updated_at: new Date().toISOString() });
+  if (error) throw error;
+}
+
+// Where each numbered Reference Sample line's text should overlay on this
+// slot's image — see ReferenceImagePositionEditor.jsx. Upsert only touches
+// the columns given here (PostgREST upsert = INSERT ... ON CONFLICT DO
+// UPDATE SET <given columns>), so this can never clear image_data_url.
+export async function saveReferenceImagePositions(slotId, positions) {
+  const { error } = await supabase
+    .from('catalog_reference_images')
+    .upsert({ slot_id: slotId, text_positions: positions, updated_at: new Date().toISOString() });
   if (error) throw error;
 }
 

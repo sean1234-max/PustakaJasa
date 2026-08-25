@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import PlakPicker from './PlakPicker';
+import ReferenceImageOverlay from './ReferenceImageOverlay';
 import { getStockStatus } from '../data/catalog';
 
 const TAHUN_OPTIONS = ['TAHUN 1', 'TAHUN 2', 'TAHUN 3', 'TAHUN 4', 'TAHUN 5', 'TAHUN 6'];
@@ -34,7 +35,7 @@ function blockHasSectionData(blk) {
 // only the last currently-revealed block (see NewOrderStep2/AddOn's
 // visible-block slicing) can duplicate itself into the next one, so an
 // earlier already-duplicated-from block doesn't confusingly overwrite it.
-export default function OrderCategoryBlock({ blk, editable, plakOptions, refImageUrl, hideEmptyRows, isLastBlock }) {
+export default function OrderCategoryBlock({ blk, editable, plakOptions, refImageUrl, refPositions, hideEmptyRows, isLastBlock }) {
   // Drag-and-drop reordering of Reference Sample rows (OTHERS — see
   // catalog.js's draggableReferenceSample / computeBlocks.js's
   // reorderReferenceSample). Only offered when actually editable (never on
@@ -131,11 +132,7 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, refImag
 
           <div className="ref-sample-grid">
             <div className="ref-sample-image">
-              {refImageUrl ? (
-                <img src={refImageUrl} alt="Reference sample" className="ref-sample-img" />
-              ) : (
-                <div className="ref-sample-placeholder">No reference image set yet</div>
-              )}
+              <ReferenceImageOverlay imageUrl={refImageUrl} positions={refPositions} lines={blk.lines} />
             </div>
             <div className="ref-sample-lines">
               {blk.lines.map((ln) => (

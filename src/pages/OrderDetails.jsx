@@ -154,7 +154,7 @@ export default function OrderDetails() {
                     <CategoryTabs categories={categories} active={currentCat?.key} onSelect={setActiveCat} />
                   </div>
                   {catBlocks.map((blk) => (
-                    <OrderCategoryBlock key={blk.idx} blk={blk} editable={READONLY} refImageUrl={state.refImages?.[blk.sampleSlotId]} />
+                    <OrderCategoryBlock key={blk.idx} blk={blk} editable={READONLY} refImageUrl={state.refImages?.[blk.sampleSlotId]} refPositions={state.refImagePositions?.[blk.sampleSlotId]} />
                   ))}
                 </>
               )}
@@ -200,7 +200,7 @@ export default function OrderDetails() {
                   className={`print-category-page${catIdx > 0 ? ' print-category-break' : ''}`}
                 >
                   {blocks.map((blk, i) => (
-                    <OrderCategoryBlock key={i} blk={blk} editable={READONLY} refImageUrl={state.refImages?.[blk.sampleSlotId]} hideEmptyRows />
+                    <OrderCategoryBlock key={i} blk={blk} editable={READONLY} refImageUrl={state.refImages?.[blk.sampleSlotId]} refPositions={state.refImagePositions?.[blk.sampleSlotId]} hideEmptyRows />
                   ))}
                 </div>
               ))}

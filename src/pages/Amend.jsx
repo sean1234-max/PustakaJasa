@@ -59,7 +59,7 @@ export default function Amend() {
         </div>
 
         {blocks.map((blk, i) => (
-          <OrderCategoryBlock key={blk.idx} blk={blk} editable={EDITABLE} refImageUrl={state.refImages?.[blk.sampleSlotId]} isLastBlock={i === blocks.length - 1} />
+          <OrderCategoryBlock key={blk.idx} blk={blk} editable={EDITABLE} refImageUrl={state.refImages?.[blk.sampleSlotId]} refPositions={state.refImagePositions?.[blk.sampleSlotId]} isLastBlock={i === blocks.length - 1} />
         ))}
 
         <div className="row-split" style={{ marginTop: 'var(--space-6)' }}>
