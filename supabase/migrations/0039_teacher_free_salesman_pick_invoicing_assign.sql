@@ -29,12 +29,12 @@ drop policy if exists "salesman update assigned orders" on public.orders;
 
 drop table if exists public.salesman_assignments;
 
-drop function if exists public.my_assigned_salesman_ids();
-drop function if exists public.my_assigned_salesman_id();
-
 -- Teacher can now submit an order naming ANY salesman, not just a
 -- pre-assigned one — still validated server-side to be a real salesman
--- account (not just any uuid).
+-- account (not just any uuid). Must drop/recreate these two policies
+-- BEFORE dropping my_assigned_salesman_ids() below, since both currently
+-- depend on it (Postgres won't drop a function while a policy still
+-- references it).
 drop policy if exists "teacher creates own orders" on public.orders;
 create policy "teacher creates own orders" on public.orders
   for insert with check (
@@ -52,6 +52,9 @@ create policy "teacher creates own orders" on public.orders
 drop policy if exists "teacher reads assigned salesman profile" on public.profiles;
 create policy "authenticated reads salesman profiles" on public.profiles
   for select using (auth.role() = 'authenticated' and role = 'salesman');
+
+drop function if exists public.my_assigned_salesman_ids();
+drop function if exists public.my_assigned_salesman_id();
 
 -- ---------------------------------------------------------------------
 -- 2) Salesman's own order visibility used to be derived from
