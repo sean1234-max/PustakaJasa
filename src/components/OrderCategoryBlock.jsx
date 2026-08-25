@@ -144,7 +144,11 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
                   return (
                     <div key={ln.key} className={`ref-sample-live-line${ln.redText ? ' ref-sample-live-red' : ''}`}>
                       <span className="ref-sample-live-num">{ln.num}</span>
-                      <span className="ref-sample-live-text" style={{ opacity: hasValue ? 1 : 0.4 }}>
+                      {/* Red/bold lines (e.g. Main Template's ACARA and
+                          SUBJEK/POSITION) always show at full strength —
+                          dimming them the same as a plain placeholder would
+                          undercut the whole point of calling them out. */}
+                      <span className="ref-sample-live-text" style={{ opacity: hasValue || ln.redText ? 1 : 0.4 }}>
                         {hasValue ? ln.value : ln.placeholder}
                       </span>
                     </div>

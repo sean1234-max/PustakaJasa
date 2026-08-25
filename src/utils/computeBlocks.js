@@ -138,16 +138,27 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
       return line;
     });
     let flatLines = rawLines.flatMap((ln) => (ln.secondLine ? [ln, ln.secondLine] : [ln]));
-    // Draggable categories (OTHERS): the teacher can freely reorder these
-    // rows on screen — purely a display/numbering convenience so Production
-    // knows which row to expect where on the reference-sample artwork, not
-    // a change to what each field means or where its value is stored (see
-    // catalog.js's draggableReferenceSample). The chosen order is kept as a
-    // plain lineValues entry (a comma-joined slotId list under refOrderKey)
-    // so it rides along with every existing lineValues mechanism —
-    // snapshot, reset, cart-to-order reconstruction — for free, with no new
-    // state field or call-site plumbing needed. Unrecognized/missing
-    // slotIds just fall back to the natural order.
+    // Each line's displayed number is assigned from its ORIGINAL
+    // (catalog-defined) order, BEFORE any drag-reorder below — a dragged
+    // row keeps its own number wherever it's moved to, rather than
+    // renumbering by new position. Two things depend on a row's number
+    // staying stable: Main Template's Kuantiti column labels
+    // (extraRefColumns further down — "Row 4"/"Row 5" is computed from a
+    // line's original position, not its current on-screen order), and
+    // simply not confusing the teacher by having a box they know as
+    // "Row 4" suddenly relabel itself "Row 2" just because they dragged
+    // it earlier in the list.
+    flatLines = flatLines.map((ln, i) => ({ ...ln, num: i + 1 }));
+    // Draggable categories (Main Template, OTHERS): the teacher can freely
+    // reorder these rows on screen — purely a display-ORDER convenience so
+    // Production knows which row to expect where on the reference-sample
+    // artwork, not a change to what each field means, where its value is
+    // stored, or its own number (see catalog.js's draggableReferenceSample).
+    // The chosen order is kept as a plain lineValues entry (a comma-joined
+    // slotId list under refOrderKey) so it rides along with every existing
+    // lineValues mechanism — snapshot, reset, cart-to-order reconstruction
+    // — for free, with no new state field or call-site plumbing needed.
+    // Unrecognized/missing slotIds just fall back to the natural order.
     if (currentCat.draggableReferenceSample) {
       const storedOrder = (lineValues[refOrderKey] || '').split(',').filter(Boolean);
       if (storedOrder.length) {
@@ -157,7 +168,7 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
         flatLines = [...ordered, ...flatLines.filter((ln) => !seen.has(ln.slotId))];
       }
     }
-    const lines = flatLines.map((ln, i) => ({ ...ln, num: i + 1 }));
+    const lines = flatLines;
 
     let matrixRows = [], columns = [], colTotals = [], grandTotal = 0, rows = [], blockTotalQty = 0;
     let namaKelasRows = [], namaKelasCount = 0, tahunField = null, extraRefColumns = [];

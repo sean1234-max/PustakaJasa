@@ -428,7 +428,7 @@ a:hover { color: var(--color-accent-900); text-decoration: underline; }
   font-size: 9px; font-weight: 700; line-height: 14px; text-align: center;
 }
 .ref-sample-live-text { flex: 1; text-align: center; }
-.ref-sample-live-red .ref-sample-live-text { color: #c0392b; }
+.ref-sample-live-red .ref-sample-live-text { color: #c0392b; font-weight: 700; }
 .ref-sample-lines { display: flex; flex-direction: column; gap: var(--space-3); }
 /* align-items: flex-start (not center) so the ★/number sit next to line 3's
    FIRST box specifically, not centered across both of its stacked boxes —
