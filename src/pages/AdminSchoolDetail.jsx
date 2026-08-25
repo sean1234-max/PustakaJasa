@@ -3,10 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import AdminLayout from '../components/AdminLayout';
 import { useAppState } from '../state/useAppState';
 import { STATUS_STAGES, STATUS_BG, STATUS_TEXT } from '../data/catalog';
-import {
-  fetchAllProfiles, fetchSalesmanAssignments, updateProfile, resetPassword,
-  assignSalesman, unassignSalesman, logAdminAction,
-} from '../lib/adminApi';
+import { fetchAllProfiles, updateProfile, resetPassword, logAdminAction } from '../lib/adminApi';
 
 const inputClass = 'w-full rounded-lg border border-outline-variant bg-surface-container-lowest text-on-surface focus:ring-2 focus:ring-primary focus:border-primary py-2.5 px-4 shadow-sm outline-none transition-all';
 const secondaryBtnClass = 'w-full sm:w-auto bg-surface-container-lowest border border-outline-variant text-on-surface-variant hover:text-on-surface text-label-bold font-semibold py-2.5 px-4 rounded-lg shadow-sm hover:shadow-md transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed';
@@ -16,17 +13,15 @@ export default function AdminSchoolDetail() {
   const navigate = useNavigate();
   const { state } = useAppState();
   const [profiles, setProfiles] = useState(null);
-  const [assignments, setAssignments] = useState([]);
   const [toast, setToast] = useState('');
   const [error, setError] = useState('');
-  const [pendingSalesmanId, setPendingSalesmanId] = useState('');
   const [confirmingStatus, setConfirmingStatus] = useState(null);
   const [newPassword, setNewPassword] = useState('');
   const [pendingLanguage, setPendingLanguage] = useState('');
 
   const load = () => {
-    Promise.all([fetchAllProfiles(), fetchSalesmanAssignments()])
-      .then(([p, a]) => { setProfiles(p); setAssignments(a); })
+    fetchAllProfiles()
+      .then(setProfiles)
       .catch((err) => console.error('Failed to load school:', err));
   };
 
@@ -48,47 +43,7 @@ export default function AdminSchoolDetail() {
   const school = profiles.find((p) => p.id === id);
   if (!school) return <AdminLayout title="School Details"><p className="text-body-md text-on-surface-variant">School not found.</p></AdminLayout>;
 
-  const salesmenOptions = profiles.filter((p) => p.role === 'salesman');
-  const assignedSalesmanIds = assignments.filter((a) => a.teacher_id === id).map((a) => a.salesman_id);
-  const assignedSalesmen = salesmenOptions.filter((s) => assignedSalesmanIds.includes(s.id));
-  const unassignedSalesmen = salesmenOptions.filter((s) => !assignedSalesmanIds.includes(s.id));
   const orders = (state.orders || []).filter((o) => o.createdBy === id);
-
-  const handleAssign = async () => {
-    if (!pendingSalesmanId) return;
-    const newSalesman = salesmenOptions.find((s) => s.id === pendingSalesmanId);
-    try {
-      await assignSalesman(pendingSalesmanId, id);
-      await logAdminAction({
-        action: 'Admin assigned a salesman to a school',
-        targetTable: 'salesman_assignments',
-        targetId: id,
-        after: { salesman: newSalesman?.display_name || 'None', school: school.sekolah },
-      });
-      setToast(`${school.sekolah || 'This school'} has been assigned to ${newSalesman?.display_name || 'the selected salesman'}.`);
-      setPendingSalesmanId('');
-      load();
-    } catch (err) {
-      setError(err.message);
-    }
-  };
-
-  const handleUnassign = async (salesmanId) => {
-    const salesman = salesmenOptions.find((s) => s.id === salesmanId);
-    try {
-      await unassignSalesman(salesmanId, id);
-      await logAdminAction({
-        action: 'Admin unassigned a salesman from a school',
-        targetTable: 'salesman_assignments',
-        targetId: id,
-        before: { salesman: salesman?.display_name || 'None', school: school.sekolah },
-      });
-      setToast(`${salesman?.display_name || 'Salesman'} has been unassigned from ${school.sekolah || 'this school'}.`);
-      load();
-    } catch (err) {
-      setError(err.message);
-    }
-  };
 
   const handleConfirmStatus = async (newStatus) => {
     try {
@@ -197,44 +152,6 @@ export default function AdminSchoolDetail() {
           </div>
 
           <div className="space-y-8 bg-surface p-6 rounded-lg border border-outline-variant/50">
-            <div>
-              <div className="mb-4">
-                <span className="text-label-bold text-on-surface-variant uppercase tracking-widest block mb-1">Salesmen</span>
-                <span className="text-body-sm text-on-surface-variant">A school can be assigned to up to 3 salesmen (e.g. a sales manager plus a salesman) — the teacher picks which one when placing an order.</span>
-              </div>
-              {assignedSalesmen.length === 0 ? (
-                <p className="text-body-sm text-on-surface-variant italic mb-4">No salesmen assigned yet.</p>
-              ) : (
-                <ul className="mb-4 divide-y divide-outline-variant">
-                  {assignedSalesmen.map((s) => (
-                    <li key={s.id} className="flex items-center justify-between py-2.5">
-                      <span className="text-body-md text-on-surface">{s.display_name || s.email}</span>
-                      <button type="button" onClick={() => handleUnassign(s.id)} className="text-label-bold font-semibold text-error hover:text-error hover:bg-error/10 px-3 py-1.5 rounded transition-colors">
-                        Unassign
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              {assignedSalesmen.length >= 3 ? (
-                <p className="text-body-sm text-on-surface-variant italic">Maximum of 3 salesmen reached for this school.</p>
-              ) : unassignedSalesmen.length === 0 ? (
-                <p className="text-body-sm text-on-surface-variant italic">No more salesmen available to assign.</p>
-              ) : (
-                <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
-                  <select className={`${inputClass} sm:w-2/3`} value={pendingSalesmanId} onChange={(e) => setPendingSalesmanId(e.target.value)}>
-                    <option value="">Select a salesman...</option>
-                    {unassignedSalesmen.map((s) => <option key={s.id} value={s.id}>{s.display_name || s.email}</option>)}
-                  </select>
-                  <button type="button" disabled={!pendingSalesmanId} onClick={handleAssign} className={`${secondaryBtnClass} sm:w-1/3`}>
-                    Assign Salesman
-                  </button>
-                </div>
-              )}
-            </div>
-
-            <hr className="border-outline-variant" />
-
             <div>
               <div className="mb-4">
                 <span className="text-label-bold text-on-surface-variant uppercase tracking-widest block mb-1">Change Password</span>

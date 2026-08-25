@@ -113,13 +113,13 @@ Deno.serve(async (req) => {
     if (!userId) return jsonResponse({ error: 'User is required.' }, 400);
     if (userId === user.id) return jsonResponse({ error: 'You cannot delete your own account.' }, 400);
 
-    // Assignment rows reference this profile by id (teacher_id or
+    // Assignment rows reference this profile by id (invoicing_id or
     // salesman_id) — clear those first so they can't dangle, mirroring how
-    // reassignSalesman/unassignSalesman (src/lib/adminApi.js) already treat
-    // this table as owned by the assignment relationship, not by either
-    // side's account lifecycle.
-    await adminClient.from('salesman_assignments').delete().eq('teacher_id', userId);
-    await adminClient.from('salesman_assignments').delete().eq('salesman_id', userId);
+    // assignInvoicingSalesman/unassignInvoicingSalesman (src/lib/adminApi.js)
+    // already treat this table as owned by the assignment relationship, not
+    // by either side's account lifecycle.
+    await adminClient.from('invoicing_salesman_assignments').delete().eq('invoicing_id', userId);
+    await adminClient.from('invoicing_salesman_assignments').delete().eq('salesman_id', userId);
 
     // Delete the profile row before the auth user, not after: if this
     // account has orders/audit-log history referencing it, the delete

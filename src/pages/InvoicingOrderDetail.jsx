@@ -3,8 +3,9 @@ import { useParams, useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
+import PriceTable from '../components/PriceTable';
 import { useAppState } from '../state/useAppState';
-import { STATUS_STAGES, STATUS_BG, STATUS_TEXT, formatDate } from '../data/catalog';
+import { STATUS_STAGES, STATUS_BG, STATUS_TEXT, formatDate, standardUnitPrice } from '../data/catalog';
 import { reconstructBlocksForCategory } from '../utils/computeBlocks';
 import { getOrderCategories } from '../utils/exportCsv';
 import { groupItemsByBatch } from '../utils/orderBatches';
@@ -13,19 +14,48 @@ import { getOrderChangeStamp } from '../utils/orderStamp';
 const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: false, matrix: false, jenisPlak: false };
 
 // Invoicing Department's own order view — assigns/displays the Invoice
-// Number (setInvoiceId, same action Production used to call — see
-// src/state/AppState.jsx) and shows the original-vs-Tambahan breakdown
-// (groupItemsByBatch, same helper SalesOrderSummary/ProductionOrderDetail
-// already use) so the relationship between an order's original items and
-// any approved Tambahan rounds is always visible from here.
+// Number and shows the original-vs-Tambahan breakdown (groupItemsByBatch,
+// same helper SalesOrderSummary/ProductionOrderDetail already use).
+//
+// A Salesman sometimes hands Invoicing a paper hard copy of an order
+// before ever clicking Approve in the system — receiving that hard copy
+// already means they've agreed to it. So while an order is still
+// "Submitted to Sales", this page lets Invoicing adjust pricing (same
+// capability Sales would have had) and Approve + save the Invoice Number
+// in one action (approveAndSetInvoiceId, src/state/AppState.jsx) — no
+// separate Sales click needed. Once an order is already "In Production"
+// (approved via either path), pricing is frozen and this page falls back
+// to the simple invoice-only entry (setInvoiceId), same as before.
 export default function InvoicingOrderDetail() {
-  const { state, setInvoiceId } = useAppState();
+  const { state, setInvoiceId, approveAndSetInvoiceId } = useAppState();
   const { id } = useParams();
   const navigate = useNavigate();
   const order = state.orders.find((o) => o.id === id);
+  const awaitingApproval = order?.status === 'Submitted to Sales';
 
   const [invoiceDraft, setInvoiceDraft] = useState('');
   const [page, setPage] = useState('summary');
+
+  // Same pattern as SalesOrderSummary's own priceDrafts — only meaningful
+  // while awaitingApproval; a not-yet-approved order never has a Tambahan
+  // batch yet, so PriceTable's own batch-grouping is a no-op here.
+  const [priceDrafts, setPriceDrafts] = useState(() => {
+    const out = {};
+    (order?.items || []).forEach((it) => {
+      out[it.id] = it.unitPrice ?? standardUnitPrice(it.jenisPlak, state.plakCatalog) ?? 0;
+    });
+    return out;
+  });
+  const rows = useMemo(() => (order?.items || []).map((it) => {
+    const unitPrice = Number(priceDrafts[it.id] ?? it.unitPrice ?? 0);
+    const harga = unitPrice * (Number(it.qty) || 0);
+    return { ...it, unitPrice, harga };
+  }), [order, priceDrafts]);
+  const setPrice = (itemIds, value) => setPriceDrafts((prev) => {
+    const next = { ...prev };
+    itemIds.forEach((itemId) => { next[itemId] = value; });
+    return next;
+  });
 
   const categories = useMemo(() => (order ? getOrderCategories(order) : []), [order]);
   const [activeCat, setActiveCat] = useState(() => categories[0]?.key || '');
@@ -40,9 +70,18 @@ export default function InvoicingOrderDetail() {
   const idx = STATUS_STAGES.indexOf(order.status);
   const stamp = getOrderChangeStamp(order);
   const itemGroups = groupItemsByBatch(order.items);
+  const totalQty = rows.reduce((sum, it) => sum + (Number(it.qty) || 0), 0);
+  const totalHarga = rows.reduce((sum, it) => sum + it.harga, 0);
+  const priceAdjusted = order.priceAdjusted || rows.some((it) => it.unitPrice !== standardUnitPrice(it.jenisPlak, state.plakCatalog));
 
   const handleSaveInvoice = () => {
     setInvoiceId(order.id, invoiceDraft);
+    setInvoiceDraft('');
+  };
+
+  const handleApproveAndInvoice = () => {
+    const updatedItems = rows.map((r) => ({ ...r, unitPrice: r.unitPrice, harga: r.harga }));
+    approveAndSetInvoiceId(order.id, updatedItems, invoiceDraft);
     setInvoiceDraft('');
   };
 
@@ -91,15 +130,21 @@ export default function InvoicingOrderDetail() {
               <div><div className="dim">Total Amount</div><div>RM {order.totalAmount.toFixed(2)}</div></div>
             </div>
 
-            <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Invoice Number</div>
-            {order.invoiceId ? (
-              <div style={{ marginTop: 'var(--space-2)' }}>
-                <div>{order.invoiceId}</div>
-              </div>
-            ) : (
-              <div className="field" style={{ maxWidth: 340, marginTop: 'var(--space-2)' }}>
-                <label htmlFor="invoiceId">Invoice Number</label>
-                <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+            {awaitingApproval ? (
+              <>
+                <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Jenis Plak / Price per Unit / QTY / Harga</div>
+                <p className="hint-text" style={{ marginTop: 0 }}>
+                  This order hasn't been approved in the system yet. Adjust pricing if needed, then Approve + save the Invoice Number below — this approves the order the same way a Salesman's own Approve would.
+                </p>
+                <PriceTable
+                  rows={rows} editable priceDrafts={priceDrafts} setPrice={setPrice}
+                  plakCatalog={state.plakCatalog} totalQty={totalQty} totalHarga={totalHarga} priceAdjusted={priceAdjusted}
+                  hideCategory combineJenisPlak
+                />
+
+                <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Approve &amp; Invoice Number</div>
+                <div className="field" style={{ maxWidth: 340, marginTop: 'var(--space-2)' }}>
+                  <label htmlFor="invoiceId">Invoice Number</label>
                   <input
                     className="input"
                     id="invoiceId"
@@ -107,40 +152,70 @@ export default function InvoicingOrderDetail() {
                     value={invoiceDraft}
                     onChange={(e) => setInvoiceDraft(e.target.value)}
                   />
-                  <button type="button" className="btn btn-primary" onClick={handleSaveInvoice}>Save</button>
                 </div>
-              </div>
-            )}
-            {state.productionToast && <p className="hint-text" style={{ marginTop: 'var(--space-2)' }}>{state.productionToast}</p>}
+                {state.productionToast && <p className="hint-text" style={{ marginTop: 'var(--space-2)' }}>{state.productionToast}</p>}
 
-            <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Original vs Tambahan</div>
-            {itemGroups.map((group, gi) => {
-              const groupQty = group.items.reduce((sum, it) => sum + (Number(it.qty) || 0), 0);
-              const groupHarga = group.items.reduce((sum, it) => sum + it.harga, 0);
-              return (
-                <div key={group.batch}>
-                  <div className="card-kicker" style={{ marginTop: gi === 0 ? 'var(--space-2)' : 'var(--space-6)' }}>{group.label}</div>
-                  <table className="table" style={{ margin: 'var(--space-3) 0 0' }}>
-                    <thead><tr><th>Category</th><th>Jenis Plak</th><th style={{ width: 110 }}>QTY</th><th style={{ width: 130 }}>Price per Unit</th><th style={{ width: 130 }}>Harga</th></tr></thead>
-                    <tbody>
-                      {group.items.map((it) => (
-                        <tr key={it.id}>
-                          <td>{it.categoryLabel}</td>
-                          <td>{it.jenisPlak}</td>
-                          <td>{it.qty}</td>
-                          <td>{it.originalUnitPrice != null ? `RM ${it.originalUnitPrice.toFixed(2)} → ` : ''}RM {(it.unitPrice ?? 0).toFixed(2)}</td>
-                          <td>RM {it.harga.toFixed(2)}</td>
-                        </tr>
-                      ))}
-                      <tr>
-                        <td /><td /><td><strong>{groupQty}</strong></td><td><strong>SUBTOTAL</strong></td>
-                        <td><strong>RM {groupHarga.toFixed(2)}</strong></td>
-                      </tr>
-                    </tbody>
-                  </table>
+                <div className="row-split" style={{ marginTop: 'var(--space-4)' }}>
+                  <span />
+                  <button type="button" className="btn btn-primary" onClick={handleApproveAndInvoice} disabled={!invoiceDraft.trim()}>
+                    Approve &amp; Save Invoice
+                  </button>
                 </div>
-              );
-            })}
+              </>
+            ) : (
+              <>
+                <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Invoice Number</div>
+                {order.invoiceId ? (
+                  <div style={{ marginTop: 'var(--space-2)' }}>
+                    <div>{order.invoiceId}</div>
+                  </div>
+                ) : (
+                  <div className="field" style={{ maxWidth: 340, marginTop: 'var(--space-2)' }}>
+                    <label htmlFor="invoiceId">Invoice Number</label>
+                    <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+                      <input
+                        className="input"
+                        id="invoiceId"
+                        placeholder="e.g. INV-2026-090"
+                        value={invoiceDraft}
+                        onChange={(e) => setInvoiceDraft(e.target.value)}
+                      />
+                      <button type="button" className="btn btn-primary" onClick={handleSaveInvoice}>Save</button>
+                    </div>
+                  </div>
+                )}
+                {state.productionToast && <p className="hint-text" style={{ marginTop: 'var(--space-2)' }}>{state.productionToast}</p>}
+
+                <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Original vs Tambahan</div>
+                {itemGroups.map((group, gi) => {
+                  const groupQty = group.items.reduce((sum, it) => sum + (Number(it.qty) || 0), 0);
+                  const groupHarga = group.items.reduce((sum, it) => sum + it.harga, 0);
+                  return (
+                    <div key={group.batch}>
+                      <div className="card-kicker" style={{ marginTop: gi === 0 ? 'var(--space-2)' : 'var(--space-6)' }}>{group.label}</div>
+                      <table className="table" style={{ margin: 'var(--space-3) 0 0' }}>
+                        <thead><tr><th>Category</th><th>Jenis Plak</th><th style={{ width: 110 }}>QTY</th><th style={{ width: 130 }}>Price per Unit</th><th style={{ width: 130 }}>Harga</th></tr></thead>
+                        <tbody>
+                          {group.items.map((it) => (
+                            <tr key={it.id}>
+                              <td>{it.categoryLabel}</td>
+                              <td>{it.jenisPlak}</td>
+                              <td>{it.qty}</td>
+                              <td>{it.originalUnitPrice != null ? `RM ${it.originalUnitPrice.toFixed(2)} → ` : ''}RM {(it.unitPrice ?? 0).toFixed(2)}</td>
+                              <td>RM {it.harga.toFixed(2)}</td>
+                            </tr>
+                          ))}
+                          <tr>
+                            <td /><td /><td><strong>{groupQty}</strong></td><td><strong>SUBTOTAL</strong></td>
+                            <td><strong>RM {groupHarga.toFixed(2)}</strong></td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  );
+                })}
+              </>
+            )}
 
             <div className="row-split" style={{ marginTop: 'var(--space-6)' }}>
               <span />
@@ -157,7 +232,7 @@ export default function InvoicingOrderDetail() {
                   <CategoryTabs categories={categories} active={currentCat?.key} onSelect={setActiveCat} />
                 </div>
                 {catBlocks.map((blk) => (
-                  <OrderCategoryBlock key={blk.idx} blk={blk} editable={READONLY} refImageUrl={state.refImages?.[blk.sampleSlotId]} />
+                  <OrderCategoryBlock key={blk.idx} blk={blk} editable={READONLY} />
                 ))}
               </>
             )}

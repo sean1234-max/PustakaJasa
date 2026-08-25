@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import AdminLayout from '../components/AdminLayout';
 import { useAppState } from '../state/useAppState';
-import { fetchAllProfiles, fetchSalesmanAssignments, createAccount, logAdminAction } from '../lib/adminApi';
+import { fetchAllProfiles, createAccount, logAdminAction } from '../lib/adminApi';
 
 const EMPTY_FORM = { displayName: '', email: '', password: '' };
 const inputClass = 'w-full px-3 py-2 border border-outline-variant rounded-lg bg-surface-bright focus:ring-2 focus:ring-primary focus:border-primary text-body-md text-on-surface outline-none transition-all';
@@ -20,7 +20,6 @@ export default function AdminSalesmen() {
   const { state } = useAppState();
   const navigate = useNavigate();
   const [profiles, setProfiles] = useState(null);
-  const [assignments, setAssignments] = useState([]);
   const [search, setSearch] = useState('');
   const [showAddForm, setShowAddForm] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -29,8 +28,8 @@ export default function AdminSalesmen() {
   const [toast, setToast] = useState('');
 
   const load = () => {
-    Promise.all([fetchAllProfiles(), fetchSalesmanAssignments()])
-      .then(([p, a]) => { setProfiles(p); setAssignments(a); })
+    fetchAllProfiles()
+      .then(setProfiles)
       .catch((err) => console.error('Failed to load salesmen:', err));
   };
 
@@ -93,7 +92,7 @@ export default function AdminSalesmen() {
   return (
     <AdminLayout
       title="Salesmen"
-      subtitle="All salesmen and the schools assigned to them."
+      subtitle="All salesmen in the system."
       headerActions={(
         <button
           type="button"
@@ -155,7 +154,6 @@ export default function AdminSalesmen() {
                   <th className="py-4 px-6 text-label-bold text-on-surface-variant uppercase tracking-wider">Name</th>
                   <th className="py-4 px-6 text-label-bold text-on-surface-variant uppercase tracking-wider">Email</th>
                   <th className="py-4 px-6 text-label-bold text-on-surface-variant uppercase tracking-wider">Status</th>
-                  <th className="py-4 px-6 text-label-bold text-on-surface-variant uppercase tracking-wider">Schools</th>
                   <th className="py-4 px-6 text-label-bold text-on-surface-variant uppercase tracking-wider">Total Orders</th>
                   <th className="py-4 px-6 text-label-bold text-on-surface-variant uppercase tracking-wider">Pending</th>
                   <th className="py-4 px-6 text-label-bold text-on-surface-variant uppercase tracking-wider">Completed</th>
@@ -164,8 +162,7 @@ export default function AdminSalesmen() {
               </thead>
               <tbody className="divide-y divide-outline-variant">
                 {filtered.map((s) => {
-                  const teacherIds = assignments.filter((a) => a.salesman_id === s.id).map((a) => a.teacher_id);
-                  const salesmanOrders = (state.orders || []).filter((o) => teacherIds.includes(o.createdBy));
+                  const salesmanOrders = (state.orders || []).filter((o) => o.salesmanId === s.id);
                   const pending = salesmanOrders.filter((o) => o.status === 'Submitted to Sales').length;
                   const completed = salesmanOrders.filter((o) => o.status === 'Completed').length;
                   return (
@@ -175,7 +172,6 @@ export default function AdminSalesmen() {
                       <td className="py-4 px-6">
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-label-bold font-semibold bg-primary-container/15 text-primary">{s.status}</span>
                       </td>
-                      <td className="py-4 px-6 text-body-md text-on-surface">{teacherIds.length}</td>
                       <td className="py-4 px-6 text-body-md text-on-surface">{salesmanOrders.length}</td>
                       <td className="py-4 px-6 text-body-md text-on-surface">{pending}</td>
                       <td className="py-4 px-6 text-body-md text-on-surface">{completed}</td>

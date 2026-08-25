@@ -2,9 +2,9 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import AdminLayout from '../components/AdminLayout';
 import { useAppState } from '../state/useAppState';
-import { fetchAllProfiles, fetchSalesmanAssignments, createAccount, logAdminAction } from '../lib/adminApi';
+import { fetchAllProfiles, createAccount, logAdminAction } from '../lib/adminApi';
 
-const EMPTY_FORM = { sekolah: '', address: '', displayName: '', email: '', password: '', assignedSalesmanId: '' };
+const EMPTY_FORM = { sekolah: '', address: '', displayName: '', email: '', password: '' };
 
 // Malaysian school-name convention: SK/SMK (Sekolah Kebangsaan / Menengah
 // Kebangsaan) are Malay-medium national schools; SJK(C) (Sekolah Jenis
@@ -38,7 +38,6 @@ export default function AdminSchools() {
   const { state } = useAppState();
   const navigate = useNavigate();
   const [profiles, setProfiles] = useState(null);
-  const [assignments, setAssignments] = useState([]);
   const [search, setSearch] = useState('');
   const [showAddForm, setShowAddForm] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -47,8 +46,8 @@ export default function AdminSchools() {
   const [toast, setToast] = useState('');
 
   const load = () => {
-    Promise.all([fetchAllProfiles(), fetchSalesmanAssignments()])
-      .then(([p, a]) => { setProfiles(p); setAssignments(a); })
+    fetchAllProfiles()
+      .then(setProfiles)
       .catch((err) => console.error('Failed to load schools:', err));
   };
 
@@ -60,9 +59,7 @@ export default function AdminSchools() {
     return () => clearTimeout(t);
   }, [toast]);
 
-  const salesmenById = new Map((profiles || []).filter((p) => p.role === 'salesman').map((p) => [p.id, p]));
   const schools = (profiles || []).filter((p) => p.role === 'teacher');
-  const salesmenOptions = (profiles || []).filter((p) => p.role === 'salesman');
   const detectedLanguage = detectSchoolLanguage(form.sekolah);
 
   const filtered = schools.filter((s) => {
@@ -97,7 +94,6 @@ export default function AdminSchools() {
         displayName: form.displayName.trim(),
         email: form.email.trim(),
         password: form.password,
-        assignedSalesmanId: form.assignedSalesmanId || null,
       });
       await logAdminAction({
         action: 'Admin created a school account',
@@ -164,12 +160,6 @@ export default function AdminSchools() {
           <Field label="Password *" htmlFor="teacher-password">
             <input className={inputClass} id="teacher-password" type="password" placeholder="At least 6 characters" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
           </Field>
-          <Field label="Assigned Salesman" htmlFor="assigned-salesman">
-            <select className={inputClass} id="assigned-salesman" value={form.assignedSalesmanId} onChange={(e) => setForm({ ...form, assignedSalesmanId: e.target.value })}>
-              <option value="">None</option>
-              {salesmenOptions.map((s) => <option key={s.id} value={s.id}>{s.display_name || s.email}</option>)}
-            </select>
-          </Field>
           {formError && <div className="bg-error-container text-on-error-container px-4 py-3 rounded-lg text-body-md mb-4">{formError}</div>}
           <div className="flex justify-end gap-3">
             <button type="button" onClick={() => setShowAddForm(false)} className="text-label-bold font-semibold text-on-surface hover:text-primary px-4 py-2.5 rounded-lg">Cancel</button>
@@ -201,7 +191,6 @@ export default function AdminSchools() {
                   <th className="py-4 px-6 text-label-bold text-on-surface-variant uppercase tracking-wider">School</th>
                   <th className="py-4 px-6 text-label-bold text-on-surface-variant uppercase tracking-wider">Language</th>
                   <th className="py-4 px-6 text-label-bold text-on-surface-variant uppercase tracking-wider">Teacher</th>
-                  <th className="py-4 px-6 text-label-bold text-on-surface-variant uppercase tracking-wider">Salesman</th>
                   <th className="py-4 px-6 text-label-bold text-on-surface-variant uppercase tracking-wider">Status</th>
                   <th className="py-4 px-6 text-label-bold text-on-surface-variant uppercase tracking-wider">Orders</th>
                   <th className="py-4 px-6 text-label-bold text-on-surface-variant uppercase tracking-wider text-right">Actions</th>
@@ -209,17 +198,12 @@ export default function AdminSchools() {
               </thead>
               <tbody className="divide-y divide-outline-variant text-body-md text-on-surface">
                 {filtered.map((s) => {
-                  const schoolSalesmen = assignments
-                    .filter((a) => a.teacher_id === s.id)
-                    .map((a) => salesmenById.get(a.salesman_id))
-                    .filter(Boolean);
                   const orderCount = (state.orders || []).filter((o) => o.createdBy === s.id).length;
                   return (
                     <tr key={s.id} className="hover:bg-surface-container-low transition-colors">
                       <td className="py-4 px-6 text-headline-sm">{s.sekolah || '—'}</td>
                       <td className="py-4 px-6 text-on-surface-variant">{s.school_language === 'SJKC' ? 'SJKC' : 'SK'}</td>
                       <td className="py-4 px-6 text-on-surface-variant">{s.display_name || '—'}</td>
-                      <td className="py-4 px-6 text-on-surface-variant">{schoolSalesmen.length > 0 ? schoolSalesmen.map((sm) => sm.display_name || sm.email).join(', ') : '—'}</td>
                       <td className="py-4 px-6">
                         <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-secondary-container text-on-secondary-container">{s.status}</span>
                       </td>

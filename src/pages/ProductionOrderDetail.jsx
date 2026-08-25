@@ -227,7 +227,7 @@ export default function ProductionOrderDetail() {
                           <div className="card-kicker">
                             {group.blk.qtyLabel}{group.batch !== 0 ? ` — ${group.label}` : ''} — {group.jenisPlak}
                           </div>
-                          <OrderCategoryBlock blk={group.blk} editable={READONLY} refImageUrl={state.refImages?.[group.blk.sampleSlotId]} />
+                          <OrderCategoryBlock blk={group.blk} editable={READONLY} />
 
                           {csvData.rows.length === 0 ? (
                             <p className="hint-text">No reference sample data to export for this order detail.</p>

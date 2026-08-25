@@ -28,7 +28,6 @@ export default function Nav() {
       <nav className="nav">
         <span className="nav-brand">Production Portal</span>
         <Link to="/production/dashboard" aria-current={ordersActive ? 'page' : undefined}>Orders</Link>
-        <Link to="/production/reference-images" aria-current={pathname === '/production/reference-images' ? 'page' : undefined}>Reference Images</Link>
         <Link to="/production/catalog" aria-current={pathname === '/production/catalog' ? 'page' : undefined}>Catalog</Link>
         <button type="button" className="nav-logout" onClick={handleLogout}>Log Out</button>
       </nav>
@@ -56,7 +55,6 @@ export default function Nav() {
         <Link to="/admin/salesmen" aria-current={pathname.startsWith('/admin/salesmen') ? 'page' : undefined}>Salesmen</Link>
         <Link to="/admin/users" aria-current={pathname === '/admin/users' ? 'page' : undefined}>Users</Link>
         <Link to="/admin/catalog" aria-current={pathname === '/admin/catalog' ? 'page' : undefined}>Products</Link>
-        <Link to="/admin/reference-images" aria-current={pathname === '/admin/reference-images' ? 'page' : undefined}>Reference Images</Link>
         <Link to="/admin/audit-log" aria-current={pathname === '/admin/audit-log' ? 'page' : undefined}>Activity Log</Link>
         <button type="button" className="nav-logout" onClick={handleLogout}>Log Out</button>
       </nav>

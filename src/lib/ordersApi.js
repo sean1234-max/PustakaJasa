@@ -81,16 +81,11 @@ export async function fetchOrders(userId, role) {
   let query = supabase.from('orders').select('*').order('created_at', { ascending: false });
   if (role === 'teacher' && userId) {
     query = query.eq('created_by', userId);
-  } else if (role === 'salesman' && userId) {
-    const { data: assignments, error: assignError } = await supabase
-      .from('salesman_assignments')
-      .select('teacher_id')
-      .eq('salesman_id', userId);
-    if (assignError) throw assignError;
-    const teacherIds = (assignments || []).map((a) => a.teacher_id);
-    if (teacherIds.length === 0) return [];
-    query = query.in('created_by', teacherIds);
   }
+  // salesman/invoicing/production/admin all get a plain select — RLS
+  // (supabase/migrations/0039_teacher_free_salesman_pick_invoicing_assign.sql,
+  // 0038_invoicing_can_approve.sql) already scopes exactly which rows come
+  // back for each of those roles, so no client-side filter is needed here.
   const { data, error } = await query;
   if (error) throw error;
   return data.map(fromDbOrder);
@@ -126,28 +121,17 @@ export async function updateOrder(id, patch) {
   if (error) throw error;
 }
 
-// Looks up every salesman currently assigned to this teacher's school (see
-// supabase/migrations/0025_allow_multiple_salesmen_per_school.sql) — the
-// New Order flow lets the teacher pick among these instead of the old
-// free-text pick from a hardcoded roster, and submitOrder() stamps the
-// order with whichever one they chose. Returns [] if the school has no
-// assignment yet; the RLS policy on `orders` insert is the real
-// enforcement (this lookup can be stale between fetch and submit, e.g. if
-// Admin changes assignments mid-session — an insert built from a stale id
-// is rejected by the database, not silently accepted).
-export async function fetchMyAssignedSalesmen(teacherId) {
-  const { data: assignments, error: assignError } = await supabase
-    .from('salesman_assignments')
-    .select('salesman_id')
-    .eq('teacher_id', teacherId);
-  if (assignError) throw assignError;
-  if (!assignments || assignments.length === 0) return [];
-
-  const salesmanIds = assignments.map((a) => a.salesman_id);
+// Every salesman account — the New Order flow lets the teacher pick freely
+// among all of them (no more pre-assignment, see
+// supabase/migrations/0039_teacher_free_salesman_pick_invoicing_assign.sql),
+// and submitOrder() stamps the order with whichever one they chose. The
+// RLS insert policy on `orders` is the real enforcement (still validates
+// the chosen id is a genuine salesman account server-side).
+export async function fetchAllSalesmen() {
   const { data: salesmen, error: salesmenError } = await supabase
     .from('profiles')
     .select('id, display_name')
-    .in('id', salesmanIds);
+    .eq('role', 'salesman');
   if (salesmenError) throw salesmenError;
   return salesmen.map((s) => ({ id: s.id, name: s.display_name }));
 }

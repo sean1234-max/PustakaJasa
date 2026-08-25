@@ -18,33 +18,33 @@ export async function updateProfile(id, patch) {
   if (error) throw error;
 }
 
-export async function fetchSalesmanAssignments() {
-  const { data, error } = await supabase.from('salesman_assignments').select('*');
+export async function fetchInvoicingSalesmanAssignments() {
+  const { data, error } = await supabase.from('invoicing_salesman_assignments').select('*');
   if (error) throw error;
   return data;
 }
 
-// A school may now be assigned to more than one salesman (see
-// supabase/migrations/0025_allow_multiple_salesmen_per_school.sql) — this
-// is a bare insert, so assigning the same salesman to the same school
-// twice FAILS on the (teacher_id, salesman_id) unique constraint instead
-// of silently creating a duplicate row.
-export async function assignSalesman(salesmanId, teacherId) {
+// An Invoicing Department user can be assigned any number of salesmen, no
+// cap (see supabase/migrations/0039_teacher_free_salesman_pick_invoicing_assign.sql)
+// — this is a bare insert, so assigning the same salesman to the same
+// invoicing user twice FAILS on the (invoicing_id, salesman_id) unique
+// constraint instead of silently creating a duplicate row.
+export async function assignInvoicingSalesman(invoicingId, salesmanId) {
   const { error } = await supabase
-    .from('salesman_assignments')
-    .insert({ salesman_id: salesmanId, teacher_id: teacherId });
+    .from('invoicing_salesman_assignments')
+    .insert({ invoicing_id: invoicingId, salesman_id: salesmanId });
   if (error) {
-    if (error.code === '23505') throw new Error('This school is already assigned to this salesman.');
+    if (error.code === '23505') throw new Error('This salesman is already assigned to this Invoicing Department user.');
     throw error;
   }
 }
 
-export async function unassignSalesman(salesmanId, teacherId) {
+export async function unassignInvoicingSalesman(invoicingId, salesmanId) {
   const { error } = await supabase
-    .from('salesman_assignments')
+    .from('invoicing_salesman_assignments')
     .delete()
-    .eq('salesman_id', salesmanId)
-    .eq('teacher_id', teacherId);
+    .eq('invoicing_id', invoicingId)
+    .eq('salesman_id', salesmanId);
   if (error) throw error;
 }
 
@@ -69,12 +69,8 @@ async function invokeAdminUserOps(payload) {
   return data;
 }
 
-export async function createAccount({ role, sekolah, address, schoolLanguage, displayName, email, password, assignedSalesmanId }) {
-  const result = await invokeAdminUserOps({ action: 'create', role, sekolah, address, schoolLanguage, displayName, email, password });
-  if (role === 'teacher' && assignedSalesmanId) {
-    await assignSalesman(assignedSalesmanId, result.id);
-  }
-  return result;
+export async function createAccount({ role, sekolah, address, schoolLanguage, displayName, email, password }) {
+  return invokeAdminUserOps({ action: 'create', role, sekolah, address, schoolLanguage, displayName, email, password });
 }
 
 export async function resetPassword(userId, newPassword) {

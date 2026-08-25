@@ -16,7 +16,7 @@ const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 // `stacked` switches from the default side-by-side thumbnail+text row to a
 // large image-on-top-of-text card (image width 100%, height `thumbSize`) —
 // opt-in and defaults to false, so every existing caller (NewOrderStep1's
-// logo upload, ProductionReferenceImages) renders exactly as before.
+// logo upload) renders exactly as before.
 export default function ImageDrop({ value, fileName, onChange, placeholder, subtext, height = 76, thumbSize = 52, stacked = false }) {
   const [dragOver, setDragOver] = useState(false);
   const [error, setError] = useState('');

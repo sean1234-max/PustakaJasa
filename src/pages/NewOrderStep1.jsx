@@ -166,7 +166,7 @@ export default function NewOrderStep1() {
             )}
             {state.assignedSalesmanLoaded && state.assignedSalesmen.length === 0 && (
               <p className="hint-text" style={{ margin: 'var(--space-2) 0 0', color: '#b3261e' }}>
-                This school has not been assigned to a salesman yet. Please contact the administrator.
+                No salesman accounts exist yet. Please contact the administrator.
               </p>
             )}
           </div>

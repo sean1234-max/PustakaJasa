@@ -5,15 +5,18 @@ import { useAppState } from '../state/useAppState';
 import { STATUS_STAGES, STATUS_BG, STATUS_TEXT } from '../data/catalog';
 import { getOrderChangeStamp } from '../utils/orderStamp';
 
-// Invoicing Department only ever works orders Sales has already approved
-// (status past 'Submitted to Sales' — see the "invoicing reads approved
-// orders" RLS policy, supabase/migrations/0036_add_invoicing_role.sql).
+// Invoicing Department can now see and act on every order, including ones
+// still 'Submitted to Sales' — a Salesman sometimes hands over a paper
+// hard copy before ever clicking Approve in the system, and opening one
+// of those here lets Invoicing approve it (with pricing) and save its
+// Invoice Number in one action (see InvoicingOrderDetail.jsx's
+// approveAndSetInvoiceId, supabase/migrations/0038_invoicing_can_approve.sql).
 // Split by whether an Invoice Number has been assigned yet — the exact
 // responsibility Production used to own (see ProductionOrderDetail.jsx's
 // history before this change) and no longer does.
 const TABS = [
-  { key: 'pending', label: 'Waiting for Invoice', match: (o) => o.status !== 'Submitted to Sales' && !o.invoiceId },
-  { key: 'invoiced', label: 'Invoiced', match: (o) => o.status !== 'Submitted to Sales' && !!o.invoiceId },
+  { key: 'pending', label: 'Waiting for Invoice', match: (o) => !o.invoiceId },
+  { key: 'invoiced', label: 'Invoiced', match: (o) => !!o.invoiceId },
 ];
 
 export default function InvoicingDashboard() {
@@ -27,7 +30,7 @@ export default function InvoicingDashboard() {
 
   const orders = state.orders || [];
   const salesmanOptions = useMemo(() => [...new Set(orders.map((o) => o.sales).filter(Boolean))].sort(), [orders]);
-  const statusOptions = STATUS_STAGES.filter((s) => s !== 'Submitted to Sales');
+  const statusOptions = STATUS_STAGES;
 
   const activeTab = TABS.find((t) => t.key === tab);
   const ordersInTab = orders.filter(activeTab.match);
@@ -54,7 +57,7 @@ export default function InvoicingDashboard() {
       <div className="dashboard-header">
         <div>
           <div className="card-title" style={{ marginBottom: 'var(--space-2)' }}>Invoicing</div>
-          <p className="hint-text" style={{ margin: 0 }}>Assign Invoice Numbers for Sales-approved orders, and search/track ones already invoiced.</p>
+          <p className="hint-text" style={{ margin: 0 }}>Assign Invoice Numbers for approved orders — or approve one yourself (with pricing) straight from a hard copy — and search/track ones already invoiced.</p>
         </div>
       </div>
 
@@ -137,7 +140,7 @@ export default function InvoicingDashboard() {
 
               <div className="order-card-actions">
                 <button type="button" className="btn btn-primary btn-block" onClick={() => navigate(`/invoicing/orders/${ord.id}`)}>
-                  {ord.invoiceId ? 'View Order' : 'Assign Invoice'}
+                  {ord.invoiceId ? 'View Order' : ord.status === 'Submitted to Sales' ? 'Approve & Invoice' : 'Assign Invoice'}
                 </button>
               </div>
             </div>

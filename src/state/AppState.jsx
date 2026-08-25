@@ -6,10 +6,9 @@ import {
 } from '../utils/computeBlocks';
 import { AppStateContext } from './AppStateContext';
 import {
-  fetchOrders, insertOrder, updateOrder, nextOrderSeq, fetchMyAssignedSalesmen,
+  fetchOrders, insertOrder, updateOrder, nextOrderSeq, fetchAllSalesmen,
 } from '../lib/ordersApi';
 import {
-  fetchReferenceImages, saveReferenceImage,
   fetchPlakCatalog, addPlakNode, removePlakNode, updatePlakNode, updatePlakNodeOrder, updatePlakNodeStock,
   deductPlakStock, restorePlakStock,
 } from '../lib/catalogAdminApi';
@@ -145,7 +144,6 @@ function initialState() {
     updateToast: '',
     productionToast: '',
 
-    refImages: {},
     plakCatalog: [],
     plakCatalogLoaded: false,
 
@@ -266,19 +264,20 @@ export function AppStateProvider({ children }) {
     return () => { cancelled = true; };
   }, [patch, state.role, state.userAuthId]);
 
-  // Which salesmen are assigned to this teacher's school (see
-  // supabase/migrations/0025_allow_multiple_salesmen_per_school.sql) — the
-  // New Order flow lets the teacher pick among these rather than freely
-  // typing a name. `refreshAssignedSalesman` (exposed below) lets
-  // NewOrderStep1 re-fetch it fresh every time the New Order flow starts,
-  // on top of this once-per-login fetch, so an assignment change Admin
-  // makes mid-session is picked up rather than trusting a stale value
-  // carried over from login.
+  // Every salesman account — the New Order flow lets the teacher freely
+  // pick any of them (see
+  // supabase/migrations/0039_teacher_free_salesman_pick_invoicing_assign.sql;
+  // Admin no longer manages a school<->salesman relationship at all).
+  // `refreshAssignedSalesman` (name kept as-is — still "the salesman
+  // assigned to this order") lets NewOrderStep1 re-fetch the list fresh
+  // every time the New Order flow starts, on top of this once-per-login
+  // fetch, so a newly-created salesman account is picked up rather than
+  // trusting a stale value carried over from login.
   const refreshAssignedSalesman = useCallback(async () => {
     const st = stateRef.current;
     if (st.role !== 'teacher' || !st.userAuthId) return;
     try {
-      const salesmen = await fetchMyAssignedSalesmen(st.userAuthId);
+      const salesmen = await fetchAllSalesmen();
       patch((latest) => {
         // Keep the teacher's already-picked salesman if it's still in the
         // (possibly changed) assigned list; auto-pick when there's only
@@ -301,14 +300,14 @@ export function AppStateProvider({ children }) {
     if (state.role === 'teacher' && state.userAuthId) refreshAssignedSalesman();
   }, [state.role, state.userAuthId, refreshAssignedSalesman]);
 
-  // Reference sample images and the Jenis Plak catalog are global settings
-  // Production manages (see catalogAdminApi.js) — fetched once per login so
-  // logging out and into a different account still picks up the latest.
+  // The Jenis Plak catalog is a global setting Production manages (see
+  // catalogAdminApi.js) — fetched once per login so logging out and into a
+  // different account still picks up the latest.
   useEffect(() => {
     if (!state.role) return undefined;
     let cancelled = false;
-    Promise.all([fetchReferenceImages(), fetchPlakCatalog()])
-      .then(([refImages, plakCatalog]) => { if (!cancelled) patch({ refImages, plakCatalog, plakCatalogLoaded: true }); })
+    fetchPlakCatalog()
+      .then((plakCatalog) => { if (!cancelled) patch({ plakCatalog, plakCatalogLoaded: true }); })
       .catch((err) => {
         console.error('Failed to load catalog settings from Supabase:', err);
         if (!cancelled) patch({ plakCatalogLoaded: true });
@@ -940,6 +939,59 @@ export function AppStateProvider({ children }) {
     productionToastTimer.current = setTimeout(() => patch({ productionToast: '' }), 2500);
   }, [patch]);
 
+  // Invoicing Department: approves a still-"Submitted to Sales" order and
+  // assigns its Invoice Number in the same action — for orders a Salesman
+  // hands over as a paper hard copy before ever clicking Approve
+  // themselves (receiving the hard copy already means they've agreed to
+  // it). A merge of approveOrder (originalUnitPrice capture, totalAmount/
+  // priceAdjusted recompute, status -> 'In Production') and setInvoiceId
+  // (normalize/validate/duplicate-check) into ONE updateOrder call — the
+  // orders_write_guard trigger (0038_invoicing_can_approve.sql) validates
+  // old vs new as a single row change, so items/status/invoiceId must all
+  // land in the same write, not two separate ones. Sales' own approve
+  // button (approveOrder) is untouched — this is an additional path to
+  // the same end state, not a replacement.
+  const approveAndSetInvoiceId = useCallback((orderId, updatedItems, invoiceId, overrides = {}) => {
+    const normalized = (invoiceId || '').replace(/\s+/g, '');
+    setState((st) => {
+      const order = st.orders.find((o) => o.id === orderId);
+      if (!order || order.status !== 'Submitted to Sales') {
+        return { ...st, productionToast: 'This order is not awaiting approval.' };
+      }
+      if (!normalized) {
+        return { ...st, productionToast: 'Enter a valid Invoice ID.' };
+      }
+      const isDuplicate = st.orders.some((o) => (
+        o.id !== orderId && o.invoiceId && o.invoiceId.replace(/\s+/g, '') === normalized
+      ));
+      if (isDuplicate) {
+        return { ...st, productionToast: 'Invoice ID invalid because repeated, please try again.' };
+      }
+      const priorItems = order.items || [];
+      const itemsWithOriginalPrice = updatedItems.map((it) => {
+        const prior = priorItems.find((p) => p.id === it.id);
+        if (prior && prior.unitPrice !== it.unitPrice && it.originalUnitPrice == null) {
+          return { ...it, originalUnitPrice: prior.unitPrice };
+        }
+        return it;
+      });
+      const totalAmount = itemsWithOriginalPrice.reduce((sum, it) => sum + it.harga, 0);
+      const priceAdjusted = itemsWithOriginalPrice.some((it) => it.unitPrice !== standardUnitPrice(it.jenisPlak, st.plakCatalog));
+      const fields = {
+        items: itemsWithOriginalPrice, totalAmount, priceAdjusted, status: 'In Production', invoiceId: normalized, ...overrides,
+      };
+      updateOrder(orderId, fields)
+        .catch((err) => console.error('Failed to approve and save invoice ID to Supabase:', err));
+      return {
+        ...st,
+        orders: st.orders.map((o) => (o.id === orderId ? { ...o, ...fields } : o)),
+        productionToast: 'Order approved and Invoice Number saved.',
+      };
+    });
+    clearTimeout(productionToastTimer.current);
+    productionToastTimer.current = setTimeout(() => patch({ productionToast: '' }), 2500);
+  }, [patch]);
+
   // Stamps the actual moment a Teacher/Salesman print action happened —
   // not the order's creation date — so "Order Printed" on the printout
   // reflects when it was really printed. Overwrites on every re-print (no
@@ -955,14 +1007,6 @@ export function AppStateProvider({ children }) {
     }));
     updateOrder(orderId, { printedAt })
       .catch((err) => console.error('Failed to save print timestamp to Supabase:', err));
-  }, [patch]);
-
-  // Production: replaces one category's reference sample image. Updates
-  // local state immediately (every teacher's picker reads from it) and
-  // persists to Supabase in the background.
-  const updateReferenceImage = useCallback((slotId, dataUrl) => {
-    patch((st) => ({ refImages: { ...st.refImages, [slotId]: dataUrl } }));
-    saveReferenceImage(slotId, dataUrl).catch((err) => console.error('Failed to save reference image to Supabase:', err));
   }, [patch]);
 
   // Production: signals the order is physically finished and handed off to
@@ -1116,10 +1160,10 @@ export function AppStateProvider({ children }) {
     state, patch, today: TODAY, login, logout,
     resetCurrentCategory, startNewOrder, addToCart, removeFromCart, submitOrder, reorderOrder,
     openAmend, updateAmend,
-    openAddOn, submitPendingAddOn, cancelPendingAddOn, rejectAddOn, approveAddOn, approveOrder, setInvoiceId,
+    openAddOn, submitPendingAddOn, cancelPendingAddOn, rejectAddOn, approveAddOn, approveOrder, setInvoiceId, approveAndSetInvoiceId,
     recordPrint,
     markProductionDone,
-    updateReferenceImage, addCatalogNode, removeCatalogNode, updateCatalogNodePrice, updateCatalogNodeStock, setCatalogNodeHidden, moveCatalogNode,
+    addCatalogNode, removeCatalogNode, updateCatalogNodePrice, updateCatalogNodeStock, setCatalogNodeHidden, moveCatalogNode,
     reorderCatalogSiblings,
     refreshAssignedSalesman,
   };

@@ -2,12 +2,8 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import AdminLayout from '../components/AdminLayout';
 import { useAppState } from '../state/useAppState';
-import {
-  fetchAllProfiles, fetchSalesmanAssignments, updateProfile, resetPassword,
-  assignSalesman, unassignSalesman, logAdminAction,
-} from '../lib/adminApi';
+import { fetchAllProfiles, updateProfile, resetPassword, logAdminAction } from '../lib/adminApi';
 
-const inputClass = 'w-full rounded-lg border border-outline-variant bg-surface-container-lowest text-on-surface focus:ring-2 focus:ring-primary focus:border-primary py-2.5 px-4 shadow-sm outline-none transition-all';
 const secondaryBtnClass = 'w-full sm:w-auto bg-surface-container-lowest border border-outline-variant text-on-surface-variant hover:text-on-surface text-label-bold font-semibold py-2.5 px-4 rounded-lg shadow-sm hover:shadow-md transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed';
 
 function StatCard({ value, label, icon }) {
@@ -27,16 +23,14 @@ export default function AdminSalesmanDetail() {
   const navigate = useNavigate();
   const { state } = useAppState();
   const [profiles, setProfiles] = useState(null);
-  const [assignments, setAssignments] = useState([]);
   const [toast, setToast] = useState('');
   const [error, setError] = useState('');
-  const [pendingSchoolId, setPendingSchoolId] = useState('');
   const [confirmingStatus, setConfirmingStatus] = useState(null);
   const [newPassword, setNewPassword] = useState('');
 
   const load = () => {
-    Promise.all([fetchAllProfiles(), fetchSalesmanAssignments()])
-      .then(([p, a]) => { setProfiles(p); setAssignments(a); })
+    fetchAllProfiles()
+      .then(setProfiles)
       .catch((err) => console.error('Failed to load salesman:', err));
   };
 
@@ -53,56 +47,7 @@ export default function AdminSalesmanDetail() {
   const salesman = profiles.find((p) => p.id === id);
   if (!salesman) return <AdminLayout title="Salesman Details"><p className="text-body-md text-on-surface-variant">Salesman not found.</p></AdminLayout>;
 
-  const allSchools = profiles.filter((p) => p.role === 'teacher');
-  const assignedTeacherIds = assignments.filter((a) => a.salesman_id === id).map((a) => a.teacher_id);
-  const assignedSchools = allSchools.filter((s) => assignedTeacherIds.includes(s.id));
-  // A school may now be assigned to more than one salesman, up to 3 (see
-  // supabase/migrations/0025_allow_multiple_salesmen_per_school.sql and
-  // 0026_cap_salesmen_per_school.sql) — so "available to assign" excludes
-  // schools already assigned to THIS salesman, and schools already at the
-  // 3-salesman cap.
-  const salesmenCountByTeacher = assignments.reduce((acc, a) => {
-    acc[a.teacher_id] = (acc[a.teacher_id] || 0) + 1;
-    return acc;
-  }, {});
-  const unassignedSchools = allSchools.filter((s) => !assignedTeacherIds.includes(s.id) && (salesmenCountByTeacher[s.id] || 0) < 3);
-  const salesmanOrders = (state.orders || []).filter((o) => assignedTeacherIds.includes(o.createdBy));
-
-  const handleAssign = async () => {
-    if (!pendingSchoolId) return;
-    const school = allSchools.find((s) => s.id === pendingSchoolId);
-    try {
-      await assignSalesman(id, pendingSchoolId);
-      await logAdminAction({
-        action: 'Admin assigned a school to a salesman',
-        targetTable: 'salesman_assignments',
-        targetId: pendingSchoolId,
-        after: { salesman: salesman.display_name, school: school?.sekolah },
-      });
-      setToast(`${school?.sekolah || 'School'} has been assigned to ${salesman.display_name}.`);
-      setPendingSchoolId('');
-      load();
-    } catch (err) {
-      setError(err.message);
-    }
-  };
-
-  const handleUnassign = async (schoolId) => {
-    const school = allSchools.find((s) => s.id === schoolId);
-    try {
-      await unassignSalesman(id, schoolId);
-      await logAdminAction({
-        action: 'Admin unassigned a school from a salesman',
-        targetTable: 'salesman_assignments',
-        targetId: schoolId,
-        before: { salesman: salesman.display_name, school: school?.sekolah },
-      });
-      setToast(`${school?.sekolah || 'School'} has been unassigned.`);
-      load();
-    } catch (err) {
-      setError(err.message);
-    }
-  };
+  const salesmanOrders = (state.orders || []).filter((o) => o.salesmanId === id);
 
   const handleConfirmStatus = async (newStatus) => {
     try {
@@ -165,52 +110,6 @@ export default function AdminSalesmanDetail() {
           <span className="inline-flex items-center justify-center px-3 py-1 rounded-full bg-primary/10 text-primary text-label-bold font-semibold uppercase tracking-wide border border-primary/20">
             {salesman.status}
           </span>
-        </section>
-
-        <hr className="border-outline-variant/50" />
-
-        <section className="flex flex-col gap-6 relative z-10">
-          <h3 className="text-label-bold text-secondary uppercase tracking-wider">Assigned Schools</h3>
-          {assignedSchools.length === 0 ? (
-            <p className="text-body-sm text-on-surface-variant italic">No schools assigned yet.</p>
-          ) : (
-            <div className="w-full overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="border-b border-outline-variant">
-                    <th className="py-3 px-4 text-label-bold text-on-surface-variant uppercase w-1/2">School</th>
-                    <th className="py-3 px-4 text-label-bold text-on-surface-variant uppercase w-1/4">Teacher</th>
-                    <th className="py-3 px-4 text-label-bold text-on-surface-variant uppercase w-1/4 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {assignedSchools.map((s) => (
-                    <tr key={s.id} className="border-b border-outline-variant/50 hover:bg-surface-variant/30 transition-colors">
-                      <td className="py-4 px-4 text-body-md text-on-surface font-medium">{s.sekolah}</td>
-                      <td className="py-4 px-4 text-body-md text-on-surface-variant">{s.display_name}</td>
-                      <td className="py-4 px-4 text-right">
-                        <button type="button" onClick={() => handleUnassign(s.id)} className="text-label-bold font-semibold text-error hover:text-error hover:bg-error/10 px-3 py-1.5 rounded transition-colors">
-                          Unassign
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {unassignedSchools.length === 0 ? (
-            <p className="text-body-sm text-on-surface-variant italic">No unassigned schools available.</p>
-          ) : (
-            <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
-              <select className={`${inputClass} sm:w-2/3`} value={pendingSchoolId} onChange={(e) => setPendingSchoolId(e.target.value)}>
-                <option value="">Select a school to assign...</option>
-                {unassignedSchools.map((s) => <option key={s.id} value={s.id}>{s.sekolah}</option>)}
-              </select>
-              <button type="button" disabled={!pendingSchoolId} onClick={handleAssign} className={`${secondaryBtnClass} sm:w-1/3`}>Assign School</button>
-            </div>
-          )}
         </section>
 
         <hr className="border-outline-variant/50" />

@@ -384,6 +384,10 @@ a:hover { color: var(--color-accent-900); text-decoration: underline; }
 
 /* Reference sample */
 .hint-text { font-size: 12px; opacity: 0.6; margin: var(--space-1) 0 var(--space-4); max-width: 60ch; }
+/* Non-blocking possible-typo hint (see src/utils/typoCheck.js) — shown
+   right under a Reference Sample line or Kuantiti Description input;
+   never prevents Add to Cart. */
+.typo-hint { font-size: 11px; color: #c0392b; margin-top: 2px; }
 .ref-sample-grid {
   display: grid;
   grid-template-columns: 280px 1fr;
@@ -404,21 +408,27 @@ a:hover { color: var(--color-accent-900); text-decoration: underline; }
   border: 1px dashed var(--color-neutral-500);
   background: #fafafa; color: var(--color-text); opacity: 0.5; font-size: 13px;
 }
-/* Live text preview under the reference image — lists whatever the
-   teacher has typed into the numbered lines so far, updating as they
-   type. The image itself stays a plain static artwork sample (Production
-   doesn't need to configure anything for this). */
+/* Live text preview — fully replaces the reference image/placeholder
+   (opaque, covers the whole box) with whatever the teacher has typed into
+   the numbered lines so far, updating live as they type. No original
+   artwork/placeholder text shows through underneath. */
+.ref-sample-image { position: relative; height: 200px; }
 .ref-sample-live-preview {
-  margin-top: var(--space-2); padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--color-neutral-300); background: #fff;
-  font-size: 12px; line-height: 1.5;
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; justify-content: center; gap: 4px;
+  padding: var(--space-3);
+  background: #fff; border: 1px solid var(--color-neutral-300);
+  overflow-y: auto;
 }
-.ref-sample-live-line { display: flex; gap: 6px; }
+.ref-sample-live-line { display: flex; gap: 6px; align-items: baseline; font-size: 13px; line-height: 1.35; }
+.ref-sample-live-line:first-child { font-size: 16px; font-weight: 700; }
 .ref-sample-live-num {
-  flex: none; width: 16px; height: 16px; border-radius: 50%;
+  flex: none; width: 14px; height: 14px; border-radius: 50%;
   background: var(--color-accent-700); color: #fff;
-  font-size: 10px; font-weight: 700; line-height: 16px; text-align: center;
+  font-size: 9px; font-weight: 700; line-height: 14px; text-align: center;
 }
+.ref-sample-live-text { flex: 1; text-align: center; }
+.ref-sample-live-red .ref-sample-live-text { color: #c0392b; }
 .ref-sample-lines { display: flex; flex-direction: column; gap: var(--space-3); }
 /* align-items: flex-start (not center) so the ★/number sit next to line 3's
    FIRST box specifically, not centered across both of its stacked boxes —
@@ -433,12 +443,6 @@ a:hover { color: var(--color-accent-900); text-decoration: underline; }
 .ref-sample-line-dragging { opacity: 0.4; }
 .line-num-draggable { cursor: grab; }
 .line-num-draggable:active { cursor: grabbing; }
-.ref-image-admin-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: var(--space-6);
-  margin-top: var(--space-4);
-}
 
 /* Jenis Plak catalog admin (Production) */
 .catalog-admin-list { display: flex; flex-direction: column; }

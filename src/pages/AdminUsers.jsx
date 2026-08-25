@@ -1,13 +1,16 @@
 import { Fragment, useEffect, useState } from 'react';
 import AdminLayout from '../components/AdminLayout';
 import { useAppState } from '../state/useAppState';
-import { fetchAllProfiles, createAccount, updateProfile, resetPassword, deleteAccount, logAdminAction } from '../lib/adminApi';
+import {
+  fetchAllProfiles, createAccount, updateProfile, resetPassword, deleteAccount, logAdminAction,
+  fetchInvoicingSalesmanAssignments, assignInvoicingSalesman, unassignInvoicingSalesman,
+} from '../lib/adminApi';
 
 const ROLE_LABELS = { teacher: 'School', salesman: 'Salesman', production: 'Production', invoicing: 'Invoicing Department', admin: 'Admin' };
 const ROLE_OPTIONS = Object.keys(ROLE_LABELS);
 const STATUS_OPTIONS = ['active', 'inactive', 'suspended'];
 
-const EMPTY_FORM = { role: 'teacher', sekolah: '', displayName: '', email: '', password: '', assignedSalesmanId: '' };
+const EMPTY_FORM = { role: 'teacher', sekolah: '', displayName: '', email: '', password: '', assignedSalesmanIds: [] };
 const inputClass = 'w-full px-3 py-2 border border-outline-variant rounded-lg bg-surface-bright focus:ring-2 focus:ring-primary focus:border-primary text-body-md text-on-surface outline-none transition-all';
 
 function Field({ label, htmlFor, children }) {
@@ -22,6 +25,7 @@ function Field({ label, htmlFor, children }) {
 export default function AdminUsers() {
   const { state } = useAppState();
   const [profiles, setProfiles] = useState(null);
+  const [invoicingAssignments, setInvoicingAssignments] = useState([]);
   const [loadError, setLoadError] = useState('');
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
@@ -36,8 +40,8 @@ export default function AdminUsers() {
   const [newPassword, setNewPassword] = useState('');
 
   const load = () => {
-    fetchAllProfiles()
-      .then(setProfiles)
+    Promise.all([fetchAllProfiles(), fetchInvoicingSalesmanAssignments()])
+      .then(([p, a]) => { setProfiles(p); setInvoicingAssignments(a); })
       .catch((err) => { console.error('Failed to load users:', err); setLoadError('Unable to load users. Please try again.'); });
   };
 
@@ -90,8 +94,10 @@ export default function AdminUsers() {
         displayName: form.displayName.trim() || null,
         email: form.email.trim(),
         password: form.password,
-        assignedSalesmanId: form.assignedSalesmanId || null,
       });
+      if (form.role === 'invoicing' && form.assignedSalesmanIds.length > 0) {
+        await Promise.all(form.assignedSalesmanIds.map((salesmanId) => assignInvoicingSalesman(result.id, salesmanId)));
+      }
       await logAdminAction({
         action: 'Admin created a user account',
         targetTable: 'profiles',
@@ -135,6 +141,16 @@ export default function AdminUsers() {
       await logAdminAction({ action: 'Admin deleted a user account', targetTable: 'profiles', targetId: p.id, before: { display_name: p.display_name, email: p.email, role: p.role } });
       setToast('User deleted successfully.');
       setExpandedId(null);
+      load();
+    } catch (err) {
+      setFormError(err.message);
+    }
+  };
+
+  const handleToggleInvoicingSalesman = async (invoicingId, salesmanId, checked) => {
+    try {
+      if (checked) await assignInvoicingSalesman(invoicingId, salesmanId);
+      else await unassignInvoicingSalesman(invoicingId, salesmanId);
       load();
     } catch (err) {
       setFormError(err.message);
@@ -209,12 +225,29 @@ export default function AdminUsers() {
             <input className={inputClass} id="new-password" type="password" placeholder="At least 6 characters" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
           </Field>
 
-          {form.role === 'teacher' && (
-            <Field label="Assigned Salesman" htmlFor="new-salesman">
-              <select className={inputClass} id="new-salesman" value={form.assignedSalesmanId} onChange={(e) => setForm({ ...form, assignedSalesmanId: e.target.value })}>
-                <option value="">None</option>
-                {salesmenOptions.map((s) => <option key={s.id} value={s.id}>{s.display_name || s.email}</option>)}
-              </select>
+          {form.role === 'invoicing' && (
+            <Field label="Assigned Salesmen" htmlFor="new-salesmen">
+              <div id="new-salesmen" className="flex flex-col gap-2 max-h-48 overflow-y-auto border border-outline-variant rounded-lg p-3">
+                {salesmenOptions.length === 0 ? (
+                  <span className="text-body-sm text-on-surface-variant">No salesman accounts exist yet.</span>
+                ) : (
+                  salesmenOptions.map((s) => (
+                    <label key={s.id} className="flex items-center gap-2 text-body-md text-on-surface">
+                      <input
+                        type="checkbox"
+                        checked={form.assignedSalesmanIds.includes(s.id)}
+                        onChange={(e) => setForm({
+                          ...form,
+                          assignedSalesmanIds: e.target.checked
+                            ? [...form.assignedSalesmanIds, s.id]
+                            : form.assignedSalesmanIds.filter((id) => id !== s.id),
+                        })}
+                      />
+                      {s.display_name || s.email}
+                    </label>
+                  ))
+                )}
+              </div>
             </Field>
           )}
 
@@ -311,6 +344,31 @@ export default function AdminUsers() {
                             <button type="button" onClick={() => saveEdit(p)} className="bg-secondary text-on-secondary text-label-bold font-semibold px-5 py-2.5 rounded-lg hover:opacity-90 transition-opacity shadow-sm mb-8">
                               Save Changes
                             </button>
+
+                            {p.role === 'invoicing' && (
+                              <div className="max-w-xl border-t border-outline-variant pt-6 mb-8">
+                                <h4 className="text-label-bold text-on-surface-variant uppercase tracking-wider mb-4">Assigned Salesmen</h4>
+                                {salesmenOptions.length === 0 ? (
+                                  <span className="text-body-sm text-on-surface-variant">No salesman accounts exist yet.</span>
+                                ) : (
+                                  <div className="flex flex-col gap-2 max-h-48 overflow-y-auto border border-outline-variant rounded-lg p-3">
+                                    {salesmenOptions.map((s) => {
+                                      const checked = invoicingAssignments.some((a) => a.invoicing_id === p.id && a.salesman_id === s.id);
+                                      return (
+                                        <label key={s.id} className="flex items-center gap-2 text-body-md text-on-surface">
+                                          <input
+                                            type="checkbox"
+                                            checked={checked}
+                                            onChange={(e) => handleToggleInvoicingSalesman(p.id, s.id, e.target.checked)}
+                                          />
+                                          {s.display_name || s.email}
+                                        </label>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                            )}
 
                             <div className="max-w-xl border-t border-outline-variant pt-6">
                               <h4 className="text-label-bold text-on-surface-variant uppercase tracking-wider mb-4">Change Password</h4>

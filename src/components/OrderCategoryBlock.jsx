@@ -24,9 +24,10 @@ function blockHasSectionData(blk) {
 // read-only order-review screen (Sales/Production/Admin/teacher order
 // details) — `editable` controls which parts of the block are inputs vs
 // read-only text for each of those.
-// The reference image itself is never editable here regardless of
-// `editable` — it's a fixed per-category example Production manages from
-// its own admin screen (Production → Reference Images), not per-order data.
+// The Reference Sample area shows a live text preview (see
+// .ref-sample-live-preview below) built purely from `blk.lines` — no
+// Production-managed reference image anymore (that whole admin feature
+// was removed; Production/Admin no longer need to manage anything here).
 // `hideEmptyRows` (print only — the editable New Order / Add On
 // them in) drops subjects/rows/columns nobody ordered from the printed
 // quantity table, so the printout only lists what was actually selected.
@@ -34,7 +35,7 @@ function blockHasSectionData(blk) {
 // only the last currently-revealed block (see NewOrderStep2/AddOn's
 // visible-block slicing) can duplicate itself into the next one, so an
 // earlier already-duplicated-from block doesn't confusingly overwrite it.
-export default function OrderCategoryBlock({ blk, editable, plakOptions, refImageUrl, hideEmptyRows, isLastBlock }) {
+export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmptyRows, isLastBlock }) {
   // Drag-and-drop reordering of Reference Sample rows (OTHERS — see
   // catalog.js's draggableReferenceSample / computeBlocks.js's
   // reorderReferenceSample). Only offered when actually editable (never on
@@ -131,28 +132,24 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, refImag
 
           <div className="ref-sample-grid">
             <div className="ref-sample-image">
-              {refImageUrl ? (
-                <img src={refImageUrl} alt="Reference sample" className="ref-sample-img" />
-              ) : (
-                <div className="ref-sample-placeholder">No reference image set yet</div>
-              )}
-              {/* Live text preview — just a plain list of whatever's been
-                  typed so far, updating live. The image above stays a
-                  static artwork sample; Production doesn't configure
-                  anything for this. */}
+              {/* Fully replaces the uploaded reference image — whatever
+                  the teacher types into the numbered lines shows here
+                  live, with nothing from the original artwork/placeholder
+                  text showing through underneath (see
+                  .ref-sample-live-preview, an opaque box covering this
+                  whole area). No Production setup needed for this. */}
               <div className="ref-sample-live-preview">
-                {blk.lines.some((ln) => String(ln.value || '').trim()) ? (
-                  blk.lines
-                    .filter((ln) => String(ln.value || '').trim())
-                    .map((ln) => (
-                      <div key={ln.key} className="ref-sample-live-line">
-                        <span className="ref-sample-live-num">{ln.num}</span>
-                        <span>{ln.value}</span>
-                      </div>
-                    ))
-                ) : (
-                  <span style={{ opacity: 0.5 }}>Live preview will appear here as the lines are filled in.</span>
-                )}
+                {blk.lines.map((ln) => {
+                  const hasValue = String(ln.value || '').trim();
+                  return (
+                    <div key={ln.key} className={`ref-sample-live-line${ln.redText ? ' ref-sample-live-red' : ''}`}>
+                      <span className="ref-sample-live-num">{ln.num}</span>
+                      <span className="ref-sample-live-text" style={{ opacity: hasValue ? 1 : 0.4 }}>
+                        {hasValue ? ln.value : ln.placeholder}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
             </div>
             <div className="ref-sample-lines">
@@ -185,13 +182,20 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, refImag
                   <div className={referenceSampleDraggable ? 'line-num line-num-draggable' : 'line-num'} title={referenceSampleDraggable ? 'Drag to reorder' : undefined}>
                     {ln.num}
                   </div>
-                  <input
-                    className={ln.redText ? 'input input-red' : 'input'}
-                    placeholder={ln.placeholder}
-                    value={ln.value}
-                    readOnly={!editable.lines}
-                    onChange={editable.lines ? (e) => ln.onChange(e.target.value) : undefined}
-                  />
+                  <div style={{ flex: 1 }}>
+                    <input
+                      className={ln.redText ? 'input input-red' : 'input'}
+                      placeholder={ln.placeholder}
+                      value={ln.value}
+                      readOnly={!editable.lines}
+                      onChange={editable.lines ? (e) => ln.onChange(e.target.value) : undefined}
+                    />
+                    {ln.typoHint && (
+                      <div className="typo-hint">
+                        Possible typo: "{ln.typoHint.word}" — did you mean "{ln.typoHint.suggestion}"?
+                      </div>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -393,6 +397,11 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, refImag
                       {editable.rowDesc
                         ? <input className="input" placeholder="e.g. BAHASA MELAYU" value={row.desc} onChange={(e) => row.setDesc(e.target.value)} />
                         : row.desc}
+                      {row.typoHint && (
+                        <div className="typo-hint">
+                          Possible typo: "{row.typoHint.word}" — did you mean "{row.typoHint.suggestion}"?
+                        </div>
+                      )}
                     </td>
                     <td>
                       <input
@@ -486,6 +495,11 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, refImag
                     {editable.rowDesc
                       ? <input className="input" placeholder="e.g. TAHUN 1" value={row.desc} onChange={(e) => row.setDesc(e.target.value)} />
                       : row.desc}
+                    {row.typoHint && (
+                      <div className="typo-hint">
+                        Possible typo: "{row.typoHint.word}" — did you mean "{row.typoHint.suggestion}"?
+                      </div>
+                    )}
                   </td>
                   {row.extraRefValues.map((rv) => (
                     <td key={rv.key}>

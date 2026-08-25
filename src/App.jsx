@@ -17,7 +17,6 @@ import SalesDashboard from './pages/SalesDashboard';
 import SalesOrderSummary from './pages/SalesOrderSummary';
 import ProductionDashboard from './pages/ProductionDashboard';
 import ProductionOrderDetail from './pages/ProductionOrderDetail';
-import ProductionReferenceImages from './pages/ProductionReferenceImages';
 import ProductionCatalog from './pages/ProductionCatalog';
 import InvoicingDashboard from './pages/InvoicingDashboard';
 import InvoicingOrderDetail from './pages/InvoicingOrderDetail';
@@ -30,7 +29,6 @@ import AdminSalesmanDetail from './pages/AdminSalesmanDetail';
 import AdminOrders from './pages/AdminOrders';
 import AdminOrderDetail from './pages/AdminOrderDetail';
 import AdminCatalog from './pages/AdminCatalog';
-import AdminReferenceImages from './pages/AdminReferenceImages';
 import AdminAuditLog from './pages/AdminAuditLog';
 
 // Supabase's session lives in localStorage and survives a refresh on its
@@ -64,7 +62,6 @@ function AppRoutes() {
 
       <Route path="/production/dashboard" element={<RequireRole role="production"><ProductionDashboard /></RequireRole>} />
       <Route path="/production/orders/:id" element={<RequireRole role="production"><ProductionOrderDetail /></RequireRole>} />
-      <Route path="/production/reference-images" element={<RequireRole role="production"><ProductionReferenceImages /></RequireRole>} />
       <Route path="/production/catalog" element={<RequireRole role="production"><ProductionCatalog /></RequireRole>} />
 
       <Route path="/invoicing/dashboard" element={<RequireRole role="invoicing"><InvoicingDashboard /></RequireRole>} />
@@ -79,7 +76,6 @@ function AppRoutes() {
       <Route path="/admin/orders" element={<RequireRole role="admin"><AdminOrders /></RequireRole>} />
       <Route path="/admin/orders/:id" element={<RequireRole role="admin"><AdminOrderDetail /></RequireRole>} />
       <Route path="/admin/catalog" element={<RequireRole role="admin"><AdminCatalog /></RequireRole>} />
-      <Route path="/admin/reference-images" element={<RequireRole role="admin"><AdminReferenceImages /></RequireRole>} />
       <Route path="/admin/audit-log" element={<RequireRole role="admin"><AdminAuditLog /></RequireRole>} />
 
       <Route path="*" element={<Navigate to="/login" replace />} />

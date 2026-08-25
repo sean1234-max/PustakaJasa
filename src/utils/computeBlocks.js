@@ -4,6 +4,7 @@ import {
   getCategoryLinePlaceholders, getCategoryPositionLine2Placeholder,
   getCategoryTahunPlaceholder, getCategoryNamaKelasPlaceholder,
 } from '../data/catalog';
+import { findPossibleTypo } from './typoCheck';
 
 export function snapshotDetail(catKey, blockIdx, isMatrix, isDynamicMatrix, lineValues, matrixValues, rowsByBlockMap, columnsByBlockMap) {
   const detail = { lines: {}, matrix: null, rows: null, columns: null };
@@ -87,17 +88,22 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
     // blank placeholder (no fixed meaning) and flow through the exact same
     // rawLines/flatLines/numbering/drag-reorder/required-index logic below
     // as any catalog-defined line.
+    const catPositionLine2Placeholder = getCategoryPositionLine2Placeholder(currentCat, schoolLanguage);
     // Captured outside the `if` below so the Kuantiti column-building
     // further down (extraRefColumns) can reuse the same base-length/count
-    // without recomputing getCategoryLinePlaceholders a second time.
-    const baseLineLen = catLinePlaceholders.length;
+    // without recomputing getCategoryLinePlaceholders a second time. Must
+    // include the second-box line (e.g. Main Template's ACARA -> SUBJEK/
+    // POSITION) in the count, matching draftUpdaters.js's onAddReferenceLine/
+    // onRemoveReferenceLine — otherwise a category with a second box would
+    // number its first extra row one too low (colliding with the second
+    // box's own "Row N").
+    const baseLineLen = catLinePlaceholders.length + (catPositionLine2Placeholder ? 1 : 0);
     const extraRefCount = currentCat.extendableReferenceSample
       ? Number(lineValues[`${catKey}::${b}::extraRefLines`]) || 0
       : 0;
     if (extraRefCount > 0) {
       catLinePlaceholders = [...catLinePlaceholders, ...Array.from({ length: extraRefCount }, () => '( Additional Line )')];
     }
-    const catPositionLine2Placeholder = getCategoryPositionLine2Placeholder(currentCat, schoolLanguage);
     // Line 3's optional second box gets its own slotId ('2b') alongside
     // every other line's own index — flattened below (secondLine, if any,
     // right after its own first box) and numbered sequentially, so plain
@@ -115,6 +121,10 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
         // that actually gets engraved; every other line stays plain.
         redText: i === 2 && !!currentCat.positionFieldsRedText,
         onChange: (val) => updaters.onLine(key, val),
+        // Flags a likely typo (e.g. "ANIGERAH" for "ANUGERAH") against a
+        // small curated word list — see src/utils/typoCheck.js. Purely a
+        // hint shown near the input; never blocks Add to Cart.
+        typoHint: findPossibleTypo(lineValues[key]),
       };
       if (i === 2 && catPositionLine2Placeholder) {
         const key2 = `${catKey}::${b}::2b`;
@@ -122,6 +132,7 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
           key: key2, slotId: '2b', placeholder: catPositionLine2Placeholder, value: lineValues[key2] || '',
           redText: !!currentCat.positionFieldsRedText,
           onChange: (val) => updaters.onLine(key2, val),
+          typoHint: findPossibleTypo(lineValues[key2]),
         };
       }
       return line;
@@ -274,6 +285,9 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
       rows = rawRows.map((row) => ({
         id: row.id, desc: row.desc, qty: row.qty,
         qtyMismatch: namaKelasCount > 0 && Number(row.qty) > 0 && Number(row.qty) !== namaKelasCount,
+        // See Reference Sample's own typoHint above — same word-list hint,
+        // just for the Description field (subject names in particular).
+        typoHint: findPossibleTypo(row.desc),
         setDesc: (v) => updaters.onRowField(rowsKey, row.id, 'desc', v),
         setQty: (v) => updaters.onRowField(rowsKey, row.id, 'qty', v),
         remove: () => updaters.onRowRemove(rowsKey, row.id),

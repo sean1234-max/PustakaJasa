@@ -214,13 +214,22 @@ export const CATEGORIES = [
     // with "Row N" (still freely editable) so it visually lines up with
     // the correspondingly-numbered Reference Sample row; capRowsAt5 caps
     // both Kuantiti rows and Reference Sample lines at 5 total, per spec.
-    linePlaceholders: ['TAJUK BESAR', 'YEAR (KALAU YEAR SUDAH INCLUDE DI LINE 1 KOSONGKAN SAHAJA)', '( SUBJEK/POSITION )'],
+    // Matches Mata Pelajaran/Klas's own shape: TAJUK BESAR / YEAR / ACARA
+    // as the three numbered lines, plus SUBJEK/POSITION as ACARA's own
+    // "second box" (positionLine2Placeholder) — computeBlocks.js flattens
+    // that into its own numbered row right after ACARA (num 4), and both
+    // ACARA (index 2) and the SUBJEK/POSITION second box render red
+    // automatically via the exact same positionFieldsRedText mechanism
+    // OTHERS already uses below — no new logic needed for either.
+    linePlaceholders: ['TAJUK BESAR', 'YEAR (KALAU YEAR SUDAH INCLUDE DI LINE 1 KOSONGKAN SAHAJA)', 'ACARA (PBD Terbaik/Mata Pelajaran Terbaik)'],
+    positionLine2Placeholder: '( SUBJEK/POSITION )',
     // YEAR is starred (shown as important) but deliberately NOT required —
     // its own placeholder tells the teacher to leave it blank when the
     // year is already part of line 1, so Add to Cart must never block on
-    // it being empty the way a genuinely required line does.
-    requiredLineIndices: [0],
-    starredLineIndices: [0, 1],
+    // it being empty the way a genuinely required line does. ACARA is
+    // both starred and required, matching Mata Pelajaran/Klas's own ACARA.
+    requiredLineIndices: [0, 2],
+    starredLineIndices: [0, 1, 2],
     positionFieldsRedText: true,
     draggableReferenceSample: true,
     positionFromRows: true,
@@ -229,11 +238,12 @@ export const CATEGORIES = [
     defaultRowDescFromPosition: true,
     hideQtyLabelSuffix: true,
     // Kuantiti's Description column always corresponds to Reference
-    // Sample's own row 3 (SUBJEK/POSITION) — this category's
+    // Sample's own row 4 (SUBJEK/POSITION, ACARA's second box — see
+    // linePlaceholders/positionLine2Placeholder above) — this category's
     // positionFromRows already reads each Kuantiti row's `desc` as the
     // actual engraved position text, so the header spells that
     // relationship out for the teacher instead of a generic "Description".
-    descColumnLabel: 'Row 3 Subjek/Position',
+    descColumnLabel: 'Row 4 Subjek/Position',
   },
   {
     key: 'OTHERS', label: 'Mata Pelajaran / Klas', mode: 'list', blocksCount: 6,
@@ -407,19 +417,6 @@ export function standardUnitPrice(code, plakCatalogTree) {
   const entry = flattenPlakCatalog(plakCatalogTree).find((p) => p.code === code);
   return entry ? entry.price : null;
 }
-
-// One reference-sample image slot per category (+ PBD variant), keyed by
-// the exact sampleSlotId computeBlocks.js generates (`sample-${catKey}-${b}`)
-// — Production manages these directly by slot, teachers only ever see them.
-export const REFERENCE_IMAGE_SLOTS = [
-  { id: 'sample-MP1-0', label: 'MP THP 1' },
-  { id: 'sample-MP2-0', label: 'MP THP 2' },
-  { id: 'sample-PBD-0', label: 'PBD Terbaik' },
-  { id: 'sample-ALIRAN-0', label: 'Aliran Terbaik' },
-  { id: 'sample-LONJAKAN-0', label: 'Lonjakan Saujana' },
-  { id: 'sample-TOKOH-0', label: 'Main Template' },
-  { id: 'sample-OTHERS-0', label: 'Mata Pelajaran / Klas' },
-];
 
 // Prunes any node marked `hidden` (Production, out of stock) — hiding a
 // whole code or just one branch inside it both work, since this checks

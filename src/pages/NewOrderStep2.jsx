@@ -68,7 +68,6 @@ export default function NewOrderStep2() {
             blk={blk}
             editable={EDITABLE}
             plakOptions={visiblePlakCatalog}
-            refImageUrl={state.refImages?.[blk.sampleSlotId]}
             isLastBlock={i === blocks.length - 1}
           />
         ))}

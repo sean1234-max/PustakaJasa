@@ -1,24 +1,9 @@
 import { supabase } from './supabaseClient';
 import { isCustomPlakCode } from '../data/catalog';
 
-// Reference sample images and the Jenis Plak catalog are global settings
-// (not scoped to a single order or account) — Production manages both,
-// everyone else just reads them. See supabase/migrations/0006_catalog_admin.sql.
-
-export async function fetchReferenceImages() {
-  const { data, error } = await supabase.from('catalog_reference_images').select('slot_id, image_data_url');
-  if (error) throw error;
-  const map = {};
-  (data || []).forEach((row) => { map[row.slot_id] = row.image_data_url; });
-  return map;
-}
-
-export async function saveReferenceImage(slotId, dataUrl) {
-  const { error } = await supabase
-    .from('catalog_reference_images')
-    .upsert({ slot_id: slotId, image_data_url: dataUrl, updated_at: new Date().toISOString() });
-  if (error) throw error;
-}
+// The Jenis Plak catalog is a global setting (not scoped to a single order
+// or account) — Production manages it, everyone else just reads it. See
+// supabase/migrations/0006_catalog_admin.sql.
 
 // Rebuilds the nested { id, code, price, hidden, children } tree PlakPicker
 // and computeBlocks expect from the flat parent_id rows plak_catalog_nodes

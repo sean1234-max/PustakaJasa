@@ -8,13 +8,11 @@ import { useAppState } from '../state/useAppState';
 // salesman/production) are untouched by this redesign, and giving Admin
 // its own layout component means this restyle can't leak into those roles.
 //
-// "Products" and "Reference Images" point at AdminCatalog/
-// AdminReferenceImages — admin-only forks of ProductionCatalog/
-// ProductionReferenceImages (same AppState handlers, restyled markup) so
-// Production's own /production/catalog and /production/reference-images
-// keep their original look untouched. Same pattern for order detail:
-// /admin/orders/:id uses AdminOrderDetail, a fork of
-// ProductionOrderDetail.
+// "Products" points at AdminCatalog — an admin-only fork of
+// ProductionCatalog (same AppState handlers, restyled markup) so
+// Production's own /production/catalog keeps its original look untouched.
+// Same pattern for order detail: /admin/orders/:id uses AdminOrderDetail,
+// a fork of ProductionOrderDetail.
 const NAV_ITEMS = [
   { to: '/admin/dashboard', icon: 'dashboard', label: 'Dashboard', match: (p) => p === '/admin/dashboard' },
   { to: '/admin/orders', icon: 'shopping_cart', label: 'Orders', match: (p) => p.startsWith('/admin/orders') },
@@ -22,7 +20,6 @@ const NAV_ITEMS = [
   { to: '/admin/salesmen', icon: 'badge', label: 'Salesmen', match: (p) => p.startsWith('/admin/salesmen') },
   { to: '/admin/users', icon: 'group', label: 'Users', match: (p) => p === '/admin/users' },
   { to: '/admin/catalog', icon: 'inventory_2', label: 'Products', match: (p) => p === '/admin/catalog' },
-  { to: '/admin/reference-images', icon: 'image', label: 'Reference Images', match: (p) => p === '/admin/reference-images' },
   { to: '/admin/audit-log', icon: 'history', label: 'Activity Log', match: (p) => p === '/admin/audit-log' },
 ];
 
