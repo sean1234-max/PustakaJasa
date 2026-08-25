@@ -390,6 +390,7 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
               <thead>
                 <tr>
                   <th>SUBJEK/POSITION</th>
+                  {blk.extraRefColumns.map((col) => <th key={col.key}>{col.label}</th>)}
                   <th style={{ width: 140 }}>{blk.qtyColHeader}</th>
                   {editable.addRemoveRows && <th style={{ width: 48 }} />}
                 </tr>
@@ -407,6 +408,13 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
                         </div>
                       )}
                     </td>
+                    {row.extraRefValues.map((rv) => (
+                      <td key={rv.key}>
+                        {editable.rowDesc
+                          ? <input className="input" value={rv.value} onChange={(e) => rv.onChange(e.target.value)} />
+                          : rv.value}
+                      </td>
+                    ))}
                     <td>
                       <input
                         className="input"
@@ -429,7 +437,12 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
                     )}
                   </tr>
                 ))}
-                <tr><td><strong>TOTAL QTY</strong></td><td><strong>{blk.blockTotalQty}</strong></td>{editable.addRemoveRows && <td />}</tr>
+                <tr>
+                  <td><strong>TOTAL QTY</strong></td>
+                  {blk.extraRefColumns.map((col) => <td key={col.key} />)}
+                  <td><strong>{blk.blockTotalQty}</strong></td>
+                  {editable.addRemoveRows && <td />}
+                </tr>
               </tbody>
             </table>
             <table className="table" style={{ flex: '0 0 220px' }}>

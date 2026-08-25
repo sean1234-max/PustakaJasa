@@ -109,7 +109,19 @@ export function createDraftUpdaters(patch, fields) {
       const key = `${catKey}::${blockIdx}::extraRefLines`;
       const current = Number(st[lineValues][key]) || 0;
       if (baseLen + current >= 5) return {};
-      return { [lineValues]: { ...st[lineValues], [key]: String(current + 1) } };
+      const newLineValues = { ...st[lineValues], [key]: String(current + 1) };
+      // hasNamaKelasList categories (OTHERS) share ONE Reference Sample
+      // across every duplicated Tahun block (same stale-copy problem onLine
+      // solves above, since the "+Add Reference Row" button is only ever
+      // shown on block 0) — keep every revealed block's own count in sync
+      // so each block's own Kuantiti table shows the same "Row N" column.
+      if (cat.hasNamaKelasList) {
+        const visibleCount = (st[visibleBlocksByCategory] && st[visibleBlocksByCategory][catKey]) || 1;
+        for (let b = 0; b < visibleCount; b++) {
+          if (b !== blockIdx) newLineValues[`${catKey}::${b}::extraRefLines`] = String(current + 1);
+        }
+      }
+      return { [lineValues]: newLineValues };
     }),
     // "Delete Reference Row" — the reverse of onAddReferenceLine: removes
     // the LAST added Reference Sample row and, in the same step, deletes
@@ -126,19 +138,31 @@ export function createDraftUpdaters(patch, fields) {
       if (current <= 0) return {};
       const removedLineIdx = baseLen + current - 1;
       const removedNum = removedLineIdx + 1;
+      const refColKey = `refCol${removedNum}`;
       const newLineValues = { ...st[lineValues], [key]: String(current - 1) };
       delete newLineValues[`${catKey}::${blockIdx}::${removedLineIdx}`];
-      const rowsKey = `${catKey}::${blockIdx}`;
-      const refColKey = `refCol${removedNum}`;
-      const newRowsByBlock = {
-        ...st[rowsByBlock],
-        [rowsKey]: (st[rowsByBlock][rowsKey] || []).map((r) => {
+      const newRowsByBlock = { ...st[rowsByBlock] };
+      const stripRefCol = (rowsKey) => {
+        newRowsByBlock[rowsKey] = (newRowsByBlock[rowsKey] || []).map((r) => {
           if (!(refColKey in r)) return r;
           const next = { ...r };
           delete next[refColKey];
           return next;
-        }),
+        });
       };
+      stripRefCol(`${catKey}::${blockIdx}`);
+      // Same cross-block sync as onAddReferenceLine above — a shared
+      // Reference Sample means every revealed block's Kuantiti table must
+      // drop the same "Row N" column, not just the block the button lives on.
+      if (cat.hasNamaKelasList) {
+        const visibleCount = (st[visibleBlocksByCategory] && st[visibleBlocksByCategory][catKey]) || 1;
+        for (let b = 0; b < visibleCount; b++) {
+          if (b === blockIdx) continue;
+          newLineValues[`${catKey}::${b}::extraRefLines`] = String(current - 1);
+          delete newLineValues[`${catKey}::${b}::${removedLineIdx}`];
+          stripRefCol(`${catKey}::${b}`);
+        }
+      }
       return { [lineValues]: newLineValues, [rowsByBlock]: newRowsByBlock };
     }),
     // Jenis Plak (`hasNamaKelasList` categories — OTHERS) has the exact same

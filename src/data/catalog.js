@@ -318,6 +318,12 @@ export const CATEGORIES = [
     // see computeBlocks.js: each field's underlying key/meaning never
     // changes, so exportCsv.js needs no changes at all.
     draggableReferenceSample: true,
+    // Same "+Add Reference Row" mechanism as TOKOH (max 5 total lines,
+    // enforced generically in computeBlocks.js/draftUpdaters.js) — an
+    // added row also grows the Kuantiti table below with a matching
+    // "Row N" column (see OrderCategoryBlock.jsx's hasNamaKelasList
+    // branch), same as TOKOH's own Kuantiti table already does.
+    extendableReferenceSample: true,
   },
 ];
 
