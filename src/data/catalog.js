@@ -142,7 +142,7 @@ const STANDARD_REFERENCE_LINES = ['TAJUK BESAR', 'YEAR', 'ACARA', '( TAHUN ? )']
 
 export const CATEGORIES = [
   {
-    key: 'MP1', label: 'MP THP 1', mode: 'matrix', blocksCount: 1,
+    key: 'MP1', label: 'MP THP 1', mode: 'matrix', blocksCount: 1, active: false,
     columnsByLanguage: { SK: CLASS_LEVELS_MY, SJKC: CLASS_LEVELS_CN },
     subjectsByLanguage: { SK: SUBJECTS_CORE, SJKC: SUBJECTS_CORE_CN },
     linePlaceholders: STANDARD_REFERENCE_LINES,
@@ -151,7 +151,7 @@ export const CATEGORIES = [
     draggableReferenceSample: true,
   },
   {
-    key: 'MP2', label: 'MP THP 2', mode: 'matrix', blocksCount: 1,
+    key: 'MP2', label: 'MP THP 2', mode: 'matrix', blocksCount: 1, active: false,
     columnsByLanguage: { SK: CLASS_LEVELS_MY_UPPER, SJKC: CLASS_LEVELS_CN_UPPER },
     subjectsByLanguage: {
       SK: [...SUBJECTS_CORE, 'SEJARAH', 'REKA BENTUK & TEKNOLOGI'],
@@ -163,7 +163,7 @@ export const CATEGORIES = [
     draggableReferenceSample: true,
   },
   {
-    key: 'PBD', label: 'PBD TERBAIK', mode: 'dynamicMatrix', blocksCount: 1,
+    key: 'PBD', label: 'PBD TERBAIK', mode: 'dynamicMatrix', blocksCount: 1, active: false,
     // Subject columns are seeded from this list (editable per-order: teachers
     // can add extra custom subject columns on top, but can't rename/remove
     // these 13 — see computeBlocks.js/formDefaults.js). Rows (Tahun + Nama
@@ -177,7 +177,7 @@ export const CATEGORIES = [
     qtyColumnLabels: ['KUANTITI'],
   },
   {
-    key: 'ALIRAN', label: 'ALIRAN TERBAIK', mode: 'dynamicMatrix', blocksCount: 1,
+    key: 'ALIRAN', label: 'ALIRAN TERBAIK', mode: 'dynamicMatrix', blocksCount: 1, active: false,
     // Same shape as PBD TERBAIK above, just "Kedudukan" (ranking) instead of
     // "Kuantiti" (count) — used to be the same PBD category's second variant,
     // split into its own tab so there's no variant dropdown to pick between.
@@ -189,7 +189,7 @@ export const CATEGORIES = [
     qtyColumnLabels: ['KEDUDUKAN'],
   },
   {
-    key: 'LONJAKAN', label: 'LONJAKAN SAUJANA', mode: 'list', blocksCount: 1,
+    key: 'LONJAKAN', label: 'LONJAKAN SAUJANA', mode: 'list', blocksCount: 1, active: false,
     rows: ['TAHUN 1', 'TAHUN 2', 'TAHUN 3', 'TAHUN 4', 'TAHUN 5', 'TAHUN 6'],
     // Line 3 used to be fixed/typed text ("LONJAKAN SAUJANA") prefixed
     // literally onto the engraved position (positionPrefixFromLine3) — now
@@ -204,18 +204,33 @@ export const CATEGORIES = [
     positionFromRows: true,
   },
   {
-    key: 'TOKOH', label: 'TOKOH', mode: 'list', blocksCount: 1,
-    rows: ['TOKOH MURID', 'TOKOH NILAM', 'TOKOH KURIKULUM', 'TOKOH KOKURIKULUM', 'TOKOH AKADEMIK'],
+    key: 'TOKOH', label: 'Main Template', mode: 'list', blocksCount: 1,
     // Line 3 is CONTOH-only (red, like OTHERS/LONJAKAN's own flexible
-    // field) — the real per-plaque position is each row's own description
-    // (TOKOH MURID, TOKOH NILAM, ...), see exportCsv.js.
-    linePlaceholders: ['TAJUK BESAR', 'YEAR', '( SUBJEK/POSITION )'],
+    // field). `rows` is deliberately omitted (like OTHERS below) — Main
+    // Template no longer ships a fixed preset Description list; the
+    // teacher types every Kuantiti row's Description themselves, starting
+    // from one blank row (see formDefaults.js's buildInitialRowsByBlock).
+    // defaultRowDescFromPosition seeds each newly-added row's Description
+    // with "Row N" (still freely editable) so it visually lines up with
+    // the correspondingly-numbered Reference Sample row; capRowsAt5 caps
+    // both Kuantiti rows and Reference Sample lines at 5 total, per spec.
+    linePlaceholders: ['TAJUK BESAR', 'YEAR (KALAU YEAR SUDAH INCLUDE DI LINE 1 KOSONGKAN SAHAJA)', '( SUBJEK/POSITION )'],
+    // YEAR is starred (shown as important) but deliberately NOT required —
+    // its own placeholder tells the teacher to leave it blank when the
+    // year is already part of line 1, so Add to Cart must never block on
+    // it being empty the way a genuinely required line does.
+    requiredLineIndices: [0],
+    starredLineIndices: [0, 1],
     positionFieldsRedText: true,
     draggableReferenceSample: true,
     positionFromRows: true,
+    extendableReferenceSample: true,
+    capRowsAt5: true,
+    defaultRowDescFromPosition: true,
+    hideQtyLabelSuffix: true,
   },
   {
-    key: 'OTHERS', label: 'LAIN-LAIN (OTHERS)', mode: 'list', blocksCount: 6,
+    key: 'OTHERS', label: 'Mata Pelajaran / Klas', mode: 'list', blocksCount: 6,
     // A catch-all for any award/plaque shape not covered by the 5 categories
     // above. Kuantiti is a per-Tahun "part": one TAHUN value (hasTahunField)
     // + a Description/QTY list (plain `rows`, same mechanism as
@@ -260,15 +275,19 @@ export const CATEGORIES = [
     // worked examples every other category uses, since OTHERS has no
     // single representative example to show.
     linePlaceholdersByLanguage: {
-      SK: ['TAJUK BESAR', 'YEAR', 'ACARA', '( TAHUN ? )'],
-      SJKC: ['大标题', '年份', '活动', '（年级？）'],
+      SK: ['TAJUK BESAR', 'YEAR (KALAU YEAR SUDAH INCLUDE DI LINE 1 KOSONGKAN SAHAJA)', 'ACARA', '( TAHUN ? )'],
+      SJKC: ['大标题', '年份（如果第一行已包含年份，此栏留空即可）', '活动', '（年级？）'],
     },
-    // Line 1 and ACARA (line 3's first box) are both required, matching
-    // every other category's own ACARA line. Note exportCsv.js's
-    // buildOthersRows still falls back to just each Kuantiti row's own
-    // desc if ACARA somehow ends up blank on an older order — this just
-    // stops a *new* order from being added to cart that way.
+    // Line 1 and ACARA (line 3's first box) are required, matching every
+    // other category's own ACARA line. YEAR is starred but deliberately
+    // NOT required — see TOKOH's own note above; its placeholder tells
+    // the teacher to leave it blank when the year is already in line 1.
+    // Note exportCsv.js's buildOthersRows still falls back to just each
+    // Kuantiti row's own desc if ACARA somehow ends up blank on an older
+    // order — this just stops a *new* order from being added to cart
+    // that way.
     requiredLineIndices: [0, 2],
+    starredLineIndices: [0, 1, 2],
     positionLine2PlaceholderByLanguage: { SK: '( SUBJEK/POSITION )', SJKC: '（科目/位置）' },
     // Line 3's two boxes (ACARA / SUBJEK-POSITION) render in red — a pale
     // tint for the placeholder, solid once the teacher actually types
@@ -285,6 +304,15 @@ export const CATEGORIES = [
     draggableReferenceSample: true,
   },
 ];
+
+// New order/add-on category pickers (NewOrderStep2.jsx, AddOn.jsx) only
+// ever offer these — MP1/MP2/PBD/ALIRAN/LONJAKAN are retired from new
+// selection (`active: false` above) but deliberately kept in CATEGORIES
+// itself so every existing order that already used one still resolves
+// correctly everywhere else (reconstructBlocksForCategory, exportCsv's
+// getOrderCategories, print/production/admin pages) — those all read the
+// full CATEGORIES list, unfiltered.
+export const ACTIVE_CATEGORIES = CATEGORIES.filter((c) => c.active !== false);
 
 // A teacher-typed catch-all pick (PlakPicker.jsx's "OTHER" leaf, committed
 // as "OTHER - <whatever the teacher typed>") is never a real catalog path,
@@ -383,8 +411,8 @@ export const REFERENCE_IMAGE_SLOTS = [
   { id: 'sample-PBD-0', label: 'PBD Terbaik' },
   { id: 'sample-ALIRAN-0', label: 'Aliran Terbaik' },
   { id: 'sample-LONJAKAN-0', label: 'Lonjakan Saujana' },
-  { id: 'sample-TOKOH-0', label: 'Tokoh' },
-  { id: 'sample-OTHERS-0', label: 'Lain-lain (Others)' },
+  { id: 'sample-TOKOH-0', label: 'Main Template' },
+  { id: 'sample-OTHERS-0', label: 'Mata Pelajaran / Klas' },
 ];
 
 // Prunes any node marked `hidden` (Production, out of stock) — hiding a
@@ -425,4 +453,19 @@ export function formatDate(d) {
 
 export function addDays(d, days) {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate() + days);
+}
+
+// Formats an ISO timestamp (e.g. orders.printed_at) in Malaysia time
+// regardless of the viewing device's own timezone/locale, so "Order
+// Printed" always reads the same no matter who opens the printout.
+export function formatDateTime(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Kuala_Lumpur',
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', hour12: true,
+  }).formatToParts(d);
+  const get = (type) => parts.find((p) => p.type === type)?.value || '';
+  return `${get('day')}/${get('month')}/${get('year')} ${get('hour')}:${get('minute')} ${get('dayPeriod').toUpperCase()}`;
 }

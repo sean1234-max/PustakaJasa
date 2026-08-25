@@ -3,7 +3,7 @@ import AdminLayout from '../components/AdminLayout';
 import { useAppState } from '../state/useAppState';
 import { fetchAllProfiles, createAccount, updateProfile, resetPassword, deleteAccount, logAdminAction } from '../lib/adminApi';
 
-const ROLE_LABELS = { teacher: 'School', salesman: 'Salesman', production: 'Production', admin: 'Admin' };
+const ROLE_LABELS = { teacher: 'School', salesman: 'Salesman', production: 'Production', invoicing: 'Invoicing Department', admin: 'Admin' };
 const ROLE_OPTIONS = Object.keys(ROLE_LABELS);
 const STATUS_OPTIONS = ['active', 'inactive', 'suspended'];
 

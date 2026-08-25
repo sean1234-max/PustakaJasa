@@ -4,7 +4,7 @@ import Nav from '../components/Nav';
 import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import { useAppState } from '../state/useAppState';
-import { CATEGORIES, filterHiddenPlakCatalog } from '../data/catalog';
+import { ACTIVE_CATEGORIES, filterHiddenPlakCatalog } from '../data/catalog';
 import { computeBlocks } from '../utils/computeBlocks';
 import { createDraftUpdaters } from '../utils/draftUpdaters';
 
@@ -44,7 +44,7 @@ export default function AddOn() {
 
         <div className="card-kicker">Jenis Anugerah (Category)</div>
         <div style={{ margin: 'var(--space-3) 0 var(--space-8)' }}>
-          <CategoryTabs categories={CATEGORIES} active={state.addOnCategory} onSelect={(key) => patch({ addOnCategory: key })} />
+          <CategoryTabs categories={ACTIVE_CATEGORIES} active={state.addOnCategory} onSelect={(key) => patch({ addOnCategory: key })} />
         </div>
 
         {blocks.map((blk, i) => (

@@ -8,6 +8,7 @@ function toDbOrder(order) {
   return {
     id: order.id,
     invoice_id: order.invoiceId ?? null,
+    printed_at: order.printedAt ?? null,
     date_placed: order.datePlaced ?? null,
     delivery_date: order.deliveryDate ?? null,
     total_amount: order.totalAmount ?? 0,
@@ -45,6 +46,7 @@ function fromDbOrder(row) {
   return {
     id: row.id,
     invoiceId: row.invoice_id,
+    printedAt: row.printed_at,
     datePlaced: row.date_placed,
     deliveryDate: row.delivery_date,
     totalAmount: Number(row.total_amount),

@@ -1,0 +1,174 @@
+import { useState, useMemo } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import Nav from '../components/Nav';
+import CategoryTabs from '../components/CategoryTabs';
+import OrderCategoryBlock from '../components/OrderCategoryBlock';
+import { useAppState } from '../state/useAppState';
+import { STATUS_STAGES, STATUS_BG, STATUS_TEXT, formatDate } from '../data/catalog';
+import { reconstructBlocksForCategory } from '../utils/computeBlocks';
+import { getOrderCategories } from '../utils/exportCsv';
+import { groupItemsByBatch } from '../utils/orderBatches';
+import { getOrderChangeStamp } from '../utils/orderStamp';
+
+const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: false, matrix: false, jenisPlak: false };
+
+// Invoicing Department's own order view — assigns/displays the Invoice
+// Number (setInvoiceId, same action Production used to call — see
+// src/state/AppState.jsx) and shows the original-vs-Tambahan breakdown
+// (groupItemsByBatch, same helper SalesOrderSummary/ProductionOrderDetail
+// already use) so the relationship between an order's original items and
+// any approved Tambahan rounds is always visible from here.
+export default function InvoicingOrderDetail() {
+  const { state, setInvoiceId } = useAppState();
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const order = state.orders.find((o) => o.id === id);
+
+  const [invoiceDraft, setInvoiceDraft] = useState('');
+  const [page, setPage] = useState('summary');
+
+  const categories = useMemo(() => (order ? getOrderCategories(order) : []), [order]);
+  const [activeCat, setActiveCat] = useState(() => categories[0]?.key || '');
+  const currentCat = categories.find((c) => c.key === activeCat) || categories[0];
+  const catBlocks = useMemo(() => {
+    if (!order || !currentCat) return [];
+    return reconstructBlocksForCategory(order, currentCat.key, state.plakCatalog).blocks;
+  }, [order, currentCat, state.plakCatalog]);
+
+  if (!order) return null;
+
+  const idx = STATUS_STAGES.indexOf(order.status);
+  const stamp = getOrderChangeStamp(order);
+  const itemGroups = groupItemsByBatch(order.items);
+
+  const handleSaveInvoice = () => {
+    setInvoiceId(order.id, invoiceDraft);
+    setInvoiceDraft('');
+  };
+
+  return (
+    <div className="screen-wrap">
+      <Nav />
+
+      <button type="button" className="btn btn-ghost" style={{ marginBottom: 'var(--space-4)' }} onClick={() => navigate('/invoicing/dashboard')}>
+        ← Back to Invoicing
+      </button>
+
+      <div className="step-header">
+        <div className={`step ${page === 'summary' ? 'step-active' : 'step-done'}`} style={{ cursor: 'pointer' }} onClick={() => setPage('summary')}>
+          <div className="step-dot">{page === 'summary' ? '1' : '✓'}</div>
+          <span>Summary</span>
+        </div>
+        <div className="step-line" />
+        <div className={`step ${page === 'details' ? 'step-active' : 'step-upcoming'}`} style={{ cursor: 'pointer' }} onClick={() => setPage('details')}>
+          <div className={`step-dot${page === 'details' ? '' : ' step-dot-outline'}`}>2</div>
+          <span>Order Details</span>
+        </div>
+      </div>
+
+      <div className="card elev-md">
+        <div className="order-card-top" style={{ marginBottom: 'var(--space-3)' }}>
+          <div>
+            <div className="card-kicker">{page === 'summary' ? 'Summary' : 'Order Details'}</div>
+            <div className="card-title">{order.id}</div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+            {stamp && <span className="order-stamp-inline">{stamp}</span>}
+            <span className="status-pill" style={{ background: STATUS_BG[idx], color: STATUS_TEXT[idx] }}>{order.status}</span>
+          </div>
+        </div>
+
+        {page === 'summary' ? (
+          <>
+            <div className="form-grid-2" style={{ marginTop: 'var(--space-3)' }}>
+              {order.sekolah && <div><div className="dim">Sekolah</div><div>{order.sekolah}</div></div>}
+              {order.sales && <div><div className="dim">Salesman</div><div>{order.sales}</div></div>}
+              {order.picName && <div><div className="dim">PIC Name</div><div>{order.picName}{order.phone ? ` / ${order.phone}` : ''}</div></div>}
+              {order.terms && <div><div className="dim">Terms</div><div>{order.terms}</div></div>}
+              {order.dueDate && <div><div className="dim">Due Date</div><div>{formatDate(new Date(order.dueDate))}</div></div>}
+              {order.functionDate && <div><div className="dim">Function Date</div><div>{formatDate(new Date(order.functionDate))}</div></div>}
+              <div><div className="dim">Order Date</div><div>{order.datePlaced}</div></div>
+              <div><div className="dim">Total Amount</div><div>RM {order.totalAmount.toFixed(2)}</div></div>
+            </div>
+
+            <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Invoice Number</div>
+            {order.invoiceId ? (
+              <div style={{ marginTop: 'var(--space-2)' }}>
+                <div>{order.invoiceId}</div>
+              </div>
+            ) : (
+              <div className="field" style={{ maxWidth: 340, marginTop: 'var(--space-2)' }}>
+                <label htmlFor="invoiceId">Invoice Number</label>
+                <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+                  <input
+                    className="input"
+                    id="invoiceId"
+                    placeholder="e.g. INV-2026-090"
+                    value={invoiceDraft}
+                    onChange={(e) => setInvoiceDraft(e.target.value)}
+                  />
+                  <button type="button" className="btn btn-primary" onClick={handleSaveInvoice}>Save</button>
+                </div>
+              </div>
+            )}
+            {state.productionToast && <p className="hint-text" style={{ marginTop: 'var(--space-2)' }}>{state.productionToast}</p>}
+
+            <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Original vs Tambahan</div>
+            {itemGroups.map((group, gi) => {
+              const groupQty = group.items.reduce((sum, it) => sum + (Number(it.qty) || 0), 0);
+              const groupHarga = group.items.reduce((sum, it) => sum + it.harga, 0);
+              return (
+                <div key={group.batch}>
+                  <div className="card-kicker" style={{ marginTop: gi === 0 ? 'var(--space-2)' : 'var(--space-6)' }}>{group.label}</div>
+                  <table className="table" style={{ margin: 'var(--space-3) 0 0' }}>
+                    <thead><tr><th>Category</th><th>Jenis Plak</th><th style={{ width: 110 }}>QTY</th><th style={{ width: 130 }}>Price per Unit</th><th style={{ width: 130 }}>Harga</th></tr></thead>
+                    <tbody>
+                      {group.items.map((it) => (
+                        <tr key={it.id}>
+                          <td>{it.categoryLabel}</td>
+                          <td>{it.jenisPlak}</td>
+                          <td>{it.qty}</td>
+                          <td>{it.originalUnitPrice != null ? `RM ${it.originalUnitPrice.toFixed(2)} → ` : ''}RM {(it.unitPrice ?? 0).toFixed(2)}</td>
+                          <td>RM {it.harga.toFixed(2)}</td>
+                        </tr>
+                      ))}
+                      <tr>
+                        <td /><td /><td><strong>{groupQty}</strong></td><td><strong>SUBTOTAL</strong></td>
+                        <td><strong>RM {groupHarga.toFixed(2)}</strong></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })}
+
+            <div className="row-split" style={{ marginTop: 'var(--space-6)' }}>
+              <span />
+              <button type="button" className="btn btn-primary" onClick={() => setPage('details')}>Next: Order Details →</button>
+            </div>
+          </>
+        ) : (
+          <>
+            {categories.length === 0 ? (
+              <p className="hint-text" style={{ marginTop: 'var(--space-3)' }}>No category details found for this order.</p>
+            ) : (
+              <>
+                <div style={{ margin: 'var(--space-3) 0' }}>
+                  <CategoryTabs categories={categories} active={currentCat?.key} onSelect={setActiveCat} />
+                </div>
+                {catBlocks.map((blk) => (
+                  <OrderCategoryBlock key={blk.idx} blk={blk} editable={READONLY} refImageUrl={state.refImages?.[blk.sampleSlotId]} />
+                ))}
+              </>
+            )}
+
+            <div className="row-split" style={{ marginTop: 'var(--space-6)' }}>
+              <button type="button" className="btn btn-ghost" onClick={() => setPage('summary')}>← Back to Summary</button>
+              <span />
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}

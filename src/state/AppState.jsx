@@ -65,8 +65,8 @@ function resetCategoryFields(catKey, st, visibleField) {
   for (let b = 0; b < (cat.blocksCount || 1); b++) {
     const key = `${catKey}::${b}`;
     if (cat.mode === 'list') {
-      // TOKOH/LONJAKAN reset back to their fixed preset rows; OTHERS (no
-      // `rows` preset — see catalog.js) resets to one blank teacher-typed
+      // LONJAKAN resets back to its fixed preset rows; TOKOH/OTHERS (no
+      // `rows` preset — see catalog.js) reset to one blank teacher-typed
       // row instead, same as formDefaults.js's initial seed.
       rowsByBlock[key] = cat.rows && cat.rows.length > 0
         ? cat.rows.map((label, i) => ({ id: st.nextRowId + i, desc: label, qty: '' }))
@@ -119,7 +119,7 @@ function initialState() {
     schoolType: null,
     stepError: '',
 
-    category: 'MP1',
+    category: 'TOKOH',
     lineValues: {},
     matrixValues: {},
     rowsByBlock: buildInitialRowsByBlock('SK'),
@@ -152,7 +152,7 @@ function initialState() {
     draftRestoredToast: '',
 
     addOnOrderId: null,
-    addOnCategory: 'MP1',
+    addOnCategory: 'TOKOH',
     addOnLineValues: {},
     addOnMatrixValues: {},
     addOnRowsByBlock: buildInitialRowsByBlock('SK'),
@@ -162,6 +162,20 @@ function initialState() {
     addOnNextPlakRowId: 1000,
     addOnNextColumnId: 1000,
     addOnVisibleBlocksByCategory: {},
+
+    // Teacher editing under Submitted to Sales (see openAmend/updateAmend
+    // below) — same draft-namespace-per-flow pattern as addOn* above.
+    amendOrderId: null,
+    amendCategory: '',
+    amendLineValues: {},
+    amendMatrixValues: {},
+    amendRowsByBlock: buildInitialRowsByBlock('SK'),
+    amendColumnsByBlock: buildInitialColumnsByBlock(),
+    amendPlakRows: buildInitialPlakRows(),
+    amendNextRowId: 1000,
+    amendNextPlakRowId: 1000,
+    amendNextColumnId: 1000,
+    amendVisibleBlocksByCategory: {},
   };
 }
 
@@ -363,7 +377,7 @@ export function AppStateProvider({ children }) {
       dueSelected: null, funcSelected: null,
       logoDataUrl: null, logoFileName: '', logoRemark: '', schoolType: null, stepError: '',
 
-      category: 'MP1',
+      category: 'TOKOH',
       lineValues: {}, matrixValues: {},
       rowsByBlock: buildInitialRowsByBlock(st.schoolLanguage), columnsByBlock: buildInitialColumnsByBlock(), plakRows: buildInitialPlakRows(),
       nextRowId: 1000, nextPlakRowId: 1000, nextColumnId: 1000, visibleBlocksByCategory: {},
@@ -397,15 +411,20 @@ export function AppStateProvider({ children }) {
         const hasJenisPlak = blk.plakRows.some((pr) => pr.jenisPlak);
         const engaged = hasQty || hasJenisPlak || blk.lines.some(lineHasValue);
         if (!engaged) continue;
+        // hasNamaKelasList categories (OTHERS) can have several blocks
+        // sharing the same qtyLabel — the Kuantiti TAHUN value, when set,
+        // is included too so the toast actually says which Tahun part has
+        // the problem instead of just repeating the category name.
+        const blockLabel = blk.tahun?.value ? `${blk.qtyLabel} (${blk.tahun.value})` : blk.qtyLabel;
         const incompleteLine = blk.lines.find((line) => line.required && !lineHasValue(line));
         if (incompleteLine) {
-          return { ...st, cartToast: `Please fill in line ${incompleteLine.num} for ${blk.qtyLabel} before adding to cart.` };
+          return { ...st, cartToast: `Please fill in line ${incompleteLine.num} for ${blockLabel} before adding to cart.` };
         }
         if (!hasQty) {
-          return { ...st, cartToast: `Please enter a quantity for ${blk.qtyLabel} before adding to cart.` };
+          return { ...st, cartToast: `Please enter a quantity for ${blockLabel} before adding to cart.` };
         }
         if (!hasJenisPlak) {
-          return { ...st, cartToast: `Please choose a Jenis Plak for ${blk.qtyLabel} before adding to cart.` };
+          return { ...st, cartToast: `Please choose a Jenis Plak for ${blockLabel} before adding to cart.` };
         }
         // A Tahun range spanning N years needs at least N medals per
         // subject (one per year) — a qty below that would silently lose
@@ -428,7 +447,7 @@ export function AppStateProvider({ children }) {
         if (blk.hasNamaKelasList) {
           const mismatchRow = blk.rows.find((row) => row.qtyMismatch);
           if (mismatchRow) {
-            return { ...st, cartToast: `${mismatchRow.desc || 'Description'} has QTY ${mismatchRow.qty}, but ${blk.namaKelasCount} Nama Kelas filled in for ${blk.qtyLabel}${blk.tahun?.value ? ` (Tahun ${blk.tahun.value})` : ''} — please make them match.` };
+            return { ...st, cartToast: `${mismatchRow.desc || 'Description'} has QTY ${mismatchRow.qty}, but ${blk.namaKelasCount} Nama Kelas filled in for ${blockLabel} — please make them match.` };
           }
         }
       }
@@ -577,7 +596,7 @@ export function AppStateProvider({ children }) {
       logoDataUrl: ord.logoDataUrl || null, logoFileName: ord.logoFileName || '', logoRemark: ord.logoRemark || '', schoolType: ord.schoolType || null,
       stepError: '',
 
-      category: restored.category || 'MP1',
+      category: restored.category || 'TOKOH',
       lineValues: restored.lineValues, matrixValues: restored.matrixValues,
       rowsByBlock: { ...buildInitialRowsByBlock(st.schoolLanguage), ...restored.rowsByBlock },
       columnsByBlock: { ...buildInitialColumnsByBlock(), ...restored.columnsByBlock },
@@ -589,9 +608,81 @@ export function AppStateProvider({ children }) {
     }));
   }, [patch]);
 
+  // Teacher editing under "Submitted to Sales" — restored 2026-08-25 after
+  // being removed in commit 6c03f9b ("Amend ('Update Details') is removed
+  // entirely"); re-derived against the CURRENT computeBlocks/
+  // buildDraftFromOrder shape rather than the old (PBD-variant-based) one,
+  // since the category system changed materially since removal (PBD/ALIRAN
+  // split into direct tabs, OTHERS' dynamic Nama Kelas/Tahun blocks).
+  // Reuses buildDraftFromOrder — the same reconstruction reorderOrder above
+  // already relies on — instead of hand-rolling the lineValues/rowsByBlock/
+  // etc rebuild a second time.
+  const openAmend = useCallback((ord) => {
+    const restored = buildDraftFromOrder(ord);
+    patch((st) => ({
+      amendOrderId: ord.id,
+      amendCategory: restored.category || '',
+      amendLineValues: restored.lineValues, amendMatrixValues: restored.matrixValues,
+      amendRowsByBlock: { ...buildInitialRowsByBlock(st.schoolLanguage), ...restored.rowsByBlock },
+      amendColumnsByBlock: { ...buildInitialColumnsByBlock(), ...restored.columnsByBlock },
+      amendPlakRows: { ...buildInitialPlakRows(), ...restored.plakRows },
+      amendNextRowId: Math.max(1000, restored.nextId), amendNextPlakRowId: Math.max(1000, restored.nextId), amendNextColumnId: Math.max(1000, restored.nextId),
+      amendVisibleBlocksByCategory: restored.visibleBlocksByCategory,
+    }));
+  }, [patch]);
+
+  // Rebuilds `items` straight from the amend draft, the same "blocks ->
+  // cart items" conversion addToCart uses (see above) — one item per
+  // filled plakRow, id/batch/originalUnitPrice carried over from the
+  // matching original item (buildDraftFromOrder seeds each block's
+  // plakRows with the ORIGINAL item ids, and Amend's EDITABLE never allows
+  // adding/removing a plakRow or changing its Jenis Plak — see Amend.jsx —
+  // so every plakRow here still corresponds 1:1 to a real original item).
+  // Only reachable while status is 'Submitted to Sales' (Dashboard.jsx's
+  // canAmend gate), so every item is still batch 0 — nothing here needs to
+  // handle an already-approved Tambahan round.
+  const updateAmend = useCallback(() => {
+    setState((st) => {
+      const order = st.orders.find((o) => o.id === st.amendOrderId);
+      if (!order) return st;
+      const originalById = new Map((order.items || []).map((it) => [it.id, it]));
+      const categoriesUsed = CATEGORIES.filter((cat) => (order.items || []).some((it) => it.categoryKey === cat.key));
+      const newItems = [];
+      categoriesUsed.forEach((cat) => {
+        const { blocks, isMatrix, isDynamicMatrix } = computeBlocks(
+          cat.key, st.amendLineValues, st.amendMatrixValues, st.amendRowsByBlock, st.amendPlakRows, st.amendColumnsByBlock, noopUpdaters, st.plakCatalog, st.schoolLanguage,
+        );
+        const visibleCount = st.amendVisibleBlocksByCategory[cat.key] || 1;
+        blocks.slice(0, visibleCount).forEach((blk) => {
+          blk.plakRows.forEach((pr) => {
+            if (!pr.jenisPlak || !pr.qty) return;
+            const prior = originalById.get(pr.id);
+            newItems.push({
+              id: pr.id, jenisPlak: pr.jenisPlak, qty: pr.qty, harga: pr.rawHarga, unitPrice: pr.unitPrice,
+              categoryLabel: blk.qtyLabel, categoryKey: cat.key, blockIdx: blk.idx,
+              detail: snapshotDetail(cat.key, blk.idx, isMatrix, isDynamicMatrix, st.amendLineValues, st.amendMatrixValues, st.amendRowsByBlock, st.amendColumnsByBlock),
+              ...(prior?.batch ? { batch: prior.batch } : {}),
+              ...(prior?.originalUnitPrice != null ? { originalUnitPrice: prior.originalUnitPrice } : {}),
+            });
+          });
+        });
+      });
+      const amendedTotal = newItems.reduce((sum, it) => sum + it.harga, 0);
+      updateOrder(st.amendOrderId, { items: newItems, totalAmount: amendedTotal })
+        .catch((err) => console.error('Failed to save amend to Supabase:', err));
+      return {
+        ...st,
+        orders: st.orders.map((o) => (o.id === st.amendOrderId ? { ...o, items: newItems, totalAmount: amendedTotal } : o)),
+        updateToast: 'Update successful.',
+      };
+    });
+    clearTimeout(updateToastTimer.current);
+    updateToastTimer.current = setTimeout(() => patch({ updateToast: '' }), 2500);
+  }, [patch]);
+
   const openAddOn = useCallback((ord) => {
     patch((st) => ({
-      addOnOrderId: ord.id, addOnCategory: 'MP1',
+      addOnOrderId: ord.id, addOnCategory: 'TOKOH',
       addOnLineValues: {}, addOnMatrixValues: {},
       addOnRowsByBlock: buildInitialRowsByBlock(st.schoolLanguage), addOnColumnsByBlock: buildInitialColumnsByBlock(), addOnPlakRows: buildInitialPlakRows(),
       addOnNextRowId: 1000, addOnNextPlakRowId: 1000, addOnNextColumnId: 1000, addOnVisibleBlocksByCategory: {},
@@ -737,8 +828,22 @@ export function AppStateProvider({ children }) {
     patch((st) => {
       const order = st.orders.find((o) => o.id === orderId);
       if (!order) return {};
+      // Stamps `originalUnitPrice` the first time Sales negotiates an
+      // add-on item's price away from what the teacher's own pending
+      // add-on had — compared against the item as it stood before THIS
+      // approval, not the live catalog rate (that's the separate,
+      // pre-existing priceAdjusted concept below). Never overwritten once
+      // set, so a later edit can't erase the true original.
+      const priorItems = order.pendingAddonItems || [];
+      const withOriginalPrice = updatedItems.map((it) => {
+        const prior = priorItems.find((p) => p.id === it.id);
+        if (prior && prior.unitPrice !== it.unitPrice && it.originalUnitPrice == null) {
+          return { ...it, originalUnitPrice: prior.unitPrice };
+        }
+        return it;
+      });
       const nextBatch = order.items.reduce((max, it) => Math.max(max, it.batch || 0), 0) + 1;
-      const batchedItems = updatedItems.map((it) => ({ ...it, batch: nextBatch }));
+      const batchedItems = withOriginalPrice.map((it) => ({ ...it, batch: nextBatch }));
       const combinedItems = [...order.items, ...batchedItems];
       const combinedTotal = order.totalAmount + batchedItems.reduce((sum, it) => sum + it.harga, 0);
       const priceAdjusted = order.priceAdjusted || batchedItems.some((it) => it.unitPrice !== standardUnitPrice(it.jenisPlak, st.plakCatalog));
@@ -770,9 +875,25 @@ export function AppStateProvider({ children }) {
   // still editable.
   const approveOrder = useCallback((orderId, updatedItems, overrides = {}) => {
     patch((st) => {
-      const totalAmount = updatedItems.reduce((sum, it) => sum + it.harga, 0);
-      const priceAdjusted = updatedItems.some((it) => it.unitPrice !== standardUnitPrice(it.jenisPlak, st.plakCatalog));
-      const fields = { items: updatedItems, totalAmount, priceAdjusted, status: 'In Production', ...overrides };
+      // Stamps `originalUnitPrice` the first time Sales changes an item's
+      // price away from what the teacher's own cart had — compared
+      // against the order as it stood before THIS approval, not the live
+      // catalog rate (that's the separate, pre-existing priceAdjusted
+      // concept below). Never overwritten once set, so a later edit can't
+      // erase the true original. Pre-existing approved orders simply have
+      // no originalUnitPrice on their items, so nothing extra shows for them.
+      const priorOrder = st.orders.find((o) => o.id === orderId);
+      const priorItems = priorOrder?.items || [];
+      const itemsWithOriginalPrice = updatedItems.map((it) => {
+        const prior = priorItems.find((p) => p.id === it.id);
+        if (prior && prior.unitPrice !== it.unitPrice && it.originalUnitPrice == null) {
+          return { ...it, originalUnitPrice: prior.unitPrice };
+        }
+        return it;
+      });
+      const totalAmount = itemsWithOriginalPrice.reduce((sum, it) => sum + it.harga, 0);
+      const priceAdjusted = itemsWithOriginalPrice.some((it) => it.unitPrice !== standardUnitPrice(it.jenisPlak, st.plakCatalog));
+      const fields = { items: itemsWithOriginalPrice, totalAmount, priceAdjusted, status: 'In Production', ...overrides };
       updateOrder(orderId, fields)
         .catch((err) => console.error('Failed to save approval to Supabase:', err));
       return {
@@ -819,6 +940,23 @@ export function AppStateProvider({ children }) {
     productionToastTimer.current = setTimeout(() => patch({ productionToast: '' }), 2500);
   }, [patch]);
 
+  // Stamps the actual moment a Teacher/Salesman print action happened —
+  // not the order's creation date — so "Order Printed" on the printout
+  // reflects when it was really printed. Overwrites on every re-print (no
+  // history table — consistent with the rest of this flat-column orders
+  // table, and there's no prior print-time data to lose). Optimistic
+  // local update first so the just-updated value is already in the DOM by
+  // the time window.print() reads it; Supabase write is fire-and-forget,
+  // same pattern as setInvoiceId above.
+  const recordPrint = useCallback((orderId) => {
+    const printedAt = new Date().toISOString();
+    patch((st) => ({
+      orders: st.orders.map((o) => (o.id === orderId ? { ...o, printedAt } : o)),
+    }));
+    updateOrder(orderId, { printedAt })
+      .catch((err) => console.error('Failed to save print timestamp to Supabase:', err));
+  }, [patch]);
+
   // Production: replaces one category's reference sample image. Updates
   // local state immediately (every teacher's picker reads from it) and
   // persists to Supabase in the background.
@@ -839,8 +977,10 @@ export function AppStateProvider({ children }) {
   // `productionToast` the rest of this page's actions already use.
   const markProductionDone = useCallback(async (orderId) => {
     const order = stateRef.current.orders.find((o) => o.id === orderId);
-    if (!order || order.status !== 'In Production' || !order.invoiceId) {
+    if (!order || order.status !== 'In Production') {
       patch({ productionToast: 'This order is not ready to be marked done.' });
+    } else if (!order.invoiceId) {
+      patch({ productionToast: 'Waiting for Invoicing Department to assign an Invoice Number before this can be marked done.' });
     } else {
       try {
         await updateOrder(orderId, { status: 'Waiting for Delivery' });
@@ -975,7 +1115,9 @@ export function AppStateProvider({ children }) {
   const value = {
     state, patch, today: TODAY, login, logout,
     resetCurrentCategory, startNewOrder, addToCart, removeFromCart, submitOrder, reorderOrder,
+    openAmend, updateAmend,
     openAddOn, submitPendingAddOn, cancelPendingAddOn, rejectAddOn, approveAddOn, approveOrder, setInvoiceId,
+    recordPrint,
     markProductionDone,
     updateReferenceImage, addCatalogNode, removeCatalogNode, updateCatalogNodePrice, updateCatalogNodeStock, setCatalogNodeHidden, moveCatalogNode,
     reorderCatalogSiblings,

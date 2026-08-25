@@ -64,11 +64,35 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
     // defaulting every field to optional. Read by OrderCategoryBlock (the
     // ★ marker) and AppState.jsx's addToCart validation.
     const requiredLineIndices = currentCat.requiredLineIndices || [0];
+    // Separate from requiredLineIndices — the ★ marker on Main
+    // Template/Mata Pelajaran-Klas's YEAR line is purely visual ("this
+    // wording matters, check it"), NOT a submission gate: the line's own
+    // placeholder text explicitly tells the teacher to leave it blank
+    // when the year is already part of line 1, so it must never block
+    // Add to Cart the way an actually-required line does.
+    const starredLineIndices = currentCat.starredLineIndices || requiredLineIndices;
     // Resolved per school (SK/SJKC) — plain pass-through for every category
     // except OTHERS, whose labels are generic placeholders with real
     // translations (see catalog.js's *ByLanguage fields / getCategory*
     // resolvers).
-    const catLinePlaceholders = getCategoryLinePlaceholders(currentCat, schoolLanguage);
+    let catLinePlaceholders = getCategoryLinePlaceholders(currentCat, schoolLanguage);
+    // Main Template's "+ Add Reference Row" (extendableReferenceSample) —
+    // the extra count rides along inside lineValues itself (a synthetic
+    // `::extraRefLines` key per block, written by draftUpdaters.js's
+    // onAddReferenceLine) rather than a new state field/computeBlocks
+    // param, so it gets snapshotted/reconstructed/reset for free by every
+    // mechanism that already treats lineValues as the source of truth
+    // (snapshotDetail above, resetCategoryFields, buildDraftFromOrder) —
+    // no call site of computeBlocks needs to change. Extra lines get a
+    // blank placeholder (no fixed meaning) and flow through the exact same
+    // rawLines/flatLines/numbering/drag-reorder/required-index logic below
+    // as any catalog-defined line.
+    if (currentCat.extendableReferenceSample) {
+      const extraCount = Number(lineValues[`${catKey}::${b}::extraRefLines`]) || 0;
+      if (extraCount > 0) {
+        catLinePlaceholders = [...catLinePlaceholders, ...Array.from({ length: extraCount }, () => '( Additional Line )')];
+      }
+    }
     const catPositionLine2Placeholder = getCategoryPositionLine2Placeholder(currentCat, schoolLanguage);
     // Line 3's optional second box gets its own slotId ('2b') alongside
     // every other line's own index — flattened below (secondLine, if any,
@@ -81,6 +105,7 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
       const line = {
         key, slotId, placeholder, value: lineValues[key] || '',
         required: requiredLineIndices.includes(i),
+        starred: starredLineIndices.includes(i),
         // Line 3's own text renders red on some categories (OTHERS — see
         // catalog.js's positionFieldsRedText) since it's the position text
         // that actually gets engraved; every other line stays plain.
@@ -262,10 +287,16 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
 
     blocks.push({
       idx: b,
-      qtyLabel: currentCat.label,
+      qtyLabel: currentCat.hideQtyLabelSuffix ? '' : currentCat.label,
       qtyColHeader: isMatrix ? 'QTY' : (currentCat.qtyColumnLabels ? currentCat.qtyColumnLabels[b] : 'QTY'),
       sampleSlotId: `sample-${catKey}-${b}`,
       lines, isMatrix, isDynamicMatrix,
+      // Main Template's "+ Add Reference Row" (see the extraRefLines note
+      // above) and the matching cap on Kuantiti's own "+ Add Row" — both
+      // capped at 5 total per catalog.js's capRowsAt5/extendableReferenceSample.
+      addReferenceLine: currentCat.extendableReferenceSample ? () => updaters.onAddReferenceLine(catKey, b) : null,
+      canAddReferenceLine: !!currentCat.extendableReferenceSample && lines.length < 5,
+      canAddRow: !currentCat.capRowsAt5 || rows.length < 5,
       columns, matrixRows,
       colTotals: colTotals.map((v) => ({ value: v })), grandTotal,
       rows,
@@ -285,6 +316,11 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
       // onDuplicateBlock and NewOrderStep2/AddOn's visible-block slicing,
       // which is what actually reveals block b+1 once this copies into it.
       duplicateBlock: currentCat.hasNamaKelasList && b < blocksCount - 1 ? () => updaters.onDuplicateBlock(catKey, b) : null,
+      // "Delete section" — only ever offered for a duplicated block (never
+      // block 0, the original section); same isLastBlock gating the caller
+      // (NewOrderStep2/AddOn) already applies to duplicateBlock above
+      // decides whether this is actually the one to show it on.
+      removeBlock: currentCat.hasNamaKelasList && b > 0 ? () => updaters.onRemoveBlock(catKey, b) : null,
       // Draggable Reference Sample (OTHERS — see catalog.js): pass the full
       // new slotId order after a drag; OrderCategoryBlock derives it from
       // `lines` current order plus the moved item's new position.
@@ -324,8 +360,8 @@ export const noopUpdaters = {
   onLine: () => {}, onMatrix: () => {}, onRowField: () => {}, onRowRemove: () => {},
   onAddRow: () => {}, onAddRowSameQty: () => {}, onPlakSelect: () => {},
   onColumnField: () => {}, onColumnRemove: () => {}, onAddColumn: () => {}, onAddColumnSameTahun: () => {},
-  onAddNamaKelas: () => {}, onDuplicateBlock: () => {},
-  onAddMatrixRow: () => {}, onMatrixRowRemove: () => {},
+  onAddNamaKelas: () => {}, onDuplicateBlock: () => {}, onRemoveBlock: () => {},
+  onAddMatrixRow: () => {}, onMatrixRowRemove: () => {}, onAddReferenceLine: () => {},
 };
 
 // Rebuilds read-only `blocks` (the same shape NewOrderStep2 renders live)

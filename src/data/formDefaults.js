@@ -5,11 +5,11 @@ export function buildInitialRowsByBlock(schoolLanguage = 'SK') {
   let id = 1;
   CATEGORIES.filter((c) => c.mode === 'list').forEach((cat) => {
     for (let b = 0; b < (cat.blocksCount || 1); b++) {
-      // TOKOH/LONJAKAN seed a fixed preset list; OTHERS has no fixed rows
-      // (`rows` is omitted in catalog.js) — it's the catch-all category, so
-      // the teacher types every Description themselves via "+ Add
-      // Description", starting from one blank row instead of an irrelevant
-      // preset to delete around.
+      // LONJAKAN seeds a fixed preset list; TOKOH/OTHERS have no fixed rows
+      // (`rows` is omitted in catalog.js) — the teacher types every
+      // Description themselves via "+ Add Row"/"+ Add Description",
+      // starting from one blank row instead of an irrelevant preset to
+      // delete around.
       out[`${cat.key}::${b}`] = cat.rows && cat.rows.length > 0
         ? cat.rows.map((label) => ({ id: id++, desc: label, qty: '' }))
         : [{ id: id++, desc: '', qty: '', custom: true }];

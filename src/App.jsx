@@ -9,6 +9,8 @@ import Cart from './pages/Cart';
 import Success from './pages/Success';
 import Dashboard from './pages/Dashboard';
 import OrderDetails from './pages/OrderDetails';
+import Amend from './pages/Amend';
+import AmendSummary from './pages/AmendSummary';
 import AddOn from './pages/AddOn';
 import AddOnSummary from './pages/AddOnSummary';
 import SalesDashboard from './pages/SalesDashboard';
@@ -17,6 +19,8 @@ import ProductionDashboard from './pages/ProductionDashboard';
 import ProductionOrderDetail from './pages/ProductionOrderDetail';
 import ProductionReferenceImages from './pages/ProductionReferenceImages';
 import ProductionCatalog from './pages/ProductionCatalog';
+import InvoicingDashboard from './pages/InvoicingDashboard';
+import InvoicingOrderDetail from './pages/InvoicingOrderDetail';
 import AdminDashboard from './pages/AdminDashboard';
 import AdminUsers from './pages/AdminUsers';
 import AdminSchools from './pages/AdminSchools';
@@ -50,6 +54,8 @@ function AppRoutes() {
       <Route path="/success" element={<RequireRole role="teacher"><Success /></RequireRole>} />
       <Route path="/dashboard" element={<RequireRole role="teacher"><Dashboard /></RequireRole>} />
       <Route path="/orders/:id" element={<RequireRole role="teacher"><OrderDetails /></RequireRole>} />
+      <Route path="/amend/:id" element={<RequireRole role="teacher"><Amend /></RequireRole>} />
+      <Route path="/amend/:id/summary" element={<RequireRole role="teacher"><AmendSummary /></RequireRole>} />
       <Route path="/addon/:id" element={<RequireRole role="teacher"><AddOn /></RequireRole>} />
       <Route path="/addon/:id/summary" element={<RequireRole role="teacher"><AddOnSummary /></RequireRole>} />
 
@@ -60,6 +66,9 @@ function AppRoutes() {
       <Route path="/production/orders/:id" element={<RequireRole role="production"><ProductionOrderDetail /></RequireRole>} />
       <Route path="/production/reference-images" element={<RequireRole role="production"><ProductionReferenceImages /></RequireRole>} />
       <Route path="/production/catalog" element={<RequireRole role="production"><ProductionCatalog /></RequireRole>} />
+
+      <Route path="/invoicing/dashboard" element={<RequireRole role="invoicing"><InvoicingDashboard /></RequireRole>} />
+      <Route path="/invoicing/orders/:id" element={<RequireRole role="invoicing"><InvoicingOrderDetail /></RequireRole>} />
 
       <Route path="/admin/dashboard" element={<RequireRole role="admin"><AdminDashboard /></RequireRole>} />
       <Route path="/admin/users" element={<RequireRole role="admin"><AdminUsers /></RequireRole>} />

@@ -6,7 +6,7 @@ import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import PriceTable from '../components/PriceTable';
 import DatePicker from '../components/DatePicker';
 import { useAppState } from '../state/useAppState';
-import { STATUS_STAGES, STATUS_BG, STATUS_TEXT, standardUnitPrice, formatDate } from '../data/catalog';
+import { STATUS_STAGES, STATUS_BG, STATUS_TEXT, standardUnitPrice, formatDate, formatDateTime } from '../data/catalog';
 import { reconstructBlocksForCategory } from '../utils/computeBlocks';
 import { getOrderCategories } from '../utils/exportCsv';
 import { getOrderChangeStamp } from '../utils/orderStamp';
@@ -16,7 +16,7 @@ import { getOrderChangeStamp } from '../utils/orderStamp';
 const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: false, matrix: false, jenisPlak: false };
 
 export default function SalesOrderSummary() {
-  const { state, today, approveOrder, approveAddOn, rejectAddOn } = useAppState();
+  const { state, today, approveOrder, approveAddOn, rejectAddOn, recordPrint } = useAppState();
   const { id } = useParams();
   const navigate = useNavigate();
   const order = state.orders.find((o) => o.id === id);
@@ -132,7 +132,10 @@ export default function SalesOrderSummary() {
     setRejectReason('');
   };
 
-  const handlePrint = () => window.print();
+  // Deferred a tick so the just-updated printedAt (recordPrint) has
+  // actually re-rendered into the print-only DOM before window.print()
+  // reads it — see the identical note in OrderDetails.jsx.
+  const handlePrint = () => { recordPrint(order.id); setTimeout(() => window.print(), 0); };
 
   return (
     <div className="screen-wrap">
@@ -285,6 +288,9 @@ export default function SalesOrderSummary() {
         <div className="print-only">
           {stamp && <div className="order-stamp">{stamp}</div>}
           <div className="form-grid-2" style={{ marginTop: 'var(--space-3)' }}>
+            <div><div className="dim">Order ID</div><div>{order.id}</div></div>
+            <div><div className="dim">Invoice Number</div><div>{order.invoiceId || '-'}</div></div>
+            {order.printedAt && <div><div className="dim">Order Printed</div><div>{formatDateTime(order.printedAt)}</div></div>}
             {order.sekolah && <div><div className="dim">Sekolah</div><div>{order.sekolah}</div></div>}
             {order.sales && <div><div className="dim">Sales</div><div>{order.sales}</div></div>}
             {order.picName && <div><div className="dim">PIC Name</div><div>{order.picName}{order.phone ? ` / ${order.phone}` : ''}</div></div>}

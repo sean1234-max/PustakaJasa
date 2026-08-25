@@ -12,7 +12,7 @@ const FILTERS = [
 ];
 
 export default function Dashboard() {
-  const { state, openAddOn, reorderOrder, cancelPendingAddOn } = useAppState();
+  const { state, openAddOn, openAmend, reorderOrder, cancelPendingAddOn } = useAppState();
   const navigate = useNavigate();
   const [filter, setFilter] = useState('Submitted to Sales');
   const [expandedAddOnId, setExpandedAddOnId] = useState(null);
@@ -71,6 +71,11 @@ export default function Dashboard() {
           const invoiceIdLabel = idx >= 1 ? (ord.invoiceId || `INV-${ord.id.replace('ORD-', '')}`) : '-';
           const canAddOn = idx === 1 && ord.pendingAddonStatus !== 'pending';
           const isCompleted = ord.status === 'Completed';
+          // Restored 2026-08-25 — teacher can still update permitted order
+          // details while the order hasn't been reviewed by Sales yet (see
+          // AppState.jsx's openAmend/updateAmend). Locked the moment Sales
+          // approves (status moves past idx 0), same as before removal.
+          const canAmend = idx === 0;
 
           return (
             <div key={ord.id} className="card order-card">
@@ -129,6 +134,7 @@ export default function Dashboard() {
 
               <div className="order-card-actions">
                 <button type="button" className="btn btn-ghost btn-block" onClick={() => navigate(`/orders/${ord.id}`)}>View Details</button>
+                {canAmend && <button type="button" className="btn btn-secondary btn-block" onClick={() => { openAmend(ord); navigate(`/amend/${ord.id}`); }}>Update Details</button>}
                 {canAddOn && <button type="button" className="btn btn-secondary btn-block" onClick={() => { openAddOn(ord); navigate(`/addon/${ord.id}`); }}>Add On</button>}
                 {isCompleted && <button type="button" className="btn btn-secondary btn-block" onClick={() => { reorderOrder(ord); navigate('/order/step1'); }}>Reorder</button>}
               </div>

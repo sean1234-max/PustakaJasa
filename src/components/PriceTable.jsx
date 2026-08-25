@@ -27,6 +27,10 @@ export default function PriceTable({
 }) {
   const groups = groupItemsByBatch(rows);
   const multiGroup = groups.length > 1;
+  // Shown only for rows that actually had a price change captured (see
+  // AppState.jsx's approveOrder/approveAddOn) — pre-existing orders/items
+  // with no originalUnitPrice never trigger this column.
+  const anyOriginalPrice = rows.some((it) => it.originalUnitPrice != null);
 
   return (
     <>
@@ -43,6 +47,7 @@ export default function PriceTable({
                 <tr>
                   {!hideCategory && <th>Category</th>}
                   <th>Jenis Plak</th>
+                  {anyOriginalPrice && <th style={{ width: 130 }}>Original Price Per Unit</th>}
                   <th style={{ width: 130 }}>Price per Unit</th>
                   <th style={{ width: 80 }}>QTY</th>
                   <th style={{ width: 130 }}>Harga</th>
@@ -55,6 +60,9 @@ export default function PriceTable({
                     <tr key={it.key}>
                       {!hideCategory && <td>{it.categoryLabel}</td>}
                       <td>{it.jenisPlak}</td>
+                      {anyOriginalPrice && (
+                        <td>{it.originalUnitPrice != null ? `RM ${it.originalUnitPrice.toFixed(2)}` : ''}</td>
+                      )}
                       <td>
                         {editable ? (
                           <input
@@ -82,7 +90,9 @@ export default function PriceTable({
                 })}
                 <tr>
                   {!hideCategory && <td />}
-                  <td /><td />
+                  <td />
+                  {anyOriginalPrice && <td />}
+                  <td />
                   <td><strong>{multiGroup ? 'SUBTOTAL' : 'TOTAL'}</strong></td>
                   <td>
                     <strong className={!multiGroup && priceAdjusted ? 'amount-adjusted' : undefined}>

@@ -21,17 +21,37 @@ export function combineByJenisPlak(items) {
   const byPlak = new Map();
   (items || []).forEach((it) => {
     if (!byPlak.has(it.jenisPlak)) {
-      byPlak.set(it.jenisPlak, { key: it.jenisPlak, jenisPlak: it.jenisPlak, ids: [], qty: 0, harga: 0 });
+      byPlak.set(it.jenisPlak, {
+        key: it.jenisPlak, jenisPlak: it.jenisPlak, ids: [], qty: 0, harga: 0,
+        originalHarga: 0, itemCount: 0, itemsWithOriginalPrice: 0,
+      });
       order.push(it.jenisPlak);
     }
     const row = byPlak.get(it.jenisPlak);
+    const qty = Number(it.qty) || 0;
     row.ids.push(it.id);
-    row.qty += Number(it.qty) || 0;
+    row.qty += qty;
     row.harga += Number(it.harga) || 0;
+    row.itemCount += 1;
+    // Only combine an Original Price Per Unit across merged rows when
+    // EVERY one of them actually has one (see AppState.jsx's approveOrder/
+    // approveAddOn) — otherwise leave it undefined so the merged row shows
+    // no original price rather than a misleading partial one.
+    if (it.originalUnitPrice != null) {
+      row.itemsWithOriginalPrice += 1;
+      row.originalHarga += (it.originalUnitPrice != null ? it.originalUnitPrice : it.unitPrice) * qty;
+    } else {
+      row.originalHarga += (Number(it.unitPrice) || 0) * qty;
+    }
   });
   return order.map((code) => {
     const row = byPlak.get(code);
-    return { ...row, unitPrice: row.qty > 0 ? row.harga / row.qty : 0 };
+    const hasOriginal = row.itemsWithOriginalPrice === row.itemCount;
+    return {
+      ...row,
+      unitPrice: row.qty > 0 ? row.harga / row.qty : 0,
+      originalUnitPrice: hasOriginal && row.qty > 0 ? row.originalHarga / row.qty : null,
+    };
   });
 }
 

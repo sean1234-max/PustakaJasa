@@ -14,12 +14,11 @@ import { getOrderChangeStamp } from '../utils/orderStamp';
 const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: false, matrix: false, jenisPlak: false };
 
 export default function ProductionOrderDetail() {
-  const { state, setInvoiceId } = useAppState();
+  const { state } = useAppState();
   const { id } = useParams();
   const navigate = useNavigate();
   const order = state.orders.find((o) => o.id === id);
 
-  const [invoiceDraft, setInvoiceDraft] = useState('');
   const [exportNote, setExportNote] = useState('');
   const exportNoteTimer = useRef(null);
   const [page, setPage] = useState('summary');
@@ -51,11 +50,6 @@ export default function ProductionOrderDetail() {
   const stamp = getOrderChangeStamp(order);
   const totalQty = order.items.reduce((sum, it) => sum + (Number(it.qty) || 0), 0);
   const itemGroups = groupItemsByBatch(order.items);
-
-  const handleSaveInvoice = () => {
-    setInvoiceId(order.id, invoiceDraft);
-    setInvoiceDraft('');
-  };
 
   const handleExportGroup = (group, csvRows) => {
     if (csvRows.length === 0) return;
@@ -131,26 +125,10 @@ export default function ProductionOrderDetail() {
             </div>
 
             <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Invoice</div>
-            {order.invoiceId ? (
-              <div style={{ marginTop: 'var(--space-2)' }}>
-                <div className="dim">Invoice ID</div>
-                <div>{order.invoiceId}</div>
-              </div>
-            ) : (
-              <div className="field" style={{ maxWidth: 340, marginTop: 'var(--space-2)' }}>
-                <label htmlFor="invoiceId">Invoice ID</label>
-                <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
-                  <input
-                    className="input"
-                    id="invoiceId"
-                    placeholder="e.g. INV-2026-090"
-                    value={invoiceDraft}
-                    onChange={(e) => setInvoiceDraft(e.target.value)}
-                  />
-                  <button type="button" className="btn btn-primary" onClick={handleSaveInvoice}>Save</button>
-                </div>
-              </div>
-            )}
+            <div style={{ marginTop: 'var(--space-2)' }}>
+              <div className="dim">Invoice Number</div>
+              <div>{order.invoiceId || 'Not assigned yet — Invoicing Department handles this.'}</div>
+            </div>
             {state.productionToast && <p className="hint-text" style={{ marginTop: 'var(--space-2)' }}>{state.productionToast}</p>}
 
             <div className="row-split" style={{ marginTop: 'var(--space-6)' }}>
@@ -197,8 +175,7 @@ export default function ProductionOrderDetail() {
               </>
             )}
 
-            {order.invoiceId ? (
-              <>
+            <>
                 <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Export by Jenis Plak</div>
                 <p className="hint-text" style={{ marginTop: 0 }}>
                   Same Jenis Plak used in more than one place in this order? Export one combined CSV for it here instead of a separate file per order detail.
@@ -276,9 +253,6 @@ export default function ProductionOrderDetail() {
                   </>
                 )}
               </>
-            ) : (
-              <p className="hint-text" style={{ marginTop: 'var(--space-6)' }}>Enter an Invoice ID on the Summary page before exporting.</p>
-            )}
 
             <div className="row-split" style={{ marginTop: 'var(--space-6)' }}>
               <button type="button" className="btn btn-ghost" onClick={() => setPage('summary')}>← Back to Summary</button>

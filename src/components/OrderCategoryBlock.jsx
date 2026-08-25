@@ -4,6 +4,20 @@ import { getStockStatus } from '../data/catalog';
 
 const TAHUN_OPTIONS = ['TAHUN 1', 'TAHUN 2', 'TAHUN 3', 'TAHUN 4', 'TAHUN 5', 'TAHUN 6'];
 
+// Whether a duplicated Mata Pelajaran/Klas section has any teacher-entered
+// data — decides whether deleting it needs a confirm prompt first. Reads
+// straight off the already-computed `blk` (Reference Sample lines, Kuantiti
+// rows, Nama Kelas list, Tahun, Jenis Plak), so no extra state plumbing is
+// needed just to answer this.
+function blockHasSectionData(blk) {
+  const linesHaveValue = blk.lines.some((ln) => (ln.value || '').trim() || (ln.secondLine?.value || '').trim());
+  const rowsHaveValue = blk.rows.some((r) => (r.desc || '').trim() || (r.qty || '').toString().trim());
+  const namaKelasHaveValue = blk.namaKelasRows.some((nk) => (nk.name || '').trim());
+  const tahunHasValue = (blk.tahun?.value || '').trim();
+  const plakHasValue = blk.plakRows.some((p) => (p.jenisPlak || '').trim());
+  return linesHaveValue || rowsHaveValue || namaKelasHaveValue || !!tahunHasValue || plakHasValue;
+}
+
 // Renders one category "block": reference sample + numbered lines, the
 // quantity table (fixed matrix / dynamic matrix / list mode), and the Jenis
 // Plak / QTY / Harga row. Reused by New Order Step 2, Add On, and every
@@ -145,7 +159,7 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, refImag
                   onDragEnd={referenceSampleDraggable ? () => setDragSlotId(null) : undefined}
                 >
                   <span
-                    style={{ color: '#c0392b', fontSize: 14, width: 14, textAlign: 'center', flex: 'none', marginTop: 7, visibility: ln.required ? 'visible' : 'hidden' }}
+                    style={{ color: '#c0392b', fontSize: 14, width: 14, textAlign: 'center', flex: 'none', marginTop: 7, visibility: ln.starred ? 'visible' : 'hidden' }}
                     aria-label={ln.required ? 'required' : undefined}
                   >
                     ★
@@ -164,10 +178,15 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, refImag
               ))}
             </div>
           </div>
+          {blk.addReferenceLine && editable.lines && blk.canAddReferenceLine && (
+            <div className="row-actions" style={{ marginTop: 'var(--space-2)' }}>
+              <button type="button" className="btn btn-secondary" onClick={blk.addReferenceLine}>+ Add Reference Row</button>
+            </div>
+          )}
         </>
       )}
 
-      <div className="card-kicker">Kuantiti — {blk.qtyLabel}</div>
+      <div className="card-kicker">{blk.qtyLabel ? `Kuantiti — ${blk.qtyLabel}` : 'Kuantiti'}</div>
 
       {blk.isMatrix ? (
         <div className="table-wrap">
@@ -407,6 +426,22 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, refImag
               {blk.duplicateBlock && isLastBlock && (
                 <button type="button" className="btn btn-secondary" onClick={blk.duplicateBlock}>Duplicate</button>
               )}
+              {blk.removeBlock && isLastBlock && (
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  aria-label="Delete this section"
+                  title="Delete this section"
+                  onClick={() => {
+                    const hasData = blockHasSectionData(blk);
+                    if (!hasData || window.confirm('Are you sure you want to delete this section? All information in this section will be removed.')) {
+                      blk.removeBlock();
+                    }
+                  }}
+                >
+                  ✕ Delete
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -447,7 +482,7 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, refImag
               <tr><td><strong>TOTAL</strong></td><td><strong>{blk.blockTotalQty}</strong></td>{editable.addRemoveRows && <td />}</tr>
             </tbody>
           </table>
-          {editable.addRemoveRows && (
+          {editable.addRemoveRows && blk.canAddRow && (
             <div className="row-actions">
               <button type="button" className="btn btn-secondary" onClick={blk.addRow}>+ Add Row</button>
             </div>

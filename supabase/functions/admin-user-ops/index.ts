@@ -25,7 +25,7 @@ function jsonResponse(body: unknown, status = 200) {
   });
 }
 
-const VALID_ROLES = ['teacher', 'salesman', 'production', 'admin'];
+const VALID_ROLES = ['teacher', 'salesman', 'production', 'admin', 'invoicing'];
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });

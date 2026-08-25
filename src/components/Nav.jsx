@@ -35,6 +35,17 @@ export default function Nav() {
     );
   }
 
+  if (state.role === 'invoicing') {
+    const ordersActive = pathname === '/invoicing/dashboard' || pathname.startsWith('/invoicing/orders');
+    return (
+      <nav className="nav">
+        <span className="nav-brand">Invoicing Department</span>
+        <Link to="/invoicing/dashboard" aria-current={ordersActive ? 'page' : undefined}>Orders</Link>
+        <button type="button" className="nav-logout" onClick={handleLogout}>Log Out</button>
+      </nav>
+    );
+  }
+
   if (state.role === 'admin') {
     return (
       <nav className="nav">

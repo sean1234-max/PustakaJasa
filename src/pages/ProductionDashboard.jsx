@@ -5,16 +5,14 @@ import { useAppState } from '../state/useAppState';
 import { STATUS_STAGES, STATUS_BG, STATUS_TEXT, formatDate } from '../data/catalog';
 import { getOrderChangeStamp } from '../utils/orderStamp';
 
-// Production only ever works orders that are already 'In Production' —
-// split into two local tabs by whether the invoice ID (handed over on
-// paper by billing) has been recorded yet. Not STATUS_STAGES-driven since
-// this is a sub-split of a single stage, not a stage of its own. Order
-// History is everything Production has already marked Done (see
-// markProductionDone in src/state/AppState.jsx) — read-only, so it can go
-// straight off `status` without the invoice split the active stages need.
+// Production only ever works orders that are already 'In Production' — one
+// active tab, regardless of whether an invoice number has been assigned
+// yet (that's now Invoicing Department's job, not a gate on Production
+// starting work — see supabase/migrations/0036_add_invoicing_role.sql and
+// InvoicingDashboard.jsx). Order History is everything Production has
+// already marked Done (see markProductionDone in src/state/AppState.jsx).
 const TABS = [
-  { key: 'pending', label: 'Pending Invoice', match: (o) => o.status === 'In Production' && !o.invoiceId },
-  { key: 'ready', label: 'Ready for Export', match: (o) => o.status === 'In Production' && !!o.invoiceId },
+  { key: 'active', label: 'In Production', match: (o) => o.status === 'In Production' },
   { key: 'history', label: 'Order History', match: (o) => o.status === 'Waiting for Delivery' || o.status === 'Completed' },
 ];
 
@@ -65,7 +63,7 @@ export default function ProductionDashboard() {
       <div className="dashboard-header">
         <div>
           <div className="card-title" style={{ marginBottom: 'var(--space-2)' }}>Production Orders</div>
-          <p className="hint-text" style={{ margin: 0 }}>Record the invoice ID once billing hands over the printed order, then export each category's CSV for the AI file.</p>
+          <p className="hint-text" style={{ margin: 0 }}>Open an order and export each category's CSV for the AI file — no need to wait for an invoice number.</p>
         </div>
       </div>
 
@@ -142,19 +140,21 @@ export default function ProductionDashboard() {
               <div className="dim" style={{ fontSize: 11 }}>Total Amount</div>
               <div className={`order-card-total${ord.priceAdjusted ? ' amount-adjusted' : ''}`}>RM {ord.totalAmount.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
 
-              <div className="order-card-actions" style={tab === 'ready' ? { display: 'flex', gap: 'var(--space-2)' } : undefined}>
-                {tab === 'pending' && (
-                  <button type="button" className="btn btn-primary btn-block" onClick={() => navigate(`/production/orders/${ord.id}`)}>
-                    Enter Invoice ID
-                  </button>
-                )}
-                {tab === 'ready' && (
+              <div className="order-card-actions" style={tab === 'active' ? { display: 'flex', gap: 'var(--space-2)' } : undefined}>
+                {tab === 'active' && (
                   <>
                     <button type="button" className="btn btn-ghost" style={{ flex: 1 }} onClick={() => navigate(`/production/orders/${ord.id}`)}>
                       View Order
                     </button>
-                    <button type="button" className="btn btn-primary" style={{ flex: 1 }} onClick={() => handleMarkDone(ord)}>
-                      Done
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      style={{ flex: 1 }}
+                      disabled={!ord.invoiceId}
+                      title={!ord.invoiceId ? 'Waiting for Invoicing Department to assign an Invoice Number' : undefined}
+                      onClick={() => handleMarkDone(ord)}
+                    >
+                      {ord.invoiceId ? 'Done' : 'Awaiting Invoice'}
                     </button>
                   </>
                 )}
