@@ -1,7 +1,5 @@
-import { useState } from 'react';
 import AdminLayout from '../components/AdminLayout';
 import ImageDrop from '../components/ImageDrop';
-import ReferenceImagePositionEditor from '../components/ReferenceImagePositionEditor';
 import { useAppState } from '../state/useAppState';
 import { REFERENCE_IMAGE_SLOTS } from '../data/catalog';
 import { logAdminAction } from '../lib/adminApi';
@@ -13,17 +11,11 @@ import { logAdminAction } from '../lib/adminApi';
 // route needs to keep Production's own (unredesigned) look — see
 // AdminLayout.jsx's header comment.
 export default function AdminReferenceImages() {
-  const { state, updateReferenceImage, updateReferenceImagePositions } = useAppState();
-  const [expandedSlotId, setExpandedSlotId] = useState(null);
+  const { state, updateReferenceImage } = useAppState();
 
   const handleChange = (slotId, label, url) => {
     updateReferenceImage(slotId, url);
     logAdminAction({ action: 'Admin uploaded a reference image', targetTable: 'catalog_reference_images', targetId: slotId, after: { label } });
-  };
-
-  const handleSavePositions = (slotId, label, positions) => {
-    updateReferenceImagePositions(slotId, positions);
-    logAdminAction({ action: 'Admin updated reference image text positions', targetTable: 'catalog_reference_images', targetId: slotId, after: { label } });
   };
 
   return (
@@ -45,22 +37,6 @@ export default function AdminReferenceImages() {
               thumbSize={180}
               stacked
             />
-            {state.refImages?.[slot.id] && (
-              <button
-                type="button"
-                className="mt-3 text-label-bold font-semibold text-on-surface hover:text-primary transition-colors"
-                onClick={() => setExpandedSlotId(expandedSlotId === slot.id ? null : slot.id)}
-              >
-                {expandedSlotId === slot.id ? 'Hide Text Positions' : 'Edit Text Positions'}
-              </button>
-            )}
-            {expandedSlotId === slot.id && (
-              <ReferenceImagePositionEditor
-                imageUrl={state.refImages[slot.id]}
-                positions={state.refImagePositions?.[slot.id]}
-                onSave={(positions) => handleSavePositions(slot.id, slot.label, positions)}
-              />
-            )}
           </div>
         ))}
       </div>

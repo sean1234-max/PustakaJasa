@@ -1,13 +1,10 @@
-import { useState } from 'react';
 import Nav from '../components/Nav';
 import ImageDrop from '../components/ImageDrop';
-import ReferenceImagePositionEditor from '../components/ReferenceImagePositionEditor';
 import { useAppState } from '../state/useAppState';
 import { REFERENCE_IMAGE_SLOTS } from '../data/catalog';
 
 export default function ProductionReferenceImages() {
-  const { state, updateReferenceImage, updateReferenceImagePositions } = useAppState();
-  const [expandedSlotId, setExpandedSlotId] = useState(null);
+  const { state, updateReferenceImage } = useAppState();
 
   const handleChange = (slotId, url) => {
     updateReferenceImage(slotId, url);
@@ -36,23 +33,6 @@ export default function ProductionReferenceImages() {
                 height={160}
                 thumbSize={64}
               />
-              {state.refImages?.[slot.id] && (
-                <button
-                  type="button"
-                  className="btn btn-ghost"
-                  style={{ marginTop: 'var(--space-2)' }}
-                  onClick={() => setExpandedSlotId(expandedSlotId === slot.id ? null : slot.id)}
-                >
-                  {expandedSlotId === slot.id ? 'Hide Text Positions' : 'Edit Text Positions'}
-                </button>
-              )}
-              {expandedSlotId === slot.id && (
-                <ReferenceImagePositionEditor
-                  imageUrl={state.refImages[slot.id]}
-                  positions={state.refImagePositions?.[slot.id]}
-                  onSave={(positions) => updateReferenceImagePositions(slot.id, positions)}
-                />
-              )}
             </div>
           ))}
         </div>

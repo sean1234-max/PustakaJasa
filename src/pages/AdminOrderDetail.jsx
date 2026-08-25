@@ -261,7 +261,7 @@ export default function AdminOrderDetail() {
                           <h4 className="text-label-bold text-on-surface-variant uppercase tracking-widest mb-2">
                             {group.blk.qtyLabel}{group.batch !== 0 ? ` — ${group.label}` : ''} — {group.jenisPlak}
                           </h4>
-                          <OrderCategoryBlock blk={group.blk} editable={READONLY} refImageUrl={state.refImages?.[group.blk.sampleSlotId]} refPositions={state.refImagePositions?.[group.blk.sampleSlotId]} />
+                          <OrderCategoryBlock blk={group.blk} editable={READONLY} refImageUrl={state.refImages?.[group.blk.sampleSlotId]} />
 
                           {csvData.rows.length === 0 ? (
                             <p className="text-body-md text-on-surface-variant">No reference sample data to export for this order detail.</p>
