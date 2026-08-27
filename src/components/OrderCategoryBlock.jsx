@@ -346,29 +346,45 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
                 {matrixRows.map((row) => (
                   <tr key={row.id}>
                     <td>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <select
+                      {row.tingkatanMode ? (
+                        // Secondary school (SMK) — see computeBlocks.js's
+                        // tingkatanMode. No Tingkatan-equivalent dropdown
+                        // exists (TAHUN_OPTIONS only ever covers primary
+                        // school's Tahun 1-6), so this is plain free text
+                        // instead, imported per-row rather than swapping
+                        // the whole category over.
+                        <input
                           className="input"
-                          style={{ flex: 1, minWidth: 0 }}
-                          value={row.tahunFrom}
-                          disabled={!editable.rowDesc}
-                          onChange={editable.rowDesc ? (e) => row.setTahunFrom(e.target.value) : undefined}
-                        >
-                          <option value="">Dari</option>
-                          {TAHUN_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
-                        </select>
-                        <span>–</span>
-                        <select
-                          className="input"
-                          style={{ flex: 1, minWidth: 0 }}
-                          value={row.tahunTo}
-                          disabled={!editable.rowDesc}
-                          onChange={editable.rowDesc ? (e) => row.setTahunTo(e.target.value) : undefined}
-                        >
-                          <option value="">Hingga</option>
-                          {TAHUN_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
-                        </select>
-                      </div>
+                          placeholder="e.g. TINGKATAN 5"
+                          value={row.tingkatan}
+                          readOnly={!editable.rowDesc}
+                          onChange={editable.rowDesc ? (e) => row.setTingkatan(e.target.value) : undefined}
+                        />
+                      ) : (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <select
+                            className="input"
+                            style={{ flex: 1, minWidth: 0 }}
+                            value={row.tahunFrom}
+                            disabled={!editable.rowDesc}
+                            onChange={editable.rowDesc ? (e) => row.setTahunFrom(e.target.value) : undefined}
+                          >
+                            <option value="">Dari</option>
+                            {TAHUN_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
+                          </select>
+                          <span>–</span>
+                          <select
+                            className="input"
+                            style={{ flex: 1, minWidth: 0 }}
+                            value={row.tahunTo}
+                            disabled={!editable.rowDesc}
+                            onChange={editable.rowDesc ? (e) => row.setTahunTo(e.target.value) : undefined}
+                          >
+                            <option value="">Hingga</option>
+                            {TAHUN_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
+                          </select>
+                        </div>
+                      )}
                       {row.minQty > 1 && <div className="hint-text" style={{ margin: '2px 0 0' }}>min {row.minQty} setiap subjek</div>}
                     </td>
                     <td>

@@ -190,6 +190,17 @@ export default function SalesOrderSummary() {
                   </>
                 )}
               </div>
+              {/* Not shown here before this — an import-derived note (a KIV
+                  line, a wording-only plaque parked here for now) landed in
+                  this SAME field but had nowhere to actually surface for
+                  Sales, so it went unseen until the teacher happened to
+                  mention it separately. See AppState.jsx's importFormAnugerahExcel. */}
+              {order.remark && (
+                <div style={{ marginTop: 'var(--space-4)' }}>
+                  <div className="dim">Remark</div>
+                  <div>{order.remark}</div>
+                </div>
+              )}
 
               <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Jenis Plak / Price per Unit / QTY / Harga</div>
               <PriceTable
@@ -299,6 +310,15 @@ export default function SalesOrderSummary() {
             {order.dueDate && <div><div className="dim">Due Date</div><div>{formatDate(new Date(order.dueDate))}</div></div>}
             {order.functionDate && <div><div className="dim">Function Date</div><div>{formatDate(new Date(order.functionDate))}</div></div>}
           </div>
+          {/* Printed too, not just shown on screen — a KIV/pending note (see
+              AppState.jsx's importFormAnugerahExcel) needs to physically
+              travel with the printed order, not just live in the app. */}
+          {order.remark && (
+            <div style={{ marginTop: 'var(--space-4)' }}>
+              <div className="dim">Remark</div>
+              <div>{order.remark}</div>
+            </div>
+          )}
 
           <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Jenis Plak / Price per Unit / QTY / Harga</div>
           <PriceTable

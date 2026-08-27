@@ -267,6 +267,15 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
           setTahunTo: (v) => updaters.onColumnField(colsKey, cls.id, 'tahunTo', v),
           setNamaKelas: (v) => updaters.onColumnField(colsKey, cls.id, 'namaKelas', v),
           remove: () => updaters.onColumnRemove(colsKey, cls.id),
+          // Secondary-school (SMK) rows only — see excelImport.js's
+          // splitTingkatanCode/AppState.jsx's classColumns. `tingkatanMode`
+          // swaps OrderCategoryBlock.jsx's Tahun Dari/Hingga dropdown pair
+          // for a single free-text box (there's no Tingkatan-equivalent
+          // dropdown), imported per-row rather than a whole-category
+          // setting, since one salesman's KLAS_MATRIX category can hold
+          // both a primary and a secondary school's own sections.
+          tingkatan: cls.tingkatan || '', tingkatanMode: !!cls.tingkatanMode,
+          setTingkatan: (v) => updaters.onColumnField(colsKey, cls.id, 'tingkatan', v),
         };
       });
       columns = subjectDefs.map((subj) => ({

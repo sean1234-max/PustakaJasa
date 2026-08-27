@@ -123,6 +123,17 @@ export default function ProductionOrderDetail() {
               <div><div className="dim">Date Placed</div><div>{order.datePlaced}</div></div>
               <div><div className="dim">Total Amount</div><div>RM {order.totalAmount.toFixed(2)}</div></div>
             </div>
+            {/* Not shown here before this — an import-derived note (a KIV
+                line, a wording-only plaque parked here for now) landed in
+                this SAME field but had nowhere to actually surface for
+                Production, so it went unseen until the teacher happened to
+                mention it separately. See AppState.jsx's importFormAnugerahExcel. */}
+            {order.remark && (
+              <div style={{ marginTop: 'var(--space-4)' }}>
+                <div className="dim">Remark</div>
+                <div>{order.remark}</div>
+              </div>
+            )}
 
             <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Invoice</div>
             <div style={{ marginTop: 'var(--space-2)' }}>

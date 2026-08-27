@@ -381,6 +381,21 @@ function scanSheetForSections(ws) {
 const ROSTER_NAME_LABELS = ['NAMA MURID', 'NAMA PELAJAR', 'NAMA GURU', 'NAMA'];
 const ROSTER_AUX_LABELS = ['JAWATAN', 'TINGKATAN', 'KELAS', 'JENIS ANUGERAH'];
 
+// Secondary-school class codes ("5K4", "5K1") pack the Tingkatan digit
+// directly onto the class code with no separating space — unlike a Nama
+// Kelas list's "1 ARIF" (splitGradeFromNamaKelas above), which always has
+// one. Only matched when the aux column is explicitly labelled TINGKATAN,
+// never guessed from a KELAS column's own values — a "1 ADIL"/"5 STEM 2"
+// class name under a plain KELAS header could just as easily be a primary
+// school's own Tahun-prefixed name, and there's no reliable way to tell
+// which without the school confirming, so it's left as plain text there
+// instead of risking a wrong split.
+function splitTingkatanCode(text) {
+  const m = String(text).trim().match(/^([1-5])([A-Za-z].*)$/);
+  if (!m) return null;
+  return { tingkatan: `TINGKATAN ${m[1]}`, rest: m[2] };
+}
+
 function looksLikePriceLine(text) {
   return /PLAK\s*RM/i.test(text);
 }
@@ -424,21 +439,68 @@ function scanSheetForRosters(ws) {
   let bandStart = range.r1;
   nameHeaders.forEach((nameH) => {
     const headerRow = nameH.row;
+    // Every aux column present, keeping its own label alongside its column
+    // — JENIS ANUGERAH and TINGKATAN both get special handling below,
+    // everything else (JAWATAN, KELAS) stays a plain per-row descriptor
+    // joined onto Nama Kelas the way it always has.
     const auxCols = [];
     for (let c = range.c1; c <= range.c2; c++) {
       if (c === nameH.col) continue;
-      if (ROSTER_AUX_LABELS.includes(cellStr(ws, headerRow, c).toUpperCase())) auxCols.push(c);
+      const label = cellStr(ws, headerRow, c).toUpperCase();
+      if (ROSTER_AUX_LABELS.includes(label)) auxCols.push({ col: c, label });
     }
+    const jenisAnugerahCol = auxCols.find((a) => a.label === 'JENIS ANUGERAH');
+    const tingkatanCol = auxCols.find((a) => a.label === 'TINGKATAN');
+    const descriptorCols = auxCols.filter((a) => a !== jenisAnugerahCol && a !== tingkatanCol);
     const subTitle = readNearestTitleAbove(ws, range, bandStart, headerRow - 1);
+
+    // JENIS ANUGERAH literally means "type of award" — when it's present,
+    // each ROW'S OWN value there (not one subtitle shared by the whole
+    // roster block) says which award that row actually belongs to. A
+    // teacher name can repeat across several distinct JENIS ANUGERAH
+    // values in the very same table (e.g. one teacher managing a class
+    // AND coordinating a Tingkatan) — grouping by that value, in the
+    // order each is first seen, still produces one section per real award
+    // even when every row happens to share the same value (then it's
+    // just one group, same result as the plain JAWATAN-style path below).
+    if (jenisAnugerahCol) {
+      const groupsByTitle = new Map();
+      const titleOrder = [];
+      let r = headerRow + 1;
+      while (r <= range.r2) {
+        const name = cellText(ws, r, nameH.col);
+        if (!name) break;
+        const title = cellText(ws, r, jenisAnugerahCol.col) || subTitle || sheetTitle;
+        const descriptorParts = descriptorCols.map((a) => cellText(ws, r, a.col)).filter(Boolean);
+        const namaKelas = [name, ...descriptorParts].join(' — ');
+        if (!groupsByTitle.has(title)) { groupsByTitle.set(title, []); titleOrder.push(title); }
+        groupsByTitle.get(title).push({ tahunFrom: '', tahunTo: '', namaKelas, subjects: [{ name: 'KUANTITI', qty: 1 }] });
+        r += 1;
+      }
+      titleOrder.forEach((title) => {
+        sections.push({ lines: { 0: sheetTitle, 2: title }, classes: groupsByTitle.get(title), jenisPlak: '' });
+      });
+      bandStart = r;
+      return;
+    }
 
     const classes = [];
     let r = headerRow + 1;
     while (r <= range.r2) {
       const name = cellText(ws, r, nameH.col);
       if (!name) break;
-      const auxParts = auxCols.map((c) => cellText(ws, r, c)).filter(Boolean);
-      const namaKelas = [name, ...auxParts].join(' — ');
-      classes.push({ tahunFrom: '', tahunTo: '', namaKelas, subjects: [{ name: 'KUANTITI', qty: 1 }] });
+      const descriptorParts = descriptorCols.map((a) => cellText(ws, r, a.col)).filter(Boolean);
+      let tingkatan = '';
+      if (tingkatanCol) {
+        const raw = cellText(ws, r, tingkatanCol.col);
+        const split = splitTingkatanCode(raw);
+        if (split) { tingkatan = split.tingkatan; descriptorParts.unshift(split.rest); }
+        else if (raw) descriptorParts.unshift(raw);
+      }
+      const namaKelas = [name, ...descriptorParts].join(' — ');
+      const cls = { tahunFrom: '', tahunTo: '', namaKelas, subjects: [{ name: 'KUANTITI', qty: 1 }] };
+      if (tingkatan) { cls.tingkatan = tingkatan; cls.tingkatanMode = true; }
+      classes.push(cls);
       r += 1;
     }
     if (classes.length > 0) {
@@ -486,6 +548,98 @@ function parseTokohSheet(ws) {
   const lines = readRefLinesInBand(ws, range, range.r1, bandEnd, TOKOH_SLOTS_BY_COUNT);
   if (!hasAnyValue(lines) && classes.length === 0) return null;
   return { lines, classes, jenisPlak: '' };
+}
+
+// A pending/placeholder line item — the school already knows they need it
+// (a rough description, a count) but doesn't have real recipient data yet
+// (a name, a class) to build an actual KLAS_MATRIX section from, so
+// there's nothing here for the teacher to review or edit. It still needs
+// to reach Sales/Invoicing/Production some other way, or the order this
+// file becomes would silently be missing however many plaques nobody
+// remembered to follow up on — surfaced as an order-level Remark instead
+// (see AppState.jsx's importFormAnugerahExcel), never as a section.
+// Detected purely by the literal marker text a school already writes for
+// exactly this ("KIV" — "kept in view", i.e. still pending) landing
+// anywhere in a row, rather than assuming any one sheet name/layout — an
+// order-summary table's own shape varies file to file just as much as
+// everything else here does.
+function findKivNotes(wb) {
+  const notes = [];
+  wb.SheetNames.forEach((name) => {
+    const ws = wb.Sheets[name];
+    const range = sheetRange(ws);
+    for (let r = range.r1; r <= range.r2; r++) {
+      const rowTexts = [];
+      let hasKiv = false;
+      for (let c = range.c1; c <= range.c2; c++) {
+        const val = cellText(ws, r, c);
+        if (!val) continue;
+        if (val.trim().toUpperCase() === 'KIV') hasKiv = true;
+        else rowTexts.push(val);
+      }
+      if (!hasKiv) continue;
+      // The row's own description is whichever cell holds the most text —
+      // a bare BIL number ("5") or a short "N ORANG" count never outruns
+      // an actual award name in length. QTY is read from that same "N
+      // ORANG" text specifically (Malay for "N person(s)") rather than
+      // just grabbing any bare number, which BIL's own row index also is.
+      const desc = rowTexts.filter((t) => !/^\d+$/.test(t.trim())).sort((a, b) => b.length - a.length)[0];
+      if (!desc) continue;
+      const qtyMatch = rowTexts.map((t) => t.match(/(\d+)\s*ORANG/i)).find(Boolean);
+      notes.push({ desc, qty: qtyMatch ? qtyMatch[1] : '' });
+    }
+  });
+  return notes;
+}
+
+// A different rare shape again: a single "sekalung penghargaan" (token of
+// appreciation) plaque for a named guest of honor, sitting as a short,
+// self-contained block of free text — no repeating class/subject list at
+// all — often inside the SAME sheet as the order summary rather than its
+// own. Anchored on its own distinctive opening line ("PERASMI :"),
+// reading whatever non-blank lines follow directly below it in the same
+// column. Unlike every other synthetic section above, this one's own
+// lines ARE the real Reference Sample content already, in the right
+// order — there's no class/subject data to derive TAHUN/SUBJEK-POSITION
+// or a display order from, so `skipLineDerivation` tells AppState.jsx's
+// importFormAnugerahExcel to use them exactly as read instead of running
+// deriveKlasMatrixSectionLines over them. Lines beyond the first 4 spill
+// into KLAS_MATRIX's own "+ Add Reference Row" extra-line slots (up to
+// its 6-line cap) the same way a teacher manually adding one would.
+function findPerasmiSections(wb) {
+  const sections = [];
+  wb.SheetNames.forEach((name) => {
+    const ws = wb.Sheets[name];
+    const range = sheetRange(ws);
+    // The colon is load-bearing — "PERASMI" bare (no colon) also turns up
+    // as an incidental, unrelated line inside some schools' own separate
+    // artwork-wording sheets (a different, longer draft of the same
+    // plaque, not the one to actually read from), and matching it there
+    // too would produce a second, bogus, truncated section.
+    const anchor = findLabelCells(ws, range, ['PERASMI :', 'PERASMI:']).sort((a, b) => a.row - b.row)[0];
+    if (!anchor) return;
+    const lines = [];
+    for (let r = anchor.row; r <= range.r2 && lines.length < 6; r++) {
+      const val = cellText(ws, r, anchor.col);
+      if (val) lines.push(val);
+      else if (lines.length > 0) break; // first blank line after content started ends the block
+    }
+    if (lines.length < 2) return;
+    const sectionLines = {};
+    lines.slice(0, 4).forEach((val, i) => { sectionLines[i] = val; });
+    if (lines.length > 4) {
+      sectionLines.extraRefLines = String(lines.length - 4);
+      lines.slice(4).forEach((val, i) => { sectionLines[4 + i] = val; });
+    }
+    sections.push({
+      lines: sectionLines,
+      classes: [{ tahunFrom: '', tahunTo: '', namaKelas: '', subjects: [{ name: 'KUANTITI', qty: 1 }] }],
+      jenisPlak: '',
+      skipLineDerivation: true,
+      remarkNote: lines.join(' / '),
+    });
+  });
+  return sections;
 }
 
 function findSheet(wb, name) {
@@ -607,8 +761,14 @@ export function parseFormAnugerahExcel(arrayBuffer) {
   const tokoh = tokohSheet ? parseTokohSheet(tokohSheet) : null;
   if (tokoh) allSections.push(tokoh);
 
-  if (allSections.length === 0) {
+  allSections.push(...findPerasmiSections(wb));
+  const kivNotes = findKivNotes(wb);
+
+  if (allSections.length === 0 && kivNotes.length === 0) {
     return { klasMatrix: null, error: 'No filled-in data found in any recognized sheet of this file.' };
   }
-  return { klasMatrix: { sections: allSections } };
+  return {
+    klasMatrix: allSections.length > 0 ? { sections: allSections } : null,
+    kivNotes,
+  };
 }

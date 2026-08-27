@@ -551,6 +551,7 @@ export function AppStateProvider({ children }) {
 
     const messages = [];
     const warnings = [];
+    const remarkNotes = [];
     let landOn = null;
 
     // Computed from a plain snapshot (stateRef.current — nothing else can
@@ -620,6 +621,13 @@ export function AppStateProvider({ children }) {
         const rowIdByName = new Map(subjectRows.map((r) => [r.desc, r.id]));
         const classColumns = section.classes.map((cls) => ({
           id: nextColumnId++, tahunFrom: cls.tahunFrom, tahunTo: cls.tahunTo, namaKelas: cls.namaKelas,
+          // Secondary-school (SMK) class codes — see excelImport.js's
+          // splitTingkatanCode — have no Tahun-dropdown equivalent to
+          // begin with, so OrderCategoryBlock.jsx swaps in a plain
+          // Tingkatan text box for this ONE class row instead, rather
+          // than forcing "TINGKATAN 5" into a Tahun 1-6 dropdown it was
+          // never meant to hold.
+          tingkatan: cls.tingkatan || '', tingkatanMode: !!cls.tingkatanMode,
         }));
         section.classes.forEach((cls, classIdx) => {
           const colId = classColumns[classIdx].id;
@@ -627,7 +635,14 @@ export function AppStateProvider({ children }) {
             newMatrixValues[`${key}::${rowIdByName.get(name)}::${colId}`] = String(qty);
           });
         });
-        Object.entries(deriveKlasMatrixSectionLines(section)).forEach(([slot, val]) => { newLineValues[`${key}::${slot}`] = val; });
+        // A PERASMI-style section (excelImport.js's findPerasmiSections)
+        // already IS its own real Reference Sample content, in the right
+        // order — there's no class/subject breakdown to derive a TAHUN/
+        // SUBJEK-POSITION example from, or a "TAJUK BESAR / TAHUN /
+        // SUBJEK-POSITION" order to reorder it into, so it opts out and
+        // rides through with its own lines exactly as read.
+        const sectionLines = section.skipLineDerivation ? section.lines : deriveKlasMatrixSectionLines(section);
+        Object.entries(sectionLines).forEach(([slot, val]) => { newLineValues[`${key}::${slot}`] = val; });
         newRowsByBlock[key] = subjectRows;
         newColumnsByBlock[key] = classColumns;
         // "SM - 13187 (GOLD)" etc isn't itself a valid Jenis Plak value —
@@ -654,6 +669,12 @@ export function AppStateProvider({ children }) {
           warnings.push({ type: 'plakMismatch', blockIdx: b, text: `Section ${b + 1}: couldn't match Jenis Plak "${section.jenisPlak}" to anything in the catalog — please choose it manually.` });
         }
         newPlakRows[key] = [{ id: nextPlakRowId++, jenisPlak: matchedPlak }];
+        // A PERASMI section's own wording (findPerasmiSections) also goes
+        // into the order's Remark, not just its own Reference Sample —
+        // Sales/Invoicing/Production reading the order later never open
+        // Step 2's block editor, so the ONLY place they'd otherwise see
+        // this at all is the printed plaque preview itself.
+        if (section.remarkNote) remarkNotes.push(section.remarkNote);
       }
 
       next = {
@@ -665,6 +686,20 @@ export function AppStateProvider({ children }) {
       };
       landOn = catKey;
       messages.push(`Mata Pelajaran/Klas (Matrix): ${maxSections} section(s)`);
+    }
+
+    // A KIV line (excelImport.js's findKivNotes) has no recipient data at
+    // all yet, so it never becomes a KLAS_MATRIX section the teacher could
+    // review — it only reaches Sales/Invoicing/Production at all if it
+    // lands somewhere they actually look. Appended (never replacing)
+    // whatever Remark text is already there, so a fresh import can't wipe
+    // out a note the teacher already typed by hand.
+    if (parsed.kivNotes?.length) {
+      parsed.kivNotes.forEach((n) => remarkNotes.push(`${n.desc}${n.qty ? ` — ${n.qty} ORANG` : ''} — KIV (belum ada nama, jangan cetak buat masa ini)`));
+    }
+    if (remarkNotes.length > 0) {
+      next = { ...next, remark: next.remark ? `${next.remark}\n${remarkNotes.join('\n')}` : remarkNotes.join('\n') };
+      messages.push(`${remarkNotes.length} note(s) added to Remark`);
     }
 
     setState({ ...next, category: landOn || next.category });
