@@ -632,6 +632,11 @@ export function AppStateProvider({ children }) {
           // excelImport.js's scanSheetForRosters — kept as its own column
           // rather than folded into Nama Kelas/Nama Murid's own text.
           jawatan: cls.jawatan || '',
+          // A recipient's OWN class, when the source had a real "NAMA
+          // KELAS" column alongside its person-name column (rather than
+          // Nama Kelas/Nama Murid itself BEING the class — see
+          // excelImport.js's groupRosterHeaders).
+          kelasName: cls.kelasName || '',
         }));
         section.classes.forEach((cls, classIdx) => {
           const colId = classColumns[classIdx].id;

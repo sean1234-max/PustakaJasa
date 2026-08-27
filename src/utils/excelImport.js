@@ -378,7 +378,18 @@ function scanSheetForSections(ws) {
 // "KUANTITI" column of 1 — the same trick a plain Nama Kelas list already
 // uses (see readNamaKelasQtyRows) for "no real subject breakdown, just a
 // name and an implicit quantity of 1".
-const ROSTER_NAME_LABELS = ['NAMA MURID', 'NAMA PELAJAR', 'NAMA GURU', 'NAMA'];
+// Not every roster identifies its own recipients by PERSON — "best class"
+// style awards list a class name instead (a real NAMA KELAS column, not
+// just a KELAS descriptor tacked onto some other row's own identity — see
+// ROSTER_AUX_LABELS' own plain "KELAS" below for that). Person-name
+// headers win when a row has BOTH (a genuine recipient identity beats a
+// same-row class-name column, which becomes its own extra field instead —
+// see scanSheetForRosters' own header grouping) — a "best class" roster
+// never has a person-name column at all to compete with in the first
+// place, so NAMA KELAS only ever becomes the anchor there.
+const PERSON_NAME_LABELS = ['NAMA MURID', 'NAMA PELAJAR', 'NAMA GURU', 'NAMA'];
+const CLASS_NAME_LABEL = 'NAMA KELAS';
+const ROSTER_NAME_LABELS = [...PERSON_NAME_LABELS, CLASS_NAME_LABEL];
 const ROSTER_AUX_LABELS = ['JAWATAN', 'TINGKATAN', 'KELAS', 'JENIS ANUGERAH'];
 
 // Secondary-school class codes ("5K4", "5K1") pack the Tingkatan digit
@@ -515,7 +526,7 @@ function buildRosterSectionLines(sheetTitle, subTitle, firstClass, groupSample, 
   const hidden = ['2b', '3'];
   if (!lines[1]) hidden.push('1');
   lines.hiddenLines = hidden.join(',');
-  const extras = [firstClass?.namaKelas, firstClass?.jawatan, groupSample].filter(Boolean);
+  const extras = [firstClass?.namaKelas, firstClass?.jawatan, firstClass?.kelasName, groupSample].filter(Boolean);
   if (extras.length > 0) {
     lines.extraRefLines = String(extras.length);
     extras.forEach((val, i) => { lines[4 + i] = val; });
@@ -538,9 +549,31 @@ function findUnlabeledGroupValue(ws, headerRow, dataRow, usedCols, range) {
   return '';
 }
 
+// Groups every "NAMA ..."-style header cell by its own row (a table can
+// carry BOTH a person-name column AND a class-name column at once, e.g.
+// "NAMA MURID | NAMA KELAS | JAWATAN") and picks ONE per row as the
+// section's actual recipient identity — a person always wins over a
+// same-row class name, which becomes its own extra field instead (see
+// scanSheetForRosters below) rather than a second, competing "this row is
+// its own roster" anchor. A table with ONLY a NAMA KELAS column (no
+// person-name column at all — a "best class" style award) uses that as
+// the anchor itself, same as any person-name header would be.
+function groupRosterHeaders(ws, range) {
+  const byRow = new Map();
+  findLabelCells(ws, range, ROSTER_NAME_LABELS).forEach((cell) => {
+    if (!byRow.has(cell.row)) byRow.set(cell.row, []);
+    byRow.get(cell.row).push(cell);
+  });
+  return [...byRow.entries()].map(([row, cells]) => {
+    const primary = cells.find((c) => PERSON_NAME_LABELS.includes(c.label)) || cells[0];
+    const kelasCol = cells.find((c) => c !== primary && c.label === CLASS_NAME_LABEL) || null;
+    return { row, col: primary.col, label: primary.label, kelasCol };
+  }).sort((a, b) => a.row - b.row);
+}
+
 function scanSheetForRosters(ws, sampleCards) {
   const range = sheetRange(ws);
-  const nameHeaders = findLabelCells(ws, range, ROSTER_NAME_LABELS).sort((a, b) => a.row - b.row);
+  const nameHeaders = groupRosterHeaders(ws, range);
   if (nameHeaders.length === 0) return [];
 
   const sheetTitle = readTopmostTitle(ws, range, range.r1, nameHeaders[0].row - 1);
@@ -587,8 +620,10 @@ function scanSheetForRosters(ws, sampleCards) {
         const title = cellText(ws, r, jenisAnugerahCol.col) || subTitle || sheetTitle;
         const descriptorParts = descriptorCols.map((a) => cellText(ws, r, a.col)).filter(Boolean);
         const namaKelas = [name, ...descriptorParts].join(' — ');
+        const cls = { tahunFrom: '', tahunTo: '', namaKelas, subjects: [{ name: 'KUANTITI', qty: 1 }] };
+        if (nameH.kelasCol) cls.kelasName = cellText(ws, r, nameH.kelasCol.col);
         if (!groupsByTitle.has(title)) { groupsByTitle.set(title, []); titleOrder.push(title); }
-        groupsByTitle.get(title).push({ tahunFrom: '', tahunTo: '', namaKelas, subjects: [{ name: 'KUANTITI', qty: 1 }] });
+        groupsByTitle.get(title).push(cls);
         r += 1;
       }
       titleOrder.forEach((title) => {
@@ -609,7 +644,7 @@ function scanSheetForRosters(ws, sampleCards) {
       const name = cellText(ws, r, nameH.col);
       if (!name) break;
       if (!groupSample) {
-        const usedCols = new Set([nameH.col, ...auxCols.map((a) => a.col)]);
+        const usedCols = new Set([nameH.col, ...auxCols.map((a) => a.col), nameH.kelasCol?.col].filter((c) => c != null));
         groupSample = findUnlabeledGroupValue(ws, headerRow, r, usedCols, range);
       }
       const descriptorParts = descriptorCols.map((a) => cellText(ws, r, a.col)).filter(Boolean);
@@ -624,6 +659,10 @@ function scanSheetForRosters(ws, sampleCards) {
       const jawatan = jawatanCol ? cellText(ws, r, jawatanCol.col) : '';
       const cls = { tahunFrom: '', tahunTo: '', namaKelas, jawatan, subjects: [{ name: 'KUANTITI', qty: 1 }] };
       if (tingkatan) { cls.tingkatan = tingkatan; cls.tingkatanMode = true; }
+      // A same-row NAMA KELAS column alongside a person-name column (see
+      // groupRosterHeaders above) — the recipient's own class, tracked
+      // separately from their name rather than merged into it.
+      if (nameH.kelasCol) cls.kelasName = cellText(ws, r, nameH.kelasCol.col);
       classes.push(cls);
       r += 1;
     }

@@ -65,17 +65,19 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
   // to a fixed layout with an explicit total width (sum of every column's
   // own width below) makes each column render at its real size and lets
   // table-wrap's overflow-x do the scrolling.
-  const DYN_COL_WIDTHS = { tahun: 260, namaKelas: 150, jawatan: 170, subject: 190, total: 70 };
-  // Tahun and Jawatan are both optional columns on a dynamicMatrix block —
-  // see computeBlocks.js's hasTahun/hasJawatan — hidden entirely rather
-  // than shown always-blank; `!== false` (not a plain truthy check) since
-  // both are `undefined` outside the dynamicMatrix branch, where this
-  // width sum goes unused anyway.
+  const DYN_COL_WIDTHS = { tahun: 260, namaKelas: 150, jawatan: 170, kelasName: 150, subject: 190, total: 70 };
+  // Tahun, Jawatan, and Kelas are all optional columns on a dynamicMatrix
+  // block — see computeBlocks.js's hasTahun/hasJawatan/hasKelasName —
+  // hidden entirely rather than shown always-blank; `!== false` (not a
+  // plain truthy check) for Tahun since it's `undefined` outside the
+  // dynamicMatrix branch, where this width sum goes unused anyway.
   const showTahunCol = blk.hasTahun !== false;
   const showJawatanCol = !!blk.hasJawatan;
-  const dynLeadingCols = (showTahunCol ? 1 : 0) + 1 + (showJawatanCol ? 1 : 0);
+  const showKelasNameCol = !!blk.hasKelasName;
+  const dynLeadingCols = (showTahunCol ? 1 : 0) + 1 + (showKelasNameCol ? 1 : 0) + (showJawatanCol ? 1 : 0);
   const dynTableWidth = (showTahunCol ? DYN_COL_WIDTHS.tahun : 0) + DYN_COL_WIDTHS.namaKelas
-    + (showJawatanCol ? DYN_COL_WIDTHS.jawatan : 0) + dynColumns.length * DYN_COL_WIDTHS.subject + DYN_COL_WIDTHS.total;
+    + (showKelasNameCol ? DYN_COL_WIDTHS.kelasName : 0) + (showJawatanCol ? DYN_COL_WIDTHS.jawatan : 0)
+    + dynColumns.length * DYN_COL_WIDTHS.subject + DYN_COL_WIDTHS.total;
   const namaKelasRows = hideEmptyRows ? blk.namaKelasRows.filter((nk) => (nk.name || '').trim()) : blk.namaKelasRows;
   // `hasNamaKelasList` categories (OTHERS) apply ONE Jenis Plak + Reference
   // Sample to every Tahun part — Duplicate copies both under the hood (see
@@ -336,6 +338,7 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
                 <tr>
                   {showTahunCol && <th style={{ width: DYN_COL_WIDTHS.tahun }}>Tahun</th>}
                   <th style={{ width: DYN_COL_WIDTHS.namaKelas }}>{blk.namaKelasLabel}</th>
+                  {showKelasNameCol && <th style={{ width: DYN_COL_WIDTHS.kelasName }}>Kelas</th>}
                   {showJawatanCol && <th style={{ width: DYN_COL_WIDTHS.jawatan }}>Jawatan</th>}
                   {dynColumns.map((col) => (
                     <th key={col.id} style={{ width: DYN_COL_WIDTHS.subject }}>
@@ -421,6 +424,17 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
                         )}
                       </div>
                     </td>
+                    {showKelasNameCol && (
+                      <td>
+                        <input
+                          className="input"
+                          placeholder="Kelas"
+                          value={row.kelasName}
+                          readOnly={!editable.rowDesc}
+                          onChange={editable.rowDesc ? (e) => row.setKelasName(e.target.value) : undefined}
+                        />
+                      </td>
+                    )}
                     {showJawatanCol && (
                       <td>
                         <input
