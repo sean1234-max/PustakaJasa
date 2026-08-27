@@ -210,6 +210,16 @@ a:hover { color: var(--color-accent-900); text-decoration: underline; }
   background: var(--color-neutral-100);
   opacity: 0.85;
 }
+/* Import-warning "jump to problem" (NewOrderStep2.jsx's liveImportWarnings
+   click handler): two quick highlight pulses on the exact field a warning
+   is about, right after scrolling it into view — the teacher's eye lands
+   on the one thing that needs fixing instead of having to re-read the
+   whole section to find it. */
+@keyframes flash-highlight {
+  0%, 100% { background-color: transparent; box-shadow: none; }
+  25%, 75% { background-color: rgba(180, 83, 9, 0.15); box-shadow: 0 0 0 2px rgba(180, 83, 9, 0.6); }
+}
+.flash-highlight { animation: flash-highlight 0.6s ease-in-out 2; }
 /* Reference Sample line 3 (ACARA / SUBJEK-POSITION on OTHERS — see
    catalog.js's positionFieldsRedText): typed text is solid red — this is
    the position text that actually gets engraved — while the empty

@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import CategoryTabs from '../components/CategoryTabs';
@@ -18,8 +18,87 @@ const DRAFT_FIELDS = {
 const EDITABLE = { lines: true, rowDesc: true, rowQty: true, addRemoveRows: true, matrix: true, jenisPlak: true };
 
 export default function NewOrderStep2() {
-  const { state, patch, addToCart } = useAppState();
+  const { state, patch, addToCart, importFormAnugerahExcel } = useAppState();
   const navigate = useNavigate();
+  const fileInputRef = useRef(null);
+  const [importStatus, setImportStatus] = useState(null); // { ok, message } | null
+  const [importing, setImporting] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  // Clicking a "couldn't match Jenis Plak" warning jumps straight to that
+  // one field — see jumpToBlock/the effect below. `pendingScrollBlockIdx`
+  // is only a request ("scroll to this block once it's actually on
+  // screen"); a category switch re-renders the whole block list first, so
+  // the target element may not exist yet at click time. `flashBlockIdx` is
+  // the block currently mid-flash (OrderCategoryBlock's flashJenisPlak
+  // prop) — cleared after the animation finishes so clicking the SAME
+  // warning again still re-triggers it.
+  const [pendingScrollBlockIdx, setPendingScrollBlockIdx] = useState(null);
+  const [flashBlockIdx, setFlashBlockIdx] = useState(null);
+
+  // "Import from Excel" — lets a teacher upload (by click OR drag-and-drop
+  // from Explorer) their own past order instead of typing every
+  // class/subject/qty by hand — either a filled-in copy of the FORM
+  // ANUGERAH Excel template (see src/utils/excelImport.js) or a Word
+  // "WORDING/KUANTITI/KOD HADIAH" order table (see src/utils/docxImport.js),
+  // a completely different shape some schools use instead. Loads into
+  // Mata Pelajaran/Klas (Matrix) for review here on Step 2 — never adds
+  // straight to cart, so a parsing mistake never reaches an order
+  // un-reviewed.
+  const handleImportFile = async (file) => {
+    if (!file) return;
+    if (!/\.(xlsx|docx)$/i.test(file.name)) {
+      setImportStatus({ ok: false, message: 'Please upload an .xlsx or .docx file.' });
+      return;
+    }
+    setImporting(true);
+    setImportStatus(null);
+    const result = await importFormAnugerahExcel(file);
+    setImporting(false);
+    setImportStatus(result);
+  };
+
+  // The import's own warning list is a snapshot from the moment the file
+  // was read — a "couldn't match Jenis Plak" entry stays true only until
+  // the teacher actually picks one for that block, at which point still
+  // showing it would read as the site being broken rather than helpful.
+  // Re-checks each `plakMismatch` entry's OWN block against the CURRENT
+  // plakRows on every render, so it disappears the moment that block gets
+  // a real Jenis Plak — however that happened (typed here, or the block
+  // reloaded via Cart's "Edit"). `truncated` (this file had more sections
+  // than fit) describes the upload itself, not any one block, so it has
+  // nothing to live-check against and just stays for the session.
+  const liveImportWarnings = useMemo(() => {
+    if (!importStatus?.warnings?.length) return [];
+    return importStatus.warnings.filter((w) => {
+      if (w.type !== 'plakMismatch') return true;
+      const rows = state.plakRows[`KLAS_MATRIX::${w.blockIdx}`] || [];
+      return !rows.some((pr) => pr.jenisPlak);
+    });
+  }, [importStatus, state.plakRows]);
+
+  // Clicking a warning switches to Mata Pelajaran/Klas (Matrix) if the
+  // teacher was on a different tab, then queues the scroll — both state
+  // updates land in the SAME event handler, so React batches them into one
+  // re-render, and `blocks` (below) is itself derived from state.category
+  // via useMemo, so by the time the effect below actually runs (after that
+  // render commits to the DOM), the target block is already there.
+  const jumpToBlock = (blockIdx) => {
+    if (state.category !== 'KLAS_MATRIX') patch({ category: 'KLAS_MATRIX' });
+    setPendingScrollBlockIdx(blockIdx);
+  };
+  useEffect(() => {
+    if (pendingScrollBlockIdx == null || state.category !== 'KLAS_MATRIX') return undefined;
+    const el = document.getElementById(`klas-matrix-plak-${pendingScrollBlockIdx}`);
+    setPendingScrollBlockIdx(null);
+    if (!el) return undefined; // block isn't currently revealed — nothing to scroll to
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setFlashBlockIdx(pendingScrollBlockIdx);
+    // Two 0.6s pulses (see index.css's flash-highlight) — cleared afterward
+    // so the SAME warning clicked again still re-triggers the animation
+    // instead of the class already being on and doing nothing.
+    const timer = setTimeout(() => setFlashBlockIdx(null), 1300);
+    return () => clearTimeout(timer);
+  }, [pendingScrollBlockIdx, state.category]);
 
   const updaters = useMemo(() => createDraftUpdaters(patch, DRAFT_FIELDS), [patch]);
 
@@ -57,19 +136,109 @@ export default function NewOrderStep2() {
         <div className="card-kicker">New Order — Product</div>
         <div className="card-title" style={{ marginBottom: 'var(--space-6)' }}>Order Details</div>
 
-        <div className="card-kicker">Jenis Anugerah (Category)</div>
-        <div style={{ margin: 'var(--space-3) 0 var(--space-8)' }}>
-          <CategoryTabs categories={ACTIVE_CATEGORIES} active={state.category} onSelect={(key) => patch({ category: key })} />
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 'var(--space-4)', flexWrap: 'wrap' }}>
+          <div>
+            <div className="card-kicker">Jenis Anugerah (Category)</div>
+            <div style={{ margin: 'var(--space-3) 0 var(--space-2)' }}>
+              <CategoryTabs categories={ACTIVE_CATEGORIES} active={state.category} onSelect={(key) => patch({ category: key })} />
+            </div>
+          </div>
+          <div style={{ width: 280 }}>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".xlsx,.docx"
+              style={{ display: 'none' }}
+              onChange={(e) => {
+                handleImportFile(e.target.files && e.target.files[0]);
+                e.target.value = ''; // allow re-selecting the same file after a failed import
+              }}
+            />
+            <div
+              className={`image-drop image-drop-stacked${dragOver ? ' image-drop-over' : ''}`}
+              style={{ cursor: importing ? 'wait' : 'pointer' }}
+              onClick={() => !importing && fileInputRef.current?.click()}
+              onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDragOver(false);
+                if (!importing) handleImportFile(e.dataTransfer.files && e.dataTransfer.files[0]);
+              }}
+            >
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.6 }}>
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" />
+              </svg>
+              <div>
+                <div className="image-drop-title">{importing ? 'Importing…' : 'Import Order File'}</div>
+                <div className="image-drop-sub">Drag & drop your filled-in FORM ANUGERAH .xlsx or WORDING .docx here, or click to browse</div>
+              </div>
+            </div>
+            {importStatus && (
+              <p className="hint-text" style={{ margin: '4px 0 0', color: importStatus.ok ? '#1f8a3b' : '#c0392b', fontWeight: 600 }}>
+                {importStatus.message}
+              </p>
+            )}
+            {/* Separate from the plain success/failure line above — these
+                flag a SPECIFIC field the import couldn't fill in correctly
+                (an un-matched Jenis Plak, a file too big to fit) even though
+                the import as a whole still succeeded, so they need their own
+                more attention-grabbing treatment or a teacher skimming past
+                the green "Imported" line would never notice one field still
+                needs manual attention before Add to Cart. Live-filtered
+                (see liveImportWarnings above) — fixing the one field a
+                warning is about makes that warning disappear on its own.
+                A plakMismatch entry is also clickable — see jumpToBlock —
+                so the teacher doesn't have to hunt through what can be a
+                dozen+ sections to find the one field a warning is about;
+                `truncated` isn't about any one block, so it's plain text. */}
+            {liveImportWarnings.length > 0 && (
+              <ul style={{ margin: '6px 0 0', paddingLeft: 18, color: '#b45309', fontWeight: 600, fontSize: '0.9em' }}>
+                {liveImportWarnings.map((w) => (
+                  <li key={w.text}>
+                    {w.type === 'plakMismatch' ? (
+                      <button
+                        type="button"
+                        onClick={() => jumpToBlock(w.blockIdx)}
+                        style={{
+                          background: 'none', border: 'none', padding: 0, margin: 0, font: 'inherit',
+                          color: 'inherit', textAlign: 'left', textDecoration: 'underline', cursor: 'pointer',
+                        }}
+                      >
+                        ⚠ {w.text}
+                      </button>
+                    ) : (
+                      <>⚠ {w.text}</>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </div>
+        <div style={{ marginBottom: 'var(--space-6)' }} />
 
         {blocks.map((blk, i) => (
-          <OrderCategoryBlock
-            key={blk.idx}
-            blk={blk}
-            editable={EDITABLE}
-            plakOptions={visiblePlakCatalog}
-            isLastBlock={i === blocks.length - 1}
-          />
+          <div key={blk.idx}>
+            {/* Beyond a couple of hand-Duplicated blocks, an import can land a
+                dozen+ independent sections in this one category — with no
+                visual break between them a long review looks like one
+                confusing wall of tables. This numbering is the cheapest way
+                to keep each section legible: "which one am I looking at, and
+                how many are there left to check". */}
+            {blocks.length > 1 && (
+              <div className="card-kicker" style={i > 0 ? { marginTop: 'var(--space-8)' } : undefined}>
+                Section {i + 1} of {blocks.length}
+              </div>
+            )}
+            <OrderCategoryBlock
+              blk={blk}
+              editable={EDITABLE}
+              plakOptions={visiblePlakCatalog}
+              isLastBlock={i === blocks.length - 1}
+              flashJenisPlak={flashBlockIdx === blk.idx}
+            />
+          </div>
         ))}
 
         <div className="row-split" style={{ marginTop: 'var(--space-6)' }}>

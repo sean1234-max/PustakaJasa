@@ -246,7 +246,7 @@ export const CATEGORIES = [
     descColumnLabel: 'Row 4 Subjek/Position',
   },
   {
-    key: 'OTHERS', label: 'Mata Pelajaran / Klas', mode: 'list', blocksCount: 6,
+    key: 'OTHERS', label: 'Mata Pelajaran / Klas', mode: 'list', blocksCount: 200,
     // A catch-all for any award/plaque shape not covered by the 5 categories
     // above. Kuantiti is a per-Tahun "part": one TAHUN value (hasTahunField)
     // + a Description/QTY list (plain `rows`, same mechanism as
@@ -257,15 +257,27 @@ export const CATEGORIES = [
     // name} shape — see computeBlocks.js). Each Description row's QTY is
     // meant to equal the Nama Kelas count (one plaque per class) — computeBlocks
     // flags a mismatch for OrderCategoryBlock's red-bold warning and
-    // AppState.jsx's addToCart guard. `blocksCount: 6` pre-allocates one
-    // block per Malaysian primary grade (TAHUN 1-6); only 1 is shown until
-    // the teacher clicks "Duplicate" to reveal the next (see
-    // draftUpdaters.js's onDuplicateBlock and NewOrderStep2/AddOn's visible-
-    // block slicing) — Duplicate copies only this block's Kuantiti (TAHUN +
-    // rows + Nama Kelas) into the new one; Reference Sample and Jenis Plak
-    // start blank there, same as any other new block.
+    // AppState.jsx's addToCart guard. `blocksCount: 200` pre-allocates a
+    // generous pool of blocks so "Duplicate" is never artificially capped
+    // (only 1 is shown until the teacher clicks "Duplicate" to reveal the
+    // next — see draftUpdaters.js's onDuplicateBlock and NewOrderStep2/
+    // AddOn's visible-block slicing) — Duplicate copies only this block's
+    // Kuantiti (TAHUN + rows + Nama Kelas) into the new one; Reference
+    // Sample and Jenis Plak start blank there, same as any other new block.
     hasTahunField: true,
     hasNamaKelasList: true,
+    // Block 0's Description/QTY rows start pre-filled with MP THP's own
+    // 13-subject list (same SUBJECTS_CORE/SUBJECTS_CORE_CN used for
+    // MP1/MP2's matrix rows above) instead of one blank teacher-typed row —
+    // see formDefaults.js's buildInitialRowsByBlock (seedRowsFromSubjects,
+    // block 0 only: every later block is populated by Duplicate copying
+    // block 0's own rows forward, so seeding them independently would just
+    // be immediately overwritten). Every row stays a normal editable/
+    // removable row (`custom: true`, same as the old single blank row) —
+    // the teacher can rename, remove, or add to this list freely; it's a
+    // starting point, not a locked preset.
+    subjectsByLanguage: { SK: SUBJECTS_CORE, SJKC: SUBJECTS_CORE_CN },
+    seedRowsFromSubjects: true,
     // *ByLanguage — resolved per school via getCategoryTahunPlaceholder/
     // getCategoryLinePlaceholders/getCategoryPositionLine2Placeholder/
     // getCategoryNamaKelasPlaceholder above, same SK/SJKC fallback pattern
@@ -318,12 +330,81 @@ export const CATEGORIES = [
     // see computeBlocks.js: each field's underlying key/meaning never
     // changes, so exportCsv.js needs no changes at all.
     draggableReferenceSample: true,
-    // Same "+Add Reference Row" mechanism as TOKOH (max 5 total lines,
-    // enforced generically in computeBlocks.js/draftUpdaters.js) — an
-    // added row also grows the Kuantiti table below with a matching
-    // "Row N" column (see OrderCategoryBlock.jsx's hasNamaKelasList
+    // Same "+Add Reference Row" mechanism as TOKOH, but capped at 6 total
+    // lines instead of TOKOH's 5 (maxReferenceLines, read by
+    // computeBlocks.js/draftUpdaters.js instead of the generic 5-line
+    // fallback) — an added row also grows the Kuantiti table below with a
+    // matching "Row N" column (see OrderCategoryBlock.jsx's hasNamaKelasList
     // branch), same as TOKOH's own Kuantiti table already does.
     extendableReferenceSample: true,
+    maxReferenceLines: 6,
+    // Every row except TAJUK BESAR (always line 1) and the SUBJEK/POSITION
+    // second box can be individually removed via its own "✕" (not just the
+    // last-added extra row, unlike TOKOH) — see computeBlocks.js's
+    // hiddenLines handling and draftUpdaters.js's onDeleteReferenceLine.
+    deletableReferenceLines: true,
+  },
+  {
+    // A separate category rather than changing OTHERS in place — same
+    // Reference Sample shape (TAJUK BESAR/YEAR/ACARA/SUBJEK-POSITION/TAHUN,
+    // draggable, 6-row cap, per-row delete) copied field-for-field from
+    // OTHERS above, but Kuantiti is a subject-by-class MATRIX (mode:
+    // 'dynamicMatrix', reusing PBD TERBAIK/ALIRAN TERBAIK's own matrix
+    // machinery wholesale — computeBlocks.js/OrderCategoryBlock.jsx/
+    // exportCsv.js's buildPbdMatrixRows already handle this generically for
+    // any dynamicMatrix category, not just PBD) instead of OTHERS' flat
+    // Description/QTY list + separate Nama Kelas list. Solves OTHERS' "one
+    // QTY number per subject, split evenly across however many classes are
+    // filled in" limitation — a subject-class matrix lets every (subject,
+    // class) pair carry its own independent quantity (e.g. Class A needs 5
+    // of a subject, Class B only needs 2), which a single shared number per
+    // subject can never represent. Each class row already carries its own
+    // Tahun range + Nama Kelas (same shape PBD/ALIRAN use), so there's no
+    // separate Duplicate-per-Tahun mechanism needed here — one block, add as
+    // many class rows as needed via "+ Add Tahun"/"+ Add Kelas".
+    // `blocksCount: 200` + `multiBlock: true`: a teacher can "Duplicate" into
+    // an independent extra section — unlike OTHERS' own Duplicate (which
+    // shares ONE Reference Sample/Jenis Plak across every section, since
+    // OTHERS' sections are just different Tahun parts of the SAME event),
+    // KLAS_MATRIX's Reference Sample and Jenis Plak are already independent
+    // per block (see plakPerBlock below, and OrderCategoryBlock.jsx's
+    // showSharedSections, which only ever hides them for hasNamaKelasList
+    // categories — KLAS_MATRIX isn't one) — so each duplicated section can
+    // be a genuinely different award (own title/ACARA, own Jenis Plak), the
+    // shape real multi-award Excel/Word imports need (see excelImport.js/
+    // docxImport.js). There's no way to make this genuinely unlimited —
+    // computeBlocks.js builds every one of a category's `blocksCount` slots
+    // on every render regardless of how many are actually revealed, so the
+    // number is a real (if generous) ceiling, not just a display cap;
+    // matches OTHERS' own already-proven-fine 200 above.
+    key: 'KLAS_MATRIX', label: 'Mata Pelajaran / Klas (Matrix)', mode: 'dynamicMatrix', blocksCount: 200, multiBlock: true,
+    // Seeded with the same 13-subject list as OTHERS (editableDefaultSubjects
+    // — unlike PBD/ALIRAN's own locked `custom: false` seed, see
+    // formDefaults.js/AppState.jsx's resetCategoryFields) so the teacher can
+    // rename/remove/add subjects freely, matching OTHERS' own behavior.
+    subjectsByLanguage: { SK: SUBJECTS_CORE, SJKC: SUBJECTS_CORE_CN },
+    editableDefaultSubjects: true,
+    qtyColumnLabels: ['KUANTITI'],
+    // Jenis Plak renders above this category's own matrix table (not the
+    // single shared top-of-page table PBD/ALIRAN use) and its total
+    // QTY/Harga render at the bottom of that same table — same "moved
+    // closer to the Kuantiti it belongs to" layout as OTHERS' own
+    // hasNamaKelasList branch, just for the matrix branch instead (see
+    // OrderCategoryBlock.jsx). PBD/ALIRAN are untouched, both retired
+    // (`active: false`) legacy categories that were never asked to change.
+    plakPerBlock: true,
+    linePlaceholdersByLanguage: {
+      SK: ['TAJUK BESAR', 'YEAR (KALAU YEAR SUDAH INCLUDE DI LINE 1 KOSONGKAN SAHAJA)', 'ACARA', '( TAHUN ? )'],
+      SJKC: ['大标题', '年份（如果第一行已包含年份，此栏留空即可）', '活动', '（年级？）'],
+    },
+    requiredLineIndices: [0, 2],
+    starredLineIndices: [0, 1, 2],
+    positionLine2PlaceholderByLanguage: { SK: '( SUBJEK/POSITION )', SJKC: '（科目/位置）' },
+    positionFieldsRedText: true,
+    draggableReferenceSample: true,
+    extendableReferenceSample: true,
+    maxReferenceLines: 6,
+    deletableReferenceLines: true,
   },
 ];
 

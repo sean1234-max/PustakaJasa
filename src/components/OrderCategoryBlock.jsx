@@ -35,7 +35,11 @@ function blockHasSectionData(blk) {
 // only the last currently-revealed block (see NewOrderStep2/AddOn's
 // visible-block slicing) can duplicate itself into the next one, so an
 // earlier already-duplicated-from block doesn't confusingly overwrite it.
-export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmptyRows, isLastBlock }) {
+// `flashJenisPlak` (New Order Step 2 only) briefly highlights this block's
+// own Jenis Plak field — see NewOrderStep2.jsx's liveImportWarnings click
+// handler, which scrolls a warning's own block into view and flips this on
+// for a moment so the teacher's eye lands on the exact field it's about.
+export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmptyRows, isLastBlock, flashJenisPlak }) {
   // Drag-and-drop reordering of Reference Sample rows (OTHERS — see
   // catalog.js's draggableReferenceSample / computeBlocks.js's
   // reorderReferenceSample). Only offered when actually editable (never on
@@ -61,7 +65,7 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
   // to a fixed layout with an explicit total width (sum of every column's
   // own width below) makes each column render at its real size and lets
   // table-wrap's overflow-x do the scrolling.
-  const DYN_COL_WIDTHS = { tahun: 190, namaKelas: 150, subject: 110, total: 70 };
+  const DYN_COL_WIDTHS = { tahun: 260, namaKelas: 150, subject: 190, total: 70 };
   const dynTableWidth = DYN_COL_WIDTHS.tahun + DYN_COL_WIDTHS.namaKelas
     + dynColumns.length * DYN_COL_WIDTHS.subject + DYN_COL_WIDTHS.total;
   const namaKelasRows = hideEmptyRows ? blk.namaKelasRows.filter((nk) => (nk.name || '').trim()) : blk.namaKelasRows;
@@ -78,50 +82,50 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
     <div>
       {showSharedSections && (
         <>
-          <div className="card-kicker">Jenis Plak / QTY / Harga</div>
-          <table className="table">
-            <thead><tr><th>Jenis Plak</th><th style={{ width: 130 }}>QTY</th><th style={{ width: 130 }}>Harga</th></tr></thead>
-            <tbody>
-              {blk.plakRows.map((pr) => {
-                // hasNamaKelasList categories (OTHERS) can have several
-                // duplicated Tahun blocks sharing this one Jenis Plak choice
-                // (see computeBlocks.js) — pr.combinedQty/combinedHargaLabel,
-                // when present, is the grand total across every one of
-                // those blocks, not just this row's own Tahun part, so the
-                // teacher sees (and gets warned against) the real total
-                // before adding to cart.
-                const displayQty = pr.combinedQty != null ? pr.combinedQty : pr.qty;
-                const displayHargaLabel = pr.combinedHargaLabel != null ? pr.combinedHargaLabel : pr.hargaLabel;
-                // Live preview of the server-enforced cap (plak_stock_deduct,
-                // supabase/migrations/0032_add_plak_stock.sql) — this can only
-                // warn early using the last-fetched catalog snapshot; the
-                // actual submit (Cart/AddOnSummary) re-checks and the database
-                // function is the real backstop against a stale/racing read.
-                const stockStatus = pr.jenisPlak ? getStockStatus(pr.jenisPlak, plakOptions) : null;
-                const overStock = !!stockStatus && Number(displayQty) > stockStatus.maxOrderable;
-                return (
-                  <tr key={pr.id}>
-                    <td>
-                      {editable.jenisPlak ? (
-                        <PlakPicker value={pr.jenisPlak} onChange={pr.setJenisPlak} catalog={plakOptions} />
-                      ) : (pr.jenisPlak || '—')}
-                    </td>
-                    <td>
-                      <div className="input input-readonly" style={overStock ? { color: '#c0392b', fontWeight: 700 } : undefined}>
-                        {displayQty}
-                      </div>
-                      {overStock && (
-                        <div className="hint-text" style={{ color: '#c0392b', margin: '2px 0 0' }}>
-                          Stock tidak cukup — baki {stockStatus.maxOrderable} sahaja boleh ditempah. Sila hubungi Salesman.
-                        </div>
-                      )}
-                    </td>
-                    <td><div className="input input-readonly input-price">{displayHargaLabel}</div></td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          {/* hasNamaKelasList categories (OTHERS) and plakPerBlock categories
+              (KLAS_MATRIX) no longer show a single shared Jenis Plak/QTY/
+              Harga table here — Jenis Plak renders above their own Kuantiti
+              part instead, with QTY/Harga at the bottom of that same
+              part — see the hasNamaKelasList/isDynamicMatrix branches below. */}
+          {!blk.hasNamaKelasList && !blk.plakPerBlock && (
+            <>
+              <div className="card-kicker">Jenis Plak / QTY / Harga</div>
+              <table className="table">
+                <thead><tr><th>Jenis Plak</th><th style={{ width: 130 }}>QTY</th><th style={{ width: 130 }}>Harga</th></tr></thead>
+                <tbody>
+                  {blk.plakRows.map((pr) => {
+                    // Live preview of the server-enforced cap (plak_stock_deduct,
+                    // supabase/migrations/0032_add_plak_stock.sql) — this can only
+                    // warn early using the last-fetched catalog snapshot; the
+                    // actual submit (Cart/AddOnSummary) re-checks and the database
+                    // function is the real backstop against a stale/racing read.
+                    const stockStatus = pr.jenisPlak ? getStockStatus(pr.jenisPlak, plakOptions) : null;
+                    const overStock = !!stockStatus && Number(pr.qty) > stockStatus.maxOrderable;
+                    return (
+                      <tr key={pr.id}>
+                        <td>
+                          {editable.jenisPlak ? (
+                            <PlakPicker value={pr.jenisPlak} onChange={pr.setJenisPlak} catalog={plakOptions} />
+                          ) : (pr.jenisPlak || '—')}
+                        </td>
+                        <td>
+                          <div className="input input-readonly" style={overStock ? { color: '#c0392b', fontWeight: 700 } : undefined}>
+                            {pr.qty}
+                          </div>
+                          {overStock && (
+                            <div className="hint-text" style={{ color: '#c0392b', margin: '2px 0 0' }}>
+                              Stock tidak cukup — baki {stockStatus.maxOrderable} sahaja boleh ditempah. Sila hubungi Salesman.
+                            </div>
+                          )}
+                        </td>
+                        <td><div className="input input-readonly input-price">{pr.hargaLabel}</div></td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </>
+          )}
 
           <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Reference Sample (Contoh)</div>
           <p className="hint-text">Fill each numbered line to match the sample layout — this tells us exactly how to place the text and sizing on the plaque.</p>
@@ -200,6 +204,18 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
                       </div>
                     )}
                   </div>
+                  {ln.deletable && editable.lines && (
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-icon"
+                      aria-label={`Delete row ${ln.num}`}
+                      title={`Delete row ${ln.num}`}
+                      style={{ flex: 'none', marginTop: 2 }}
+                      onClick={ln.onDelete}
+                    >
+                      ✕
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
@@ -209,7 +225,7 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
               {blk.canAddReferenceLine && (
                 <button type="button" className="btn btn-secondary" onClick={blk.addReferenceLine}>+ Add Reference Row</button>
               )}
-              {blk.canRemoveReferenceLine && (
+              {!blk.deletableReferenceLines && blk.canRemoveReferenceLine && (
                 <button type="button" className="btn btn-ghost" onClick={blk.removeReferenceLine}>− Delete Reference Row</button>
               )}
             </div>
@@ -273,6 +289,31 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
         </div>
       ) : blk.isDynamicMatrix ? (
         <div>
+          {blk.plakPerBlock && (
+            <div
+              id={`klas-matrix-plak-${blk.idx}`}
+              className={`field${flashJenisPlak ? ' flash-highlight' : ''}`}
+              style={{ marginBottom: 'var(--space-4)', maxWidth: 420 }}
+            >
+              <label>Jenis Plak</label>
+              {blk.plakRows.map((pr) => {
+                const stockStatus = pr.jenisPlak ? getStockStatus(pr.jenisPlak, plakOptions) : null;
+                const overStock = !!stockStatus && Number(pr.qty) > stockStatus.maxOrderable;
+                return (
+                  <div key={pr.id}>
+                    {editable.jenisPlak ? (
+                      <PlakPicker value={pr.jenisPlak} onChange={pr.setJenisPlak} catalog={plakOptions} />
+                    ) : (pr.jenisPlak || '—')}
+                    {overStock && (
+                      <div className="hint-text" style={{ color: '#c0392b', margin: '2px 0 0' }}>
+                        Stock tidak cukup — baki {stockStatus.maxOrderable} sahaja boleh ditempah. Sila hubungi Salesman.
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
           <div className="table-wrap">
             <table className="table" style={{ tableLayout: 'fixed', width: dynTableWidth }}>
               <thead>
@@ -283,7 +324,14 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
                     <th key={col.id} style={{ width: DYN_COL_WIDTHS.subject }}>
                       {col.custom && editable.rowDesc ? (
                         <div style={{ display: 'flex', gap: 4 }}>
-                          <input className="input" style={{ flex: 1, minWidth: 0 }} placeholder="e.g. KEMAHIRAN HIDUP" value={col.subject} onChange={(e) => col.setSubject(e.target.value)} />
+                          <input
+                            className="input"
+                            style={{ flex: 1, minWidth: 0, fontSize: '0.8em', padding: '4px 6px' }}
+                            placeholder="e.g. KEMAHIRAN HIDUP"
+                            title={col.subject}
+                            value={col.subject}
+                            onChange={(e) => col.setSubject(e.target.value)}
+                          />
                           {editable.addRemoveRows && (
                             <button type="button" className="btn btn-ghost btn-icon" aria-label="Remove subject" onClick={col.remove}>✕</button>
                           )}
@@ -359,6 +407,13 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
                   {dynColTotals.map((ct, i) => <td key={i}><strong>{ct.value}</strong></td>)}
                   <td><strong>{blk.grandTotal}</strong></td>
                 </tr>
+                {blk.plakPerBlock && (
+                  <tr>
+                    <td colSpan={2}><strong>HARGA</strong></td>
+                    {dynColTotals.map((ct, i) => <td key={i} />)}
+                    <td><strong className="input-price" style={{ fontSize: '1.5em', fontWeight: 800 }}>{blk.plakRows[0]?.hargaLabel ?? '—'}</strong></td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
@@ -372,6 +427,25 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
         </div>
       ) : blk.hasNamaKelasList ? (
         <div>
+          <div className="field" style={{ marginBottom: 'var(--space-4)', maxWidth: 420 }}>
+            <label>Jenis Plak</label>
+            {blk.plakRows.map((pr) => {
+              const stockStatus = pr.jenisPlak ? getStockStatus(pr.jenisPlak, plakOptions) : null;
+              const overStock = !!stockStatus && Number(pr.qty) > stockStatus.maxOrderable;
+              return (
+                <div key={pr.id}>
+                  {editable.jenisPlak ? (
+                    <PlakPicker value={pr.jenisPlak} onChange={pr.setJenisPlak} catalog={plakOptions} />
+                  ) : (pr.jenisPlak || '—')}
+                  {overStock && (
+                    <div className="hint-text" style={{ color: '#c0392b', margin: '2px 0 0' }}>
+                      Stock tidak cukup — baki {stockStatus.maxOrderable} sahaja boleh ditempah. Sila hubungi Salesman.
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
           {blk.tahun && (
             <div style={{ marginBottom: 'var(--space-4)' }}>
               <input
@@ -389,7 +463,7 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
             <table className="table" style={{ flex: '1 1 320px' }}>
               <thead>
                 <tr>
-                  <th>SUBJEK/POSITION</th>
+                  <th>ROW 4 SUBJECK/POSITION</th>
                   {blk.extraRefColumns.map((col) => <th key={col.key}>{col.label}</th>)}
                   <th style={{ width: 140 }}>{blk.qtyColHeader}</th>
                   {editable.addRemoveRows && <th style={{ width: 48 }} />}
@@ -441,6 +515,12 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
                   <td><strong>TOTAL QTY</strong></td>
                   {blk.extraRefColumns.map((col) => <td key={col.key} />)}
                   <td><strong>{blk.blockTotalQty}</strong></td>
+                  {editable.addRemoveRows && <td />}
+                </tr>
+                <tr>
+                  <td><strong>HARGA</strong></td>
+                  {blk.extraRefColumns.map((col) => <td key={col.key} />)}
+                  <td><strong className="input-price" style={{ fontSize: '1.5em', fontWeight: 800 }}>{blk.plakRows[0]?.hargaLabel ?? '—'}</strong></td>
                   {editable.addRemoveRows && <td />}
                 </tr>
               </tbody>

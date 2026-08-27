@@ -78,10 +78,6 @@ export default function NewOrderStep1() {
       patch({ stepError: 'Please select terms.' });
       return;
     }
-    if (!state.dueSelected) {
-      patch({ stepError: 'Please select a due date.' });
-      return;
-    }
     if (!state.funcSelected) {
       patch({ stepError: 'Please select a function date.' });
       return;
@@ -199,25 +195,10 @@ export default function NewOrderStep1() {
         </div>
 
         <div className="form-grid-2">
-          <DatePicker
-            label="Due Date"
-            id="dueDate"
-            selected={state.dueSelected}
-            today={today}
-            minDate={dueMinDate}
-            onSelect={(d) => patch((st) => ({
-              dueSelected: d,
-              // A due date change can leave a previously-picked function
-              // date now falling before it — clear it rather than leave an
-              // invalid combination sitting in the form.
-              funcSelected: st.funcSelected && st.funcSelected < d ? null : st.funcSelected,
-            }))}
-          />
-          <DatePicker label="Function Date" id="funcDate" selected={state.funcSelected} onSelect={(d) => patch({ funcSelected: d })} today={today} minDate={state.dueSelected || dueMinDate} />
+          <DatePicker label="Function Date" id="funcDate" selected={state.funcSelected} onSelect={(d) => patch({ funcSelected: d })} today={today} minDate={dueMinDate} />
         </div>
         <p className="hint-text" style={{ marginBottom: 'var(--space-4)' }}>
-          Due Date must be on or after {formatDate(dueMinDate)} (at least 4 days from today, including today).
-          {state.dueSelected && ` Function Date must be on or after the Due Date (${formatDate(state.dueSelected)}).`}
+          Function Date must be on or after {formatDate(dueMinDate)} (at least 4 days from today, including today).
         </p>
 
         <div className="field" style={{ marginBottom: 'var(--space-6)' }}>

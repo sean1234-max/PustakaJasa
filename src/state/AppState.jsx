@@ -4,6 +4,8 @@ import { buildInitialRowsByBlock, buildInitialColumnsByBlock, buildInitialPlakRo
 import {
   computeBlocks, snapshotDetail, noopUpdaters, buildDraftFromOrder,
 } from '../utils/computeBlocks';
+import { parseFormAnugerahExcel, matchJenisPlakPath } from '../utils/excelImport';
+import { parseWordingDocx } from '../utils/docxImport';
 import { AppStateContext } from './AppStateContext';
 import {
   fetchOrders, insertOrder, updateOrder, nextOrderSeq, fetchAllSalesmen,
@@ -28,6 +30,42 @@ function describeStockError(err) {
   const m = /^INSUFFICIENT_STOCK:(.*):(\d+)$/.exec(err?.message || '');
   if (m) return `Not enough stock for "${m[1]}" — only ${m[2]} left available to order. Please lower the quantity or contact your salesman.`;
   return `Could not check stock: ${err?.message || 'unknown error'}. Please try again.`;
+}
+
+// A section imported into KLAS_MATRIX (from either excelImport.js or
+// docxImport.js) rarely carries real Reference Sample text for TAHUN
+// (slot '3') or SUBJEK/POSITION (slot '2b') — those two lines only exist
+// on the plaque to show an EXAMPLE of this section's own class/subject
+// breakdown, and the source document's own "TAHUN 1 UTHMAN" / "TEMPAT
+// PERTAMA"-style text lives in the parsed class/subject data, not in a
+// literal Reference Sample line anywhere. Filling them in from the
+// section's own first class/subject — never overwriting real text a
+// source document DID supply — turns the live preview from a wall of grey
+// placeholder text into an actual worked example, matching what the
+// teacher's own paper order already shows. YEAR ('1')/ACARA ('2') are
+// hidden (not just left blank) whenever nothing filled them in either —
+// otherwise every one of what can be a dozen+ imported sections would
+// need the teacher to click ✕ on both, one by one. The visible order is
+// also set to TAJUK BESAR / TAHUN / SUBJEK-POSITION — the order every one
+// of these imported shapes' own paper sample actually uses — rather than
+// the catalog's own YEAR/ACARA-first default order.
+function deriveKlasMatrixSectionLines(section) {
+  const lines = { ...section.lines };
+  const firstClass = section.classes[0];
+  if (firstClass) {
+    if (!lines['3']) {
+      const tahunText = [firstClass.tahunFrom, firstClass.namaKelas].filter(Boolean).join(' ').trim();
+      if (tahunText) lines['3'] = tahunText;
+    }
+    if (!lines['2b']) {
+      const firstSubject = firstClass.subjects.find((s) => s.name);
+      if (firstSubject) lines['2b'] = firstSubject.name;
+    }
+  }
+  const hidden = ['1', '2'].filter((slot) => !lines[slot]);
+  if (hidden.length) lines.hiddenLines = hidden.join(',');
+  lines.refOrder = '0,3,2b';
+  return lines;
 }
 
 // Finds a catalog node by id anywhere in the tree, along with the sibling
@@ -64,19 +102,24 @@ function resetCategoryFields(catKey, st, visibleField) {
   for (let b = 0; b < (cat.blocksCount || 1); b++) {
     const key = `${catKey}::${b}`;
     if (cat.mode === 'list') {
-      // LONJAKAN resets back to its fixed preset rows; TOKOH/OTHERS (no
-      // `rows` preset — see catalog.js) reset to one blank teacher-typed
-      // row instead, same as formDefaults.js's initial seed.
+      // LONJAKAN resets back to its fixed preset rows; TOKOH resets to one
+      // blank teacher-typed row (no `rows` preset — see catalog.js); OTHERS'
+      // own block 0 resets back to MP THP's subject list (seedRowsFromSubjects
+      // — same head-start as formDefaults.js's initial seed, since a reset
+      // here means the teacher just added one Tahun's items to cart and is
+      // about to start the next).
       rowsByBlock[key] = cat.rows && cat.rows.length > 0
         ? cat.rows.map((label, i) => ({ id: st.nextRowId + i, desc: label, qty: '' }))
-        : [{ id: st.nextRowId, desc: '', qty: '', custom: true }];
+        : cat.seedRowsFromSubjects && b === 0
+          ? getCategorySubjects(cat, st.schoolLanguage).map((subject, i) => ({ id: st.nextRowId + i, desc: subject, qty: '', custom: true }))
+          : [{ id: st.nextRowId, desc: '', qty: '', custom: true }];
       if (cat.hasNamaKelasList) {
         columnsByBlock[key] = [{ id: nextColumnId, name: '' }];
         nextColumnId += 1;
       }
     }
     if (cat.mode === 'dynamicMatrix') {
-      rowsByBlock[key] = getCategorySubjects(cat, st.schoolLanguage).map((subject, i) => ({ id: st.nextRowId + i, desc: subject, custom: false }));
+      rowsByBlock[key] = getCategorySubjects(cat, st.schoolLanguage).map((subject, i) => ({ id: st.nextRowId + i, desc: subject, custom: !!cat.editableDefaultSubjects }));
       columnsByBlock[key] = [{ id: nextColumnId, tahunFrom: '', tahunTo: '', namaKelas: '' }];
       nextColumnId += 1;
     }
@@ -476,8 +519,198 @@ export function AppStateProvider({ children }) {
     toastTimer.current = setTimeout(() => patch({ cartToast: '' }), 2500);
   }, [patch]);
 
+  // Reads a teacher-uploaded past order file — either a filled-in copy of
+  // the FORM ANUGERAH Excel template (MP THP 1/2, PBD, LONJAKAN SAUJANA,
+  // TOKOH, the native "KLAS MATRIX" sheet — see excelImport.js) or a Word
+  // "WORDING / KUANTITI / KOD HADIAH" order table (see docxImport.js), a
+  // completely different real-world shape some schools use instead. Both
+  // parsers return the exact same `{ klasMatrix: { sections } }` shape, so
+  // whichever one matches the file's own extension feeds the same merge
+  // step below — every recognized award, regardless of source format,
+  // lands in KLAS_MATRIX (see excelImport.js's header comment for why one
+  // destination beats splitting across categories). Deliberately REPLACES
+  // rather than merges KLAS_MATRIX's own draft — this is meant to be the
+  // teacher's starting point (see NewOrderStep2's "Import from Excel"
+  // button), not layered on top of whatever's already there. Never adds
+  // straight to cart — the teacher still reviews/edits on Step 2 and clicks
+  // Add to Cart themselves, same as manual entry, so a parsing mistake
+  // never silently reaches an order. Returns { ok, message } for the caller
+  // to show; never throws.
+  const importFormAnugerahExcel = useCallback(async (file) => {
+    let parsed;
+    try {
+      const buffer = await file.arrayBuffer();
+      parsed = /\.docx$/i.test(file.name) ? await parseWordingDocx(buffer) : parseFormAnugerahExcel(buffer);
+    } catch (err) {
+      console.error('Failed to read uploaded order file:', err);
+      return { ok: false, message: 'Could not read this file. Please try again.' };
+    }
+    if (parsed.error) {
+      return { ok: false, message: parsed.error };
+    }
+
+    const messages = [];
+    const warnings = [];
+    let landOn = null;
+
+    // Computed from a plain snapshot (stateRef.current — nothing else can
+    // change it between here and the setState call below, since there's no
+    // `await` in between) rather than inside a setState updater function:
+    // React 18 Strict Mode deliberately invokes an updater function TWICE
+    // in development to catch impurity, and `warnings`/`messages`
+    // above are mutated (via .push) as a side effect of running this block
+    // — a second invocation would silently double every warning/message
+    // (exactly what duplicated every "couldn't match Jenis Plak" line in
+    // the review list). Computing the whole result once, up front, and
+    // handing setState an already-finished plain object sidesteps the
+    // problem entirely — merging the same finished object twice is a
+    // no-op, not a double-push.
+    const st = stateRef.current;
+    let next = st;
+
+    if (parsed.klasMatrix) {
+      const catKey = 'KLAS_MATRIX';
+      const cat = CATEGORIES.find((c) => c.key === catKey);
+      const maxSections = Math.min(parsed.klasMatrix.sections.length, cat.blocksCount || 1);
+      // A file with more independent awards than KLAS_MATRIX has room for
+      // (catalog.js's blocksCount) would otherwise just silently lose the
+      // rest — nothing else here would ever tell the teacher a whole
+      // section didn't make it in at all.
+      if (parsed.klasMatrix.sections.length > maxSections) {
+        warnings.push({ type: 'truncated', text: `This file has ${parsed.klasMatrix.sections.length} sections, but only the first ${maxSections} could be imported — please upload the rest separately.` });
+      }
+      const defaultNames = getCategorySubjects(cat, next.schoolLanguage);
+      let nextRowId = next.nextRowId;
+      let nextColumnId = next.nextColumnId;
+      let nextPlakRowId = next.nextPlakRowId;
+      const newLineValues = { ...next.lineValues };
+      const newMatrixValues = { ...next.matrixValues };
+      const newRowsByBlock = { ...next.rowsByBlock };
+      const newColumnsByBlock = { ...next.columnsByBlock };
+      const newPlakRows = { ...next.plakRows };
+      // Clear every pre-allocated block's own draft first — a fresh import
+      // is meant to fully replace whatever was there, not layer on top,
+      // including any block this file's sections don't reach.
+      for (let b = 0; b < (cat.blocksCount || 1); b++) {
+        const key = `${catKey}::${b}`;
+        Object.keys(newLineValues).forEach((k) => { if (k.startsWith(`${key}::`)) delete newLineValues[k]; });
+        Object.keys(newMatrixValues).forEach((k) => { if (k.startsWith(`${key}::`)) delete newMatrixValues[k]; });
+      }
+
+      for (let b = 0; b < maxSections; b++) {
+        const section = parsed.klasMatrix.sections[b];
+        const key = `${catKey}::${b}`;
+        // Only subjects this section's own source actually carried any
+        // qty for — a section imported from PBD/LONJAKAN (their own
+        // synthetic "KUANTITI"/"KEDUDUKAN" single-column stand-in) or from
+        // a Nama Kelas list has no real subject breakdown at all, and
+        // padding it out with the other 12 always-empty default subject
+        // columns would just be noise the teacher has to scroll past and
+        // manually delete. Subjects actually present are ordered to match
+        // the familiar default-13 order first, with any name outside that
+        // list (MP THP 2's own SEJARAH/REKA BENTUK & TEKNOLOGI, or the
+        // synthetic stand-ins above) appended after.
+        const presentNames = new Set();
+        section.classes.forEach((cls) => cls.subjects.forEach(({ name }) => presentNames.add(name)));
+        const subjectNameOrder = [
+          ...defaultNames.filter((name) => presentNames.has(name)),
+          ...[...presentNames].filter((name) => !defaultNames.includes(name)),
+        ];
+        const subjectRows = subjectNameOrder.map((name) => ({ id: nextRowId++, desc: name, custom: true }));
+        const rowIdByName = new Map(subjectRows.map((r) => [r.desc, r.id]));
+        const classColumns = section.classes.map((cls) => ({
+          id: nextColumnId++, tahunFrom: cls.tahunFrom, tahunTo: cls.tahunTo, namaKelas: cls.namaKelas,
+        }));
+        section.classes.forEach((cls, classIdx) => {
+          const colId = classColumns[classIdx].id;
+          cls.subjects.forEach(({ name, qty }) => {
+            newMatrixValues[`${key}::${rowIdByName.get(name)}::${colId}`] = String(qty);
+          });
+        });
+        Object.entries(deriveKlasMatrixSectionLines(section)).forEach(([slot, val]) => { newLineValues[`${key}::${slot}`] = val; });
+        newRowsByBlock[key] = subjectRows;
+        newColumnsByBlock[key] = classColumns;
+        // "SM - 13187 (GOLD)" etc isn't itself a valid Jenis Plak value —
+        // PlakPicker/pricing need the exact ' / '-joined catalog path
+        // (e.g. "SM-13187 / GOLD / NORMAL") — matchJenisPlakPath walks the
+        // LIVE catalog tree to build it, defaulting an unmentioned base to
+        // "NORMAL" the same way a teacher would if they left it out. Left
+        // BLANK (never the raw, un-matched text) when even the code itself
+        // can't be found in the catalog at all — raw text sitting in this
+        // field would otherwise look like a real, chosen Jenis Plak (it
+        // satisfies addToCart's own hasJenisPlak check, silently letting a
+        // completely un-priced, unstocked value through to checkout);
+        // leaving it genuinely blank routes it through that SAME existing
+        // "please choose a Jenis Plak" gate instead of past it. The
+        // teacher would never otherwise realize this one field didn't
+        // actually come from their file — flagged in `warnings` below.
+        // `blockIdx` lets NewOrderStep2.jsx re-check THIS specific block's
+        // own live plakRows on every render and drop the warning the
+        // moment the teacher actually picks something — a warning that
+        // still said "please choose manually" after they just did would
+        // read as broken, not helpful.
+        const matchedPlak = matchJenisPlakPath(section.jenisPlak, next.plakCatalog);
+        if (section.jenisPlak && !matchedPlak) {
+          warnings.push({ type: 'plakMismatch', blockIdx: b, text: `Section ${b + 1}: couldn't match Jenis Plak "${section.jenisPlak}" to anything in the catalog — please choose it manually.` });
+        }
+        newPlakRows[key] = [{ id: nextPlakRowId++, jenisPlak: matchedPlak }];
+      }
+
+      next = {
+        ...next,
+        lineValues: newLineValues, matrixValues: newMatrixValues,
+        rowsByBlock: newRowsByBlock, columnsByBlock: newColumnsByBlock, plakRows: newPlakRows,
+        visibleBlocksByCategory: { ...next.visibleBlocksByCategory, [catKey]: maxSections },
+        nextRowId, nextColumnId, nextPlakRowId,
+      };
+      landOn = catKey;
+      messages.push(`Mata Pelajaran/Klas (Matrix): ${maxSections} section(s)`);
+    }
+
+    setState({ ...next, category: landOn || next.category });
+
+    return { ok: true, message: `Imported — ${messages.join('; ')}. Please review before adding to cart.`, warnings };
+  }, []);
+
   const removeFromCart = useCallback((id) => {
     patch((st) => ({ cart: st.cart.filter((c) => c.id !== id) }));
+  }, [patch]);
+
+  // "Edit" on a Cart row — reloads every cart item already added under this
+  // ONE category back into the New Order draft for that category (every
+  // block/section, not just whichever item the row itself represents,
+  // since a category can be grouped across several — see Cart.jsx's own
+  // groupedCartRows), switches Step 2 to that category tab, and pulls those
+  // items back OUT of the cart so re-adding after edits doesn't duplicate
+  // them. Reuses buildDraftFromOrder — same reconstruction reorderOrder
+  // already relies on for a full order — just scoped to one category's own
+  // cart items instead of a whole submitted order, and merged into the
+  // EXISTING draft/cart rather than replacing it, so any other category
+  // already in the cart is left untouched.
+  const editCartCategory = useCallback((categoryKey) => {
+    patch((st) => {
+      const itemsForCat = st.cart.filter((ci) => ci.categoryKey === categoryKey);
+      if (itemsForCat.length === 0) return {};
+      const restored = buildDraftFromOrder({ items: itemsForCat });
+      const newLineValues = { ...st.lineValues };
+      Object.keys(newLineValues).forEach((k) => { if (k.startsWith(`${categoryKey}::`)) delete newLineValues[k]; });
+      Object.assign(newLineValues, restored.lineValues);
+      const newMatrixValues = { ...st.matrixValues };
+      Object.keys(newMatrixValues).forEach((k) => { if (k.startsWith(`${categoryKey}::`)) delete newMatrixValues[k]; });
+      Object.assign(newMatrixValues, restored.matrixValues);
+      return {
+        category: categoryKey,
+        lineValues: newLineValues,
+        matrixValues: newMatrixValues,
+        rowsByBlock: { ...st.rowsByBlock, ...restored.rowsByBlock },
+        columnsByBlock: { ...st.columnsByBlock, ...restored.columnsByBlock },
+        plakRows: { ...st.plakRows, ...restored.plakRows },
+        nextRowId: Math.max(st.nextRowId, restored.nextId),
+        nextColumnId: Math.max(st.nextColumnId, restored.nextId),
+        visibleBlocksByCategory: { ...st.visibleBlocksByCategory, [categoryKey]: restored.visibleBlocksByCategory[categoryKey] },
+        cart: st.cart.filter((ci) => ci.categoryKey !== categoryKey),
+      };
+    });
   }, [patch]);
 
   // The order id used to come from a nextOrderSeq counter that lived only
@@ -1158,7 +1391,8 @@ export function AppStateProvider({ children }) {
 
   const value = {
     state, patch, today: TODAY, login, logout,
-    resetCurrentCategory, startNewOrder, addToCart, removeFromCart, submitOrder, reorderOrder,
+    resetCurrentCategory, startNewOrder, addToCart, removeFromCart, editCartCategory, submitOrder, reorderOrder,
+    importFormAnugerahExcel,
     openAmend, updateAmend,
     openAddOn, submitPendingAddOn, cancelPendingAddOn, rejectAddOn, approveAddOn, approveOrder, setInvoiceId, approveAndSetInvoiceId,
     recordPrint,

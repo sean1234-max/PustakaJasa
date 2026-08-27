@@ -97,13 +97,24 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
     // onRemoveReferenceLine — otherwise a category with a second box would
     // number its first extra row one too low (colliding with the second
     // box's own "Row N").
-    const baseLineLen = catLinePlaceholders.length + (catPositionLine2Placeholder ? 1 : 0);
+    const origLineLen = catLinePlaceholders.length;
+    const baseLineLen = origLineLen + (catPositionLine2Placeholder ? 1 : 0);
     const extraRefCount = currentCat.extendableReferenceSample
       ? Number(lineValues[`${catKey}::${b}::extraRefLines`]) || 0
       : 0;
     if (extraRefCount > 0) {
       catLinePlaceholders = [...catLinePlaceholders, ...Array.from({ length: extraRefCount }, () => '( Additional Line )')];
     }
+    // Mata Pelajaran/Klas only (catalog.js's deletableReferenceLines) — a
+    // teacher can hide any single row (base or extra) via its own ✕, except
+    // TAJUK BESAR (slotId '0') and the SUBJEK/POSITION second box (slotId
+    // '2b'), which draftUpdaters.js's onDeleteReferenceLine refuses to add
+    // to this set in the first place. Filtered out of `lines`/
+    // `extraRefColumns` below — a hidden line is simply absent from
+    // `blk.lines`, so it drops out of required-line validation for free.
+    const hiddenLineSlots = currentCat.deletableReferenceLines
+      ? new Set((lineValues[`${catKey}::${b}::hiddenLines`] || '').split(',').filter(Boolean))
+      : null;
     // Line 3's optional second box gets its own slotId ('2b') alongside
     // every other line's own index — flattened below (secondLine, if any,
     // right after its own first box) and numbered sequentially, so plain
@@ -125,6 +136,11 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
         // small curated word list — see src/utils/typoCheck.js. Purely a
         // hint shown near the input; never blocks Add to Cart.
         typoHint: findPossibleTypo(lineValues[key]),
+        // TAJUK BESAR (i === 0) can never be deleted even on a
+        // deletableReferenceLines category — every other row (including any
+        // teacher-added extra) gets its own ✕.
+        deletable: !!currentCat.deletableReferenceLines && i !== 0,
+        onDelete: () => updaters.onDeleteReferenceLine(catKey, b, slotId),
       };
       if (i === 2 && catPositionLine2Placeholder) {
         const key2 = `${catKey}::${b}::2b`;
@@ -168,7 +184,13 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
         flatLines = [...ordered, ...flatLines.filter((ln) => !seen.has(ln.slotId))];
       }
     }
-    const lines = flatLines;
+    // Hidden rows are dropped only after numbering/reordering above so a
+    // deleted row's siblings keep their own original numbers rather than
+    // closing the gap (matches the drag-reorder comment above: a row's
+    // number is a stable identity, not a sequential display index).
+    const lines = hiddenLineSlots && hiddenLineSlots.size
+      ? flatLines.filter((ln) => !hiddenLineSlots.has(ln.slotId))
+      : flatLines;
 
     let matrixRows = [], columns = [], colTotals = [], grandTotal = 0, rows = [], blockTotalQty = 0;
     let namaKelasRows = [], namaKelasCount = 0, tahunField = null, extraRefColumns = [];
@@ -290,8 +312,11 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
       extraRefColumns = currentCat.extendableReferenceSample
         ? Array.from({ length: extraRefCount }, (_, i) => {
           const num = baseLineLen + i + 1;
-          return { key: `refCol${num}`, label: `Row ${num}` };
-        })
+          const slotId = `${origLineLen + i}`;
+          return { key: `refCol${num}`, label: `Row ${num}`, slotId };
+        // A hidden extra row (deletableReferenceLines — Mata Pelajaran/Klas)
+        // drops its matching Kuantiti column too, same as any hidden base row.
+        }).filter((col) => !(hiddenLineSlots && hiddenLineSlots.has(col.slotId)))
         : [];
       rows = rawRows.map((row) => ({
         id: row.id, desc: row.desc, qty: row.qty,
@@ -338,17 +363,22 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
       sampleSlotId: `sample-${catKey}-${b}`,
       lines, isMatrix, isDynamicMatrix,
       // Main Template's "+ Add Reference Row" (see the extraRefLines note
-      // above) and the matching cap on Kuantiti's own "+ Add Row" — both
-      // capped at 5 total per catalog.js's capRowsAt5/extendableReferenceSample.
+      // above) and the matching cap on Kuantiti's own "+ Add Row" — capped
+      // at `cat.maxReferenceLines` (falls back to 5) total VISIBLE lines.
       addReferenceLine: currentCat.extendableReferenceSample ? () => updaters.onAddReferenceLine(catKey, b) : null,
-      canAddReferenceLine: !!currentCat.extendableReferenceSample && lines.length < 5,
+      canAddReferenceLine: !!currentCat.extendableReferenceSample && lines.length < (currentCat.maxReferenceLines || 5),
       // "Delete Reference Row" — removes the LAST added Reference Sample
       // row and its matching Kuantiti column together (draftUpdaters.js's
       // onRemoveReferenceLine); only ever offered once at least one has
-      // actually been added (extraRefCount > 0) — the base 3 lines are
-      // never removable this way.
+      // actually been added (extraRefCount > 0) — the base lines are never
+      // removable this way. Superseded by each line's own `deletable`/
+      // `onDelete` on a deletableReferenceLines category (Mata Pelajaran/
+      // Klas) — OrderCategoryBlock only renders this button when that flag
+      // is off (TOKOH).
       removeReferenceLine: currentCat.extendableReferenceSample ? () => updaters.onRemoveReferenceLine(catKey, b) : null,
       canRemoveReferenceLine: extraRefCount > 0,
+      deletableReferenceLines: !!currentCat.deletableReferenceLines,
+      plakPerBlock: !!currentCat.plakPerBlock,
       descColumnLabel: currentCat.descColumnLabel,
       extraRefColumns,
       canAddRow: !currentCat.capRowsAt5 || rows.length < 5,
@@ -370,12 +400,16 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
       // e.g. TAHUN 1-6 for OTHERS, is used) — see draftUpdaters.js's
       // onDuplicateBlock and NewOrderStep2/AddOn's visible-block slicing,
       // which is what actually reveals block b+1 once this copies into it.
-      duplicateBlock: currentCat.hasNamaKelasList && b < blocksCount - 1 ? () => updaters.onDuplicateBlock(catKey, b) : null,
+      // `multiBlock` (KLAS_MATRIX) opts in the same way `hasNamaKelasList`
+      // (OTHERS) already does — the two categories just differ in whether
+      // Reference Sample/Jenis Plak are shared across sections or
+      // independent per section (see showSharedSections below).
+      duplicateBlock: (currentCat.hasNamaKelasList || currentCat.multiBlock) && b < blocksCount - 1 ? () => updaters.onDuplicateBlock(catKey, b) : null,
       // "Delete section" — only ever offered for a duplicated block (never
       // block 0, the original section); same isLastBlock gating the caller
       // (NewOrderStep2/AddOn) already applies to duplicateBlock above
       // decides whether this is actually the one to show it on.
-      removeBlock: currentCat.hasNamaKelasList && b > 0 ? () => updaters.onRemoveBlock(catKey, b) : null,
+      removeBlock: (currentCat.hasNamaKelasList || currentCat.multiBlock) && b > 0 ? () => updaters.onRemoveBlock(catKey, b) : null,
       // Draggable Reference Sample (OTHERS — see catalog.js): pass the full
       // new slotId order after a drag; OrderCategoryBlock derives it from
       // `lines` current order plus the moved item's new position.
@@ -383,28 +417,6 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
         ? (newSlotIdOrder) => updaters.onLine(refOrderKey, newSlotIdOrder.join(','))
         : null,
       blockTotalQty, plakRows,
-    });
-  }
-
-  // hasNamaKelasList categories (OTHERS) can have several duplicated Tahun
-  // blocks that all share ONE Jenis Plak choice (see draftUpdaters.js's
-  // onDuplicateBlock) — but only block 0's Jenis Plak/QTY/Harga table is
-  // ever shown (showSharedSections in OrderCategoryBlock.jsx), so without
-  // this its displayed QTY/Harga would look like just block 0's own Tahun
-  // part, hiding however many more plaques the other duplicated blocks add.
-  // Each block still becomes its OWN cart item with its own qty when added
-  // (needed so every Tahun's own Description/Nama Kelas rows export
-  // separately, see AppState.jsx's addToCart) — this combined figure is
-  // display-only, attached to every block's own first plakRow so whichever
-  // block is actually rendered shows the true grand total instead.
-  if (currentCat.hasNamaKelasList) {
-    const combinedQty = blocks.reduce((sum, blk) => sum + blk.blockTotalQty, 0);
-    const pricedRows = blocks.flatMap((blk) => blk.plakRows).filter((pr) => pr.unitPrice != null);
-    const combinedHargaLabel = pricedRows.length
-      ? `RM ${pricedRows.reduce((sum, pr) => sum + pr.rawHarga, 0).toFixed(2)}`
-      : '—';
-    blocks.forEach((blk) => {
-      blk.plakRows = blk.plakRows.map((pr, i) => (i === 0 ? { ...pr, combinedQty, combinedHargaLabel } : pr));
     });
   }
 
@@ -417,7 +429,7 @@ export const noopUpdaters = {
   onColumnField: () => {}, onColumnRemove: () => {}, onAddColumn: () => {}, onAddColumnSameTahun: () => {},
   onAddNamaKelas: () => {}, onDuplicateBlock: () => {}, onRemoveBlock: () => {},
   onAddMatrixRow: () => {}, onMatrixRowRemove: () => {},
-  onAddReferenceLine: () => {}, onRemoveReferenceLine: () => {},
+  onAddReferenceLine: () => {}, onRemoveReferenceLine: () => {}, onDeleteReferenceLine: () => {},
 };
 
 // Rebuilds read-only `blocks` (the same shape NewOrderStep2 renders live)

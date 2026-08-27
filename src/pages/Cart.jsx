@@ -5,7 +5,7 @@ import { useAppState } from '../state/useAppState';
 import { formatDate, getStockStatus } from '../data/catalog';
 
 export default function Cart() {
-  const { state, patch, today, removeFromCart, submitOrder } = useAppState();
+  const { state, patch, today, removeFromCart, editCartCategory, submitOrder } = useAppState();
   const navigate = useNavigate();
   const [submitting, setSubmitting] = useState(false);
 
@@ -30,7 +30,7 @@ export default function Cart() {
         // hasPrice stays false for a code with no resolvable catalog price
         // (Production's OTHER catch-all — see PlakPicker.jsx) — RM 0.00
         // would otherwise read as a free item instead of "price not set".
-        row = { key, jenisPlak: ci.jenisPlak, qty: 0, harga: 0, hasPrice: false, ids: [] };
+        row = { key, jenisPlak: ci.jenisPlak, categoryKey: ci.categoryKey, qty: 0, harga: 0, hasPrice: false, ids: [] };
         byKey.set(key, row);
         rows.push(row);
       }
@@ -93,7 +93,6 @@ export default function Cart() {
           </div>
           <div className="summary-col">
             <div><span className="dim">TARIKH ORDER :</span> {formatDate(today)}</div>
-            <div><span className="dim">TARIKH HANTAR :</span> {formatDate(state.dueSelected)}</div>
             <div><span className="dim">TARIKH FUNCTION :</span> {formatDate(state.funcSelected)}</div>
             <div><span className="dim">TERMS :</span> {state.terms}</div>
           </div>
@@ -101,7 +100,7 @@ export default function Cart() {
 
         <div className="card-kicker">Jenis Plak / QTY / Harga</div>
         <table className="table" style={{ margin: 'var(--space-3) 0 var(--space-8)' }}>
-          <thead><tr><th>Jenis Plak</th><th style={{ width: 110 }}>QTY</th><th style={{ width: 130 }}>Harga</th><th style={{ width: 44 }} /></tr></thead>
+          <thead><tr><th>Jenis Plak</th><th style={{ width: 110 }}>QTY</th><th style={{ width: 130 }}>Harga</th><th style={{ width: 48 }} /><th style={{ width: 44 }} /></tr></thead>
           <tbody>
             {groupedCartRows.map((row) => {
               const status = getStockStatus(row.jenisPlak, state.plakCatalog);
@@ -111,14 +110,25 @@ export default function Cart() {
                   <td>{row.jenisPlak}</td>
                   <td style={overStock ? { color: '#c0392b', fontWeight: 700 } : undefined}>{row.qty}</td>
                   <td>{row.hasPrice ? `RM ${row.harga.toFixed(2)}` : '—'}</td>
+                  <td>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-icon"
+                      aria-label="Edit"
+                      title="Edit this order's details"
+                      onClick={() => { editCartCategory(row.categoryKey); navigate('/order/step2'); }}
+                    >
+                      ✎
+                    </button>
+                  </td>
                   <td><button type="button" className="btn btn-ghost btn-icon" aria-label="Remove" onClick={() => row.ids.forEach(removeFromCart)}>✕</button></td>
                 </tr>
               );
             })}
             {groupedCartRows.length === 0 && (
-              <tr><td colSpan={4} style={{ textAlign: 'center', opacity: 0.5, padding: 'var(--space-4)' }}>No items yet — add categories from New Order → Order Details.</td></tr>
+              <tr><td colSpan={5} style={{ textAlign: 'center', opacity: 0.5, padding: 'var(--space-4)' }}>No items yet — add categories from New Order → Order Details.</td></tr>
             )}
-            <tr><td><strong>TOTAL</strong></td><td><strong>{cartTotalQty}</strong></td><td><strong>RM {cartTotalHarga.toFixed(2)}</strong></td><td /></tr>
+            <tr><td><strong>TOTAL</strong></td><td><strong>{cartTotalQty}</strong></td><td><strong>RM {cartTotalHarga.toFixed(2)}</strong></td><td /><td /></tr>
           </tbody>
         </table>
 

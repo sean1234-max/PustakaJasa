@@ -1,4 +1,14 @@
-import { CATEGORIES, customMatrixLabelKey } from '../data/catalog';
+import {
+  CATEGORIES, customMatrixLabelKey, getCategoryLinePlaceholders, getCategoryPositionLine2Placeholder,
+} from '../data/catalog';
+
+// Reference Sample's base line count (catalog lines + optional second box),
+// resolved the same way computeBlocks.js does — length is identical across
+// schoolLanguage variants (only the wording differs), so 'SK' is fine to use
+// here purely for counting.
+function baseReferenceLineCount(cat) {
+  return getCategoryLinePlaceholders(cat, 'SK').length + (getCategoryPositionLine2Placeholder(cat, 'SK') ? 1 : 0);
+}
 
 // Builds the block-editing callbacks (onLine, onMatrix, onRowField, ...) for
 // a given "draft" namespace inside global state — the same set of fields is
@@ -93,22 +103,28 @@ export function createDraftUpdaters(patch, fields) {
         [nextRowId]: st[nextRowId] + 1,
       };
     }),
-    // "+ Add Reference Row" — Main Template only (catalog.js's
+    // "+ Add Reference Row" — Main Template/Mata Pelajaran-Klas (catalog.js's
     // extendableReferenceSample). The count lives inside lineValues itself
     // as a synthetic `${catKey}::${blockIdx}::extraRefLines` entry (read by
     // computeBlocks.js when building that block's Reference Sample lines)
     // rather than a separate state field, so it rides along for free with
     // every mechanism that already snapshots/resets/reconstructs
     // lineValues by key prefix — no other call site needs to change.
-    // Capped at 5 total lines (base catalog lines + extra), enforced here
-    // rather than only by hiding the button.
+    // Capped at `cat.maxReferenceLines` (falls back to 5) total VISIBLE
+    // lines — a category with individually-deletable rows
+    // (deletableReferenceLines) frees up room as rows are deleted, so
+    // hidden ones don't count against the cap — enforced here rather than
+    // only by hiding the button.
     onAddReferenceLine: (catKey, blockIdx) => patch((st) => {
       const cat = CATEGORIES.find((c) => c.key === catKey);
       if (!cat?.extendableReferenceSample) return {};
-      const baseLen = (cat.linePlaceholders || []).length + (cat.positionLine2Placeholder ? 1 : 0);
+      const baseLen = baseReferenceLineCount(cat);
       const key = `${catKey}::${blockIdx}::extraRefLines`;
       const current = Number(st[lineValues][key]) || 0;
-      if (baseLen + current >= 5) return {};
+      const hiddenKey = `${catKey}::${blockIdx}::hiddenLines`;
+      const hiddenCount = (st[lineValues][hiddenKey] || '').split(',').filter(Boolean).length;
+      const maxLines = cat.maxReferenceLines || 5;
+      if (baseLen + current - hiddenCount >= maxLines) return {};
       const newLineValues = { ...st[lineValues], [key]: String(current + 1) };
       // hasNamaKelasList categories (OTHERS) share ONE Reference Sample
       // across every duplicated Tahun block (same stale-copy problem onLine
@@ -132,15 +148,21 @@ export function createDraftUpdaters(patch, fields) {
     onRemoveReferenceLine: (catKey, blockIdx) => patch((st) => {
       const cat = CATEGORIES.find((c) => c.key === catKey);
       if (!cat?.extendableReferenceSample) return {};
-      const baseLen = (cat.linePlaceholders || []).length + (cat.positionLine2Placeholder ? 1 : 0);
+      const origLen = getCategoryLinePlaceholders(cat, 'SK').length;
+      const baseLen = baseReferenceLineCount(cat);
       const key = `${catKey}::${blockIdx}::extraRefLines`;
       const current = Number(st[lineValues][key]) || 0;
       if (current <= 0) return {};
-      const removedLineIdx = baseLen + current - 1;
-      const removedNum = removedLineIdx + 1;
+      // The removed row's raw lineValues index sits right after the base
+      // (non-second-box) placeholders, at origLen + (current - 1) — NOT
+      // baseLen + current - 1, which double-counts the second box (2b isn't
+      // its own entry in the placeholder array computeBlocks.js maps over,
+      // it's injected separately as line 2's secondLine).
+      const removedRawIdx = origLen + current - 1;
+      const removedNum = baseLen + current;
       const refColKey = `refCol${removedNum}`;
       const newLineValues = { ...st[lineValues], [key]: String(current - 1) };
-      delete newLineValues[`${catKey}::${blockIdx}::${removedLineIdx}`];
+      delete newLineValues[`${catKey}::${blockIdx}::${removedRawIdx}`];
       const newRowsByBlock = { ...st[rowsByBlock] };
       const stripRefCol = (rowsKey) => {
         newRowsByBlock[rowsKey] = (newRowsByBlock[rowsKey] || []).map((r) => {
@@ -159,40 +181,108 @@ export function createDraftUpdaters(patch, fields) {
         for (let b = 0; b < visibleCount; b++) {
           if (b === blockIdx) continue;
           newLineValues[`${catKey}::${b}::extraRefLines`] = String(current - 1);
-          delete newLineValues[`${catKey}::${b}::${removedLineIdx}`];
+          delete newLineValues[`${catKey}::${b}::${removedRawIdx}`];
           stripRefCol(`${catKey}::${b}`);
         }
       }
       return { [lineValues]: newLineValues, [rowsByBlock]: newRowsByBlock };
     }),
-    // Jenis Plak (`hasNamaKelasList` categories — OTHERS) has the exact same
-    // shared-on-block-0-only/stale-copy problem as onLine above: the picker
-    // is only ever shown for block 0 (showSharedSections), but each
-    // duplicated block carries its own plakRows entry for its own cart
-    // item/export, seeded once at Duplicate-click time. Picking (or
-    // changing) the Jenis Plak afterward must keep every already-revealed
-    // block's own copy in sync the same way.
-    onPlakSelect: (rowsKey, id, val) => patch((st) => {
-      const newPlakRows = {
-        ...st[plakRows],
-        [rowsKey]: st[plakRows][rowsKey].map((r) => (r.id === id ? { ...r, jenisPlak: val } : r)),
-      };
-      const match = /^(.+)::0$/.exec(rowsKey);
-      if (match) {
-        const catKey = match[1];
-        const cat = CATEGORIES.find((c) => c.key === catKey);
-        if (cat?.hasNamaKelasList) {
+    // "Delete row" ✕ — Mata Pelajaran/Klas only (catalog.js's
+    // deletableReferenceLines). TAJUK BESAR (slotId '0') and the
+    // SUBJEK/POSITION second box (slotId '2b') can never be deleted this way
+    // (guarded here, not just by the UI omitting their ✕ button).
+    //
+    // Two different removals, depending on which kind of row it is:
+    //  - A teacher-ADDED row (slotId's raw index falls in the
+    //    extraRefLines-counted range): closes the gap by shifting every
+    //    later extra row (and its matching Kuantiti `refCol` column) down
+    //    one slot and shrinking the counter — so extras always stay
+    //    contiguous and the next "+ Add Reference Row" lands on
+    //    (current max shown + 1), instead of the counter just ticking up
+    //    forever and leaving a permanently orphaned number behind.
+    //  - A base catalog row (YEAR/ACARA/TAHUN) — simply hidden (kept as a
+    //    comma-joined `${catKey}::${blockIdx}::hiddenLines` entry, the same
+    //    "ride along inside lineValues" trick extraRefLines uses).
+    //    computeBlocks.js filters it out of `lines` (dropping it from
+    //    required-line validation for free) — it doesn't need shifting
+    //    since extras are always numbered after every base row regardless
+    //    of which base rows are currently hidden. Its own value is cleared
+    //    too, so stale text can't leak into exportCsv.js (which reads
+    //    lineValues by raw index regardless of what's currently shown).
+    onDeleteReferenceLine: (catKey, blockIdx, slotId) => patch((st) => {
+      const cat = CATEGORIES.find((c) => c.key === catKey);
+      if (!cat?.deletableReferenceLines) return {};
+      if (slotId === '0' || slotId === '2b') return {};
+      const origLen = getCategoryLinePlaceholders(cat, 'SK').length;
+      const baseLen = baseReferenceLineCount(cat);
+      const slotIdx = Number(slotId);
+      const extraKey = `${catKey}::${blockIdx}::extraRefLines`;
+      const extraCount = Number(st[lineValues][extraKey]) || 0;
+
+      if (Number.isInteger(slotIdx) && slotIdx >= origLen && slotIdx < origLen + extraCount) {
+        const removedK = slotIdx - origLen;
+        const applyToBlock = (bIdx, lv, rb) => {
+          const values = Array.from({ length: extraCount }, (_, k) => lv[`${catKey}::${bIdx}::${origLen + k}`] || '');
+          values.splice(removedK, 1);
+          for (let k = 0; k < extraCount; k++) delete lv[`${catKey}::${bIdx}::${origLen + k}`];
+          values.forEach((v, k) => { if (v) lv[`${catKey}::${bIdx}::${origLen + k}`] = v; });
+          lv[`${catKey}::${bIdx}::extraRefLines`] = String(extraCount - 1);
+          const rowsKeyName = `${catKey}::${bIdx}`;
+          if (rb[rowsKeyName]) {
+            rb[rowsKeyName] = rb[rowsKeyName].map((r) => {
+              const cols = Array.from({ length: extraCount }, (_, k) => r[`refCol${baseLen + k + 1}`]);
+              cols.splice(removedK, 1);
+              const next = { ...r };
+              for (let k = 0; k < extraCount; k++) delete next[`refCol${baseLen + k + 1}`];
+              cols.forEach((v, k) => { if (v !== undefined) next[`refCol${baseLen + k + 1}`] = v; });
+              return next;
+            });
+          }
+        };
+        const newLineValues = { ...st[lineValues] };
+        const newRowsByBlock = { ...st[rowsByBlock] };
+        applyToBlock(blockIdx, newLineValues, newRowsByBlock);
+        if (cat.hasNamaKelasList) {
           const visibleCount = (st[visibleBlocksByCategory] && st[visibleBlocksByCategory][catKey]) || 1;
-          for (let b = 1; b < visibleCount; b++) {
-            const key = `${catKey}::${b}`;
-            if (newPlakRows[key]) {
-              newPlakRows[key] = newPlakRows[key].map((r, i) => (i === 0 ? { ...r, jenisPlak: val } : r));
-            }
+          for (let b = 0; b < visibleCount; b++) {
+            if (b !== blockIdx) applyToBlock(b, newLineValues, newRowsByBlock);
           }
         }
+        return { [lineValues]: newLineValues, [rowsByBlock]: newRowsByBlock };
       }
-      return { [plakRows]: newPlakRows };
+
+      const hiddenKey = `${catKey}::${blockIdx}::hiddenLines`;
+      const hidden = new Set((st[lineValues][hiddenKey] || '').split(',').filter(Boolean));
+      if (hidden.has(slotId)) return {};
+      hidden.add(slotId);
+      const hiddenList = Array.from(hidden).join(',');
+      const newLineValues = { ...st[lineValues], [hiddenKey]: hiddenList };
+      delete newLineValues[`${catKey}::${blockIdx}::${slotId}`];
+      // Same cross-block sync onAddReferenceLine above uses — Mata
+      // Pelajaran/Klas shares ONE Reference Sample across every revealed
+      // Tahun block.
+      if (cat.hasNamaKelasList) {
+        const visibleCount = (st[visibleBlocksByCategory] && st[visibleBlocksByCategory][catKey]) || 1;
+        for (let b = 0; b < visibleCount; b++) {
+          if (b === blockIdx) continue;
+          newLineValues[`${catKey}::${b}::hiddenLines`] = hiddenList;
+          delete newLineValues[`${catKey}::${b}::${slotId}`];
+        }
+      }
+      return { [lineValues]: newLineValues };
     }),
+    // Jenis Plak — each Tahun block (`hasNamaKelasList` categories — OTHERS)
+    // picks its own Jenis Plak independently (shown above its own Tahun
+    // field, not a single shared table on block 0 any more). "Duplicate"
+    // still copies the PREVIOUS block's choice forward as a starting point
+    // (see onDuplicateBlock below), but editing it afterward only ever
+    // touches this one block — no cross-block sync.
+    onPlakSelect: (rowsKey, id, val) => patch((st) => ({
+      [plakRows]: {
+        ...st[plakRows],
+        [rowsKey]: st[plakRows][rowsKey].map((r) => (r.id === id ? { ...r, jenisPlak: val } : r)),
+      },
+    })),
     // Columns (Tahun + Nama Kelas) — dynamicMatrix categories only (PBD).
     // "+ Add Tahun" — a genuinely new Tahun range, so both Tahun and Nama
     // Kelas start blank for the teacher to fill in. Also reused as-is for
@@ -298,6 +388,19 @@ export function createDraftUpdaters(patch, fields) {
         ...st[columnsByBlock],
         [toKey]: JSON.parse(JSON.stringify((st[columnsByBlock] && st[columnsByBlock][fromKey]) || [])),
       };
+      // dynamicMatrix categories (KLAS_MATRIX, via multiBlock) keep each
+      // cell's own qty in matrixValues (keyed by `${catKey}::${blockIdx}::
+      // ${subjectRowId}::${classColId}`), a state field entirely separate
+      // from rowsByBlock/columnsByBlock above — those two only carry the
+      // subject/class DEFINITIONS. The deep-cloned copies keep every id
+      // identical to the source block's own (JSON clone never remints
+      // `id`), so each matrixValues entry can move straight across by
+      // swapping just the blockIdx segment of its key, with no id remapping
+      // needed.
+      const newMatrixValues = { ...st[matrixValues] };
+      Object.keys(st[matrixValues]).forEach((k) => {
+        if (k.startsWith(fromLinePrefix)) newMatrixValues[`${toLinePrefix}${k.slice(fromLinePrefix.length)}`] = st[matrixValues][k];
+      });
       const fromPlak = (st[plakRows][fromKey] || [])[0];
       const newPlakRows = {
         ...st[plakRows],
@@ -309,7 +412,7 @@ export function createDraftUpdaters(patch, fields) {
         [catKey]: Math.min(cat.blocksCount || 1, Math.max(currentVisible, toBlockIdx + 1)),
       };
       return {
-        [lineValues]: newLineValues, [rowsByBlock]: newRowsByBlock, [columnsByBlock]: newColumnsByBlock,
+        [lineValues]: newLineValues, [matrixValues]: newMatrixValues, [rowsByBlock]: newRowsByBlock, [columnsByBlock]: newColumnsByBlock,
         [plakRows]: newPlakRows, [visibleBlocksByCategory]: newVisibleBlocksByCategory,
       };
     }),
@@ -329,6 +432,8 @@ export function createDraftUpdaters(patch, fields) {
       const linePrefix = `${catKey}::${blockIdx}::`;
       const newLineValues = { ...st[lineValues] };
       Object.keys(newLineValues).forEach((k) => { if (k.startsWith(linePrefix)) delete newLineValues[k]; });
+      const newMatrixValues = { ...st[matrixValues] };
+      Object.keys(newMatrixValues).forEach((k) => { if (k.startsWith(linePrefix)) delete newMatrixValues[k]; });
       const blockKey = `${catKey}::${blockIdx}`;
       const newRowsByBlock = { ...st[rowsByBlock] };
       delete newRowsByBlock[blockKey];
@@ -337,7 +442,7 @@ export function createDraftUpdaters(patch, fields) {
       const newPlakRows = { ...st[plakRows] };
       delete newPlakRows[blockKey];
       return {
-        [lineValues]: newLineValues, [rowsByBlock]: newRowsByBlock, [columnsByBlock]: newColumnsByBlock,
+        [lineValues]: newLineValues, [matrixValues]: newMatrixValues, [rowsByBlock]: newRowsByBlock, [columnsByBlock]: newColumnsByBlock,
         [plakRows]: newPlakRows,
         [visibleBlocksByCategory]: { ...st[visibleBlocksByCategory], [catKey]: blockIdx },
       };
