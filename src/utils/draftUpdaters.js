@@ -212,7 +212,7 @@ export function createDraftUpdaters(patch, fields) {
     onDeleteReferenceLine: (catKey, blockIdx, slotId) => patch((st) => {
       const cat = CATEGORIES.find((c) => c.key === catKey);
       if (!cat?.deletableReferenceLines) return {};
-      if (slotId === '0' || slotId === '2b') return {};
+      if (slotId === '0') return {};
       const origLen = getCategoryLinePlaceholders(cat, 'SK').length;
       const baseLen = baseReferenceLineCount(cat);
       const slotIdx = Number(slotId);
@@ -267,6 +267,28 @@ export function createDraftUpdaters(patch, fields) {
           if (b === blockIdx) continue;
           newLineValues[`${catKey}::${b}::hiddenLines`] = hiddenList;
           delete newLineValues[`${catKey}::${b}::${slotId}`];
+        }
+      }
+      return { [lineValues]: newLineValues };
+    }),
+    // Re-shows a base row hidden via onDeleteReferenceLine — currently only
+    // ever offered for SUBJEK/POSITION ('2b', see OrderCategoryBlock.jsx's
+    // "+ Add Subjek/Position" button), so a teacher who deletes it by
+    // accident (or an import that hid it outright — see excelImport.js's
+    // buildRosterSectionLines) isn't stuck without a way to bring it back
+    // short of starting the whole block over.
+    onRestoreReferenceLine: (catKey, blockIdx, slotId) => patch((st) => {
+      const cat = CATEGORIES.find((c) => c.key === catKey);
+      if (!cat?.deletableReferenceLines) return {};
+      const hiddenKey = `${catKey}::${blockIdx}::hiddenLines`;
+      const hidden = new Set((st[lineValues][hiddenKey] || '').split(',').filter(Boolean));
+      if (!hidden.delete(slotId)) return {};
+      const hiddenList = Array.from(hidden).join(',');
+      const newLineValues = { ...st[lineValues], [hiddenKey]: hiddenList };
+      if (cat.hasNamaKelasList) {
+        const visibleCount = (st[visibleBlocksByCategory] && st[visibleBlocksByCategory][catKey]) || 1;
+        for (let b = 0; b < visibleCount; b++) {
+          if (b !== blockIdx) newLineValues[`${catKey}::${b}::hiddenLines`] = hiddenList;
         }
       }
       return { [lineValues]: newLineValues };

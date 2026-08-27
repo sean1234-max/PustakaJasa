@@ -65,9 +65,17 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
   // to a fixed layout with an explicit total width (sum of every column's
   // own width below) makes each column render at its real size and lets
   // table-wrap's overflow-x do the scrolling.
-  const DYN_COL_WIDTHS = { tahun: 260, namaKelas: 150, subject: 190, total: 70 };
-  const dynTableWidth = DYN_COL_WIDTHS.tahun + DYN_COL_WIDTHS.namaKelas
-    + dynColumns.length * DYN_COL_WIDTHS.subject + DYN_COL_WIDTHS.total;
+  const DYN_COL_WIDTHS = { tahun: 260, namaKelas: 150, jawatan: 170, subject: 190, total: 70 };
+  // Tahun and Jawatan are both optional columns on a dynamicMatrix block —
+  // see computeBlocks.js's hasTahun/hasJawatan — hidden entirely rather
+  // than shown always-blank; `!== false` (not a plain truthy check) since
+  // both are `undefined` outside the dynamicMatrix branch, where this
+  // width sum goes unused anyway.
+  const showTahunCol = blk.hasTahun !== false;
+  const showJawatanCol = !!blk.hasJawatan;
+  const dynLeadingCols = (showTahunCol ? 1 : 0) + 1 + (showJawatanCol ? 1 : 0);
+  const dynTableWidth = (showTahunCol ? DYN_COL_WIDTHS.tahun : 0) + DYN_COL_WIDTHS.namaKelas
+    + (showJawatanCol ? DYN_COL_WIDTHS.jawatan : 0) + dynColumns.length * DYN_COL_WIDTHS.subject + DYN_COL_WIDTHS.total;
   const namaKelasRows = hideEmptyRows ? blk.namaKelasRows.filter((nk) => (nk.name || '').trim()) : blk.namaKelasRows;
   // `hasNamaKelasList` categories (OTHERS) apply ONE Jenis Plak + Reference
   // Sample to every Tahun part — Duplicate copies both under the hood (see
@@ -225,6 +233,14 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
               {blk.canAddReferenceLine && (
                 <button type="button" className="btn btn-secondary" onClick={blk.addReferenceLine}>+ Add Reference Row</button>
               )}
+              {/* Only appears once SUBJEK/POSITION is actually missing (its
+                  own ✕ deleted it, or an import — see excelImport.js's
+                  buildRosterSectionLines — hid it outright since it never
+                  applies to a named-recipient roster) — otherwise there'd
+                  be nothing for it to do. */}
+              {blk.addSubjekPosition && (
+                <button type="button" className="btn btn-secondary" onClick={blk.addSubjekPosition}>+ Add Subjek/Position</button>
+              )}
               {!blk.deletableReferenceLines && blk.canRemoveReferenceLine && (
                 <button type="button" className="btn btn-ghost" onClick={blk.removeReferenceLine}>− Delete Reference Row</button>
               )}
@@ -318,8 +334,9 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
             <table className="table" style={{ tableLayout: 'fixed', width: dynTableWidth }}>
               <thead>
                 <tr>
-                  <th style={{ width: DYN_COL_WIDTHS.tahun }}>Tahun</th>
-                  <th style={{ width: DYN_COL_WIDTHS.namaKelas }}>Nama Kelas</th>
+                  {showTahunCol && <th style={{ width: DYN_COL_WIDTHS.tahun }}>Tahun</th>}
+                  <th style={{ width: DYN_COL_WIDTHS.namaKelas }}>{blk.namaKelasLabel}</th>
+                  {showJawatanCol && <th style={{ width: DYN_COL_WIDTHS.jawatan }}>Jawatan</th>}
                   {dynColumns.map((col) => (
                     <th key={col.id} style={{ width: DYN_COL_WIDTHS.subject }}>
                       {col.custom && editable.rowDesc ? (
@@ -345,54 +362,56 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
               <tbody>
                 {matrixRows.map((row) => (
                   <tr key={row.id}>
-                    <td>
-                      {row.tingkatanMode ? (
-                        // Secondary school (SMK) — see computeBlocks.js's
-                        // tingkatanMode. No Tingkatan-equivalent dropdown
-                        // exists (TAHUN_OPTIONS only ever covers primary
-                        // school's Tahun 1-6), so this is plain free text
-                        // instead, imported per-row rather than swapping
-                        // the whole category over.
-                        <input
-                          className="input"
-                          placeholder="e.g. TINGKATAN 5"
-                          value={row.tingkatan}
-                          readOnly={!editable.rowDesc}
-                          onChange={editable.rowDesc ? (e) => row.setTingkatan(e.target.value) : undefined}
-                        />
-                      ) : (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                          <select
+                    {showTahunCol && (
+                      <td>
+                        {row.tingkatanMode ? (
+                          // Secondary school (SMK) — see computeBlocks.js's
+                          // tingkatanMode. No Tingkatan-equivalent dropdown
+                          // exists (TAHUN_OPTIONS only ever covers primary
+                          // school's Tahun 1-6), so this is plain free text
+                          // instead, imported per-row rather than swapping
+                          // the whole category over.
+                          <input
                             className="input"
-                            style={{ flex: 1, minWidth: 0 }}
-                            value={row.tahunFrom}
-                            disabled={!editable.rowDesc}
-                            onChange={editable.rowDesc ? (e) => row.setTahunFrom(e.target.value) : undefined}
-                          >
-                            <option value="">Dari</option>
-                            {TAHUN_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
-                          </select>
-                          <span>–</span>
-                          <select
-                            className="input"
-                            style={{ flex: 1, minWidth: 0 }}
-                            value={row.tahunTo}
-                            disabled={!editable.rowDesc}
-                            onChange={editable.rowDesc ? (e) => row.setTahunTo(e.target.value) : undefined}
-                          >
-                            <option value="">Hingga</option>
-                            {TAHUN_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
-                          </select>
-                        </div>
-                      )}
-                      {row.minQty > 1 && <div className="hint-text" style={{ margin: '2px 0 0' }}>min {row.minQty} setiap subjek</div>}
-                    </td>
+                            placeholder="e.g. TINGKATAN 5"
+                            value={row.tingkatan}
+                            readOnly={!editable.rowDesc}
+                            onChange={editable.rowDesc ? (e) => row.setTingkatan(e.target.value) : undefined}
+                          />
+                        ) : (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <select
+                              className="input"
+                              style={{ flex: 1, minWidth: 0 }}
+                              value={row.tahunFrom}
+                              disabled={!editable.rowDesc}
+                              onChange={editable.rowDesc ? (e) => row.setTahunFrom(e.target.value) : undefined}
+                            >
+                              <option value="">Dari</option>
+                              {TAHUN_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
+                            </select>
+                            <span>–</span>
+                            <select
+                              className="input"
+                              style={{ flex: 1, minWidth: 0 }}
+                              value={row.tahunTo}
+                              disabled={!editable.rowDesc}
+                              onChange={editable.rowDesc ? (e) => row.setTahunTo(e.target.value) : undefined}
+                            >
+                              <option value="">Hingga</option>
+                              {TAHUN_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
+                            </select>
+                          </div>
+                        )}
+                        {row.minQty > 1 && <div className="hint-text" style={{ margin: '2px 0 0' }}>min {row.minQty} setiap subjek</div>}
+                      </td>
+                    )}
                     <td>
                       <div style={{ display: 'flex', gap: 4 }}>
                         <input
                           className="input"
                           style={{ flex: 1, minWidth: 0 }}
-                          placeholder="Nama Kelas"
+                          placeholder={blk.namaKelasLabel}
                           value={row.namaKelas}
                           readOnly={!editable.rowDesc}
                           onChange={editable.rowDesc ? (e) => row.setNamaKelas(e.target.value) : undefined}
@@ -402,6 +421,17 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
                         )}
                       </div>
                     </td>
+                    {showJawatanCol && (
+                      <td>
+                        <input
+                          className="input"
+                          placeholder="Jawatan"
+                          value={row.jawatan}
+                          readOnly={!editable.rowDesc}
+                          onChange={editable.rowDesc ? (e) => row.setJawatan(e.target.value) : undefined}
+                        />
+                      </td>
+                    )}
                     {row.cells.filter((_, i) => keepColIdx[i]).map((cell) => (
                       <td key={cell.key}>
                         <input
@@ -419,13 +449,13 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
                   </tr>
                 ))}
                 <tr>
-                  <td colSpan={2}><strong>TOTAL ({blk.qtyColHeader})</strong></td>
+                  <td colSpan={dynLeadingCols}><strong>TOTAL ({blk.qtyColHeader})</strong></td>
                   {dynColTotals.map((ct, i) => <td key={i}><strong>{ct.value}</strong></td>)}
                   <td><strong>{blk.grandTotal}</strong></td>
                 </tr>
                 {blk.plakPerBlock && (
                   <tr>
-                    <td colSpan={2}><strong>HARGA</strong></td>
+                    <td colSpan={dynLeadingCols}><strong>HARGA</strong></td>
                     {dynColTotals.map((ct, i) => <td key={i} />)}
                     <td><strong className="input-price" style={{ fontSize: '1.5em', fontWeight: 800 }}>{blk.plakRows[0]?.hargaLabel ?? '—'}</strong></td>
                   </tr>

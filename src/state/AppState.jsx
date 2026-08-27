@@ -628,6 +628,10 @@ export function AppStateProvider({ children }) {
           // than forcing "TINGKATAN 5" into a Tahun 1-6 dropdown it was
           // never meant to hold.
           tingkatan: cls.tingkatan || '', tingkatanMode: !!cls.tingkatanMode,
+          // A named-recipient roster's own role/position per person — see
+          // excelImport.js's scanSheetForRosters — kept as its own column
+          // rather than folded into Nama Kelas/Nama Murid's own text.
+          jawatan: cls.jawatan || '',
         }));
         section.classes.forEach((cls, classIdx) => {
           const colId = classColumns[classIdx].id;
@@ -643,6 +647,11 @@ export function AppStateProvider({ children }) {
         // rides through with its own lines exactly as read.
         const sectionLines = section.skipLineDerivation ? section.lines : deriveKlasMatrixSectionLines(section);
         Object.entries(sectionLines).forEach(([slot, val]) => { newLineValues[`${key}::${slot}`] = val; });
+        // A roster import's own column header text (NAMA MURID/NAMA GURU/
+        // NAMA PELAJAR — see excelImport.js's scanSheetForRosters) rides
+        // along the same way hiddenLines/refOrder do, read back by
+        // computeBlocks.js to override the generic "Nama Kelas" header.
+        if (section.namaKelasLabel) newLineValues[`${key}::namaKelasLabel`] = section.namaKelasLabel;
         newRowsByBlock[key] = subjectRows;
         newColumnsByBlock[key] = classColumns;
         // "SM - 13187 (GOLD)" etc isn't itself a valid Jenis Plak value —

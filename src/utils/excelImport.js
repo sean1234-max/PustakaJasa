@@ -428,7 +428,117 @@ function readTopmostTitle(ws, range, rowStart, rowEnd) {
   return '';
 }
 
-function scanSheetForRosters(ws) {
+function titleCase(s) {
+  return String(s).toLowerCase().replace(/\b\p{L}/gu, (c) => c.toUpperCase());
+}
+
+// School-provided workbooks sometimes embed their OWN "what this plaque
+// should actually say" preview somewhere else entirely — commonly right
+// alongside an order summary sheet — a compact few-line block, distinct
+// from the roster/table data itself, that turns out to be the CORRECT
+// Reference Sample content: a roster sheet's own title/subtitle can be
+// abbreviated or worded slightly differently from what's actually meant
+// to be engraved. Anchored on a year-like line ("SESI 2024/2025", "2024")
+// — a genuinely low-false-positive signal, since a real award/roster
+// title essentially never IS just a bare year run — the line directly
+// above (uninterrupted by a blank row) is the real TAJUK BESAR, and the
+// lines directly below are ACARA, then whichever recipient-example
+// content follows (name, role, ...). A year embedded WITHIN a longer
+// title line ("ANUGERAH KECEMERLANGAN 2024") doesn't count as its own
+// anchor — matches the app's own existing "leave YEAR blank if it's
+// already included in line 1" convention — so scanSheetForRosters below
+// falls back to the roster sheet's own title when no separate year-only
+// line exists to anchor a card on.
+const YEAR_RUN_RE = /(19|20)\d{2}/g;
+function looksLikeYearOnlyLine(text) {
+  if (!YEAR_RUN_RE.test(text)) return false;
+  YEAR_RUN_RE.lastIndex = 0;
+  const stripped = text.replace(YEAR_RUN_RE, '').replace(/[/\-–,.]/g, '').trim();
+  return stripped.length <= 12;
+}
+function findSampleCards(wb) {
+  const cards = [];
+  wb.SheetNames.forEach((name) => {
+    const ws = wb.Sheets[name];
+    const range = sheetRange(ws);
+    for (let r = range.r1; r <= range.r2; r++) {
+      for (let c = range.c1; c <= range.c2; c++) {
+        const val = cellText(ws, r, c);
+        if (!val || !looksLikeYearOnlyLine(val)) continue;
+        const tajukBesar = cellText(ws, r - 1, c);
+        if (!tajukBesar) continue;
+        const extras = [];
+        for (let r2 = r + 1; r2 <= Math.min(r + 6, range.r2); r2++) {
+          const v = cellText(ws, r2, c);
+          if (!v) break;
+          extras.push(v);
+        }
+        if (extras.length === 0) continue;
+        cards.push({ tajukBesar, year: val, acara: extras[0] });
+      }
+    }
+  });
+  return cards;
+}
+// Matched by prefix, not exact equality — a card's own ACARA line and a
+// roster's own subtitle commonly differ after the award name itself
+// (the roster subtitle tacks on "(TINGKATAN 5) - LEMBAGA PENGAWAS"-style
+// qualifiers the card never repeats).
+function matchSampleCard(subTitle, cards) {
+  const upper = (subTitle || '').toUpperCase();
+  return cards.find((c) => upper.startsWith(c.acara.toUpperCase())) || null;
+}
+
+// Builds a roster-derived section's full Reference Sample lines in one
+// place, for both scanSheetForRosters branches below. TAHUN (slot 3) and
+// SUBJEK/POSITION (slot 2b) never apply to a named-recipient roster —
+// there's no Tahun axis, and a name/role can't sit in SUBJEK/POSITION's
+// own red-font styling — so both are hidden outright rather than left for
+// the teacher to notice and delete by hand. What WOULD have gone in
+// SUBJEK/POSITION (this section's own first real row, as a live example —
+// same idea as AppState.jsx's deriveKlasMatrixSectionLines) becomes extra
+// Reference Sample rows instead, since that's the only place left with
+// room for un-styled free text: the example name, then its example
+// role/Jawatan if this shape has one, then a shared group/committee
+// caption if the sheet had an extra unlabeled column for one.
+function buildRosterSectionLines(sheetTitle, subTitle, firstClass, groupSample, cards) {
+  const card = matchSampleCard(subTitle, cards);
+  const lines = {};
+  if (card) {
+    lines[0] = card.tajukBesar;
+    lines[1] = card.year;
+    lines[2] = card.acara;
+  } else {
+    lines[0] = sheetTitle;
+    lines[2] = subTitle;
+  }
+  const hidden = ['2b', '3'];
+  if (!lines[1]) hidden.push('1');
+  lines.hiddenLines = hidden.join(',');
+  const extras = [firstClass?.namaKelas, firstClass?.jawatan, groupSample].filter(Boolean);
+  if (extras.length > 0) {
+    lines.extraRefLines = String(extras.length);
+    extras.forEach((val, i) => { lines[4 + i] = val; });
+  }
+  return lines;
+}
+
+// Some rosters have one more column with no header label at all — a
+// constant group/committee name repeated on every row (e.g. "LEMBAGA
+// PENGAWAS") rather than something that varies per person the way
+// JAWATAN does. There's nothing to label it by, so it isn't tracked as
+// its own per-row field — instead its own value becomes one of the
+// Reference Sample example lines above (see buildRosterSectionLines).
+function findUnlabeledGroupValue(ws, headerRow, dataRow, usedCols, range) {
+  for (let c = range.c1; c <= range.c2; c++) {
+    if (usedCols.has(c) || cellStr(ws, headerRow, c)) continue;
+    const val = cellText(ws, dataRow, c);
+    if (val) return val;
+  }
+  return '';
+}
+
+function scanSheetForRosters(ws, sampleCards) {
   const range = sheetRange(ws);
   const nameHeaders = findLabelCells(ws, range, ROSTER_NAME_LABELS).sort((a, b) => a.row - b.row);
   if (nameHeaders.length === 0) return [];
@@ -440,9 +550,11 @@ function scanSheetForRosters(ws) {
   nameHeaders.forEach((nameH) => {
     const headerRow = nameH.row;
     // Every aux column present, keeping its own label alongside its column
-    // — JENIS ANUGERAH and TINGKATAN both get special handling below,
-    // everything else (JAWATAN, KELAS) stays a plain per-row descriptor
-    // joined onto Nama Kelas the way it always has.
+    // — JENIS ANUGERAH, TINGKATAN, and JAWATAN all get special handling
+    // below; anything else (just KELAS, in practice) stays a plain
+    // per-row descriptor joined onto Nama Kelas the way it always has,
+    // since it complements the class identity rather than being a
+    // separate kind of attribute the way a role/position is.
     const auxCols = [];
     for (let c = range.c1; c <= range.c2; c++) {
       if (c === nameH.col) continue;
@@ -451,8 +563,10 @@ function scanSheetForRosters(ws) {
     }
     const jenisAnugerahCol = auxCols.find((a) => a.label === 'JENIS ANUGERAH');
     const tingkatanCol = auxCols.find((a) => a.label === 'TINGKATAN');
-    const descriptorCols = auxCols.filter((a) => a !== jenisAnugerahCol && a !== tingkatanCol);
+    const jawatanCol = auxCols.find((a) => a.label === 'JAWATAN');
+    const descriptorCols = auxCols.filter((a) => a !== jenisAnugerahCol && a !== tingkatanCol && a !== jawatanCol);
     const subTitle = readNearestTitleAbove(ws, range, bandStart, headerRow - 1);
+    const namaKelasLabel = titleCase(nameH.label);
 
     // JENIS ANUGERAH literally means "type of award" — when it's present,
     // each ROW'S OWN value there (not one subtitle shared by the whole
@@ -478,17 +592,26 @@ function scanSheetForRosters(ws) {
         r += 1;
       }
       titleOrder.forEach((title) => {
-        sections.push({ lines: { 0: sheetTitle, 2: title }, classes: groupsByTitle.get(title), jenisPlak: '' });
+        const classes = groupsByTitle.get(title);
+        sections.push({
+          lines: buildRosterSectionLines(sheetTitle, title, classes[0], '', sampleCards),
+          classes, jenisPlak: '', skipLineDerivation: true, namaKelasLabel,
+        });
       });
       bandStart = r;
       return;
     }
 
     const classes = [];
+    let groupSample = '';
     let r = headerRow + 1;
     while (r <= range.r2) {
       const name = cellText(ws, r, nameH.col);
       if (!name) break;
+      if (!groupSample) {
+        const usedCols = new Set([nameH.col, ...auxCols.map((a) => a.col)]);
+        groupSample = findUnlabeledGroupValue(ws, headerRow, r, usedCols, range);
+      }
       const descriptorParts = descriptorCols.map((a) => cellText(ws, r, a.col)).filter(Boolean);
       let tingkatan = '';
       if (tingkatanCol) {
@@ -498,13 +621,17 @@ function scanSheetForRosters(ws) {
         else if (raw) descriptorParts.unshift(raw);
       }
       const namaKelas = [name, ...descriptorParts].join(' — ');
-      const cls = { tahunFrom: '', tahunTo: '', namaKelas, subjects: [{ name: 'KUANTITI', qty: 1 }] };
+      const jawatan = jawatanCol ? cellText(ws, r, jawatanCol.col) : '';
+      const cls = { tahunFrom: '', tahunTo: '', namaKelas, jawatan, subjects: [{ name: 'KUANTITI', qty: 1 }] };
       if (tingkatan) { cls.tingkatan = tingkatan; cls.tingkatanMode = true; }
       classes.push(cls);
       r += 1;
     }
     if (classes.length > 0) {
-      sections.push({ lines: { 0: sheetTitle, 2: subTitle }, classes, jenisPlak: '' });
+      sections.push({
+        lines: buildRosterSectionLines(sheetTitle, subTitle, classes[0], groupSample, sampleCards),
+        classes, jenisPlak: '', skipLineDerivation: true, namaKelasLabel,
+      });
     }
     bandStart = r;
   });
@@ -714,6 +841,7 @@ export function parseFormAnugerahExcel(arrayBuffer) {
     return { klasMatrix: null, error: 'Could not read this file — please make sure it is a valid .xlsx file.' };
   }
 
+  const sampleCards = findSampleCards(wb);
   const allSections = [];
   wb.SheetNames.forEach((name) => {
     const upper = name.trim().toUpperCase();
@@ -722,7 +850,7 @@ export function parseFormAnugerahExcel(arrayBuffer) {
     // Mutually exclusive in practice — a "JENIS PLAK" footer sheet never
     // also carries a "NAMA MURID"/"NAMA GURU" roster header, so running
     // both scans on every sheet is safe and needs no shape pre-detection.
-    allSections.push(...scanSheetForSections(ws), ...scanSheetForRosters(ws));
+    allSections.push(...scanSheetForSections(ws), ...scanSheetForRosters(ws, sampleCards));
   });
   const klasSheet = findSheet(wb, 'KLAS MATRIX');
   if (klasSheet) {

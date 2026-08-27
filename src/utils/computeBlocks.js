@@ -106,12 +106,14 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
       catLinePlaceholders = [...catLinePlaceholders, ...Array.from({ length: extraRefCount }, () => '( Additional Line )')];
     }
     // Mata Pelajaran/Klas only (catalog.js's deletableReferenceLines) — a
-    // teacher can hide any single row (base or extra) via its own ✕, except
-    // TAJUK BESAR (slotId '0') and the SUBJEK/POSITION second box (slotId
-    // '2b'), which draftUpdaters.js's onDeleteReferenceLine refuses to add
-    // to this set in the first place. Filtered out of `lines`/
-    // `extraRefColumns` below — a hidden line is simply absent from
-    // `blk.lines`, so it drops out of required-line validation for free.
+    // teacher can hide any single row (base or extra) via its own ✕,
+    // except TAJUK BESAR (slotId '0'), which draftUpdaters.js's
+    // onDeleteReferenceLine refuses to add to this set in the first
+    // place. Filtered out of `lines`/`extraRefColumns` below — a hidden
+    // line is simply absent from `blk.lines`, so it drops out of
+    // required-line validation for free. SUBJEK/POSITION (slotId '2b')
+    // hidden this way is re-addable via its own button — see
+    // `addSubjekPosition` below.
     const hiddenLineSlots = currentCat.deletableReferenceLines
       ? new Set((lineValues[`${catKey}::${b}::hiddenLines`] || '').split(',').filter(Boolean))
       : null;
@@ -149,6 +151,12 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
           redText: !!currentCat.positionFieldsRedText,
           onChange: (val) => updaters.onLine(key2, val),
           typoHint: findPossibleTypo(lineValues[key2]),
+          // Deletable now (a named-recipient roster import — see
+          // excelImport.js's buildRosterSectionLines — never has a real
+          // SUBJEK/POSITION value to begin with, and hides it outright),
+          // unlike TAJUK BESAR which stays permanently required.
+          deletable: !!currentCat.deletableReferenceLines,
+          onDelete: () => updaters.onDeleteReferenceLine(catKey, b, '2b'),
         };
       }
       return line;
@@ -276,6 +284,13 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
           // both a primary and a secondary school's own sections.
           tingkatan: cls.tingkatan || '', tingkatanMode: !!cls.tingkatanMode,
           setTingkatan: (v) => updaters.onColumnField(colsKey, cls.id, 'tingkatan', v),
+          // A named-recipient roster import (excelImport.js's
+          // scanSheetForRosters) tracks each person's own role/position as
+          // its own field — distinct from Nama Kelas/Nama Murid, and from
+          // Tingkatan above, which is a class code rather than a role.
+          // Blank/absent for every other KLAS_MATRIX shape.
+          jawatan: cls.jawatan || '',
+          setJawatan: (v) => updaters.onColumnField(colsKey, cls.id, 'jawatan', v),
         };
       });
       columns = subjectDefs.map((subj) => ({
@@ -387,6 +402,13 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
       removeReferenceLine: currentCat.extendableReferenceSample ? () => updaters.onRemoveReferenceLine(catKey, b) : null,
       canRemoveReferenceLine: extraRefCount > 0,
       deletableReferenceLines: !!currentCat.deletableReferenceLines,
+      // SUBJEK/POSITION deleted (its own ✕ — see the secondLine object
+      // above) leaves nothing on screen to click to bring it back except
+      // this — shown next to "+ Add Reference Row" only while it's
+      // actually missing, since offering to "add" something already there
+      // would be confusing.
+      addSubjekPosition: currentCat.deletableReferenceLines && catPositionLine2Placeholder && hiddenLineSlots?.has('2b')
+        ? () => updaters.onRestoreReferenceLine(catKey, b, '2b') : null,
       plakPerBlock: !!currentCat.plakPerBlock,
       descColumnLabel: currentCat.descColumnLabel,
       extraRefColumns,
@@ -426,6 +448,22 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
         ? (newSlotIdOrder) => updaters.onLine(refOrderKey, newSlotIdOrder.join(','))
         : null,
       blockTotalQty, plakRows,
+      // A named-recipient roster import (excelImport.js's
+      // scanSheetForRosters) has no Tahun axis at all — an always-blank
+      // Tahun Dari/Hingga column on every one of its rows would just be
+      // noise, so the whole column disappears instead of making the
+      // teacher notice and delete it by hand. Purely content-derived
+      // (not a stored per-import flag), so it also self-corrects the
+      // moment the teacher types a real Tahun/Tingkatan into a
+      // manually-added row.
+      hasTahun: isDynamicMatrix && matrixRows.some((r) => r.tahunFrom || r.tahunTo || r.tingkatanMode),
+      hasJawatan: isDynamicMatrix && matrixRows.some((r) => r.jawatan),
+      // "Nama Kelas" by default, but a roster import's own column header
+      // text (NAMA MURID/NAMA GURU/NAMA PELAJAR) rides along as a
+      // synthetic lineValues entry the same way hiddenLines/refOrder do,
+      // overriding it here — see excelImport.js's namaKelasLabel /
+      // AppState.jsx's merge into lineValues.
+      namaKelasLabel: lineValues[`${catKey}::${b}::namaKelasLabel`] || 'Nama Kelas',
     });
   }
 
@@ -438,7 +476,7 @@ export const noopUpdaters = {
   onColumnField: () => {}, onColumnRemove: () => {}, onAddColumn: () => {}, onAddColumnSameTahun: () => {},
   onAddNamaKelas: () => {}, onDuplicateBlock: () => {}, onRemoveBlock: () => {},
   onAddMatrixRow: () => {}, onMatrixRowRemove: () => {},
-  onAddReferenceLine: () => {}, onRemoveReferenceLine: () => {}, onDeleteReferenceLine: () => {},
+  onAddReferenceLine: () => {}, onRemoveReferenceLine: () => {}, onDeleteReferenceLine: () => {}, onRestoreReferenceLine: () => {},
 };
 
 // Rebuilds read-only `blocks` (the same shape NewOrderStep2 renders live)
