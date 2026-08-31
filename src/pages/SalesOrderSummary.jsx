@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import CategoryTabs from '../components/CategoryTabs';
@@ -6,7 +6,8 @@ import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import PriceTable from '../components/PriceTable';
 import DatePicker from '../components/DatePicker';
 import { useAppState } from '../state/useAppState';
-import { STATUS_STAGES, STATUS_BG, STATUS_TEXT, standardUnitPrice, formatDate, formatDateTime } from '../data/catalog';
+import { statusPillStyle, standardUnitPrice, formatDate, formatDateTime } from '../data/catalog';
+import CancelOrderControl from '../components/CancelOrderControl';
 import { reconstructBlocksForCategory } from '../utils/computeBlocks';
 import { getOrderCategories } from '../utils/exportCsv';
 import { getOrderChangeStamp } from '../utils/orderStamp';
@@ -16,10 +17,11 @@ import { getOrderChangeStamp } from '../utils/orderStamp';
 const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: false, matrix: false, jenisPlak: false };
 
 export default function SalesOrderSummary() {
-  const { state, today, approveOrder, approveAddOn, rejectAddOn, recordPrint } = useAppState();
+  const { state, today, approveOrder, approveAddOn, rejectAddOn, recordPrint, ensureOrderLoaded } = useAppState();
   const { id } = useParams();
   const navigate = useNavigate();
   const order = state.orders.find((o) => o.id === id);
+  useEffect(() => { ensureOrderLoaded(id); }, [id, ensureOrderLoaded]);
   const editable = order?.status === 'Submitted to Sales';
 
   // Due Date / Function Date stay editable right up to the moment of
@@ -51,6 +53,7 @@ export default function SalesOrderSummary() {
     return out;
   });
   const [rejectReason, setRejectReason] = useState('');
+  const [busy, setBusy] = useState(false);
 
   const rows = useMemo(() => (order?.items || []).map((it) => {
     const unitPrice = Number(priceDrafts[it.id] ?? it.unitPrice ?? 0);
@@ -87,7 +90,6 @@ export default function SalesOrderSummary() {
 
   if (!order) return null;
 
-  const idx = STATUS_STAGES.indexOf(order.status);
   // Only shown once Sales has approved (matches the same `editable` gate
   // the Print button itself uses) — see getOrderChangeStamp.
   const stamp = !editable ? getOrderChangeStamp(order) : null;
@@ -112,7 +114,8 @@ export default function SalesOrderSummary() {
   // dashboard) so Sales can immediately print the now-approved order —
   // the page re-renders read-only once order.status flips, and the Print
   // button takes its place where Approve was.
-  const handleApprove = () => {
+  const handleApprove = async () => {
+    if (busy) return;
     const updatedItems = rows.map((r) => ({ ...r, unitPrice: r.unitPrice, harga: r.harga }));
     // Only overrides a date if Sales actually set one — never blanks an
     // existing due/function date just because the draft state happened to
@@ -120,16 +123,26 @@ export default function SalesOrderSummary() {
     const overrides = {};
     if (dueDateDraft) overrides.dueDate = dueDateDraft;
     if (functionDateDraft) overrides.functionDate = functionDateDraft;
-    approveOrder(order.id, updatedItems, overrides);
+    setBusy(true);
+    await approveOrder(order.id, updatedItems, overrides);
+    setBusy(false);
+    // On success order.status flips locally and this page re-renders
+    // read-only; on failure the error toast (state.updateToast) shows.
   };
 
-  const handleApproveAddOn = () => {
-    approveAddOn(order.id, addOnRows.map((r) => ({ ...r })));
+  const handleApproveAddOn = async () => {
+    if (busy) return;
+    setBusy(true);
+    await approveAddOn(order.id, addOnRows.map((r) => ({ ...r })));
+    setBusy(false);
   };
 
-  const handleRejectAddOn = () => {
-    rejectAddOn(order.id, rejectReason.trim());
-    setRejectReason('');
+  const handleRejectAddOn = async () => {
+    if (busy) return;
+    setBusy(true);
+    const res = await rejectAddOn(order.id, rejectReason.trim());
+    setBusy(false);
+    if (res?.ok) setRejectReason('');
   };
 
   // Deferred a tick so the just-updated printedAt (recordPrint) has
@@ -165,7 +178,7 @@ export default function SalesOrderSummary() {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
             {stamp && <span className="order-stamp-inline no-print">{stamp}</span>}
-            <span className="status-pill" style={{ background: STATUS_BG[idx], color: STATUS_TEXT[idx] }}>{order.status}</span>
+            <span className="status-pill" style={statusPillStyle(order.status)}>{order.status}</span>
           </div>
         </div>
 
@@ -252,8 +265,8 @@ export default function SalesOrderSummary() {
                     <input className="input" id="rejectReason" placeholder="e.g. please confirm quantity for X" value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} />
                   </div>
                   <div className="row-split" style={{ marginTop: 'var(--space-4)' }}>
-                    <button type="button" className="btn btn-ghost" onClick={handleRejectAddOn}>Reject</button>
-                    <button type="button" className="btn btn-primary" onClick={handleApproveAddOn}>Approve Add-On</button>
+                    <button type="button" className="btn btn-ghost" onClick={handleRejectAddOn} disabled={busy}>Reject</button>
+                    <button type="button" className="btn btn-primary" onClick={handleApproveAddOn} disabled={busy}>{busy ? 'Working…' : 'Approve Add-On'}</button>
                   </div>
                 </>
               )}
@@ -263,10 +276,18 @@ export default function SalesOrderSummary() {
                 </div>
               )}
 
+              {editable && (
+                <div style={{ marginTop: 'var(--space-6)' }}>
+                  <div className="card-kicker">Cancel</div>
+                  <CancelOrderControl order={order} onCancelled={() => navigate('/sales/dashboard')} />
+                </div>
+              )}
+
+              {state.updateToast && <p className="toast-inline" style={{ display: 'block', marginTop: 'var(--space-4)' }}>{state.updateToast}</p>}
               <div className="row-split" style={{ marginTop: 'var(--space-6)' }}>
                 <button type="button" className="btn btn-ghost" onClick={() => setPage('details')}>View Order Details →</button>
                 {editable
-                  ? <button type="button" className="btn btn-primary" onClick={handleApprove}>Approve</button>
+                  ? <button type="button" className="btn btn-primary" onClick={handleApprove} disabled={busy}>{busy ? 'Approving…' : 'Approve'}</button>
                   : <button type="button" className="btn btn-primary" onClick={handlePrint}>Print Order</button>}
               </div>
             </>

@@ -8,7 +8,7 @@ import { parseFormAnugerahExcel, matchJenisPlakPath } from '../utils/excelImport
 import { parseWordingDocx } from '../utils/docxImport';
 import { AppStateContext } from './AppStateContext';
 import {
-  fetchOrders, insertOrder, updateOrder, nextOrderSeq, fetchAllSalesmen,
+  fetchOrders, fetchOrderById, insertOrder, updateOrder, nextOrderSeq, fetchAllSalesmen,
 } from '../lib/ordersApi';
 import {
   fetchPlakCatalog, addPlakNode, removePlakNode, updatePlakNode, updatePlakNodeOrder, updatePlakNodeStock,
@@ -30,6 +30,25 @@ function describeStockError(err) {
   const m = /^INSUFFICIENT_STOCK:(.*):(\d+)$/.exec(err?.message || '');
   if (m) return `Not enough stock for "${m[1]}" — only ${m[2]} left available to order. Please lower the quantity or contact your salesman.`;
   return `Could not check stock: ${err?.message || 'unknown error'}. Please try again.`;
+}
+
+// Turns a raw Supabase/Postgres error from an order write into something a
+// non-technical user can act on. Covers the three server-side guards this
+// app now relies on (RLS row ownership, orders_write_guard's status/column
+// rules, orders_amount_guard's items<->total arithmetic check — see
+// supabase/migrations/0041 & 0042) plus a generic fallback.
+function describeOrderWriteError(err, verb = 'save') {
+  const m = err?.message || '';
+  if (/does not match the sum of its items|check_violation|order total \(/i.test(m)) {
+    return "The order total didn't add up on the server and the change was rejected. Please refresh the page and re-check the prices before trying again.";
+  }
+  if (/already in production|submit an Add-On|can no longer be edited|awaiting approval|only move an order|has been cancelled/i.test(m)) {
+    return `This order can't be changed that way anymore: ${m}`;
+  }
+  if (/row-level security|not authorized|account is not active/i.test(m)) {
+    return `You're not allowed to ${verb} this order right now — it may have moved to a later stage, or your session changed. Please refresh and try again.`;
+  }
+  return `Could not ${verb} this order: ${m || 'unknown error'}. Please try again.`;
 }
 
 // A section imported into KLAS_MATRIX (from either excelImport.js or
@@ -223,16 +242,25 @@ function initialState() {
 export function AppStateProvider({ children }) {
   const [state, setState] = useState(initialState);
   const toastTimer = useRef(null);
-  const updateToastTimer = useRef(null);
   const productionToastTimer = useRef(null);
   const draftToastTimer = useRef(null);
-  const draftSaveTimer = useRef(null);
   const stateRef = useRef(state);
   stateRef.current = state;
 
   const patch = useCallback((updater) => {
     setState((prev) => ({ ...prev, ...(typeof updater === 'function' ? updater(prev) : updater) }));
   }, []);
+
+  // Shows a message on one of the transient toast state keys (updateToast /
+  // productionToast / cartToast) and clears it after a few seconds. Shared
+  // by the order-write actions below so they all surface success/failure
+  // the same way instead of each rolling their own timer.
+  const toastFlashTimer = useRef(null);
+  const flashToast = useCallback((key, message) => {
+    patch({ [key]: message });
+    clearTimeout(toastFlashTimer.current);
+    toastFlashTimer.current = setTimeout(() => patch({ [key]: '' }), 3500);
+  }, [patch]);
 
   // Autosave the in-progress order draft so a crash, closed tab, or dead
   // battery mid-order doesn't lose what the teacher already filled in —
@@ -922,44 +950,46 @@ export function AppStateProvider({ children }) {
   // Only reachable while status is 'Submitted to Sales' (Dashboard.jsx's
   // canAmend gate), so every item is still batch 0 — nothing here needs to
   // handle an already-approved Tambahan round.
-  const updateAmend = useCallback(() => {
-    setState((st) => {
-      const order = st.orders.find((o) => o.id === st.amendOrderId);
-      if (!order) return st;
-      const originalById = new Map((order.items || []).map((it) => [it.id, it]));
-      const categoriesUsed = CATEGORIES.filter((cat) => (order.items || []).some((it) => it.categoryKey === cat.key));
-      const newItems = [];
-      categoriesUsed.forEach((cat) => {
-        const { blocks, isMatrix, isDynamicMatrix } = computeBlocks(
-          cat.key, st.amendLineValues, st.amendMatrixValues, st.amendRowsByBlock, st.amendPlakRows, st.amendColumnsByBlock, noopUpdaters, st.plakCatalog, st.schoolLanguage,
-        );
-        const visibleCount = st.amendVisibleBlocksByCategory[cat.key] || 1;
-        blocks.slice(0, visibleCount).forEach((blk) => {
-          blk.plakRows.forEach((pr) => {
-            if (!pr.jenisPlak || !pr.qty) return;
-            const prior = originalById.get(pr.id);
-            newItems.push({
-              id: pr.id, jenisPlak: pr.jenisPlak, qty: pr.qty, harga: pr.rawHarga, unitPrice: pr.unitPrice,
-              categoryLabel: blk.qtyLabel, categoryKey: cat.key, blockIdx: blk.idx,
-              detail: snapshotDetail(cat.key, blk.idx, isMatrix, isDynamicMatrix, st.amendLineValues, st.amendMatrixValues, st.amendRowsByBlock, st.amendColumnsByBlock),
-              ...(prior?.batch ? { batch: prior.batch } : {}),
-              ...(prior?.originalUnitPrice != null ? { originalUnitPrice: prior.originalUnitPrice } : {}),
-            });
+  const updateAmend = useCallback(async () => {
+    const st = stateRef.current;
+    const order = st.orders.find((o) => o.id === st.amendOrderId);
+    if (!order) return { ok: false, message: 'Order not found.' };
+    const originalById = new Map((order.items || []).map((it) => [it.id, it]));
+    const categoriesUsed = CATEGORIES.filter((cat) => (order.items || []).some((it) => it.categoryKey === cat.key));
+    const newItems = [];
+    categoriesUsed.forEach((cat) => {
+      const { blocks, isMatrix, isDynamicMatrix } = computeBlocks(
+        cat.key, st.amendLineValues, st.amendMatrixValues, st.amendRowsByBlock, st.amendPlakRows, st.amendColumnsByBlock, noopUpdaters, st.plakCatalog, st.schoolLanguage,
+      );
+      const visibleCount = st.amendVisibleBlocksByCategory[cat.key] || 1;
+      blocks.slice(0, visibleCount).forEach((blk) => {
+        blk.plakRows.forEach((pr) => {
+          if (!pr.jenisPlak || !pr.qty) return;
+          const prior = originalById.get(pr.id);
+          newItems.push({
+            id: pr.id, jenisPlak: pr.jenisPlak, qty: pr.qty, harga: pr.rawHarga, unitPrice: pr.unitPrice,
+            categoryLabel: blk.qtyLabel, categoryKey: cat.key, blockIdx: blk.idx,
+            detail: snapshotDetail(cat.key, blk.idx, isMatrix, isDynamicMatrix, st.amendLineValues, st.amendMatrixValues, st.amendRowsByBlock, st.amendColumnsByBlock),
+            ...(prior?.batch ? { batch: prior.batch } : {}),
+            ...(prior?.originalUnitPrice != null ? { originalUnitPrice: prior.originalUnitPrice } : {}),
           });
         });
       });
-      const amendedTotal = newItems.reduce((sum, it) => sum + it.harga, 0);
-      updateOrder(st.amendOrderId, { items: newItems, totalAmount: amendedTotal })
-        .catch((err) => console.error('Failed to save amend to Supabase:', err));
-      return {
-        ...st,
-        orders: st.orders.map((o) => (o.id === st.amendOrderId ? { ...o, items: newItems, totalAmount: amendedTotal } : o)),
-        updateToast: 'Update successful.',
-      };
     });
-    clearTimeout(updateToastTimer.current);
-    updateToastTimer.current = setTimeout(() => patch({ updateToast: '' }), 2500);
-  }, [patch]);
+    const amendedTotal = newItems.reduce((sum, it) => sum + it.harga, 0);
+    try {
+      await updateOrder(st.amendOrderId, { items: newItems, totalAmount: amendedTotal });
+    } catch (err) {
+      console.error('Failed to save amend to Supabase:', err);
+      flashToast('updateToast', describeOrderWriteError(err, 'update'));
+      return { ok: false };
+    }
+    patch((latest) => ({
+      orders: latest.orders.map((o) => (o.id === st.amendOrderId ? { ...o, items: newItems, totalAmount: amendedTotal } : o)),
+    }));
+    flashToast('updateToast', 'Update successful.');
+    return { ok: true };
+  }, [patch, flashToast]);
 
   const openAddOn = useCallback((ord) => {
     patch((st) => ({
@@ -1007,13 +1037,8 @@ export function AppStateProvider({ children }) {
         });
       });
     });
-    const flashToast = (msg) => {
-      patch({ updateToast: msg });
-      clearTimeout(updateToastTimer.current);
-      updateToastTimer.current = setTimeout(() => patch({ updateToast: '' }), 2500);
-    };
     if (newItems.length === 0) {
-      flashToast('No add-on items to submit.');
+      flashToast('updateToast', 'No add-on items to submit.');
       return false;
     }
 
@@ -1036,7 +1061,7 @@ export function AppStateProvider({ children }) {
       await deductPlakStock(newItems.map((it) => ({ full_path: it.jenisPlak, qty: it.qty })));
     } catch (err) {
       console.error('Stock deduction failed for Add On:', err);
-      flashToast(describeStockError(err));
+      flashToast('updateToast', describeStockError(err));
       return false;
     }
 
@@ -1046,7 +1071,7 @@ export function AppStateProvider({ children }) {
       console.error('Failed to submit add-on to Supabase:', err);
       restorePlakStock(newItems.map((it) => ({ full_path: it.jenisPlak, qty: it.qty })))
         .catch((restoreErr) => console.error('Failed to restore stock after a failed add-on submit:', restoreErr));
-      flashToast(`Could not submit the add-on: ${err.message || 'unknown error'}. Please try again.`);
+      flashToast('updateToast', `Could not submit the add-on: ${err.message || 'unknown error'}. Please try again.`);
       return false;
     }
 
@@ -1055,47 +1080,137 @@ export function AppStateProvider({ children }) {
         o.id === st.addOnOrderId ? { ...o, pendingAddonItems: newItems, pendingAddonStatus: 'pending', pendingAddonRejectReason: null } : o
       )),
     }));
-    flashToast('Add-on submitted — waiting for Sales approval.');
+    flashToast('updateToast', 'Add-on submitted — waiting for Sales approval.');
     return true;
-  }, [patch]);
+  }, [patch, flashToast]);
 
   // Teacher withdraws a pending or rejected add-on before/without Sales
-  // acting on it further — clears it back to no-add-on-in-flight.
-  const cancelPendingAddOn = useCallback((orderId) => {
+  // acting on it further — clears it back to no-add-on-in-flight. Awaits
+  // the write and only updates local state on success; returns { ok }.
+  const cancelPendingAddOn = useCallback(async (orderId) => {
     const order = stateRef.current.orders.find((o) => o.id === orderId);
-    // A 'rejected' add-on already had its stock restored when it was
-    // rejected (see rejectAddOn) — only a still-'pending' one (withdrawn
-    // before Sales acted on it) still has its submission-time deduction
-    // outstanding here.
-    if (order?.pendingAddonStatus === 'pending' && order.pendingAddonItems?.length) {
-      restorePlakStock(order.pendingAddonItems.map((it) => ({ full_path: it.jenisPlak, qty: it.qty })))
-        .catch((err) => console.error('Failed to restore stock for a cancelled add-on:', err));
+    if (!order) return { ok: false };
+    const fields = { pendingAddonItems: null, pendingAddonStatus: null, pendingAddonRejectReason: null };
+    try {
+      await updateOrder(orderId, fields);
+    } catch (err) {
+      console.error('Failed to cancel add-on in Supabase:', err);
+      flashToast('updateToast', describeOrderWriteError(err, 'update'));
+      return { ok: false };
     }
-    updateOrder(orderId, { pendingAddonItems: null, pendingAddonStatus: null, pendingAddonRejectReason: null })
-      .catch((err) => console.error('Failed to cancel add-on in Supabase:', err));
     patch((st) => ({
-      orders: st.orders.map((o) => (
-        o.id === orderId ? { ...o, pendingAddonItems: null, pendingAddonStatus: null, pendingAddonRejectReason: null } : o
-      )),
+      orders: st.orders.map((o) => (o.id === orderId ? { ...o, ...fields } : o)),
     }));
-  }, [patch]);
+    // A 'rejected' add-on already had its stock restored when it was
+    // rejected (see rejectAddOn) — only a still-'pending' one still has its
+    // submission-time deduction outstanding. Best-effort, after the write.
+    if (order.pendingAddonStatus === 'pending' && order.pendingAddonItems?.length) {
+      try {
+        await restorePlakStock(order.pendingAddonItems.map((it) => ({ full_path: it.jenisPlak, qty: it.qty })));
+      } catch (err) {
+        console.error('Failed to restore stock for a cancelled add-on:', err);
+        flashToast('updateToast', 'Add-on withdrawn — but its stock could not be returned automatically. Please tell an administrator.');
+        return { ok: true };
+      }
+    }
+    flashToast('updateToast', 'Add-on withdrawn.');
+    return { ok: true };
+  }, [patch, flashToast]);
 
   // Sales sends a pending add-on back to the teacher with an optional
   // reason, instead of approving it — `pendingAddonItems` stays as-is so
   // the teacher can see what was submitted; only cancelPendingAddOn or a
   // fresh submitPendingAddOn (which overwrites it) clears it from here.
-  const rejectAddOn = useCallback((orderId, reason) => {
+  const rejectAddOn = useCallback(async (orderId, reason) => {
     const order = stateRef.current.orders.find((o) => o.id === orderId);
-    if (order?.pendingAddonItems?.length) {
-      restorePlakStock(order.pendingAddonItems.map((it) => ({ full_path: it.jenisPlak, qty: it.qty })))
-        .catch((err) => console.error('Failed to restore stock for a rejected add-on:', err));
+    if (!order) return { ok: false };
+    const fields = { pendingAddonStatus: 'rejected', pendingAddonRejectReason: reason || '' };
+    try {
+      await updateOrder(orderId, fields);
+    } catch (err) {
+      console.error('Failed to reject add-on in Supabase:', err);
+      flashToast('updateToast', describeOrderWriteError(err, 'update'));
+      return { ok: false };
     }
-    updateOrder(orderId, { pendingAddonStatus: 'rejected', pendingAddonRejectReason: reason || '' })
-      .catch((err) => console.error('Failed to reject add-on in Supabase:', err));
     patch((st) => ({
-      orders: st.orders.map((o) => (o.id === orderId ? { ...o, pendingAddonStatus: 'rejected', pendingAddonRejectReason: reason || '' } : o)),
+      orders: st.orders.map((o) => (o.id === orderId ? { ...o, ...fields } : o)),
     }));
-  }, [patch]);
+    if (order.pendingAddonItems?.length) {
+      try {
+        await restorePlakStock(order.pendingAddonItems.map((it) => ({ full_path: it.jenisPlak, qty: it.qty })));
+      } catch (err) {
+        console.error('Failed to restore stock for a rejected add-on:', err);
+        flashToast('updateToast', 'Add-on rejected — but its stock could not be returned automatically. Please tell an administrator.');
+        return { ok: true };
+      }
+    }
+    flashToast('updateToast', 'Add-on sent back to the teacher.');
+    return { ok: true };
+  }, [patch, flashToast]);
+
+  // Cancels an order that isn't going to be fulfilled and hands its
+  // submit-time stock deduction back (there's no stock trigger — the app
+  // orchestrates stock, the DB only enforces the floor; see
+  // supabase/migrations/0042_order_cancellation.sql). Who may cancel, and
+  // from which status, is enforced server-side by orders_write_guard — the
+  // client just surfaces whatever it says. `status` is written FIRST (so a
+  // failed stock restore can't be retried into a double-credit — the order
+  // is already terminal and re-cancelling is refused), then the stock is
+  // restored. A pending add-on on the order is withdrawn and its own
+  // deduction restored in the same step. Returns { ok, message }; never
+  // throws. Reads/writes via stateRef + patch, awaiting each network call,
+  // rather than the optimistic "local first, fire-and-forget" pattern —
+  // cancelling must never show as done locally while the database still has
+  // the order live.
+  const cancelOrder = useCallback(async (orderId, reason) => {
+    const st = stateRef.current;
+    const order = st.orders.find((o) => o.id === orderId);
+    if (!order) return { ok: false, message: 'Order not found.' };
+    if (order.status === 'Cancelled') return { ok: false, message: 'This order is already cancelled.' };
+
+    const hadPendingAddon = order.pendingAddonStatus === 'pending' && order.pendingAddonItems?.length;
+    const cancelFields = {
+      status: 'Cancelled',
+      cancelReason: (reason || '').trim() || null,
+      cancelledAt: new Date().toISOString(),
+      cancelledBy: st.userAuthId || null,
+      ...(hadPendingAddon
+        ? { pendingAddonItems: null, pendingAddonStatus: null, pendingAddonRejectReason: null }
+        : {}),
+    };
+
+    try {
+      await updateOrder(orderId, cancelFields);
+    } catch (err) {
+      console.error('Failed to cancel order in Supabase:', err);
+      const message = describeOrderWriteError(err, 'cancel');
+      flashToast('updateToast', message);
+      return { ok: false, message };
+    }
+
+    patch((latest) => ({
+      orders: latest.orders.map((o) => (o.id === orderId ? { ...o, ...cancelFields } : o)),
+    }));
+
+    // Stock restore is best-effort AFTER the cancel is committed. A failure
+    // here leaves the order correctly cancelled but the stock not yet
+    // credited back — surfaced clearly so an admin can restock by hand,
+    // rather than silently swallowed.
+    const toRestore = [
+      ...(order.items || []).map((it) => ({ full_path: it.jenisPlak, qty: it.qty })),
+      ...(hadPendingAddon ? order.pendingAddonItems.map((it) => ({ full_path: it.jenisPlak, qty: it.qty })) : []),
+    ];
+    try {
+      await restorePlakStock(toRestore);
+    } catch (err) {
+      console.error('Order cancelled, but restoring its stock failed:', err);
+      flashToast('updateToast', 'Order cancelled — but its stock could not be returned automatically. Please tell an administrator to restock manually.');
+      return { ok: true, message: 'Order cancelled (stock restore failed — see an administrator).' };
+    }
+
+    flashToast('updateToast', 'Order cancelled and stock returned.');
+    return { ok: true, message: 'Order cancelled and stock returned.' };
+  }, [patch, flashToast]);
 
   // Sales approves a pending add-on — `updatedItems` carries each item's
   // (possibly Sales-negotiated) unitPrice/harga, same as approveOrder
@@ -1105,43 +1220,48 @@ export function AppStateProvider({ children }) {
   // src/utils/orderBatches.js. Only ever adds to items/totalAmount; never
   // touches the order's main `status`, so an add-on can be approved
   // whether the order is already In Production or beyond.
-  const approveAddOn = useCallback((orderId, updatedItems) => {
-    patch((st) => {
-      const order = st.orders.find((o) => o.id === orderId);
-      if (!order) return {};
-      // Stamps `originalUnitPrice` the first time Sales negotiates an
-      // add-on item's price away from what the teacher's own pending
-      // add-on had — compared against the item as it stood before THIS
-      // approval, not the live catalog rate (that's the separate,
-      // pre-existing priceAdjusted concept below). Never overwritten once
-      // set, so a later edit can't erase the true original.
-      const priorItems = order.pendingAddonItems || [];
-      const withOriginalPrice = updatedItems.map((it) => {
-        const prior = priorItems.find((p) => p.id === it.id);
-        if (prior && prior.unitPrice !== it.unitPrice && it.originalUnitPrice == null) {
-          return { ...it, originalUnitPrice: prior.unitPrice };
-        }
-        return it;
-      });
-      const nextBatch = order.items.reduce((max, it) => Math.max(max, it.batch || 0), 0) + 1;
-      const batchedItems = withOriginalPrice.map((it) => ({ ...it, batch: nextBatch }));
-      const combinedItems = [...order.items, ...batchedItems];
-      const combinedTotal = order.totalAmount + batchedItems.reduce((sum, it) => sum + it.harga, 0);
-      const priceAdjusted = order.priceAdjusted || batchedItems.some((it) => it.unitPrice !== standardUnitPrice(it.jenisPlak, st.plakCatalog));
-      updateOrder(orderId, {
-        items: combinedItems, totalAmount: combinedTotal, priceAdjusted,
-        pendingAddonItems: null, pendingAddonStatus: null, pendingAddonRejectReason: null,
-      }).catch((err) => console.error('Failed to approve add-on in Supabase:', err));
-      return {
-        orders: st.orders.map((o) => (
-          o.id === orderId ? {
-            ...o, items: combinedItems, totalAmount: combinedTotal, priceAdjusted,
-            pendingAddonItems: null, pendingAddonStatus: null, pendingAddonRejectReason: null,
-          } : o
-        )),
-      };
+  const approveAddOn = useCallback(async (orderId, updatedItems) => {
+    const st = stateRef.current;
+    const order = st.orders.find((o) => o.id === orderId);
+    if (!order) return { ok: false, message: 'Order not found.' };
+    // Stamps `originalUnitPrice` the first time Sales negotiates an add-on
+    // item's price away from what the teacher's own pending add-on had —
+    // compared against the item as it stood before THIS approval, not the
+    // live catalog rate (that's the separate priceAdjusted concept below).
+    const priorItems = order.pendingAddonItems || [];
+    const withOriginalPrice = updatedItems.map((it) => {
+      const prior = priorItems.find((p) => p.id === it.id);
+      if (prior && prior.unitPrice !== it.unitPrice && it.originalUnitPrice == null) {
+        return { ...it, originalUnitPrice: prior.unitPrice };
+      }
+      return it;
     });
-  }, [patch]);
+    const nextBatch = order.items.reduce((max, it) => Math.max(max, it.batch || 0), 0) + 1;
+    const batchedItems = withOriginalPrice.map((it) => ({ ...it, batch: nextBatch }));
+    const combinedItems = [...order.items, ...batchedItems];
+    // Recompute the whole total from combinedItems, not order.totalAmount +
+    // delta — an incremental sum inherits any rounding drift the order
+    // already carried and would then fail the server-side items<->total
+    // check (orders_amount_guard, supabase/migrations/0041).
+    const combinedTotal = combinedItems.reduce((sum, it) => sum + it.harga, 0);
+    const priceAdjusted = order.priceAdjusted || batchedItems.some((it) => it.unitPrice !== standardUnitPrice(it.jenisPlak, st.plakCatalog));
+    const fields = {
+      items: combinedItems, totalAmount: combinedTotal, priceAdjusted,
+      pendingAddonItems: null, pendingAddonStatus: null, pendingAddonRejectReason: null,
+    };
+    try {
+      await updateOrder(orderId, fields);
+    } catch (err) {
+      console.error('Failed to approve add-on in Supabase:', err);
+      flashToast('updateToast', describeOrderWriteError(err, 'approve the add-on for'));
+      return { ok: false };
+    }
+    patch((latest) => ({
+      orders: latest.orders.map((o) => (o.id === orderId ? { ...o, ...fields } : o)),
+    }));
+    flashToast('updateToast', 'Add-on approved and added to the order.');
+    return { ok: true };
+  }, [patch, flashToast]);
 
   // Sales approval: `updatedItems` carries each item's (possibly
   // Sales-negotiated) unitPrice and recalculated harga. priceAdjusted is
@@ -1154,72 +1274,81 @@ export function AppStateProvider({ children }) {
   // per-item price, already folded into updatedItems) at the same moment
   // they approve — the only point before production where those dates are
   // still editable.
-  const approveOrder = useCallback((orderId, updatedItems, overrides = {}) => {
-    patch((st) => {
-      // Stamps `originalUnitPrice` the first time Sales changes an item's
-      // price away from what the teacher's own cart had — compared
-      // against the order as it stood before THIS approval, not the live
-      // catalog rate (that's the separate, pre-existing priceAdjusted
-      // concept below). Never overwritten once set, so a later edit can't
-      // erase the true original. Pre-existing approved orders simply have
-      // no originalUnitPrice on their items, so nothing extra shows for them.
-      const priorOrder = st.orders.find((o) => o.id === orderId);
-      const priorItems = priorOrder?.items || [];
-      const itemsWithOriginalPrice = updatedItems.map((it) => {
-        const prior = priorItems.find((p) => p.id === it.id);
-        if (prior && prior.unitPrice !== it.unitPrice && it.originalUnitPrice == null) {
-          return { ...it, originalUnitPrice: prior.unitPrice };
-        }
-        return it;
-      });
-      const totalAmount = itemsWithOriginalPrice.reduce((sum, it) => sum + it.harga, 0);
-      const priceAdjusted = itemsWithOriginalPrice.some((it) => it.unitPrice !== standardUnitPrice(it.jenisPlak, st.plakCatalog));
-      const fields = { items: itemsWithOriginalPrice, totalAmount, priceAdjusted, status: 'In Production', ...overrides };
-      updateOrder(orderId, fields)
-        .catch((err) => console.error('Failed to save approval to Supabase:', err));
-      return {
-        orders: st.orders.map((o) => (o.id === orderId ? { ...o, ...fields } : o)),
-      };
+  const approveOrder = useCallback(async (orderId, updatedItems, overrides = {}) => {
+    const st = stateRef.current;
+    const priorOrder = st.orders.find((o) => o.id === orderId);
+    if (!priorOrder) return { ok: false, message: 'Order not found.' };
+    // Stamps `originalUnitPrice` the first time Sales changes an item's
+    // price away from what the teacher's own cart had — compared against
+    // the order as it stood before THIS approval, not the live catalog rate
+    // (the separate priceAdjusted concept below). Never overwritten once set.
+    const priorItems = priorOrder.items || [];
+    const itemsWithOriginalPrice = updatedItems.map((it) => {
+      const prior = priorItems.find((p) => p.id === it.id);
+      if (prior && prior.unitPrice !== it.unitPrice && it.originalUnitPrice == null) {
+        return { ...it, originalUnitPrice: prior.unitPrice };
+      }
+      return it;
     });
-  }, [patch]);
+    const totalAmount = itemsWithOriginalPrice.reduce((sum, it) => sum + it.harga, 0);
+    const priceAdjusted = itemsWithOriginalPrice.some((it) => it.unitPrice !== standardUnitPrice(it.jenisPlak, st.plakCatalog));
+    const fields = { items: itemsWithOriginalPrice, totalAmount, priceAdjusted, status: 'In Production', ...overrides };
+    try {
+      await updateOrder(orderId, fields);
+    } catch (err) {
+      console.error('Failed to save approval to Supabase:', err);
+      flashToast('updateToast', describeOrderWriteError(err, 'approve'));
+      return { ok: false };
+    }
+    patch((latest) => ({
+      orders: latest.orders.map((o) => (o.id === orderId ? { ...o, ...fields } : o)),
+    }));
+    return { ok: true };
+  }, [patch, flashToast]);
 
   // Production: records the invoice ID billing hands over on paper once an
   // approved order's hardcopy comes back invoiced. Guarded against orders
   // that aren't yet approved, blank input, and overwriting an existing
   // invoiceId — that paperwork is treated as immutable once recorded.
-  const setInvoiceId = useCallback((orderId, invoiceId) => {
+  const setInvoiceId = useCallback(async (orderId, invoiceId) => {
     // Strips every space (not just leading/trailing) before saving or
     // comparing, so "INV 2026 090" and "INV2026090" are treated as the
     // same invoice number for the duplicate check below.
     const normalized = (invoiceId || '').replace(/\s+/g, '');
-    setState((st) => {
-      const order = st.orders.find((o) => o.id === orderId);
-      if (!order || order.status !== 'In Production') {
-        return { ...st, productionToast: 'This order is not ready for invoice entry.' };
-      }
-      if (order.invoiceId) {
-        return { ...st, productionToast: 'Invoice ID is already set for this order.' };
-      }
-      if (!normalized) {
-        return { ...st, productionToast: 'Enter a valid Invoice ID.' };
-      }
-      const isDuplicate = st.orders.some((o) => (
-        o.id !== orderId && o.invoiceId && o.invoiceId.replace(/\s+/g, '') === normalized
-      ));
-      if (isDuplicate) {
-        return { ...st, productionToast: 'Invoice ID invalid because repeated, please try again.' };
-      }
-      updateOrder(orderId, { invoiceId: normalized })
-        .catch((err) => console.error('Failed to save invoice ID to Supabase:', err));
-      return {
-        ...st,
-        orders: st.orders.map((o) => (o.id === orderId ? { ...o, invoiceId: normalized } : o)),
-        productionToast: 'Invoice ID saved — order is ready for export.',
-      };
-    });
-    clearTimeout(productionToastTimer.current);
-    productionToastTimer.current = setTimeout(() => patch({ productionToast: '' }), 2500);
-  }, [patch]);
+    const st = stateRef.current;
+    const order = st.orders.find((o) => o.id === orderId);
+    if (!order || order.status !== 'In Production') {
+      flashToast('productionToast', 'This order is not ready for invoice entry.');
+      return { ok: false };
+    }
+    if (order.invoiceId) {
+      flashToast('productionToast', 'Invoice ID is already set for this order.');
+      return { ok: false };
+    }
+    if (!normalized) {
+      flashToast('productionToast', 'Enter a valid Invoice ID.');
+      return { ok: false };
+    }
+    const isDuplicate = st.orders.some((o) => (
+      o.id !== orderId && o.invoiceId && o.invoiceId.replace(/\s+/g, '') === normalized
+    ));
+    if (isDuplicate) {
+      flashToast('productionToast', 'Invoice ID invalid because repeated, please try again.');
+      return { ok: false };
+    }
+    try {
+      await updateOrder(orderId, { invoiceId: normalized });
+    } catch (err) {
+      console.error('Failed to save invoice ID to Supabase:', err);
+      flashToast('productionToast', describeOrderWriteError(err, 'save the invoice number for'));
+      return { ok: false };
+    }
+    patch((latest) => ({
+      orders: latest.orders.map((o) => (o.id === orderId ? { ...o, invoiceId: normalized } : o)),
+    }));
+    flashToast('productionToast', 'Invoice ID saved — order is ready for export.');
+    return { ok: true };
+  }, [patch, flashToast]);
 
   // Invoicing Department: approves a still-"Submitted to Sales" order and
   // assigns its Invoice Number in the same action — for orders a Salesman
@@ -1233,46 +1362,51 @@ export function AppStateProvider({ children }) {
   // land in the same write, not two separate ones. Sales' own approve
   // button (approveOrder) is untouched — this is an additional path to
   // the same end state, not a replacement.
-  const approveAndSetInvoiceId = useCallback((orderId, updatedItems, invoiceId, overrides = {}) => {
+  const approveAndSetInvoiceId = useCallback(async (orderId, updatedItems, invoiceId, overrides = {}) => {
     const normalized = (invoiceId || '').replace(/\s+/g, '');
-    setState((st) => {
-      const order = st.orders.find((o) => o.id === orderId);
-      if (!order || order.status !== 'Submitted to Sales') {
-        return { ...st, productionToast: 'This order is not awaiting approval.' };
+    const st = stateRef.current;
+    const order = st.orders.find((o) => o.id === orderId);
+    if (!order || order.status !== 'Submitted to Sales') {
+      flashToast('productionToast', 'This order is not awaiting approval.');
+      return { ok: false };
+    }
+    if (!normalized) {
+      flashToast('productionToast', 'Enter a valid Invoice ID.');
+      return { ok: false };
+    }
+    const isDuplicate = st.orders.some((o) => (
+      o.id !== orderId && o.invoiceId && o.invoiceId.replace(/\s+/g, '') === normalized
+    ));
+    if (isDuplicate) {
+      flashToast('productionToast', 'Invoice ID invalid because repeated, please try again.');
+      return { ok: false };
+    }
+    const priorItems = order.items || [];
+    const itemsWithOriginalPrice = updatedItems.map((it) => {
+      const prior = priorItems.find((p) => p.id === it.id);
+      if (prior && prior.unitPrice !== it.unitPrice && it.originalUnitPrice == null) {
+        return { ...it, originalUnitPrice: prior.unitPrice };
       }
-      if (!normalized) {
-        return { ...st, productionToast: 'Enter a valid Invoice ID.' };
-      }
-      const isDuplicate = st.orders.some((o) => (
-        o.id !== orderId && o.invoiceId && o.invoiceId.replace(/\s+/g, '') === normalized
-      ));
-      if (isDuplicate) {
-        return { ...st, productionToast: 'Invoice ID invalid because repeated, please try again.' };
-      }
-      const priorItems = order.items || [];
-      const itemsWithOriginalPrice = updatedItems.map((it) => {
-        const prior = priorItems.find((p) => p.id === it.id);
-        if (prior && prior.unitPrice !== it.unitPrice && it.originalUnitPrice == null) {
-          return { ...it, originalUnitPrice: prior.unitPrice };
-        }
-        return it;
-      });
-      const totalAmount = itemsWithOriginalPrice.reduce((sum, it) => sum + it.harga, 0);
-      const priceAdjusted = itemsWithOriginalPrice.some((it) => it.unitPrice !== standardUnitPrice(it.jenisPlak, st.plakCatalog));
-      const fields = {
-        items: itemsWithOriginalPrice, totalAmount, priceAdjusted, status: 'In Production', invoiceId: normalized, ...overrides,
-      };
-      updateOrder(orderId, fields)
-        .catch((err) => console.error('Failed to approve and save invoice ID to Supabase:', err));
-      return {
-        ...st,
-        orders: st.orders.map((o) => (o.id === orderId ? { ...o, ...fields } : o)),
-        productionToast: 'Order approved and Invoice Number saved.',
-      };
+      return it;
     });
-    clearTimeout(productionToastTimer.current);
-    productionToastTimer.current = setTimeout(() => patch({ productionToast: '' }), 2500);
-  }, [patch]);
+    const totalAmount = itemsWithOriginalPrice.reduce((sum, it) => sum + it.harga, 0);
+    const priceAdjusted = itemsWithOriginalPrice.some((it) => it.unitPrice !== standardUnitPrice(it.jenisPlak, st.plakCatalog));
+    const fields = {
+      items: itemsWithOriginalPrice, totalAmount, priceAdjusted, status: 'In Production', invoiceId: normalized, ...overrides,
+    };
+    try {
+      await updateOrder(orderId, fields);
+    } catch (err) {
+      console.error('Failed to approve and save invoice ID to Supabase:', err);
+      flashToast('productionToast', describeOrderWriteError(err, 'approve'));
+      return { ok: false };
+    }
+    patch((latest) => ({
+      orders: latest.orders.map((o) => (o.id === orderId ? { ...o, ...fields } : o)),
+    }));
+    flashToast('productionToast', 'Order approved and Invoice Number saved.');
+    return { ok: true };
+  }, [patch, flashToast]);
 
   // Stamps the actual moment a Teacher/Salesman print action happened —
   // not the order's creation date — so "Order Printed" on the printout
@@ -1289,6 +1423,25 @@ export function AppStateProvider({ children }) {
     }));
     updateOrder(orderId, { printedAt })
       .catch((err) => console.error('Failed to save print timestamp to Supabase:', err));
+  }, [patch]);
+
+  // fetchOrders() only pulls a bounded window of recent orders into
+  // `state.orders`. A detail page opened for an order outside that window
+  // (an old one, a deep link) would otherwise find nothing — this fetches
+  // that one order by id (RLS still applies) and merges it in, so every
+  // existing `state.orders.find(...)` keeps working. No-op if it's already
+  // loaded or the caller can't see it.
+  const ensureOrderLoaded = useCallback(async (orderId) => {
+    if (!orderId || stateRef.current.orders.some((o) => o.id === orderId)) return;
+    try {
+      const order = await fetchOrderById(orderId);
+      if (!order) return;
+      patch((latest) => (
+        latest.orders.some((o) => o.id === orderId) ? {} : { orders: [order, ...latest.orders] }
+      ));
+    } catch (err) {
+      console.error('Failed to load order on demand:', orderId, err);
+    }
   }, [patch]);
 
   // Production: signals the order is physically finished and handed off to
@@ -1444,7 +1597,9 @@ export function AppStateProvider({ children }) {
     importFormAnugerahExcel,
     openAmend, updateAmend,
     openAddOn, submitPendingAddOn, cancelPendingAddOn, rejectAddOn, approveAddOn, approveOrder, setInvoiceId, approveAndSetInvoiceId,
+    cancelOrder,
     recordPrint,
+    ensureOrderLoaded,
     markProductionDone,
     addCatalogNode, removeCatalogNode, updateCatalogNodePrice, updateCatalogNodeStock, setCatalogNodeHidden, moveCatalogNode,
     reorderCatalogSiblings,

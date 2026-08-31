@@ -533,8 +533,23 @@ export const STATUS_STAGES = [
   'Submitted to Sales', 'In Production', 'Waiting for Delivery', 'Completed',
 ];
 
+// 'Cancelled' is a terminal OFF-RAMP, not a pipeline stage — kept out of
+// STATUS_STAGES (which drives the 4-dot progress steppers and the
+// stage-tab dashboards) but included here for status filter dropdowns.
+export const ORDER_STATUSES = [...STATUS_STAGES, 'Cancelled'];
+
 export const STATUS_BG = ['#e4ecf2', '#5980a6', '#2f5878', '#1d1f20'];
 export const STATUS_TEXT = ['#1d1f20', '#fff', '#fff', '#fff'];
+
+// Inline style object for an order-status pill. Handles the 4 pipeline
+// stages plus 'Cancelled' (STATUS_STAGES.indexOf returns -1 for it, which
+// would otherwise render a pill with no background). Every status pill in
+// the app goes through this so the fallback/`Cancelled` styling can't drift.
+export function statusPillStyle(status) {
+  if (status === 'Cancelled') return { background: '#e7d3d0', color: '#7a2f27' };
+  const i = STATUS_STAGES.indexOf(status);
+  return { background: STATUS_BG[i] ?? '#e4ecf2', color: STATUS_TEXT[i] ?? '#1d1f20' };
+}
 
 export function formatDate(d) {
   if (!d) return '';

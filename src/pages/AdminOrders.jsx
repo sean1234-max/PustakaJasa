@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import AdminLayout from '../components/AdminLayout';
 import { useAppState } from '../state/useAppState';
-import { STATUS_STAGES, STATUS_BG, STATUS_TEXT } from '../data/catalog';
+import { ORDER_STATUSES, statusPillStyle } from '../data/catalog';
 
 const DATE_OPTIONS = ['All Time', 'Today', 'This Week', 'This Month', 'Custom Range'];
 
@@ -106,7 +106,7 @@ export default function AdminOrders() {
           </Select>
           <Select label="Status" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
             <option value="all">All Statuses</option>
-            {STATUS_STAGES.map((s) => <option key={s} value={s}>{s}</option>)}
+            {ORDER_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
           </Select>
           <Select label="Date" value={dateFilter} onChange={(e) => setDateFilter(e.target.value)}>
             {DATE_OPTIONS.map((d) => <option key={d} value={d}>{d}</option>)}
@@ -139,7 +139,6 @@ export default function AdminOrders() {
       ) : (
         <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filtered.map((ord) => {
-            const idx = STATUS_STAGES.indexOf(ord.status);
             return (
               <button
                 type="button"
@@ -152,7 +151,7 @@ export default function AdminOrders() {
                     <span className="block text-label-bold uppercase tracking-wider text-on-surface-variant mb-1">Order ID</span>
                     <span className="text-headline-sm text-primary">{ord.id}</span>
                   </div>
-                  <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold whitespace-nowrap" style={{ background: STATUS_BG[idx], color: STATUS_TEXT[idx] }}>
+                  <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold whitespace-nowrap" style={statusPillStyle(ord.status)}>
                     {ord.status}
                   </span>
                 </div>

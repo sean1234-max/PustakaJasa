@@ -1,6 +1,7 @@
 import {
   CATEGORIES, getCategorySubjects, getCategoryColumns, tahunRangeYears,
   getCustomMatrixRowIds, customMatrixLabelKey, matrixCellKey,
+  flattenPlakCatalog, isCustomPlakCode,
 } from '../data/catalog';
 
 export const CSV_COLUMNS = ['event_header', 'year', 'position', 'event_line_1', 'event_line_2'];
@@ -284,4 +285,64 @@ export function buildCategoryCsvFilename(order, categoryLabel) {
   const invoice = sanitizeFilenamePart(order.invoiceId || order.id);
   const category = sanitizeFilenamePart(categoryLabel);
   return `(${invoice}) - ${category}.csv`;
+}
+
+// The gate between "here are some rows" and "hand this file to production".
+// `csvData` is the { rows, skippedItemIds } that buildCsvRows already
+// produced for this same `items` selection — passed in rather than
+// recomputed so the caller and the check can never disagree about what's
+// being exported. `errors` block the export outright (the data would reach
+// an engraving machine wrong or incomplete); `warnings` are surfaced but
+// don't block (the operator may know the blank is intentional).
+export function validateExport(order, items, plakCatalog, csvData) {
+  const errors = [];
+  const warnings = [];
+  const scoped = items || (order.items || []);
+  const { rows = [], skippedItemIds = [] } = csvData || {};
+
+  // 1. An item with no reference-sample data at all is silently dropped by
+  //    buildCsvRows (skippedItemIds) — those plaques would just be missing
+  //    from the file with nothing telling production they were ordered.
+  if (skippedItemIds.length > 0) {
+    errors.push(`${skippedItemIds.length} item(s) have no Reference Sample data — they would be missing from the CSV entirely. Fill them in before exporting.`);
+  }
+
+  // 2. Every item must carry a Jenis Plak that actually resolves — either a
+  //    real catalog path, or a deliberate "OTHER - ..." custom pick. Raw,
+  //    un-matched text (e.g. straight from an import) can't be routed to a
+  //    production file.
+  const flatCatalog = flattenPlakCatalog(plakCatalog);
+  const validPaths = new Set(flatCatalog.map((p) => p.code));
+  const missingPlak = scoped.filter((it) => !it.jenisPlak).length;
+  if (missingPlak > 0) {
+    errors.push(`${missingPlak} item(s) have no Jenis Plak selected.`);
+  }
+  // Only cross-check against the catalog when it's actually loaded — an
+  // empty tree means "not fetched yet", not "every code is invalid".
+  if (flatCatalog.length > 0) {
+    const unknownPlak = [...new Set(
+      scoped.filter((it) => it.jenisPlak && !isCustomPlakCode(it.jenisPlak) && !validPaths.has(it.jenisPlak))
+        .map((it) => it.jenisPlak),
+    )];
+    if (unknownPlak.length > 0) {
+      errors.push(`Jenis Plak not found in the catalog: ${unknownPlak.join(', ')}.`);
+    }
+  }
+
+  // 3. Something was selected but it produced nothing to engrave.
+  if (rows.length === 0 && scoped.length > 0 && skippedItemIds.length === 0) {
+    errors.push('This selection produces no CSV rows — every quantity is 0, or the reference data is incomplete.');
+  }
+
+  // 4. Non-blocking: rows that would engrave with an empty title / position.
+  const blankHeader = rows.filter((r) => !String(r[0] ?? '').trim()).length;
+  if (blankHeader > 0) {
+    warnings.push(`${blankHeader} row(s) would engrave with no event header (TAJUK BESAR).`);
+  }
+  const blankPosition = rows.filter((r) => !String(r[2] ?? '').trim()).length;
+  if (blankPosition > 0) {
+    warnings.push(`${blankPosition} row(s) have a blank "position" field.`);
+  }
+
+  return { ok: errors.length === 0, errors, warnings, rowCount: rows.length };
 }

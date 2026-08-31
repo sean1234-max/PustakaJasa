@@ -1,11 +1,11 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import PriceTable from '../components/PriceTable';
 import { useAppState } from '../state/useAppState';
-import { STATUS_STAGES, STATUS_BG, STATUS_TEXT, formatDate, standardUnitPrice } from '../data/catalog';
+import { statusPillStyle, formatDate, standardUnitPrice } from '../data/catalog';
 import { reconstructBlocksForCategory } from '../utils/computeBlocks';
 import { getOrderCategories } from '../utils/exportCsv';
 import { groupItemsByBatch } from '../utils/orderBatches';
@@ -27,14 +27,16 @@ const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: f
 // (approved via either path), pricing is frozen and this page falls back
 // to the simple invoice-only entry (setInvoiceId), same as before.
 export default function InvoicingOrderDetail() {
-  const { state, setInvoiceId, approveAndSetInvoiceId } = useAppState();
+  const { state, setInvoiceId, approveAndSetInvoiceId, ensureOrderLoaded } = useAppState();
   const { id } = useParams();
   const navigate = useNavigate();
   const order = state.orders.find((o) => o.id === id);
   const awaitingApproval = order?.status === 'Submitted to Sales';
+  useEffect(() => { ensureOrderLoaded(id); }, [id, ensureOrderLoaded]);
 
   const [invoiceDraft, setInvoiceDraft] = useState('');
   const [page, setPage] = useState('summary');
+  const [busy, setBusy] = useState(false);
 
   // Same pattern as SalesOrderSummary's own priceDrafts — only meaningful
   // while awaitingApproval; a not-yet-approved order never has a Tambahan
@@ -67,22 +69,27 @@ export default function InvoicingOrderDetail() {
 
   if (!order) return null;
 
-  const idx = STATUS_STAGES.indexOf(order.status);
   const stamp = getOrderChangeStamp(order);
   const itemGroups = groupItemsByBatch(order.items);
   const totalQty = rows.reduce((sum, it) => sum + (Number(it.qty) || 0), 0);
   const totalHarga = rows.reduce((sum, it) => sum + it.harga, 0);
   const priceAdjusted = order.priceAdjusted || rows.some((it) => it.unitPrice !== standardUnitPrice(it.jenisPlak, state.plakCatalog));
 
-  const handleSaveInvoice = () => {
-    setInvoiceId(order.id, invoiceDraft);
-    setInvoiceDraft('');
+  const handleSaveInvoice = async () => {
+    if (busy) return;
+    setBusy(true);
+    const res = await setInvoiceId(order.id, invoiceDraft);
+    setBusy(false);
+    if (res?.ok) setInvoiceDraft('');
   };
 
-  const handleApproveAndInvoice = () => {
+  const handleApproveAndInvoice = async () => {
+    if (busy) return;
     const updatedItems = rows.map((r) => ({ ...r, unitPrice: r.unitPrice, harga: r.harga }));
-    approveAndSetInvoiceId(order.id, updatedItems, invoiceDraft);
-    setInvoiceDraft('');
+    setBusy(true);
+    const res = await approveAndSetInvoiceId(order.id, updatedItems, invoiceDraft);
+    setBusy(false);
+    if (res?.ok) setInvoiceDraft('');
   };
 
   return (
@@ -113,7 +120,7 @@ export default function InvoicingOrderDetail() {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
             {stamp && <span className="order-stamp-inline">{stamp}</span>}
-            <span className="status-pill" style={{ background: STATUS_BG[idx], color: STATUS_TEXT[idx] }}>{order.status}</span>
+            <span className="status-pill" style={statusPillStyle(order.status)}>{order.status}</span>
           </div>
         </div>
 
@@ -168,8 +175,8 @@ export default function InvoicingOrderDetail() {
 
                 <div className="row-split" style={{ marginTop: 'var(--space-4)' }}>
                   <span />
-                  <button type="button" className="btn btn-primary" onClick={handleApproveAndInvoice} disabled={!invoiceDraft.trim()}>
-                    Approve &amp; Save Invoice
+                  <button type="button" className="btn btn-primary" onClick={handleApproveAndInvoice} disabled={busy || !invoiceDraft.trim()}>
+                    {busy ? 'Working…' : 'Approve & Save Invoice'}
                   </button>
                 </div>
               </>
@@ -191,7 +198,7 @@ export default function InvoicingOrderDetail() {
                         value={invoiceDraft}
                         onChange={(e) => setInvoiceDraft(e.target.value)}
                       />
-                      <button type="button" className="btn btn-primary" onClick={handleSaveInvoice}>Save</button>
+                      <button type="button" className="btn btn-primary" onClick={handleSaveInvoice} disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>
                     </div>
                   </div>
                 )}

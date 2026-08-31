@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import AdminLayout from '../components/AdminLayout';
 import { useAppState } from '../state/useAppState';
-import { STATUS_STAGES, STATUS_BG, STATUS_TEXT } from '../data/catalog';
+import { statusPillStyle } from '../data/catalog';
 import { fetchAllProfiles, updateProfile, resetPassword, logAdminAction } from '../lib/adminApi';
 
 const inputClass = 'w-full rounded-lg border border-outline-variant bg-surface-container-lowest text-on-surface focus:ring-2 focus:ring-primary focus:border-primary py-2.5 px-4 shadow-sm outline-none transition-all';
@@ -200,7 +200,6 @@ export default function AdminSchoolDetail() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {orders.map((ord) => {
-              const idx = STATUS_STAGES.indexOf(ord.status);
               return (
                 <button
                   type="button"
@@ -213,7 +212,7 @@ export default function AdminSchoolDetail() {
                       <span className="text-label-bold text-on-surface-variant uppercase block mb-1">Order ID</span>
                       <span className="text-headline-sm text-primary">{ord.id}</span>
                     </div>
-                    <span className="inline-flex items-center px-2 py-1 rounded-md text-[10px] font-semibold border border-outline-variant/30" style={{ background: STATUS_BG[idx], color: STATUS_TEXT[idx] }}>
+                    <span className="inline-flex items-center px-2 py-1 rounded-md text-[10px] font-semibold border border-outline-variant/30" style={statusPillStyle(ord.status)}>
                       {ord.status}
                     </span>
                   </div>

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import { useAppState } from '../state/useAppState';
-import { STATUS_STAGES, STATUS_BG, STATUS_TEXT } from '../data/catalog';
+import { STATUS_STAGES, statusPillStyle } from '../data/catalog';
 
 const FILTERS = [
   { key: 'Submitted to Sales', label: 'Submitted to Sales', match: (o) => o.status === 'Submitted to Sales' },
@@ -84,7 +84,7 @@ export default function Dashboard() {
                   <div className="order-card-label">Order ID</div>
                   <div className="order-card-id">{ord.id}</div>
                 </div>
-                <span className="status-pill" style={{ background: STATUS_BG[idx], color: STATUS_TEXT[idx] }}>{ord.status}</span>
+                <span className="status-pill" style={statusPillStyle(ord.status)}>{ord.status}</span>
               </div>
 
               <div className="order-dots">

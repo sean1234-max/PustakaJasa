@@ -39,6 +39,9 @@ function toDbOrder(order) {
     pending_addon_items: order.pendingAddonItems ?? null,
     pending_addon_status: order.pendingAddonStatus ?? null,
     pending_addon_reject_reason: order.pendingAddonRejectReason ?? null,
+    cancel_reason: order.cancelReason ?? null,
+    cancelled_at: order.cancelledAt ?? null,
+    cancelled_by: order.cancelledBy ?? null,
   };
 }
 
@@ -73,12 +76,21 @@ function fromDbOrder(row) {
     pendingAddonItems: row.pending_addon_items || null,
     pendingAddonStatus: row.pending_addon_status || null,
     pendingAddonRejectReason: row.pending_addon_reject_reason || null,
+    cancelReason: row.cancel_reason || null,
+    cancelledAt: row.cancelled_at || null,
+    cancelledBy: row.cancelled_by || null,
   };
 }
 
-// Fetches all orders, newest first.
-export async function fetchOrders(userId, role) {
-  let query = supabase.from('orders').select('*').order('created_at', { ascending: false });
+// Fetches orders, newest first. `limit` bounds how many rows are pulled into
+// memory (AppState keeps the whole result in `state.orders`) — the default is
+// generous (covers years of a real shop's volume) but stops the list from
+// growing without limit. Any single order not in the loaded window can still
+// be opened: fetchOrderById + AppState.ensureOrderLoaded merge it in on demand.
+export async function fetchOrders(userId, role, { limit = 500 } = {}) {
+  let query = supabase.from('orders').select('*')
+    .order('created_at', { ascending: false })
+    .limit(limit);
   if (role === 'teacher' && userId) {
     query = query.eq('created_by', userId);
   }
@@ -89,6 +101,15 @@ export async function fetchOrders(userId, role) {
   const { data, error } = await query;
   if (error) throw error;
   return data.map(fromDbOrder);
+}
+
+// One order by id — RLS still applies, so a user asking for an order they
+// can't see gets null, not an error. Used when a detail page is opened for an
+// order that falls outside the fetchOrders() window.
+export async function fetchOrderById(id) {
+  const { data, error } = await supabase.from('orders').select('*').eq('id', id).maybeSingle();
+  if (error) throw error;
+  return data ? fromDbOrder(data) : null;
 }
 
 // Atomically reserves the next order number for `prefix` (e.g. "ORD-2026-")

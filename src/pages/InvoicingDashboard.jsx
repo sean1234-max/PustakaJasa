@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import { useAppState } from '../state/useAppState';
-import { STATUS_STAGES, STATUS_BG, STATUS_TEXT } from '../data/catalog';
+import { STATUS_STAGES, statusPillStyle } from '../data/catalog';
 import { getOrderChangeStamp } from '../utils/orderStamp';
 
 // Invoicing Department can now see and act on every order, including ones
@@ -114,7 +114,6 @@ export default function InvoicingDashboard() {
       {filteredOrders.length === 0 && <p className="hint-text">No orders match.</p>}
       <div className="order-grid">
         {filteredOrders.map((ord) => {
-          const idx = STATUS_STAGES.indexOf(ord.status);
           const stamp = getOrderChangeStamp(ord);
           return (
             <div key={ord.id} className="card order-card">
@@ -123,7 +122,7 @@ export default function InvoicingDashboard() {
                   <div className="order-card-label">Order ID</div>
                   <div className="order-card-id">{ord.id}</div>
                 </div>
-                <span className="status-pill" style={{ background: STATUS_BG[idx], color: STATUS_TEXT[idx] }}>{ord.status}</span>
+                <span className="status-pill" style={statusPillStyle(ord.status)}>{ord.status}</span>
               </div>
               {stamp && <div className="order-stamp-inline" style={{ marginTop: 'var(--space-1)' }}>{stamp}</div>}
 

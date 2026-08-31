@@ -1,12 +1,12 @@
-import { useState, useMemo, useRef } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import { useAppState } from '../state/useAppState';
-import { STATUS_STAGES, STATUS_BG, STATUS_TEXT, formatDate } from '../data/catalog';
+import { statusPillStyle, formatDate } from '../data/catalog';
 import { reconstructOrderDetailGroups } from '../utils/computeBlocks';
-import { getOrderCategories, getOrderJenisPlakGroups, buildCsvRows, rowsToCsv, buildCategoryCsvFilename } from '../utils/exportCsv';
+import { getOrderCategories, getOrderJenisPlakGroups, buildCsvRows, rowsToCsv, buildCategoryCsvFilename, validateExport } from '../utils/exportCsv';
 import { downloadTextFile } from '../utils/downloadBlob';
 import { groupItemsByBatch } from '../utils/orderBatches';
 import { getOrderChangeStamp } from '../utils/orderStamp';
@@ -14,10 +14,11 @@ import { getOrderChangeStamp } from '../utils/orderStamp';
 const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: false, matrix: false, jenisPlak: false };
 
 export default function ProductionOrderDetail() {
-  const { state } = useAppState();
+  const { state, ensureOrderLoaded } = useAppState();
   const { id } = useParams();
   const navigate = useNavigate();
   const order = state.orders.find((o) => o.id === id);
+  useEffect(() => { ensureOrderLoaded(id); }, [id, ensureOrderLoaded]);
 
   const [exportNote, setExportNote] = useState('');
   const exportNoteTimer = useRef(null);
@@ -44,31 +45,42 @@ export default function ProductionOrderDetail() {
   // file and can be exported as one combined CSV. See getOrderJenisPlakGroups.
   const jenisPlakGroups = useMemo(() => (order ? getOrderJenisPlakGroups(order) : []), [order]);
 
+  // Rows + a hard validation result per Jenis Plak group (see validateExport).
+  const jenisPlakExport = useMemo(() => {
+    if (!order) return [];
+    return jenisPlakGroups.map(({ jenisPlak, items }) => {
+      const csvData = buildCsvRows(order, null, items);
+      return { jenisPlak, items, csvData, check: validateExport(order, items, state.plakCatalog, csvData) };
+    });
+  }, [order, jenisPlakGroups, state.plakCatalog]);
+
   if (!order) return null;
 
-  const idx = STATUS_STAGES.indexOf(order.status);
   const stamp = getOrderChangeStamp(order);
   const totalQty = order.items.reduce((sum, it) => sum + (Number(it.qty) || 0), 0);
   const itemGroups = groupItemsByBatch(order.items);
 
-  const handleExportGroup = (group, csvRows) => {
-    if (csvRows.length === 0) return;
-    const csv = rowsToCsv(csvRows);
+  // Both export paths refuse a selection that failed validateExport, even
+  // if called programmatically — the disabled button is the first line, this
+  // is the backstop.
+  const handleExportGroup = (group, csvData, check) => {
+    if (!check.ok || csvData.rows.length === 0) return;
+    const csv = rowsToCsv(csvData.rows);
     const label = [group.blk.qtyLabel, group.batch !== 0 ? group.label : null, group.jenisPlak]
       .filter(Boolean).join(' - ');
     const filename = buildCategoryCsvFilename(order, label);
     downloadTextFile(filename, csv);
-    setExportNote(`Exported ${csvRows.length} row(s) to ${filename}.`);
+    setExportNote(`Exported ${csvData.rows.length} row(s) to ${filename}.`);
     clearTimeout(exportNoteTimer.current);
     exportNoteTimer.current = setTimeout(() => setExportNote(''), 4000);
   };
 
-  const handleExportJenisPlak = (jenisPlak, csvRows) => {
-    if (csvRows.length === 0) return;
-    const csv = rowsToCsv(csvRows);
+  const handleExportJenisPlak = (jenisPlak, csvData, check) => {
+    if (!check.ok || csvData.rows.length === 0) return;
+    const csv = rowsToCsv(csvData.rows);
     const filename = buildCategoryCsvFilename(order, jenisPlak);
     downloadTextFile(filename, csv);
-    setExportNote(`Exported ${csvRows.length} row(s) to ${filename}.`);
+    setExportNote(`Exported ${csvData.rows.length} row(s) to ${filename}.`);
     clearTimeout(exportNoteTimer.current);
     exportNoteTimer.current = setTimeout(() => setExportNote(''), 4000);
   };
@@ -106,7 +118,7 @@ export default function ProductionOrderDetail() {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
             {stamp && <span className="order-stamp-inline">{stamp}</span>}
-            <span className="status-pill" style={{ background: STATUS_BG[idx], color: STATUS_TEXT[idx] }}>{order.status}</span>
+            <span className="status-pill" style={statusPillStyle(order.status)}>{order.status}</span>
           </div>
         </div>
 
@@ -194,26 +206,33 @@ export default function ProductionOrderDetail() {
                 {jenisPlakGroups.length === 0 ? (
                   <p className="hint-text">No Jenis Plak found for this order.</p>
                 ) : (
-                  <table className="table" style={{ margin: 'var(--space-3) 0' }}>
-                    <thead><tr><th>Jenis Plak</th><th style={{ width: 140 }}>Order Details</th><th style={{ width: 100 }}>Rows</th><th style={{ width: 140 }} /></tr></thead>
-                    <tbody>
-                      {jenisPlakGroups.map(({ jenisPlak, items }) => {
-                        const csvData = buildCsvRows(order, null, items);
-                        return (
+                  <>
+                    <table className="table" style={{ margin: 'var(--space-3) 0' }}>
+                      <thead><tr><th>Jenis Plak</th><th style={{ width: 140 }}>Order Details</th><th style={{ width: 100 }}>Rows</th><th style={{ width: 140 }} /></tr></thead>
+                      <tbody>
+                        {jenisPlakExport.map(({ jenisPlak, items, csvData, check }) => (
                           <tr key={jenisPlak}>
                             <td>{jenisPlak}</td>
                             <td>{items.length}</td>
-                            <td>{csvData.rows.length}</td>
+                            <td>{check.ok ? csvData.rows.length : <span style={{ color: '#b0392e', fontWeight: 700 }}>blocked</span>}</td>
                             <td>
-                              <button type="button" className="btn btn-primary" disabled={csvData.rows.length === 0} onClick={() => handleExportJenisPlak(jenisPlak, csvData.rows)}>
+                              <button type="button" className="btn btn-primary" disabled={!check.ok || csvData.rows.length === 0} onClick={() => handleExportJenisPlak(jenisPlak, csvData, check)}>
                                 Export CSV
                               </button>
                             </td>
                           </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                        ))}
+                      </tbody>
+                    </table>
+                    {jenisPlakExport.filter((g) => !g.check.ok).map((g) => (
+                      <p key={g.jenisPlak} className="hint-text" style={{ color: '#b0392e', fontWeight: 600 }}>
+                        ⚠ {g.jenisPlak}: {g.check.errors.join(' ')}
+                      </p>
+                    ))}
+                    {jenisPlakExport.flatMap((g) => g.check.warnings.map((w) => (
+                      <p key={`${g.jenisPlak}-${w}`} className="hint-text" style={{ color: '#b45309' }}>{g.jenisPlak}: {w}</p>
+                    )))}
+                  </>
                 )}
                 {exportNote && <p className="hint-text">{exportNote}</p>}
 
@@ -230,6 +249,7 @@ export default function ProductionOrderDetail() {
                     {detailGroups.map((group, gi) => {
                       if (!group.blk) return null;
                       const csvData = buildCsvRows(order, currentCat.key, group.items);
+                      const check = validateExport(order, group.items, state.plakCatalog, csvData);
                       return (
                         <div
                           key={group.items[0].id}
@@ -240,20 +260,19 @@ export default function ProductionOrderDetail() {
                           </div>
                           <OrderCategoryBlock blk={group.blk} editable={READONLY} />
 
-                          {csvData.rows.length === 0 ? (
-                            <p className="hint-text">No reference sample data to export for this order detail.</p>
-                          ) : (
-                            <>
-                              {csvData.skippedItemIds.length > 0 && (
-                                <p className="hint-text">{csvData.skippedItemIds.length} item(s) skipped — no reference sample data.</p>
-                              )}
-                              <p className="hint-text">{csvData.rows.length} row(s) ready to export.</p>
-                            </>
+                          {check.errors.map((e) => (
+                            <p key={e} className="hint-text" style={{ color: '#b0392e', fontWeight: 600 }}>⚠ {e}</p>
+                          ))}
+                          {check.warnings.map((w) => (
+                            <p key={w} className="hint-text" style={{ color: '#b45309' }}>{w}</p>
+                          ))}
+                          {check.ok && csvData.rows.length > 0 && (
+                            <p className="hint-text">{csvData.rows.length} row(s) ready to export.</p>
                           )}
 
                           <div className="row-split" style={{ marginTop: 'var(--space-3)' }}>
                             <span />
-                            <button type="button" className="btn btn-primary" disabled={csvData.rows.length === 0} onClick={() => handleExportGroup(group, csvData.rows)}>
+                            <button type="button" className="btn btn-primary" disabled={!check.ok || csvData.rows.length === 0} onClick={() => handleExportGroup(group, csvData, check)}>
                               Export CSV
                             </button>
                           </div>

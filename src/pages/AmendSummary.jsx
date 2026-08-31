@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import { useAppState } from '../state/useAppState';
@@ -8,7 +8,18 @@ import { getOrderCategories } from '../utils/exportCsv';
 export default function AmendSummary() {
   const { state, updateAmend } = useAppState();
   const navigate = useNavigate();
+  const [saving, setSaving] = useState(false);
   const order = state.orders.find((o) => o.id === state.amendOrderId);
+
+  const handleUpdate = async () => {
+    if (saving) return;
+    setSaving(true);
+    const res = await updateAmend();
+    setSaving(false);
+    if (res?.ok) navigate('/dashboard');
+    // on failure the error toast (state.updateToast) shows below and the
+    // user stays on this page to retry.
+  };
 
   const amendSummaryItems = useMemo(() => {
     if (!order) return [];
@@ -49,9 +60,10 @@ export default function AmendSummary() {
           </tbody>
         </table>
 
+        {state.updateToast && <p className="toast-inline" style={{ display: 'block', marginBottom: 'var(--space-3)' }}>{state.updateToast}</p>}
         <div className="row-split">
-          <button type="button" className="btn btn-ghost" onClick={() => navigate(`/amend/${order.id}`)}>← Back to Edit</button>
-          <button type="button" className="btn btn-primary" onClick={() => { updateAmend(); navigate('/dashboard'); }}>Update</button>
+          <button type="button" className="btn btn-ghost" onClick={() => navigate(`/amend/${order.id}`)} disabled={saving}>← Back to Edit</button>
+          <button type="button" className="btn btn-primary" onClick={handleUpdate} disabled={saving}>{saving ? 'Updating…' : 'Update'}</button>
         </div>
       </div>
     </div>

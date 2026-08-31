@@ -1,22 +1,25 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import PriceTable from '../components/PriceTable';
 import { useAppState } from '../state/useAppState';
-import { STATUS_STAGES, STATUS_BG, STATUS_TEXT, formatDate, formatDateTime, standardUnitPrice } from '../data/catalog';
+import { STATUS_STAGES, statusPillStyle, formatDate, formatDateTime, standardUnitPrice } from '../data/catalog';
+import CancelOrderControl from '../components/CancelOrderControl';
 import { reconstructBlocksForCategory } from '../utils/computeBlocks';
 import { getOrderCategories } from '../utils/exportCsv';
 
 const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: false, matrix: false, jenisPlak: false };
 
 export default function OrderDetails() {
-  const { state, recordPrint } = useAppState();
+  const { state, recordPrint, ensureOrderLoaded } = useAppState();
   const { id } = useParams();
   const navigate = useNavigate();
   const order = state.orders.find((o) => o.id === id);
   const [page, setPage] = useState('summary');
+
+  useEffect(() => { ensureOrderLoaded(id); }, [id, ensureOrderLoaded]);
 
   const categories = useMemo(() => (order ? getOrderCategories(order) : []), [order]);
   const [activeCat, setActiveCat] = useState(() => categories[0]?.key || '');
@@ -80,7 +83,7 @@ export default function OrderDetails() {
             <div className="card-kicker">{page === 'summary' ? 'Summary' : 'Order Details'}</div>
             <div className="card-title">{order.id}</div>
           </div>
-          <span className="status-pill" style={{ background: STATUS_BG[idx], color: STATUS_TEXT[idx] }}>{order.status}</span>
+          <span className="status-pill" style={statusPillStyle(order.status)}>{order.status}</span>
         </div>
 
         <div className="screen-only">
@@ -136,6 +139,14 @@ export default function OrderDetails() {
                 <div style={{ marginTop: 'var(--space-4)' }}>
                   <div className="dim">Remark</div>
                   <div>{order.remark}</div>
+                </div>
+              )}
+
+              {order.status === 'Submitted to Sales' && (
+                <div style={{ marginTop: 'var(--space-6)' }}>
+                  <div className="card-kicker">Cancel</div>
+                  <p className="hint-text" style={{ marginTop: 0 }}>You can cancel this order yourself only while it is still awaiting Sales review.</p>
+                  <CancelOrderControl order={order} onCancelled={() => navigate('/dashboard')} />
                 </div>
               )}
 

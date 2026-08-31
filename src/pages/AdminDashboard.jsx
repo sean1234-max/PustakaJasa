@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import AdminLayout from '../components/AdminLayout';
 import { useAppState } from '../state/useAppState';
 import { fetchAllProfiles } from '../lib/adminApi';
-import { STATUS_STAGES, STATUS_BG, STATUS_TEXT } from '../data/catalog';
+import { STATUS_STAGES, statusPillStyle } from '../data/catalog';
 
 function StatTile({ value, label }) {
   return (
@@ -74,7 +74,6 @@ export default function AdminDashboard() {
         {recentOrders.length === 0 && <p className="text-body-md text-on-surface-variant">No orders yet.</p>}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {recentOrders.map((ord) => {
-            const idx = STATUS_STAGES.indexOf(ord.status);
             return (
               <button
                 type="button"
@@ -87,7 +86,7 @@ export default function AdminDashboard() {
                     <span className="text-label-bold text-on-surface-variant block mb-1">Order ID</span>
                     <span className="text-headline-md text-primary">{ord.id}</span>
                   </div>
-                  <span className="px-3 py-1 rounded text-label-bold font-semibold" style={{ background: STATUS_BG[idx], color: STATUS_TEXT[idx] }}>
+                  <span className="px-3 py-1 rounded text-label-bold font-semibold" style={statusPillStyle(ord.status)}>
                     {ord.status}
                   </span>
                 </div>

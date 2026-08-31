@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import { useAppState } from '../state/useAppState';
-import { STATUS_STAGES, STATUS_BG, STATUS_TEXT } from '../data/catalog';
+import { statusPillStyle } from '../data/catalog';
 
 // Sales works one stage at a time — filter tabs map 1:1 to STATUS_STAGES,
 // except the first stage is relabeled "Waiting for Approve" since that's
@@ -61,7 +61,6 @@ export default function SalesDashboard() {
       {filteredOrders.length === 0 && <p className="hint-text">No orders in this stage.</p>}
       <div className="order-grid">
         {filteredOrders.map((ord) => {
-          const idx = STATUS_STAGES.indexOf(ord.status);
           const pendingReview = ord.status === 'Submitted to Sales' || (filter === ADDON_FILTER && ord.pendingAddonStatus === 'pending');
 
           return (
@@ -71,7 +70,7 @@ export default function SalesDashboard() {
                   <div className="order-card-label">Order ID</div>
                   <div className="order-card-id">{ord.id}</div>
                 </div>
-                <span className="status-pill" style={{ background: STATUS_BG[idx], color: STATUS_TEXT[idx] }}>{ord.status}</span>
+                <span className="status-pill" style={statusPillStyle(ord.status)}>{ord.status}</span>
               </div>
               {filter === ADDON_FILTER && (
                 <span className="status-pill" style={{ background: 'var(--color-accent-100)', color: 'var(--color-accent-900)', marginTop: 'var(--space-2)' }}>Add-On Pending</span>

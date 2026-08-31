@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import { useAppState } from '../state/useAppState';
-import { STATUS_STAGES, STATUS_BG, STATUS_TEXT, formatDate } from '../data/catalog';
+import { statusPillStyle, formatDate } from '../data/catalog';
 import { getOrderChangeStamp } from '../utils/orderStamp';
 
 // Production only ever works orders that are already 'In Production' — one
@@ -109,7 +109,6 @@ export default function ProductionDashboard() {
       {filteredOrders.length === 0 && <p className="hint-text">No orders in this stage.</p>}
       <div className="order-grid">
         {filteredOrders.map((ord) => {
-          const idx = STATUS_STAGES.indexOf(ord.status);
           const stamp = getOrderChangeStamp(ord);
 
           return (
@@ -119,7 +118,7 @@ export default function ProductionDashboard() {
                   <div className="order-card-label">Order ID</div>
                   <div className="order-card-id">{ord.id}</div>
                 </div>
-                <span className="status-pill" style={{ background: STATUS_BG[idx], color: STATUS_TEXT[idx] }}>{ord.status}</span>
+                <span className="status-pill" style={statusPillStyle(ord.status)}>{ord.status}</span>
               </div>
               {stamp && <div className="order-stamp-inline" style={{ marginTop: 'var(--space-1)' }}>{stamp}</div>}
 

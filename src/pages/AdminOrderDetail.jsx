@@ -1,12 +1,13 @@
-import { useState, useMemo, useRef } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import AdminLayout from '../components/AdminLayout';
 import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import { useAppState } from '../state/useAppState';
-import { STATUS_STAGES, STATUS_BG, STATUS_TEXT, formatDate } from '../data/catalog';
+import { statusPillStyle, formatDate } from '../data/catalog';
+import CancelOrderControl from '../components/CancelOrderControl';
 import { reconstructOrderDetailGroups } from '../utils/computeBlocks';
-import { getOrderCategories, getOrderJenisPlakGroups, buildCsvRows, rowsToCsv, buildCategoryCsvFilename } from '../utils/exportCsv';
+import { getOrderCategories, getOrderJenisPlakGroups, buildCsvRows, rowsToCsv, buildCategoryCsvFilename, validateExport } from '../utils/exportCsv';
 import { downloadTextFile } from '../utils/downloadBlob';
 import { groupItemsByBatch } from '../utils/orderBatches';
 
@@ -18,12 +19,14 @@ import { groupItemsByBatch } from '../utils/orderBatches';
 const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: false, matrix: false, jenisPlak: false };
 
 export default function AdminOrderDetail() {
-  const { state, setInvoiceId } = useAppState();
+  const { state, setInvoiceId, ensureOrderLoaded } = useAppState();
   const { id } = useParams();
   const navigate = useNavigate();
   const order = state.orders.find((o) => o.id === id);
+  useEffect(() => { ensureOrderLoaded(id); }, [id, ensureOrderLoaded]);
 
   const [invoiceDraft, setInvoiceDraft] = useState('');
+  const [savingInvoice, setSavingInvoice] = useState(false);
   const [exportNote, setExportNote] = useState('');
   const exportNoteTimer = useRef(null);
   const [page, setPage] = useState('summary');
@@ -42,36 +45,45 @@ export default function AdminOrderDetail() {
   // Order-wide, not scoped to the selected category tab — see the matching
   // comment in ProductionOrderDetail.jsx.
   const jenisPlakGroups = useMemo(() => (order ? getOrderJenisPlakGroups(order) : []), [order]);
+  const jenisPlakExport = useMemo(() => {
+    if (!order) return [];
+    return jenisPlakGroups.map(({ jenisPlak, items }) => {
+      const csvData = buildCsvRows(order, null, items);
+      return { jenisPlak, items, csvData, check: validateExport(order, items, state.plakCatalog, csvData) };
+    });
+  }, [order, jenisPlakGroups, state.plakCatalog]);
 
   if (!order) return <AdminLayout title="Order Details"><p className="text-body-md text-on-surface-variant">Order not found.</p></AdminLayout>;
 
-  const idx = STATUS_STAGES.indexOf(order.status);
   const totalQty = order.items.reduce((sum, it) => sum + (Number(it.qty) || 0), 0);
   const itemGroups = groupItemsByBatch(order.items);
 
-  const handleSaveInvoice = () => {
-    setInvoiceId(order.id, invoiceDraft);
-    setInvoiceDraft('');
+  const handleSaveInvoice = async () => {
+    if (savingInvoice) return;
+    setSavingInvoice(true);
+    const res = await setInvoiceId(order.id, invoiceDraft);
+    setSavingInvoice(false);
+    if (res?.ok) setInvoiceDraft('');
   };
 
-  const handleExportGroup = (group, csvRows) => {
-    if (csvRows.length === 0) return;
-    const csv = rowsToCsv(csvRows);
+  const handleExportGroup = (group, csvData, check) => {
+    if (!check.ok || csvData.rows.length === 0) return;
+    const csv = rowsToCsv(csvData.rows);
     const label = [group.blk.qtyLabel, group.batch !== 0 ? group.label : null, group.jenisPlak]
       .filter(Boolean).join(' - ');
     const filename = buildCategoryCsvFilename(order, label);
     downloadTextFile(filename, csv);
-    setExportNote(`Exported ${csvRows.length} row(s) to ${filename}.`);
+    setExportNote(`Exported ${csvData.rows.length} row(s) to ${filename}.`);
     clearTimeout(exportNoteTimer.current);
     exportNoteTimer.current = setTimeout(() => setExportNote(''), 4000);
   };
 
-  const handleExportJenisPlak = (jenisPlak, csvRows) => {
-    if (csvRows.length === 0) return;
-    const csv = rowsToCsv(csvRows);
+  const handleExportJenisPlak = (jenisPlak, csvData, check) => {
+    if (!check.ok || csvData.rows.length === 0) return;
+    const csv = rowsToCsv(csvData.rows);
     const filename = buildCategoryCsvFilename(order, jenisPlak);
     downloadTextFile(filename, csv);
-    setExportNote(`Exported ${csvRows.length} row(s) to ${filename}.`);
+    setExportNote(`Exported ${csvData.rows.length} row(s) to ${filename}.`);
     clearTimeout(exportNoteTimer.current);
     exportNoteTimer.current = setTimeout(() => setExportNote(''), 4000);
   };
@@ -111,7 +123,7 @@ export default function AdminOrderDetail() {
             <span className="text-label-bold text-on-surface-variant uppercase tracking-widest block mb-1">{page === 'summary' ? 'Summary' : 'Order Details'}</span>
             <h2 className="text-headline-md text-on-surface">{order.id}</h2>
           </div>
-          <span className="px-3 py-1 rounded-md text-label-bold font-semibold" style={{ background: STATUS_BG[idx], color: STATUS_TEXT[idx] }}>{order.status}</span>
+          <span className="px-3 py-1 rounded-md text-label-bold font-semibold" style={statusPillStyle(order.status)}>{order.status}</span>
         </div>
 
         {page === 'summary' ? (
@@ -145,11 +157,15 @@ export default function AdminOrderDetail() {
                     value={invoiceDraft}
                     onChange={(e) => setInvoiceDraft(e.target.value)}
                   />
-                  <button type="button" onClick={handleSaveInvoice} className="bg-primary text-on-primary text-label-bold font-semibold px-5 py-2.5 rounded-lg hover:bg-primary/90 transition-colors">Save</button>
+                  <button type="button" onClick={handleSaveInvoice} disabled={savingInvoice} className="bg-primary text-on-primary text-label-bold font-semibold px-5 py-2.5 rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-60">{savingInvoice ? 'Saving…' : 'Save'}</button>
                 </div>
               </div>
             )}
             {state.productionToast && <p className="text-body-sm text-on-surface-variant mt-2">{state.productionToast}</p>}
+
+            <h3 className="text-label-bold text-on-surface-variant uppercase tracking-widest mt-8 mb-2">Cancel</h3>
+            <CancelOrderControl order={order} onCancelled={() => navigate('/admin/orders')} />
+            {state.updateToast && <p className="text-body-sm text-on-surface-variant mt-2">{state.updateToast}</p>}
 
             <div className="flex justify-end mt-8">
               <button type="button" onClick={() => setPage('details')} className="bg-primary text-on-primary text-label-bold font-semibold px-6 py-2.5 rounded-lg hover:bg-primary/90 transition-colors">Next: Order Details →</button>
@@ -222,25 +238,28 @@ export default function AdminOrderDetail() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-outline-variant text-body-md text-on-surface">
-                        {jenisPlakGroups.map(({ jenisPlak, items }) => {
-                          const csvData = buildCsvRows(order, null, items);
-                          return (
-                            <tr key={jenisPlak}>
-                              <td className="py-2 pr-4">{jenisPlak}</td>
-                              <td className="py-2 pr-4">{items.length}</td>
-                              <td className="py-2 pr-4">{csvData.rows.length}</td>
-                              <td className="py-2">
-                                <button type="button" disabled={csvData.rows.length === 0} onClick={() => handleExportJenisPlak(jenisPlak, csvData.rows)} className="bg-primary text-on-primary text-label-bold font-semibold px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50">
-                                  Export CSV
-                                </button>
-                              </td>
-                            </tr>
-                          );
-                        })}
+                        {jenisPlakExport.map(({ jenisPlak, items, csvData, check }) => (
+                          <tr key={jenisPlak}>
+                            <td className="py-2 pr-4">{jenisPlak}</td>
+                            <td className="py-2 pr-4">{items.length}</td>
+                            <td className="py-2 pr-4">{check.ok ? csvData.rows.length : <span className="text-error font-semibold">blocked</span>}</td>
+                            <td className="py-2">
+                              <button type="button" disabled={!check.ok || csvData.rows.length === 0} onClick={() => handleExportJenisPlak(jenisPlak, csvData, check)} className="bg-primary text-on-primary text-label-bold font-semibold px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50">
+                                Export CSV
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
                       </tbody>
                     </table>
                   </div>
                 )}
+                {jenisPlakExport.filter((g) => !g.check.ok).map((g) => (
+                  <p key={g.jenisPlak} className="text-body-sm text-error font-semibold mt-1">⚠ {g.jenisPlak}: {g.check.errors.join(' ')}</p>
+                ))}
+                {jenisPlakExport.flatMap((g) => g.check.warnings.map((w) => (
+                  <p key={`${g.jenisPlak}-${w}`} className="text-body-sm mt-1" style={{ color: '#b45309' }}>{g.jenisPlak}: {w}</p>
+                )))}
                 {exportNote && <p className="text-body-md text-on-surface-variant mt-2">{exportNote}</p>}
 
                 <h3 className="text-body-sm font-semibold text-on-surface-variant uppercase tracking-widest mt-8 mb-2 opacity-80">Export by Category (for review)</h3>
@@ -256,6 +275,7 @@ export default function AdminOrderDetail() {
                     {detailGroups.map((group, gi) => {
                       if (!group.blk) return null;
                       const csvData = buildCsvRows(order, currentCat.key, group.items);
+                      const check = validateExport(order, group.items, state.plakCatalog, csvData);
                       return (
                         <div key={group.items[0].id} className={gi > 0 ? 'mt-8 pt-8 border-t border-outline-variant' : undefined}>
                           <h4 className="text-label-bold text-on-surface-variant uppercase tracking-widest mb-2">
@@ -263,19 +283,18 @@ export default function AdminOrderDetail() {
                           </h4>
                           <OrderCategoryBlock blk={group.blk} editable={READONLY} />
 
-                          {csvData.rows.length === 0 ? (
-                            <p className="text-body-md text-on-surface-variant">No reference sample data to export for this order detail.</p>
-                          ) : (
-                            <>
-                              {csvData.skippedItemIds.length > 0 && (
-                                <p className="text-body-md text-on-surface-variant">{csvData.skippedItemIds.length} item(s) skipped — no reference sample data.</p>
-                              )}
-                              <p className="text-body-md text-on-surface-variant">{csvData.rows.length} row(s) ready to export.</p>
-                            </>
+                          {check.errors.map((e) => (
+                            <p key={e} className="text-body-sm text-error font-semibold mt-1">⚠ {e}</p>
+                          ))}
+                          {check.warnings.map((w) => (
+                            <p key={w} className="text-body-sm mt-1" style={{ color: '#b45309' }}>{w}</p>
+                          ))}
+                          {check.ok && csvData.rows.length > 0 && (
+                            <p className="text-body-md text-on-surface-variant mt-1">{csvData.rows.length} row(s) ready to export.</p>
                           )}
 
                           <div className="flex justify-end mt-3">
-                            <button type="button" disabled={csvData.rows.length === 0} onClick={() => handleExportGroup(group, csvData.rows)} className="bg-primary text-on-primary text-label-bold font-semibold px-6 py-2.5 rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50">
+                            <button type="button" disabled={!check.ok || csvData.rows.length === 0} onClick={() => handleExportGroup(group, csvData, check)} className="bg-primary text-on-primary text-label-bold font-semibold px-6 py-2.5 rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50">
                               Export CSV
                             </button>
                           </div>
