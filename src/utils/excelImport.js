@@ -181,12 +181,19 @@ function readNamaKelasQtyRows(ws, range, { namaKelasCol, qtyCol, startRow, endRo
 // carrying every subject's own qty from that column.
 function readSubjectMatrix(ws, range, { subjectCol, subjectStartRow, subjectEndRow, classHeaderRow, classCols }) {
   const subjectNames = [];
+  // The teacher's own "TOTAL" row (where the subject names end) is also a
+  // cross-check: its per-column figure is what the teacher believes each
+  // class column adds up to. Captured here (not just used as a stop marker)
+  // so a column whose filled cells don't match its own TOTAL can be
+  // surfaced as a question on Step 2 — see importChecks.js checkColumnTotals.
+  let totalRow = null;
   for (let r = subjectStartRow; r <= subjectEndRow; r++) {
     const name = cellText(ws, r, subjectCol);
-    if (name && name.toUpperCase().startsWith('TOTAL')) break;
+    if (name && name.toUpperCase().startsWith('TOTAL')) { totalRow = r; break; }
     if (name) subjectNames.push({ row: r, name });
   }
   const classes = [];
+  const statedTotals = {};
   classCols.forEach((col) => {
     const label = cellText(ws, classHeaderRow, col);
     if (!label) return;
@@ -198,8 +205,12 @@ function readSubjectMatrix(ws, range, { subjectCol, subjectStartRow, subjectEndR
     if (subjects.length === 0) return;
     const tahun = normalizeTahun(label);
     classes.push({ tahunFrom: tahun, tahunTo: tahun, namaKelas: tahun ? '' : label, subjects });
+    if (totalRow != null) {
+      const stated = cellNum(ws, totalRow, col);
+      if (stated > 0) statedTotals[label] = stated;
+    }
   });
-  return classes;
+  return { classes, statedTotals };
 }
 // A subject list with no class axis at all — each row is just its own
 // Description (subject name) and QTY, the same flat shape Mata Pelajaran/
@@ -248,6 +259,7 @@ function scanSheetForSections(ws) {
   plakAnchors.forEach((plakAnchor) => {
     const candidates = shapeLabels.filter((h) => h.row >= bandStart && h.row < plakAnchor.row);
     let classes = [];
+    let statedTotals = null; // subject-matrix shape only — the teacher's own per-column TOTAL row
     let headerRow = plakAnchor.row; // default: no table found, ref-line band runs right up to the footer
     if (candidates.length > 0) {
       headerRow = Math.max(...candidates.map((h) => h.row));
@@ -293,10 +305,12 @@ function scanSheetForSections(ws) {
         const classCols = belowRowLabels.length > sameRowLabels.length ? belowRowLabels : sameRowLabels;
         const classHeaderRow = belowRowLabels.length > sameRowLabels.length ? headerRow + 1 : headerRow;
         if (classCols.length > 0) {
-          classes = readSubjectMatrix(ws, range, {
+          const matrix = readSubjectMatrix(ws, range, {
             subjectCol: subjekH.col, subjectStartRow: headerRow + (classHeaderRow > headerRow ? 2 : 1),
             subjectEndRow: plakAnchor.row - 1, classHeaderRow, classCols,
           });
+          classes = matrix.classes;
+          if (Object.keys(matrix.statedTotals).length > 0) statedTotals = matrix.statedTotals;
         } else {
           // No class-level columns at all next to SUBJEK — just a subject
           // name and a single qty each, with no genuine class axis to plot
@@ -349,7 +363,9 @@ function scanSheetForSections(ws) {
     // unrelated label text rather than finding a genuinely filled-in award,
     // and creating a section from it would just be empty noise.
     if (classes.length > 0 || jenisPlak) {
-      sections.push({ lines, classes, jenisPlak });
+      const section = { lines, classes, jenisPlak };
+      if (statedTotals) section.statedTotals = statedTotals;
+      sections.push(section);
     }
     // Next section's ref-line band starts right after this one's own data —
     // whichever of the footer's data rows or the qty table goes further down.
@@ -813,6 +829,40 @@ function findSheet(wb, name) {
   return found ? wb.Sheets[found] : null;
 }
 
+// The FRONT PG cover sheet's own JENIS PLAK / QTY table — the school's
+// hand-totalled grand total per plaque code, used purely as a cross-check
+// oracle against what each imported section actually adds up to (see
+// importChecks.js checkExpansionTotals). NOT a data source for the order
+// itself — its rows carry no wording or class breakdown. Returns a Map of
+// aggressively-normalised code (all spaces/parens stripped, dashes
+// collapsed — enough to line "M 1902 A" up with a section's "M1902A", or
+// "ACC- 635 (GOLD)" with "ACC-635 (GOLD)") → summed qty, or null when the
+// sheet or its table isn't there.
+export function frontPgMatchKey(text) {
+  return String(text || '').toUpperCase().replace(/[()]/g, '').replace(/\s+/g, '').replace(/-+/g, '-');
+}
+function readFrontPgTotals(wb) {
+  const ws = findSheet(wb, 'FRONT PG');
+  if (!ws) return null;
+  const range = sheetRange(ws);
+  const plakH = findLabelCells(ws, range, ['JENIS PLAK'])[0];
+  if (!plakH) return null;
+  const qtyH = findLabelCells(ws, { r1: plakH.row, r2: plakH.row, c1: range.c1, c2: range.c2 }, ['QTY'])
+    .find((h) => h.col > plakH.col);
+  if (!qtyH) return null;
+  const totals = new Map();
+  for (let r = plakH.row + 1; r <= range.r2; r++) {
+    const code = cellText(ws, r, plakH.col);
+    if (!code) continue; // TAMBAHAN blocks leave gaps — keep scanning
+    if (/^(TAMBAHAN|REMARK|JUMLAH|TOTAL|CATATAN|NOTA)/i.test(code)) break;
+    const qty = cellNum(ws, r, qtyH.col);
+    if (qty <= 0) continue;
+    const key = frontPgMatchKey(code);
+    totals.set(key, (totals.get(key) || 0) + qty);
+  }
+  return totals.size > 0 ? totals : null;
+}
+
 // Loosens up a code/text for substring comparison: uppercase, parentheses
 // treated as plain separators, and — critically — any spaced-out hyphen
 // ("SM - 13187") collapsed to the bare one the catalog actually stores
@@ -930,6 +980,20 @@ export function parseFormAnugerahExcel(arrayBuffer) {
 
   allSections.push(...findPerasmiSections(wb));
   const kivNotes = findKivNotes(wb);
+
+  // Tag each section with the school's own FRONT PG grand total for its
+  // plaque code, when one lines up — a section whose imported classes don't
+  // add up to it becomes a question on Step 2 (importChecks.js
+  // checkExpansionTotals). Left off when nothing matches, so it's never a
+  // false alarm from a code the cover sheet just doesn't list.
+  const frontPgTotals = readFrontPgTotals(wb);
+  if (frontPgTotals) {
+    allSections.forEach((s) => {
+      if (!s.jenisPlak) return;
+      const qty = frontPgTotals.get(frontPgMatchKey(s.jenisPlak));
+      if (qty != null) s.frontPgQty = qty;
+    });
+  }
 
   if (allSections.length === 0 && kivNotes.length === 0) {
     return { klasMatrix: null, error: 'No filled-in data found in any recognized sheet of this file.' };

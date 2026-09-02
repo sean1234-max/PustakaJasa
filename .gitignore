@@ -25,3 +25,8 @@ supabase/.temp
 *.sln
 *.sw?
 .vercel
+
+# Local throwaway scripts for prompt-tuning the extract-order-file function
+_test_*.ps1
+_*.mjs
+*_result.json

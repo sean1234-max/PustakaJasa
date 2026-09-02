@@ -34,6 +34,11 @@ export default function NewOrderStep2() {
   // warning again still re-triggers it.
   const [pendingScrollBlockIdx, setPendingScrollBlockIdx] = useState(null);
   const [flashBlockIdx, setFlashBlockIdx] = useState(null);
+  // Answers to the import's `type:'choice'` cross-check questions (see
+  // AppState's importFormAnugerahExcel / the "Confirm before continuing"
+  // panel below), keyed by warning id → chosen option key. An unanswered
+  // choice question blocks Add to Cart.
+  const [choiceAnswers, setChoiceAnswers] = useState({});
 
   // "Import from Excel" — lets a teacher upload (by click OR drag-and-drop
   // from Explorer) their own past order instead of typing every
@@ -52,10 +57,22 @@ export default function NewOrderStep2() {
     }
     setImporting(true);
     setImportStatus(null);
+    setChoiceAnswers({});
     const result = await importFormAnugerahExcel(file);
     setImporting(false);
     setImportStatus(result);
   };
+
+  // The import's cross-check questions (matrix column vs its own TOTAL row,
+  // etc.) — shown in their own panel, and every one must be answered before
+  // Add to Cart. Answering "fill it back in" applies the exact draft edits
+  // AppState resolved at import time (addPatches); the other answers just
+  // acknowledge (the draft already holds the real figures).
+  const choiceWarnings = useMemo(
+    () => (importStatus?.warnings || []).filter((w) => w.type === 'choice'),
+    [importStatus],
+  );
+  const unansweredChoices = choiceWarnings.filter((w) => !choiceAnswers[w.id]);
 
   // The import's own warning list is a snapshot from the moment the file
   // was read — a "couldn't match Jenis Plak" entry stays true only until
@@ -99,6 +116,16 @@ export default function NewOrderStep2() {
     const timer = setTimeout(() => setFlashBlockIdx(null), 1300);
     return () => clearTimeout(timer);
   }, [pendingScrollBlockIdx, state.category]);
+
+  const answerChoice = (w, optionKey) => {
+    if (optionKey === 'add' && w.addPatches?.length) {
+      const mv = { ...state.matrixValues };
+      w.addPatches.forEach((p) => { mv[p.mkey] = p.value; });
+      patch({ matrixValues: mv });
+    }
+    setChoiceAnswers((a) => ({ ...a, [w.id]: optionKey }));
+    if (optionKey === 'keep' || w.jumpOnAnswer) jumpToBlock(w.blockIdx);
+  };
 
   const updaters = useMemo(() => createDraftUpdaters(patch, DRAFT_FIELDS), [patch]);
 
@@ -170,7 +197,7 @@ export default function NewOrderStep2() {
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" />
               </svg>
               <div>
-                <div className="image-drop-title">{importing ? 'Importing…' : 'Import Order File'}</div>
+                <div className="image-drop-title">{importing ? 'Reading… (a tricky file can take up to a minute)' : 'Import Order File'}</div>
                 <div className="image-drop-sub">Drag & drop your filled-in FORM ANUGERAH .xlsx or WORDING .docx here, or click to browse</div>
               </div>
             </div>
@@ -218,6 +245,37 @@ export default function NewOrderStep2() {
         </div>
         <div style={{ marginBottom: 'var(--space-6)' }} />
 
+        {choiceWarnings.length > 0 && (
+          <div className="confirm-panel">
+            <div className="confirm-panel-title">
+              Confirm before continuing
+              {unansweredChoices.length > 0 && <span className="confirm-panel-count">{unansweredChoices.length} left</span>}
+            </div>
+            {choiceWarnings.map((w) => {
+              const answered = choiceAnswers[w.id];
+              return (
+                <div key={w.id} className={`confirm-item${answered ? ' confirm-item-done' : ''}`}>
+                  <p className="confirm-item-q">{w.text}</p>
+                  {answered ? (
+                    <p className="confirm-item-a">
+                      ✓ {w.options.find((o) => o.key === answered)?.label}
+                      <button type="button" className="confirm-undo" onClick={() => setChoiceAnswers((a) => { const n = { ...a }; delete n[w.id]; return n; })}>change</button>
+                    </p>
+                  ) : (
+                    <div className="confirm-item-opts">
+                      {w.options.map((o) => (
+                        <button key={o.key} type="button" className="btn btn-ghost" onClick={() => answerChoice(w, o.key)}>
+                          {o.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
         {blocks.map((blk, i) => (
           <div key={blk.idx}>
             {/* Beyond a couple of hand-Duplicated blocks, an import can land a
@@ -244,7 +302,12 @@ export default function NewOrderStep2() {
         <div className="row-split" style={{ marginTop: 'var(--space-6)' }}>
           <button type="button" className="btn btn-ghost" onClick={() => navigate('/order/step1')}>← Back</button>
           {state.cartToast && <span className="toast-inline">{state.cartToast}</span>}
-          <button type="button" className="btn btn-primary" onClick={addToCart}>Add to Cart</button>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+            <button type="button" className="btn btn-primary" onClick={addToCart} disabled={unansweredChoices.length > 0}>Add to Cart</button>
+            {unansweredChoices.length > 0 && (
+              <span className="hint-text" style={{ margin: 0 }}>Answer the {unansweredChoices.length} question(s) above first.</span>
+            )}
+          </div>
         </div>
       </div>
     </div>

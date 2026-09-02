@@ -6,6 +6,11 @@ import {
 } from '../utils/computeBlocks';
 import { parseFormAnugerahExcel, matchJenisPlakPath } from '../utils/excelImport';
 import { parseWordingDocx } from '../utils/docxImport';
+import { checkColumnTotals, checkExpansionTotals } from '../utils/importChecks';
+import { aiResultToParsed, importLooksThin } from '../utils/aiImportMap';
+import { renderSheetsText, uploadOrderFile, runAiExtraction } from '../lib/importApi';
+
+const AI_IMPORT_ENABLED = import.meta.env.VITE_AI_IMPORT_ENABLED === 'true';
 import { AppStateContext } from './AppStateContext';
 import {
   fetchOrders, fetchOrderById, insertOrder, updateOrder, nextOrderSeq, fetchAllSalesmen,
@@ -85,6 +90,32 @@ function deriveKlasMatrixSectionLines(section) {
   if (hidden.length) lines.hiddenLines = hidden.join(',');
   lines.refOrder = '0,3,2b';
   return lines;
+}
+
+// Renders the file to text, uploads it for the audit trail (best-effort),
+// calls the extract-order-file Edge Function, and maps a successful result
+// into the same { klasMatrix: { sections } } shape the deterministic
+// parsers return. Returns null on any failure — the caller then keeps the
+// deterministic result. Never throws.
+async function tryAiExtraction(file, buffer) {
+  try {
+    const sheetsText = await renderSheetsText(buffer, file.name);
+    if (!sheetsText || !sheetsText.trim()) return null;
+    let storagePath = null;
+    try {
+      ({ storagePath } = await uploadOrderFile(file, buffer));
+    } catch (e) {
+      console.warn('order-imports upload failed (continuing):', e);
+    }
+    const res = await runAiExtraction({ storagePath, fileName: file.name, sheetsText });
+    if (res?.status === 'succeeded' && res.result) {
+      return aiResultToParsed(res.result);
+    }
+    return null;
+  } catch (e) {
+    console.error('AI extraction failed:', e);
+    return null;
+  }
 }
 
 // Finds a catalog node by id anywhere in the tree, along with the sibling
@@ -566,9 +597,23 @@ export function AppStateProvider({ children }) {
   // to show; never throws.
   const importFormAnugerahExcel = useCallback(async (file) => {
     let parsed;
+    let usedAi = false;
     try {
       const buffer = await file.arrayBuffer();
       parsed = /\.docx$/i.test(file.name) ? await parseWordingDocx(buffer) : parseFormAnugerahExcel(buffer);
+
+      // AI fallback — only when it's switched on for this build, the caller
+      // is an admin (the limited first rollout), and the deterministic
+      // parser came back empty or with nothing to show. The deterministic
+      // result still wins whenever it's usable — this never overrides a
+      // good template read, only rescues a file the heuristics can't handle.
+      if (AI_IMPORT_ENABLED && stateRef.current.role === 'admin' && importLooksThin(parsed)) {
+        const aiParsed = await tryAiExtraction(file, buffer);
+        if (aiParsed && !aiParsed.error) {
+          parsed = aiParsed;
+          usedAi = true;
+        }
+      }
     } catch (err) {
       console.error('Failed to read uploaded order file:', err);
       return { ok: false, message: 'Could not read this file. Please try again.' };
@@ -728,6 +773,79 @@ export function AppStateProvider({ children }) {
       };
       landOn = catKey;
       messages.push(`Mata Pelajaran/Klas (Matrix): ${maxSections} section(s)`);
+
+      // Cross-check each subject matrix against the teacher's own TOTAL row.
+      // A mismatch becomes a `type:'choice'` warning the teacher must answer
+      // on Step 2 before Add to Cart (see NewOrderStep2's "需要你确认"
+      // panel) — never auto-corrected here. Each option carries the exact
+      // draft edits its answer implies, resolved to real row/column ids now
+      // while newRowsByBlock/newColumnsByBlock are in scope.
+      const importedSections = parsed.klasMatrix.sections.slice(0, maxSections);
+      const columnTotalIssues = checkColumnTotals(importedSections);
+      columnTotalIssues.forEach((iss) => {
+        const key = `${catKey}::${iss.sectionIdx}`;
+        const rows = newRowsByBlock[key] || [];
+        const cols = newColumnsByBlock[key] || [];
+        const col = cols.find((c) => (c.namaKelas || c.tahunFrom || c.tahunTo || '') === iss.classLabel);
+        const addPatches = [];
+        if (col) {
+          iss.missing.forEach((m) => {
+            const row = rows.find((r) => r.desc === m.name);
+            if (row) addPatches.push({ mkey: `${key}::${row.id}::${col.id}`, value: String(m.qty) });
+          });
+        }
+        const options = [];
+        if (iss.missing.length > 0 && addPatches.length === iss.missing.length) {
+          options.push({ key: 'add', label: `${iss.missing.map((m) => m.name).join(', ')} was left blank — fill it back in` });
+        }
+        options.push({ key: 'total', label: `The TOTAL figure is wrong — it should be ${iss.computed}` });
+        options.push({ key: 'keep', label: 'Neither is right — I will fix it myself below' });
+        warnings.push({
+          type: 'choice',
+          id: iss.id,
+          blockIdx: iss.sectionIdx,
+          text: `Section ${iss.sectionIdx + 1} · ${iss.classLabel}: you filled in ${iss.computed}, but the TOTAL says ${iss.stated}.`,
+          options,
+          addPatches,
+        });
+      });
+
+      // Second cross-check: what each plaque code's sections add up to vs
+      // the school's own FRONT PG grand total. No auto-fix — the parser
+      // can't know where a shortfall belongs — so this only asks, and it
+      // skips any code already covered by a column-total question above.
+      checkExpansionTotals(importedSections, columnTotalIssues.map((i) => i.sectionIdx)).forEach((iss) => {
+        const where = iss.sectionIdxs.map((i) => i + 1).join(', ');
+        warnings.push({
+          type: 'choice',
+          id: iss.id,
+          blockIdx: iss.sectionIdxs[0],
+          text: `${iss.jenisPlak} (section ${where}): the imported classes add up to ${iss.computed}, but FRONT PG says ${iss.stated}. Something didn't come through — check this section below.`,
+          options: [{ key: 'keep', label: 'Got it — take me to that section' }],
+          addPatches: [],
+        });
+      });
+
+      // Questions the AI raised while reading (see aiImportMap.js) — same
+      // "Confirm before continuing" panel as the deterministic checks. The
+      // AI never carries an auto-fix instruction, so answering just
+      // acknowledges and jumps the teacher to that section to adjust it.
+      (parsed.questions || []).forEach((q) => {
+        const opts = q.options.length ? q.options : ['OK, I have checked this'];
+        warnings.push({
+          type: 'choice',
+          id: q.id,
+          blockIdx: q.awardIndex ?? 0,
+          text: q.text,
+          options: opts.map((label, i) => ({ key: `opt${i}`, label })),
+          addPatches: [],
+          jumpOnAnswer: true,
+        });
+      });
+    }
+
+    if (parsed.remarkNotes?.length) {
+      parsed.remarkNotes.forEach((n) => remarkNotes.push(n));
     }
 
     // A KIV line (excelImport.js's findKivNotes) has no recipient data at
@@ -746,7 +864,8 @@ export function AppStateProvider({ children }) {
 
     setState({ ...next, category: landOn || next.category });
 
-    return { ok: true, message: `Imported — ${messages.join('; ')}. Please review before adding to cart.`, warnings };
+    const lead = usedAi ? 'Read by AI' : 'Imported';
+    return { ok: true, message: `${lead} — ${messages.join('; ')}. Please review carefully before adding to cart.`, warnings };
   }, []);
 
   const removeFromCart = useCallback((id) => {

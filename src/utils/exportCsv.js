@@ -1,7 +1,7 @@
 import {
   CATEGORIES, getCategorySubjects, getCategoryColumns, tahunRangeYears,
   getCustomMatrixRowIds, customMatrixLabelKey, matrixCellKey,
-  flattenPlakCatalog, isCustomPlakCode,
+  flattenPlakCatalog, isCustomPlakCode, MANUAL_MAX_QTY,
 } from '../data/catalog';
 
 export const CSV_COLUMNS = ['event_header', 'year', 'position', 'event_line_1', 'event_line_2'];
@@ -251,6 +251,40 @@ export function getOrderJenisPlakGroups(order) {
     byPlak.get(item.jenisPlak).push(item);
   });
   return [...byPlak.entries()].map(([jenisPlak, items]) => ({ jenisPlak, items }));
+}
+
+// For each Jenis Plak group (getOrderJenisPlakGroups), whether Production
+// should export a CSV or type the plaques by hand. Keyed by the exact
+// jenisPlak string. `totalQty` is the sum of every item's qty for that
+// Jenis Plak across the whole order — the same number the school's FRONT
+// PG page totals — so a Jenis Plak ordered in several places is judged on
+// its combined size, not each line. Computed live (never stored) so it
+// stays correct after an amend. See catalog.js's MANUAL_MAX_QTY.
+export function getPlakProductionMode(order) {
+  const modes = new Map();
+  getOrderJenisPlakGroups(order).forEach(({ jenisPlak, items }) => {
+    const totalQty = items.reduce((sum, it) => sum + (Number(it.qty) || 0), 0);
+    modes.set(jenisPlak, {
+      mode: totalQty <= MANUAL_MAX_QTY ? 'manual' : 'csv',
+      totalQty,
+    });
+  });
+  return modes;
+}
+
+// Collapses a group's built CSV rows down to the distinct plaque texts a
+// Production operator would hand-type, each with how many to make — for
+// the "BUAT MANUAL" checklist shown instead of an export button. Order of
+// first appearance is kept. Rows whose position AND event lines are all
+// blank collapse into one "(no text)" entry rather than vanishing.
+export function summarizeRowsForManual(rows) {
+  const seen = new Map();
+  (rows || []).forEach((r) => {
+    const text = [r[2], r[3], r[4]].map((v) => String(v ?? '').trim()).filter(Boolean).join('  ·  ');
+    const key = text || '(tiada teks)';
+    seen.set(key, (seen.get(key) || 0) + 1);
+  });
+  return [...seen.entries()].map(([text, count]) => ({ text, count }));
 }
 
 // RFC4180-quoted CSV text. Any value containing a newline, comma, or quote

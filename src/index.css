@@ -283,6 +283,41 @@ a:hover { color: var(--color-accent-900); text-decoration: underline; }
 .btn-ghost:hover { background: var(--color-neutral-100); }
 .btn-danger { background: #b0392e; color: #fff; }
 .btn-danger:hover:not(:disabled) { background: #8f2c23; box-shadow: var(--shadow-sm); }
+
+/* Production: this Jenis Plak's total qty is small enough to hand-type
+   into Illustrator (see catalog.js MANUAL_MAX_QTY) — shown where an
+   "Export CSV" button would otherwise sit. */
+.pill-manual {
+  display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: 0.04em;
+  text-transform: uppercase; padding: 4px 9px; white-space: nowrap;
+  background: #f2e3c8; color: #7a5312; border: 1px solid #d9bd85;
+}
+.manual-engrave-list { margin: var(--space-2) 0 var(--space-4); font-size: 12px; }
+.manual-engrave-list li { margin: 2px 0; }
+
+/* NewOrderStep2 — cross-check questions from an import that must be
+   answered before Add to Cart (see AppState's importFormAnugerahExcel
+   `type:'choice'` warnings). */
+.confirm-panel {
+  border: 1px solid #d9bd85; background: #fbf4e6; border-radius: 6px;
+  padding: var(--space-4); margin-bottom: var(--space-6);
+}
+.confirm-panel-title { font-weight: 700; font-size: 13px; color: #7a5312; display: flex; align-items: center; gap: 8px; }
+.confirm-panel-count {
+  font-size: 11px; font-weight: 700; background: #7a5312; color: #fff;
+  padding: 1px 7px; border-radius: 999px;
+}
+.confirm-item { padding: var(--space-3) 0 0; }
+.confirm-item + .confirm-item { border-top: 1px solid #ecdcbc; margin-top: var(--space-3); }
+.confirm-item-q { margin: 0 0 var(--space-2); font-size: 13px; }
+.confirm-item-opts { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.confirm-item-opts .btn { font-size: 12px; }
+.confirm-item-a { margin: 0; font-size: 12px; color: #1f8a3b; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.confirm-item-done { opacity: 0.75; }
+.confirm-undo {
+  background: none; border: none; padding: 0; font: inherit; font-weight: 600;
+  color: var(--color-text); opacity: 0.6; text-decoration: underline; cursor: pointer;
+}
 .btn-block { width: 100%; }
 .btn-icon { padding: 6px 9px; }
 

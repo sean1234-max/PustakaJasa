@@ -4,9 +4,9 @@ import Nav from '../components/Nav';
 import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import { useAppState } from '../state/useAppState';
-import { statusPillStyle, formatDate } from '../data/catalog';
+import { statusPillStyle, formatDate, MANUAL_MAX_QTY } from '../data/catalog';
 import { reconstructOrderDetailGroups } from '../utils/computeBlocks';
-import { getOrderCategories, getOrderJenisPlakGroups, buildCsvRows, rowsToCsv, buildCategoryCsvFilename, validateExport } from '../utils/exportCsv';
+import { getOrderCategories, getOrderJenisPlakGroups, getPlakProductionMode, summarizeRowsForManual, buildCsvRows, rowsToCsv, buildCategoryCsvFilename, validateExport } from '../utils/exportCsv';
 import { downloadTextFile } from '../utils/downloadBlob';
 import { groupItemsByBatch } from '../utils/orderBatches';
 import { getOrderChangeStamp } from '../utils/orderStamp';
@@ -46,13 +46,24 @@ export default function ProductionOrderDetail() {
   const jenisPlakGroups = useMemo(() => (order ? getOrderJenisPlakGroups(order) : []), [order]);
 
   // Rows + a hard validation result per Jenis Plak group (see validateExport).
+  // `mode` ('csv' | 'manual') is the small-qty split — see getPlakProductionMode:
+  // a Jenis Plak with a small enough combined qty is faster hand-typed into
+  // Illustrator than exported, so Production gets a checklist instead of a
+  // button (but "Export CSV anyway" stays available).
   const jenisPlakExport = useMemo(() => {
     if (!order) return [];
+    const modes = getPlakProductionMode(order);
     return jenisPlakGroups.map(({ jenisPlak, items }) => {
       const csvData = buildCsvRows(order, null, items);
-      return { jenisPlak, items, csvData, check: validateExport(order, items, state.plakCatalog, csvData) };
+      const { mode, totalQty } = modes.get(jenisPlak) || { mode: 'csv', totalQty: 0 };
+      return { jenisPlak, items, csvData, mode, totalQty, check: validateExport(order, items, state.plakCatalog, csvData) };
     });
   }, [order, jenisPlakGroups, state.plakCatalog]);
+
+  const manualPlakGroups = useMemo(
+    () => jenisPlakExport.filter((g) => g.mode === 'manual'),
+    [jenisPlakExport],
+  );
 
   if (!order) return null;
 
@@ -201,29 +212,67 @@ export default function ProductionOrderDetail() {
             <>
                 <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Export by Jenis Plak</div>
                 <p className="hint-text" style={{ marginTop: 0 }}>
-                  Same Jenis Plak used in more than one place in this order? Export one combined CSV for it here instead of a separate file per order detail.
+                  One CSV per Jenis Plak — combined across every order detail that uses it (that's one Adobe Illustrator file).
+                  A Jenis Plak with {MANUAL_MAX_QTY} keping or fewer in total is marked <strong>BUAT MANUAL</strong>: type those few straight into Illustrator, it's faster than exporting and importing. Its plaque text is listed below.
                 </p>
                 {jenisPlakGroups.length === 0 ? (
                   <p className="hint-text">No Jenis Plak found for this order.</p>
                 ) : (
                   <>
                     <table className="table" style={{ margin: 'var(--space-3) 0' }}>
-                      <thead><tr><th>Jenis Plak</th><th style={{ width: 140 }}>Order Details</th><th style={{ width: 100 }}>Rows</th><th style={{ width: 140 }} /></tr></thead>
+                      <thead><tr><th>Jenis Plak</th><th style={{ width: 110 }}>Order Details</th><th style={{ width: 80 }}>QTY</th><th style={{ width: 110 }}>Rows</th><th style={{ width: 150 }} /></tr></thead>
                       <tbody>
-                        {jenisPlakExport.map(({ jenisPlak, items, csvData, check }) => (
+                        {jenisPlakExport.map(({ jenisPlak, items, csvData, check, mode, totalQty }) => (
                           <tr key={jenisPlak}>
                             <td>{jenisPlak}</td>
                             <td>{items.length}</td>
-                            <td>{check.ok ? csvData.rows.length : <span style={{ color: '#b0392e', fontWeight: 700 }}>blocked</span>}</td>
+                            <td>{totalQty}</td>
                             <td>
-                              <button type="button" className="btn btn-primary" disabled={!check.ok || csvData.rows.length === 0} onClick={() => handleExportJenisPlak(jenisPlak, csvData, check)}>
-                                Export CSV
-                              </button>
+                              {mode === 'manual'
+                                ? <span className="pill-manual">Buat Manual</span>
+                                : check.ok ? csvData.rows.length : <span style={{ color: '#b0392e', fontWeight: 700 }}>blocked</span>}
+                            </td>
+                            <td>
+                              {mode === 'manual' ? (
+                                <button type="button" className="btn btn-ghost" disabled={!check.ok || csvData.rows.length === 0} onClick={() => handleExportJenisPlak(jenisPlak, csvData, check)}>
+                                  Export CSV anyway
+                                </button>
+                              ) : (
+                                <button type="button" className="btn btn-primary" disabled={!check.ok || csvData.rows.length === 0} onClick={() => handleExportJenisPlak(jenisPlak, csvData, check)}>
+                                  Export CSV
+                                </button>
+                              )}
                             </td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
+                    {manualPlakGroups.length > 0 && (
+                      <div style={{ marginTop: 'var(--space-2)' }}>
+                        {manualPlakGroups.map(({ jenisPlak, totalQty, csvData }) => {
+                          const engrave = summarizeRowsForManual(csvData.rows);
+                          return (
+                            <div key={jenisPlak} style={{ marginBottom: 'var(--space-3)' }}>
+                              <div style={{ fontWeight: 700, fontSize: 13 }}>
+                                <span className="pill-manual" style={{ marginRight: 8 }}>Buat Manual</span>
+                                {jenisPlak} — {totalQty} keping
+                              </div>
+                              {engrave.length > 0 ? (
+                                <ul className="manual-engrave-list">
+                                  {engrave.map((e) => (
+                                    <li key={e.text}>{e.count} ×&nbsp; {e.text}</li>
+                                  ))}
+                                </ul>
+                              ) : (
+                                <p className="hint-text" style={{ marginTop: 2 }}>
+                                  See the “Export by Category” section below for the full engraving text.
+                                </p>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                     {jenisPlakExport.filter((g) => !g.check.ok).map((g) => (
                       <p key={g.jenisPlak} className="hint-text" style={{ color: '#b0392e', fontWeight: 600 }}>
                         ⚠ {g.jenisPlak}: {g.check.errors.join(' ')}

@@ -417,6 +417,17 @@ export const CATEGORIES = [
 // full CATEGORIES list, unfiltered.
 export const ACTIVE_CATEGORIES = CATEGORIES.filter((c) => c.active !== false);
 
+// Production splits each order by Jenis Plak — one physical Adobe
+// Illustrator file per Jenis Plak. When a Jenis Plak's TOTAL quantity
+// across the whole order is this small, hand-typing the few plaques
+// straight into Illustrator is faster than exporting a CSV and importing
+// it, so Production is told to "BUAT MANUAL" instead of getting an export
+// button. Aggregate per Jenis Plak (matching the school's own FRONT PG
+// grand totals), not per order line. `qty <= MANUAL_MAX_QTY` → manual;
+// `qty >= MANUAL_MAX_QTY + 1` → CSV. See getPlakProductionMode in
+// src/utils/exportCsv.js.
+export const MANUAL_MAX_QTY = 10;
+
 // A teacher-typed catch-all pick (PlakPicker.jsx's "OTHER" leaf, committed
 // as "OTHER - <whatever the teacher typed>") is never a real catalog path,
 // so it can't resolve to a plak_catalog_nodes row at all — stock tracking
