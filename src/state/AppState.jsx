@@ -595,23 +595,25 @@ export function AppStateProvider({ children }) {
   // Add to Cart themselves, same as manual entry, so a parsing mistake
   // never silently reaches an order. Returns { ok, message } for the caller
   // to show; never throws.
-  const importFormAnugerahExcel = useCallback(async (file) => {
+  const importFormAnugerahExcel = useCallback(async (file, opts = {}) => {
     let parsed;
     let usedAi = false;
     try {
       const buffer = await file.arrayBuffer();
       parsed = /\.docx$/i.test(file.name) ? await parseWordingDocx(buffer) : parseFormAnugerahExcel(buffer);
 
-      // AI fallback — only when it's switched on for this build, the caller
-      // is an admin (the limited first rollout), and the deterministic
-      // parser came back empty or with nothing to show. The deterministic
-      // result still wins whenever it's usable — this never overrides a
-      // good template read, only rescues a file the heuristics can't handle.
-      if (AI_IMPORT_ENABLED && stateRef.current.role === 'admin' && importLooksThin(parsed)) {
+      // AI fallback — only when it's switched on for this build and the
+      // caller is an admin (the limited first rollout). Runs automatically
+      // when the deterministic parser came back empty/thin, or on demand
+      // (`opts.forceAi`) when the teacher judges the built-in read wrong.
+      // A good template read is never silently overridden.
+      if (AI_IMPORT_ENABLED && stateRef.current.role === 'admin' && (opts.forceAi || importLooksThin(parsed))) {
         const aiParsed = await tryAiExtraction(file, buffer);
         if (aiParsed && !aiParsed.error) {
           parsed = aiParsed;
           usedAi = true;
+        } else if (opts.forceAi) {
+          return { ok: false, message: 'The AI could not read this file. Keep the built-in result, or enter it by hand.' };
         }
       }
     } catch (err) {
@@ -710,6 +712,12 @@ export function AppStateProvider({ children }) {
           // Nama Kelas/Nama Murid itself BEING the class — see
           // excelImport.js's groupRosterHeaders).
           kelasName: cls.kelasName || '',
+          // The engraved second detail line below the name, for a
+          // pre-written / named-recipient roster import (aiImportMap.js's
+          // "prebuilt" layout) — jawatan + unit, e.g.
+          // "KETUA PENGAWAS\nLEMBAGA PENGAWAS SEKOLAH". Reaches the CSV's
+          // 5th column via buildPbdMatrixRows; blank for every other shape.
+          eline2: cls.eline2 || '',
         }));
         section.classes.forEach((cls, classIdx) => {
           const colId = classColumns[classIdx].id;
@@ -835,11 +843,15 @@ export function AppStateProvider({ children }) {
         warnings.push({
           type: 'choice',
           id: q.id,
-          blockIdx: q.awardIndex ?? 0,
+          blockIdx: q.sectionIdx ?? 0,
           text: q.text,
           options: opts.map((label, i) => ({ key: `opt${i}`, label })),
           addPatches: [],
           jumpOnAnswer: true,
+          // When one answer implies a mechanical edit (add the school name,
+          // drop the class line), NewOrderStep2 applies it — keyed by
+          // `opt<whenOption>`. See aiImportMap.js.
+          aiApply: q.apply || null,
         });
       });
     }

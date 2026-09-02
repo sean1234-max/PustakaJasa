@@ -20,21 +20,35 @@ export interface Plaque {
 }
 
 export interface Award {
-  eventHeader: string;   // top line of the sample box — the majlis title
-  year: string;          // a session year printed on the plaque; usually ""
+  eventHeader: string;   // top line(s) of the plaque — the majlis title (may itself be 2 lines joined with \n)
+  year: string;          // a session line printed on the plaque ("SESI 2024/2025", "2025/2026"); "" if none
   awardName: string;     // the award-name line, e.g. "ANUGERAH CEMERLANG MATA PELAJARAN"
   jenisPlak: string;     // the plaque code, verbatim as written in the file
+  // "matrix"  — the default. line1 = year/class qualifier, line2 = subject/rank.
+  // "prebuilt" — a finished list / named-recipient roster where the teacher
+  //   already wrote every plaque: line1 = the recipient name (or the whole
+  //   pre-written detail line), line2 = the second engraved line below it
+  //   (jawatan + unit, class + year, ...).
+  layout: 'matrix' | 'prebuilt';
   plaques: Plaque[];
   statedTotal: number | null;  // the award's own written TOTAL, if any
   note: string;          // anything the office should see (PPKI wording change, KIV note, ...)
 }
 
 export interface ExtractionQuestion {
-  // 'year-inconsistency' | 'count-mismatch' | 'plak-not-in-catalog' | 'other'
+  // 'year-inconsistency' | 'count-mismatch' | 'plak-not-in-catalog'
+  //   | 'missing-school-name' | 'extra-column-not-in-sample' | 'other'
   kind: string;
   text: string;          // phrased as a question, never an assertion of error
   options: string[];     // 0-4 concrete choices; [] = acknowledge only
   awardIndex: number | null;
+  // When ONE of the answers implies a concrete, mechanical edit to the
+  // draft, describe it so a single click applies it. null = ask only.
+  //   "prepend-header"     — add `text` (+ newline) above each award's header
+  //   "strip-detail-line"  — drop the last line of every plaque's line2
+  // `whenOption` is the index into `options` that triggers the edit; the
+  // other options just acknowledge.
+  apply: { action: 'prepend-header' | 'strip-detail-line'; awardIndexes: number[]; text: string; whenOption: number } | null;
 }
 
 export interface ExtractionResult {
@@ -58,12 +72,13 @@ export const EXTRACTION_INPUT_SCHEMA = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['eventHeader', 'year', 'awardName', 'jenisPlak', 'plaques', 'statedTotal', 'note'],
+        required: ['eventHeader', 'year', 'awardName', 'jenisPlak', 'layout', 'plaques', 'statedTotal', 'note'],
         properties: {
           eventHeader: { type: 'string' },
           year: { type: 'string' },
           awardName: { type: 'string' },
           jenisPlak: { type: 'string' },
+          layout: { type: 'string', enum: ['matrix', 'prebuilt'] },
           plaques: {
             type: 'array',
             items: {
@@ -105,12 +120,23 @@ export const EXTRACTION_INPUT_SCHEMA = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['kind', 'text', 'options', 'awardIndex'],
+        required: ['kind', 'text', 'options', 'awardIndex', 'apply'],
         properties: {
           kind: { type: 'string' },
           text: { type: 'string' },
           options: { type: 'array', items: { type: 'string' }, maxItems: 4 },
           awardIndex: { type: ['integer', 'null'], minimum: 0 },
+          apply: {
+            type: ['object', 'null'],
+            additionalProperties: false,
+            required: ['action', 'awardIndexes', 'text', 'whenOption'],
+            properties: {
+              action: { type: 'string', enum: ['prepend-header', 'strip-detail-line'] },
+              awardIndexes: { type: 'array', items: { type: 'integer', minimum: 0 } },
+              text: { type: 'string' },
+              whenOption: { type: 'integer', minimum: 0 },
+            },
+          },
         },
       },
     },
@@ -141,6 +167,9 @@ export function validateExtraction(
     if (typeof a !== 'object' || a === null) return { ok: false, error: `award ${i} is not an object` };
     if (!isStr(a.eventHeader) || !isStr(a.year) || !isStr(a.awardName) || !isStr(a.jenisPlak) || !isStr(a.note)) {
       return { ok: false, error: `award ${i}: eventHeader/year/awardName/jenisPlak/note must be strings` };
+    }
+    if (a.layout !== 'matrix' && a.layout !== 'prebuilt') {
+      return { ok: false, error: `award ${i}: layout must be "matrix" or "prebuilt"` };
     }
     if (a.statedTotal !== null && !(isInt(a.statedTotal) && (a.statedTotal as number) >= 0)) {
       return { ok: false, error: `award ${i}: statedTotal must be a non-negative integer or null` };
@@ -183,6 +212,15 @@ export function validateExtraction(
     }
     if (q.awardIndex !== null && !(isInt(q.awardIndex) && (q.awardIndex as number) >= 0)) {
       return { ok: false, error: `questions[${i}]: awardIndex must be a non-negative integer or null` };
+    }
+    if (q.apply !== null && q.apply !== undefined) {
+      const ap = q.apply as Record<string, unknown>;
+      if (typeof ap !== 'object'
+        || (ap.action !== 'prepend-header' && ap.action !== 'strip-detail-line')
+        || !Array.isArray(ap.awardIndexes) || !ap.awardIndexes.every((x) => isInt(x) && (x as number) >= 0)
+        || !isStr(ap.text) || !isInt(ap.whenOption)) {
+        return { ok: false, error: `questions[${i}].apply: bad shape` };
+      }
     }
   }
 

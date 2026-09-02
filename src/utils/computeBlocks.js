@@ -296,6 +296,13 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
           // person-name column — see excelImport.js's groupRosterHeaders.
           kelasName: cls.kelasName || '',
           setKelasName: (v) => updaters.onColumnField(colsKey, cls.id, 'kelasName', v),
+          // The engraved detail below the recipient name (CSV event_line_2)
+          // — jawatan + unit + class, however the teacher wants it stacked.
+          // Set only by an AI "prebuilt" roster import (aiImportMap.js);
+          // shown here as a free multi-line box so the teacher can reorder
+          // or trim the lines. Blank for every other KLAS_MATRIX shape.
+          eline2: cls.eline2 || '',
+          setEline2: (v) => updaters.onColumnField(colsKey, cls.id, 'eline2', v),
         };
       });
       columns = subjectDefs.map((subj) => ({
@@ -464,6 +471,7 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
       hasTahun: isDynamicMatrix && matrixRows.some((r) => r.tahunFrom || r.tahunTo || r.tingkatanMode),
       hasJawatan: isDynamicMatrix && matrixRows.some((r) => r.jawatan),
       hasKelasName: isDynamicMatrix && matrixRows.some((r) => r.kelasName),
+      hasEline2: isDynamicMatrix && matrixRows.some((r) => r.eline2),
       // "Nama Kelas" by default, but a roster import's own column header
       // text (NAMA MURID/NAMA GURU/NAMA PELAJAR) rides along as a
       // synthetic lineValues entry the same way hiddenLines/refOrder do,

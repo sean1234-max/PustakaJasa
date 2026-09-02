@@ -65,7 +65,7 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
   // to a fixed layout with an explicit total width (sum of every column's
   // own width below) makes each column render at its real size and lets
   // table-wrap's overflow-x do the scrolling.
-  const DYN_COL_WIDTHS = { tahun: 260, namaKelas: 150, jawatan: 170, kelasName: 150, subject: 190, total: 70 };
+  const DYN_COL_WIDTHS = { tahun: 260, namaKelas: 150, jawatan: 170, kelasName: 150, eline2: 240, subject: 190, total: 70 };
   // Tahun, Jawatan, and Kelas are all optional columns on a dynamicMatrix
   // block — see computeBlocks.js's hasTahun/hasJawatan/hasKelasName —
   // hidden entirely rather than shown always-blank; `!== false` (not a
@@ -74,9 +74,12 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
   const showTahunCol = blk.hasTahun !== false;
   const showJawatanCol = !!blk.hasJawatan;
   const showKelasNameCol = !!blk.hasKelasName;
-  const dynLeadingCols = (showTahunCol ? 1 : 0) + 1 + (showKelasNameCol ? 1 : 0) + (showJawatanCol ? 1 : 0);
+  const showEline2Col = !!blk.hasEline2;
+  const dynLeadingCols = (showTahunCol ? 1 : 0) + 1 + (showKelasNameCol ? 1 : 0)
+    + (showJawatanCol ? 1 : 0) + (showEline2Col ? 1 : 0);
   const dynTableWidth = (showTahunCol ? DYN_COL_WIDTHS.tahun : 0) + DYN_COL_WIDTHS.namaKelas
     + (showKelasNameCol ? DYN_COL_WIDTHS.kelasName : 0) + (showJawatanCol ? DYN_COL_WIDTHS.jawatan : 0)
+    + (showEline2Col ? DYN_COL_WIDTHS.eline2 : 0)
     + dynColumns.length * DYN_COL_WIDTHS.subject + DYN_COL_WIDTHS.total;
   const namaKelasRows = hideEmptyRows ? blk.namaKelasRows.filter((nk) => (nk.name || '').trim()) : blk.namaKelasRows;
   // `hasNamaKelasList` categories (OTHERS) apply ONE Jenis Plak + Reference
@@ -340,6 +343,7 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
                   <th style={{ width: DYN_COL_WIDTHS.namaKelas }}>{blk.namaKelasLabel}</th>
                   {showKelasNameCol && <th style={{ width: DYN_COL_WIDTHS.kelasName }}>Kelas</th>}
                   {showJawatanCol && <th style={{ width: DYN_COL_WIDTHS.jawatan }}>Jawatan</th>}
+                  {showEline2Col && <th style={{ width: DYN_COL_WIDTHS.eline2 }}>Baris tambahan (event_line_2)</th>}
                   {dynColumns.map((col) => (
                     <th key={col.id} style={{ width: DYN_COL_WIDTHS.subject }}>
                       {col.custom && editable.rowDesc ? (
@@ -443,6 +447,23 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
                           value={row.jawatan}
                           readOnly={!editable.rowDesc}
                           onChange={editable.rowDesc ? (e) => row.setJawatan(e.target.value) : undefined}
+                        />
+                      </td>
+                    )}
+                    {showEline2Col && (
+                      <td>
+                        {/* Free multi-line text — one line per engraved line
+                            below the recipient's name. Teacher can reorder
+                            or trim; each newline becomes a line break on
+                            the plaque (CSV event_line_2). */}
+                        <textarea
+                          className="input"
+                          rows={2}
+                          style={{ resize: 'vertical', lineHeight: 1.35 }}
+                          placeholder="jawatan / unit / kelas — satu baris setiap baris ukiran"
+                          value={row.eline2}
+                          readOnly={!editable.rowDesc}
+                          onChange={editable.rowDesc ? (e) => row.setEline2(e.target.value) : undefined}
                         />
                       </td>
                     )}

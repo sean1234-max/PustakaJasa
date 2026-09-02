@@ -62,6 +62,41 @@ describe('buildCsvRows — positionFromRows category (Main Template / TOKOH)', (
   });
 });
 
+describe('buildCsvRows — dynamicMatrix with a pre-written roster column (event_line_2)', () => {
+  // A KLAS_MATRIX item as aiImportMap builds it for a "prebuilt" roster:
+  // one column per recipient, carrying eline2, and one blank subject row.
+  const item = {
+    id: 'r1', jenisPlak: 'OTHER - roster plak', qty: 2, categoryKey: 'KLAS_MATRIX', blockIdx: 0,
+    detail: {
+      lines: {
+        'KLAS_MATRIX::0::0': 'SMK X\nHEM 2024', 'KLAS_MATRIX::0::1': 'SESI 2024/2025',
+        'KLAS_MATRIX::0::2': 'ANUGERAH KEPIMPINAN MURID CEMERLANG',
+      },
+      rows: [{ id: 's0', desc: '' }],
+      columns: [
+        { id: 'c0', tahunFrom: '', tahunTo: '', namaKelas: 'KESHVINI A/P MUGAN', eline2: 'KETUA PENGAWAS\nLEMBAGA PENGAWAS SEKOLAH' },
+        { id: 'c1', tahunFrom: '', tahunTo: '', namaKelas: 'LIEW YONG SHIN', eline2: 'SETIAUSAHA\nLEMBAGA PENGAWAS SEKOLAH' },
+      ],
+      matrix: { 'KLAS_MATRIX::0::s0::c0': '1', 'KLAS_MATRIX::0::s0::c1': '1' },
+    },
+  };
+  const order = { id: 'ORD-R', items: [item], schoolLanguage: 'SK' };
+
+  it('emits the recipient in event_line_1 and jawatan+unit in event_line_2', () => {
+    const { rows } = buildCsvRows(order, 'KLAS_MATRIX', [item]);
+    expect(rows).toEqual([
+      ['SMK X\nHEM 2024', 'SESI 2024/2025', 'ANUGERAH KEPIMPINAN MURID CEMERLANG', 'KESHVINI A/P MUGAN', 'KETUA PENGAWAS\nLEMBAGA PENGAWAS SEKOLAH'],
+      ['SMK X\nHEM 2024', 'SESI 2024/2025', 'ANUGERAH KEPIMPINAN MURID CEMERLANG', 'LIEW YONG SHIN', 'SETIAUSAHA\nLEMBAGA PENGAWAS SEKOLAH'],
+    ]);
+  });
+
+  it('leaves event_line_2 blank for a column with no eline2 (every catalog-native order)', () => {
+    const plain = { ...item, detail: { ...item.detail, columns: item.detail.columns.map((c) => ({ ...c, eline2: '' })) } };
+    const { rows } = buildCsvRows({ ...order, items: [plain] }, 'KLAS_MATRIX', [plain]);
+    expect(rows.every((r) => r[4] === '')).toBe(true);
+  });
+});
+
 describe('validateExport', () => {
   const catalog = [{ code: 'CPH', children: [{ code: 'A', price: 7.5 }, { code: 'B', price: 7.5 }] }];
   const goodItem = {

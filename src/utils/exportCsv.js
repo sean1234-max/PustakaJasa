@@ -175,10 +175,15 @@ function buildPbdMatrixRows(item, header, year, positionPart1) {
       const qty = Number(matrix[key]) || 0;
       if (qty <= 0) return;
       const position = [positionPart1, subjectRow.desc].filter(Boolean).join('\n');
+      // The 5th CSV column, normally blank — a named-recipient / pre-written
+      // roster import (aiImportMap.js) uses it for the engraved detail line
+      // that sits below the name (jawatan + unit). Plain here for every
+      // catalog-native PBD/ALIRAN order.
+      const eventLine2 = col.eline2 || '';
       const tahunLabels = tahunRangeYears(col.tahunFrom, col.tahunTo);
       if (tahunLabels.length === 0) {
         const eventLine1 = col.namaKelas || '';
-        const row = [header, year, position, eventLine1, ''];
+        const row = [header, year, position, eventLine1, eventLine2];
         for (let n = 0; n < qty; n++) rows.push(row);
         return;
       }
@@ -187,7 +192,7 @@ function buildPbdMatrixRows(item, header, year, positionPart1) {
       tahunLabels.forEach((tahunLabel, i) => {
         const count = base + (i < remainder ? 1 : 0);
         const eventLine1 = [tahunLabel, col.namaKelas].filter(Boolean).join(' ');
-        const row = [header, year, position, eventLine1, ''];
+        const row = [header, year, position, eventLine1, eventLine2];
         for (let n = 0; n < count; n++) rows.push(row);
       });
     });

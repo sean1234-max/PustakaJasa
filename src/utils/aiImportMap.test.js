@@ -87,6 +87,31 @@ describe('aiResultToParsed', () => {
     ]);
   });
 
+  it('maps a "prebuilt" named-recipient roster: name -> event_line_1, role+unit -> event_line_2', () => {
+    const parsed = aiResultToParsed(base({
+      awards: [{
+        eventHeader: 'SMK BANDAR BARU SERI PETALING, KUALA LUMPUR\nANUGERAH KECEMERLANGAN HAL EHWAL MURID (HEM)',
+        year: 'SESI 2024/2025', awardName: 'ANUGERAH KEPIMPINAN MURID CEMERLANG', jenisPlak: '',
+        layout: 'prebuilt',
+        plaques: [
+          { line1: 'KESHVINI A/P MUGAN', line2: 'KETUA PENGAWAS\nLEMBAGA PENGAWAS SEKOLAH', count: 1 },
+          { line1: 'LIEW YONG SHIN', line2: 'PENOLONG KETUA PENGAWAS II\nLEMBAGA PENGAWAS SEKOLAH', count: 1 },
+        ],
+        statedTotal: 26, note: '',
+      }],
+    }));
+    const [sec] = parsed.klasMatrix.sections;
+    expect(sec.lines).toEqual({
+      '0': 'SMK BANDAR BARU SERI PETALING, KUALA LUMPUR\nANUGERAH KECEMERLANGAN HAL EHWAL MURID (HEM)',
+      '1': 'SESI 2024/2025',
+      '2': 'ANUGERAH KEPIMPINAN MURID CEMERLANG',
+    });
+    expect(sec.classes).toEqual([
+      { tahunFrom: '', tahunTo: '', namaKelas: 'KESHVINI A/P MUGAN', eline2: 'KETUA PENGAWAS\nLEMBAGA PENGAWAS SEKOLAH', subjects: [{ name: '', qty: 1 }] },
+      { tahunFrom: '', tahunTo: '', namaKelas: 'LIEW YONG SHIN', eline2: 'PENOLONG KETUA PENGAWAS II\nLEMBAGA PENGAWAS SEKOLAH', subjects: [{ name: '', qty: 1 }] },
+    ]);
+  });
+
   it('joins a "senarai hadiah" pre-written label (non-Tahun line1 + line2) into one position block, no duplicate year', () => {
     const parsed = aiResultToParsed(base({
       awards: [{
@@ -118,7 +143,7 @@ describe('aiResultToParsed', () => {
     ]);
   });
 
-  it('maps questions with stable ids and clamps a missing awardIndex to null', () => {
+  it('maps questions with stable ids, resolves awardIndex -> sectionIdx', () => {
     const parsed = aiResultToParsed(base({
       awards: [{ eventHeader: 'E', year: '', awardName: 'A', jenisPlak: 'X', plaques: [{ line1: '', line2: '', count: 1 }], statedTotal: null, note: '' }],
       questions: [
@@ -127,9 +152,22 @@ describe('aiResultToParsed', () => {
       ],
     }));
     expect(parsed.questions).toEqual([
-      { id: 'ai-q:0', kind: 'year-inconsistency', text: '2024/2025 or 2025/2026?', options: ['2024/2025', '2025/2026'], awardIndex: 0 },
-      { id: 'ai-q:1', kind: 'other', text: 'Check this', options: [], awardIndex: null },
+      { id: 'ai-q:0', kind: 'year-inconsistency', text: '2024/2025 or 2025/2026?', options: ['2024/2025', '2025/2026'], sectionIdx: 0 },
+      { id: 'ai-q:1', kind: 'other', text: 'Check this', options: [], sectionIdx: 0 },
     ]);
+  });
+
+  it('resolves an apply block to section indexes and normalises its text', () => {
+    const parsed = aiResultToParsed(base({
+      awards: [
+        { eventHeader: 'SMK X\nEVENT', year: '', awardName: 'A', jenisPlak: '', layout: 'prebuilt', plaques: [{ line1: 'ALI', line2: 'PENGERUSI', count: 1 }], statedTotal: null, note: '' },
+        { eventHeader: 'EVENT', year: '', awardName: 'B', jenisPlak: '', layout: 'prebuilt', plaques: [{ line1: 'ABU', line2: 'GURU', count: 1 }], statedTotal: null, note: '' },
+      ],
+      questions: [
+        { kind: 'missing-school-name', text: 'Add school name to award B?', options: ['Add the school name', 'Leave it out'], awardIndex: 1, apply: { action: 'prepend-header', awardIndexes: [1], text: 'SMK X', whenOption: 0 } },
+      ],
+    }));
+    expect(parsed.questions[0].apply).toEqual({ action: 'prepend-header', sectionIdxs: [1], text: 'SMK X', whenOption: 0 });
   });
 
   it('errors when no award produced any class', () => {

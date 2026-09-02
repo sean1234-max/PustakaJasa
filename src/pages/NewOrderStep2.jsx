@@ -39,6 +39,10 @@ export default function NewOrderStep2() {
   // panel below), keyed by warning id → chosen option key. An unanswered
   // choice question blocks Add to Cart.
   const [choiceAnswers, setChoiceAnswers] = useState({});
+  // Kept so an admin can re-run the last import through the AI when the
+  // built-in reader got it wrong (see the "Read with AI instead" button).
+  const [lastImportFile, setLastImportFile] = useState(null);
+  const aiImportAvailable = import.meta.env.VITE_AI_IMPORT_ENABLED === 'true' && state.role === 'admin';
 
   // "Import from Excel" — lets a teacher upload (by click OR drag-and-drop
   // from Explorer) their own past order instead of typing every
@@ -58,7 +62,18 @@ export default function NewOrderStep2() {
     setImporting(true);
     setImportStatus(null);
     setChoiceAnswers({});
+    setLastImportFile(file);
     const result = await importFormAnugerahExcel(file);
+    setImporting(false);
+    setImportStatus(result);
+  };
+
+  const rereadWithAi = async () => {
+    if (!lastImportFile || importing) return;
+    setImporting(true);
+    setImportStatus(null);
+    setChoiceAnswers({});
+    const result = await importFormAnugerahExcel(lastImportFile, { forceAi: true });
     setImporting(false);
     setImportStatus(result);
   };
@@ -122,6 +137,34 @@ export default function NewOrderStep2() {
       const mv = { ...state.matrixValues };
       w.addPatches.forEach((p) => { mv[p.mkey] = p.value; });
       patch({ matrixValues: mv });
+    }
+    // An AI question whose chosen answer implies a mechanical edit
+    // (add the school name back / drop the class line). See aiImportMap.js.
+    const ap = w.aiApply;
+    if (ap && optionKey === `opt${ap.whenOption}`) {
+      if (ap.action === 'prepend-header') {
+        const lv = { ...state.lineValues };
+        ap.sectionIdxs.forEach((si) => {
+          const k = `KLAS_MATRIX::${si}::0`;
+          const cur = lv[k] || '';
+          // Skip a header that already leads with the school name — the AI
+          // sometimes lists an award that in fact already has it.
+          if (cur.split('\n')[0].trim() === ap.text.trim()) return;
+          lv[k] = cur ? `${ap.text}\n${cur}` : ap.text;
+        });
+        patch({ lineValues: lv });
+      } else if (ap.action === 'strip-detail-line') {
+        const cbb = { ...state.columnsByBlock };
+        ap.sectionIdxs.forEach((si) => {
+          const k = `KLAS_MATRIX::${si}`;
+          if (!cbb[k]) return;
+          cbb[k] = cbb[k].map((c) => ({
+            ...c,
+            eline2: String(c.eline2 || '').split('\n').slice(0, -1).join('\n'),
+          }));
+        });
+        patch({ columnsByBlock: cbb });
+      }
     }
     setChoiceAnswers((a) => ({ ...a, [w.id]: optionKey }));
     if (optionKey === 'keep' || w.jumpOnAnswer) jumpToBlock(w.blockIdx);
@@ -205,6 +248,19 @@ export default function NewOrderStep2() {
               <p className="hint-text" style={{ margin: '4px 0 0', color: importStatus.ok ? '#1f8a3b' : '#c0392b', fontWeight: 600 }}>
                 {importStatus.message}
               </p>
+            )}
+            {aiImportAvailable && lastImportFile && !importing
+              && importStatus && !importStatus.message?.startsWith('Read by AI') && (
+              <button
+                type="button"
+                onClick={rereadWithAi}
+                style={{
+                  background: 'none', border: 'none', padding: '2px 0 0', margin: 0, font: 'inherit',
+                  fontSize: '0.85em', color: '#4a5db8', textDecoration: 'underline', cursor: 'pointer',
+                }}
+              >
+                Not right? Read it with AI instead
+              </button>
             )}
             {/* Separate from the plain success/failure line above — these
                 flag a SPECIFIC field the import couldn't fill in correctly
