@@ -65,7 +65,18 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
   // to a fixed layout with an explicit total width (sum of every column's
   // own width below) makes each column render at its real size and lets
   // table-wrap's overflow-x do the scrolling.
-  const DYN_COL_WIDTHS = { tahun: 260, namaKelas: 150, jawatan: 170, kelasName: 150, eline2: 240, subject: 190, total: 70 };
+  // Nama Kelas / "Subjek / Position" holds free text of very uneven length
+  // (a class code like "3 MIRANDA" vs an imported TOKOH honour like "TOKOH
+  // KOKURIKULUM PUTERI"). Size the one shared column width to the LONGEST
+  // value actually present so every cell shows its whole text without
+  // truncation — clamped so a stray long paste can't blow the layout out.
+  const namaKelasColWidth = (() => {
+    const texts = [blk.namaKelasLabel || 'Nama Kelas', ...matrixRows.map((r) => r.namaKelas || '')];
+    const longest = texts.reduce((m, t) => Math.max(m, String(t).length), 0);
+    // ~7.3px/char at the input font + input padding + the row's ✕ button + td padding
+    return Math.min(460, Math.max(150, Math.round(longest * 7.3) + 70));
+  })();
+  const DYN_COL_WIDTHS = { tahun: 260, namaKelas: namaKelasColWidth, jawatan: 170, kelasName: 150, eline2: 240, subject: 190, total: 70 };
   // Tahun, Jawatan, and Kelas are all optional columns on a dynamicMatrix
   // block — see computeBlocks.js's hasTahun/hasJawatan/hasKelasName —
   // hidden entirely rather than shown always-blank; `!== false` (not a
@@ -75,9 +86,16 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
   const showJawatanCol = !!blk.hasJawatan;
   const showKelasNameCol = !!blk.hasKelasName;
   const showEline2Col = !!blk.hasEline2;
-  const dynLeadingCols = (showTahunCol ? 1 : 0) + 1 + (showKelasNameCol ? 1 : 0)
+  // Hide the Nama Kelas column when nothing in this block uses it (a
+  // Tahun-only subject matrix like MP THP) — an always-blank column is
+  // just noise. Content-derived, so it reappears the moment a class name
+  // is typed. Never hidden when there's no Tahun column either (then Nama
+  // Kelas is the only row identity left).
+  const showNamaKelasCol = !blk.matrixNoRowAxis && (blk.hasNamaKelas !== false || !showTahunCol);
+  const dynLeadingCols = (showTahunCol ? 1 : 0) + (showNamaKelasCol ? 1 : 0) + (showKelasNameCol ? 1 : 0)
     + (showJawatanCol ? 1 : 0) + (showEline2Col ? 1 : 0);
-  const dynTableWidth = (showTahunCol ? DYN_COL_WIDTHS.tahun : 0) + DYN_COL_WIDTHS.namaKelas
+  const dynTableWidth = (showTahunCol ? DYN_COL_WIDTHS.tahun : 0)
+    + (showNamaKelasCol ? DYN_COL_WIDTHS.namaKelas : 0)
     + (showKelasNameCol ? DYN_COL_WIDTHS.kelasName : 0) + (showJawatanCol ? DYN_COL_WIDTHS.jawatan : 0)
     + (showEline2Col ? DYN_COL_WIDTHS.eline2 : 0)
     + dynColumns.length * DYN_COL_WIDTHS.subject + DYN_COL_WIDTHS.total;
@@ -340,27 +358,28 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
               <thead>
                 <tr>
                   {showTahunCol && <th style={{ width: DYN_COL_WIDTHS.tahun }}>Tahun</th>}
-                  <th style={{ width: DYN_COL_WIDTHS.namaKelas }}>{blk.namaKelasLabel}</th>
+                  {showNamaKelasCol && <th style={{ width: DYN_COL_WIDTHS.namaKelas }}>{blk.namaKelasLabel}</th>}
                   {showKelasNameCol && <th style={{ width: DYN_COL_WIDTHS.kelasName }}>Kelas</th>}
                   {showJawatanCol && <th style={{ width: DYN_COL_WIDTHS.jawatan }}>Jawatan</th>}
                   {showEline2Col && <th style={{ width: DYN_COL_WIDTHS.eline2 }}>Baris tambahan (event_line_2)</th>}
                   {dynColumns.map((col) => (
                     <th key={col.id} style={{ width: DYN_COL_WIDTHS.subject }}>
-                      {col.custom && editable.rowDesc ? (
-                        <div style={{ display: 'flex', gap: 4 }}>
-                          <input
-                            className="input"
-                            style={{ flex: 1, minWidth: 0, fontSize: '0.8em', padding: '4px 6px' }}
-                            placeholder="e.g. KEMAHIRAN HIDUP"
-                            title={col.subject}
-                            value={col.subject}
-                            onChange={(e) => col.setSubject(e.target.value)}
-                          />
-                          {editable.addRemoveRows && (
-                            <button type="button" className="btn btn-ghost btn-icon" aria-label="Remove subject" onClick={col.remove}>✕</button>
-                          )}
-                        </div>
-                      ) : col.subject}
+                      {blk.matrixNoSubjectAxis ? (blk.qtyColHeader || 'Kuantiti')
+                        : col.custom && editable.rowDesc ? (
+                          <div style={{ display: 'flex', gap: 4 }}>
+                            <input
+                              className="input"
+                              style={{ flex: 1, minWidth: 0, fontSize: '0.8em', padding: '4px 6px' }}
+                              placeholder="e.g. KEMAHIRAN HIDUP"
+                              title={col.subject}
+                              value={col.subject}
+                              onChange={(e) => col.setSubject(e.target.value)}
+                            />
+                            {editable.addRemoveRows && (
+                              <button type="button" className="btn btn-ghost btn-icon" aria-label="Remove subject" onClick={col.remove}>✕</button>
+                            )}
+                          </div>
+                        ) : col.subject}
                     </th>
                   ))}
                   <th style={{ width: DYN_COL_WIDTHS.total }}>Total</th>
@@ -411,23 +430,30 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
                           </div>
                         )}
                         {row.minQty > 1 && <div className="hint-text" style={{ margin: '2px 0 0' }}>min {row.minQty} setiap subjek</div>}
+                        {/* When the Nama Kelas column is hidden (a Tahun-only
+                            matrix, e.g. MP THP), the row's ✕ moves here. */}
+                        {!showNamaKelasCol && editable.addRemoveRows && (
+                          <button type="button" className="btn btn-ghost btn-icon" style={{ marginTop: 4 }} aria-label="Remove row" onClick={row.remove}>✕</button>
+                        )}
                       </td>
                     )}
-                    <td>
-                      <div style={{ display: 'flex', gap: 4 }}>
-                        <input
-                          className="input"
-                          style={{ flex: 1, minWidth: 0 }}
-                          placeholder={blk.namaKelasLabel}
-                          value={row.namaKelas}
-                          readOnly={!editable.rowDesc}
-                          onChange={editable.rowDesc ? (e) => row.setNamaKelas(e.target.value) : undefined}
-                        />
-                        {editable.addRemoveRows && (
-                          <button type="button" className="btn btn-ghost btn-icon" aria-label="Remove class" onClick={row.remove}>✕</button>
-                        )}
-                      </div>
-                    </td>
+                    {showNamaKelasCol && (
+                      <td>
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          <input
+                            className="input"
+                            style={{ flex: 1, minWidth: 0 }}
+                            placeholder={blk.namaKelasLabel}
+                            value={row.namaKelas}
+                            readOnly={!editable.rowDesc}
+                            onChange={editable.rowDesc ? (e) => row.setNamaKelas(e.target.value) : undefined}
+                          />
+                          {editable.addRemoveRows && (
+                            <button type="button" className="btn btn-ghost btn-icon" aria-label="Remove class" onClick={row.remove}>✕</button>
+                          )}
+                        </div>
+                      </td>
+                    )}
                     {showKelasNameCol && (
                       <td>
                         <input
@@ -484,14 +510,26 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
                   </tr>
                 ))}
                 <tr>
-                  <td colSpan={dynLeadingCols}><strong>TOTAL ({blk.qtyColHeader})</strong></td>
-                  {dynColTotals.map((ct, i) => <td key={i}><strong>{ct.value}</strong></td>)}
+                  {dynLeadingCols > 0 ? (
+                    <>
+                      <td colSpan={dynLeadingCols}><strong>TOTAL ({blk.qtyColHeader})</strong></td>
+                      {dynColTotals.map((ct, i) => <td key={i}><strong>{ct.value}</strong></td>)}
+                    </>
+                  ) : (
+                    <td colSpan={dynColumns.length}><strong>TOTAL ({blk.qtyColHeader})</strong></td>
+                  )}
                   <td><strong>{blk.grandTotal}</strong></td>
                 </tr>
                 {blk.plakPerBlock && (
                   <tr>
-                    <td colSpan={dynLeadingCols}><strong>HARGA</strong></td>
-                    {dynColTotals.map((ct, i) => <td key={i} />)}
+                    {dynLeadingCols > 0 ? (
+                      <>
+                        <td colSpan={dynLeadingCols}><strong>HARGA</strong></td>
+                        {dynColTotals.map((ct, i) => <td key={i} />)}
+                      </>
+                    ) : (
+                      <td colSpan={dynColumns.length}><strong>HARGA</strong></td>
+                    )}
                     <td><strong className="input-price" style={{ fontSize: '1.5em', fontWeight: 800 }}>{blk.plakRows[0]?.hargaLabel ?? '—'}</strong></td>
                   </tr>
                 )}
@@ -500,7 +538,9 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
           </div>
           {editable.addRemoveRows && (
             <div className="row-actions" style={{ display: 'flex', gap: 8, marginTop: 'var(--space-3)' }}>
-              <button type="button" className="btn btn-secondary" onClick={blk.addRow}>+ Add Subject</button>
+              {!blk.matrixNoSubjectAxis && (
+                <button type="button" className="btn btn-secondary" onClick={blk.addRow}>+ Add Subject</button>
+              )}
               <button type="button" className="btn btn-secondary" onClick={blk.addColumnSameTahun}>+ Add Kelas</button>
               <button type="button" className="btn btn-secondary" onClick={blk.addColumn}>+ Add Tahun</button>
             </div>

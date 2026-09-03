@@ -7,10 +7,6 @@ import {
 import { parseFormAnugerahExcel, matchJenisPlakPath } from '../utils/excelImport';
 import { parseWordingDocx } from '../utils/docxImport';
 import { checkColumnTotals, checkExpansionTotals } from '../utils/importChecks';
-import { aiResultToParsed, importLooksThin } from '../utils/aiImportMap';
-import { renderSheetsText, uploadOrderFile, runAiExtraction } from '../lib/importApi';
-
-const AI_IMPORT_ENABLED = import.meta.env.VITE_AI_IMPORT_ENABLED === 'true';
 import { AppStateContext } from './AppStateContext';
 import {
   fetchOrders, fetchOrderById, insertOrder, updateOrder, nextOrderSeq, fetchAllSalesmen,
@@ -58,64 +54,50 @@ function describeOrderWriteError(err, verb = 'save') {
 
 // A section imported into KLAS_MATRIX (from either excelImport.js or
 // docxImport.js) rarely carries real Reference Sample text for TAHUN
-// (slot '3') or SUBJEK/POSITION (slot '2b') — those two lines only exist
-// on the plaque to show an EXAMPLE of this section's own class/subject
-// breakdown, and the source document's own "TAHUN 1 UTHMAN" / "TEMPAT
-// PERTAMA"-style text lives in the parsed class/subject data, not in a
-// literal Reference Sample line anywhere. Filling them in from the
-// section's own first class/subject — never overwriting real text a
-// source document DID supply — turns the live preview from a wall of grey
-// placeholder text into an actual worked example, matching what the
-// teacher's own paper order already shows. YEAR ('1')/ACARA ('2') are
-// hidden (not just left blank) whenever nothing filled them in either —
-// otherwise every one of what can be a dozen+ imported sections would
-// need the teacher to click ✕ on both, one by one. The visible order is
-// also set to TAJUK BESAR / TAHUN / SUBJEK-POSITION — the order every one
-// of these imported shapes' own paper sample actually uses — rather than
-// the catalog's own YEAR/ACARA-first default order.
+// (slot '3') — the source document's own "TAHUN 1 UTHMAN"-style text
+// lives in the parsed class data, not in a literal Reference Sample line.
+// Deriving slot '3' from the section's own first class — never overwriting
+// real text the source DID supply — turns the live preview from grey
+// placeholder text into an actual worked example.
+//
+// The reference-sample layout matches what these order files' own paper
+// sample boxes actually use, in this order:
+//   TAJUK BESAR (0, + optional 2nd line 0b)
+//   YEAR (1)          — only when the file wrote a standalone year/SESI
+//                       line right under the title (excelImport.js's
+//                       readRefLinesInBand pulls it out); otherwise hidden
+//   ACARA (2)         — the award name
+//   SUBJEK/POSITION (2b) — ONLY when the file's own sample spelled it out
+//                       on its own line (a 4-line MP THP 1/2 box); never
+//                       synthesized from the section's subjects, and
+//                       hidden outright when absent so the teacher doesn't
+//                       have to ✕ off an empty ( SUBJEK/POSITION ) row
+//   TAHUN example (3) — derived from the section's own first class when
+//                       the sample didn't spell one out
+// Every empty slot except TAJUK BESAR is hidden (not just left blank) so
+// a dozen+ imported sections don't each need the teacher to clear them by
+// hand; a hidden slot also drops out of required-line validation (see
+// computeBlocks.js), which is what we want for an import that genuinely
+// had no ACARA/TAHUN to read.
 function deriveKlasMatrixSectionLines(section) {
   const lines = { ...section.lines };
   const firstClass = section.classes[0];
-  if (firstClass) {
-    if (!lines['3']) {
-      const tahunText = [firstClass.tahunFrom, firstClass.namaKelas].filter(Boolean).join(' ').trim();
-      if (tahunText) lines['3'] = tahunText;
-    }
-    if (!lines['2b']) {
-      const firstSubject = firstClass.subjects.find((s) => s.name);
-      if (firstSubject) lines['2b'] = firstSubject.name;
-    }
+  // A combined TOKOH section (excelImport.js's parseTokohSheet): every
+  // "class" here is an award name, not a per-plaque TAHUN/Nama Kelas, so
+  // there's no worked TAHUN example to derive — the reference sample is
+  // just TAJUK BESAR + ACARA (2 rows). Deriving slot '3' from the first
+  // award would wrongly add a third, editable row echoing one honour.
+  if (firstClass && !lines['3'] && !section.positionFromNamaKelas) {
+    const tahunText = [firstClass.tahunFrom, firstClass.namaKelas].filter(Boolean).join(' ').trim();
+    // Not when it just repeats the award-name line (a TOKOH-style section
+    // where the honour title IS the position, not a per-plaque class) —
+    // that would show the same text twice.
+    if (tahunText && tahunText !== (lines['2'] || '').trim()) lines['3'] = tahunText;
   }
-  const hidden = ['1', '2'].filter((slot) => !lines[slot]);
+  const hidden = ['1', '2', '2b', '3'].filter((slot) => !lines[slot]);
   if (hidden.length) lines.hiddenLines = hidden.join(',');
-  lines.refOrder = '0,3,2b';
+  lines.refOrder = ['0', '0b', '1', '2', '2b', '3'].filter((slot) => lines[slot]).join(',');
   return lines;
-}
-
-// Renders the file to text, uploads it for the audit trail (best-effort),
-// calls the extract-order-file Edge Function, and maps a successful result
-// into the same { klasMatrix: { sections } } shape the deterministic
-// parsers return. Returns null on any failure — the caller then keeps the
-// deterministic result. Never throws.
-async function tryAiExtraction(file, buffer) {
-  try {
-    const sheetsText = await renderSheetsText(buffer, file.name);
-    if (!sheetsText || !sheetsText.trim()) return null;
-    let storagePath = null;
-    try {
-      ({ storagePath } = await uploadOrderFile(file, buffer));
-    } catch (e) {
-      console.warn('order-imports upload failed (continuing):', e);
-    }
-    const res = await runAiExtraction({ storagePath, fileName: file.name, sheetsText });
-    if (res?.status === 'succeeded' && res.result) {
-      return aiResultToParsed(res.result);
-    }
-    return null;
-  } catch (e) {
-    console.error('AI extraction failed:', e);
-    return null;
-  }
 }
 
 // Finds a catalog node by id anywhere in the tree, along with the sibling
@@ -595,27 +577,11 @@ export function AppStateProvider({ children }) {
   // Add to Cart themselves, same as manual entry, so a parsing mistake
   // never silently reaches an order. Returns { ok, message } for the caller
   // to show; never throws.
-  const importFormAnugerahExcel = useCallback(async (file, opts = {}) => {
+  const importFormAnugerahExcel = useCallback(async (file) => {
     let parsed;
-    let usedAi = false;
     try {
       const buffer = await file.arrayBuffer();
       parsed = /\.docx$/i.test(file.name) ? await parseWordingDocx(buffer) : parseFormAnugerahExcel(buffer);
-
-      // AI fallback — only when it's switched on for this build and the
-      // caller is an admin (the limited first rollout). Runs automatically
-      // when the deterministic parser came back empty/thin, or on demand
-      // (`opts.forceAi`) when the teacher judges the built-in read wrong.
-      // A good template read is never silently overridden.
-      if (AI_IMPORT_ENABLED && stateRef.current.role === 'admin' && (opts.forceAi || importLooksThin(parsed))) {
-        const aiParsed = await tryAiExtraction(file, buffer);
-        if (aiParsed && !aiParsed.error) {
-          parsed = aiParsed;
-          usedAi = true;
-        } else if (opts.forceAi) {
-          return { ok: false, message: 'The AI could not read this file. Keep the built-in result, or enter it by hand.' };
-        }
-      }
     } catch (err) {
       console.error('Failed to read uploaded order file:', err);
       return { ok: false, message: 'Could not read this file. Please try again.' };
@@ -712,11 +678,10 @@ export function AppStateProvider({ children }) {
           // Nama Kelas/Nama Murid itself BEING the class — see
           // excelImport.js's groupRosterHeaders).
           kelasName: cls.kelasName || '',
-          // The engraved second detail line below the name, for a
-          // pre-written / named-recipient roster import (aiImportMap.js's
-          // "prebuilt" layout) — jawatan + unit, e.g.
-          // "KETUA PENGAWAS\nLEMBAGA PENGAWAS SEKOLAH". Reaches the CSV's
-          // 5th column via buildPbdMatrixRows; blank for every other shape.
+          // A fixed engraved line below the per-plaque line — a "TAHAP 1" /
+          // "TAHAP 2" from a parallel-class-list sheet (excelImport.js's
+          // readParallelClassLists). Reaches the CSV's 5th column via
+          // buildPbdMatrixRows; blank for every other shape.
           eline2: cls.eline2 || '',
         }));
         section.classes.forEach((cls, classIdx) => {
@@ -733,6 +698,13 @@ export function AppStateProvider({ children }) {
         // rides through with its own lines exactly as read.
         const sectionLines = section.skipLineDerivation ? section.lines : deriveKlasMatrixSectionLines(section);
         Object.entries(sectionLines).forEach(([slot, val]) => { newLineValues[`${key}::${slot}`] = val; });
+        // A combined TOKOH section (excelImport.js's parseTokohSheet): the
+        // honour names ARE the per-plaque positions, rendered as Nama Kelas
+        // rows (with a "Subjek / Position" header). Slot '2' is only the
+        // sample-box example — the CSV must take position from the row's
+        // namaKelas, not slot '2', and leave event_line_1 blank (TOKOH
+        // plaques have no event_line_1). exportCsv.js reads this back.
+        if (section.positionFromNamaKelas) newLineValues[`${key}::posFromKelas`] = '1';
         // A roster import's own column header text (NAMA MURID/NAMA GURU/
         // NAMA PELAJAR — see excelImport.js's scanSheetForRosters) rides
         // along the same way hiddenLines/refOrder do, read back by
@@ -834,30 +806,6 @@ export function AppStateProvider({ children }) {
         });
       });
 
-      // Questions the AI raised while reading (see aiImportMap.js) — same
-      // "Confirm before continuing" panel as the deterministic checks. The
-      // AI never carries an auto-fix instruction, so answering just
-      // acknowledges and jumps the teacher to that section to adjust it.
-      (parsed.questions || []).forEach((q) => {
-        const opts = q.options.length ? q.options : ['OK, I have checked this'];
-        warnings.push({
-          type: 'choice',
-          id: q.id,
-          blockIdx: q.sectionIdx ?? 0,
-          text: q.text,
-          options: opts.map((label, i) => ({ key: `opt${i}`, label })),
-          addPatches: [],
-          jumpOnAnswer: true,
-          // When one answer implies a mechanical edit (add the school name,
-          // drop the class line), NewOrderStep2 applies it — keyed by
-          // `opt<whenOption>`. See aiImportMap.js.
-          aiApply: q.apply || null,
-        });
-      });
-    }
-
-    if (parsed.remarkNotes?.length) {
-      parsed.remarkNotes.forEach((n) => remarkNotes.push(n));
     }
 
     // A KIV line (excelImport.js's findKivNotes) has no recipient data at
@@ -876,8 +824,7 @@ export function AppStateProvider({ children }) {
 
     setState({ ...next, category: landOn || next.category });
 
-    const lead = usedAi ? 'Read by AI' : 'Imported';
-    return { ok: true, message: `${lead} — ${messages.join('; ')}. Please review carefully before adding to cart.`, warnings };
+    return { ok: true, message: `Imported — ${messages.join('; ')}. Please review carefully before adding to cart.`, warnings };
   }, []);
 
   const removeFromCart = useCallback((id) => {

@@ -29,6 +29,12 @@ const EVENT_WORDS = [
   'KONVOKESYEN', 'SIJIL', 'PENTAKSIRAN', 'PRESTASI', 'RUMAH', 'SUKAN',
   'PERMAINAN', 'PERTANDINGAN', 'PERSATUAN', 'UNIT', 'BERUNIFORM', 'KELAB',
   'PRASEKOLAH', 'PPKI',
+  // Recurring words in real order files — listed so a legit word isn't
+  // hinted as a near-miss of another (SESI vs SENI, IKON vs IKAN).
+  'SESI', 'APRESIASI', 'HADIAH', 'PENERIMA', 'PENCAPAIAN', 'IKON', 'INOVASI',
+  'SAHSIAH', 'BESTARI', 'PEMBACA', 'HARAPAN', 'PUTERA', 'PUTERI', 'PEREMPUAN',
+  'LELAKI', 'KEPIMPINAN', 'PENGAWAS', 'TERPUJI', 'HEM', 'PBD', 'TAHAP',
+  'BRIPS', 'MATA', 'PELAJARAN', 'PENDIDIKAN', 'KEDUDUKAN', 'KUANTITI',
 ];
 
 export const TYPO_CHECK_DICTIONARY = [...new Set([...SUBJECT_WORDS, ...EVENT_WORDS])];

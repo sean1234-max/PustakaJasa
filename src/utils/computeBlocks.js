@@ -159,6 +159,22 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
           onDelete: () => updaters.onDeleteReferenceLine(catKey, b, '2b'),
         };
       }
+      // TAJUK BESAR can carry a second engraved line (school on line 1,
+      // event title on line 2) — an AI pre-written / roster import splits
+      // them so each is its own single-line field. Only shown when that
+      // block actually has a slot-0b value; joined back into one
+      // event_header column on export (exportCsv.js).
+      if (i === 0 && lineValues[`${catKey}::${b}::0b`]) {
+        const key0b = `${catKey}::${b}::0b`;
+        line.secondLine = {
+          key: key0b, slotId: '0b', placeholder: 'Baris kedua tajuk besar',
+          value: lineValues[key0b] || '',
+          onChange: (val) => updaters.onLine(key0b, val),
+          typoHint: findPossibleTypo(lineValues[key0b]),
+          deletable: true,
+          onDelete: () => updaters.onDeleteReferenceLine(catKey, b, '0b'),
+        };
+      }
       return line;
     });
     let flatLines = rawLines.flatMap((ln) => (ln.secondLine ? [ln, ln.secondLine] : [ln]));
@@ -196,9 +212,17 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
     // deleted row's siblings keep their own original numbers rather than
     // closing the gap (matches the drag-reorder comment above: a row's
     // number is a stable identity, not a sequential display index).
-    const lines = hiddenLineSlots && hiddenLineSlots.size
+    let lines = hiddenLineSlots && hiddenLineSlots.size
       ? flatLines.filter((ln) => !hiddenLineSlots.has(ln.slotId))
       : flatLines;
+    // KLAS_MATRIX (dynamicMatrix) is the exception: an import here
+    // auto-hides the reference-sample slots its source file skipped —
+    // YEAR and SUBJEK/POSITION (see AppState.jsx's
+    // deriveKlasMatrixSectionLines) — so the teacher would otherwise see
+    // "1, 3, 5". Renumber what's left 1..N for a gapless list. Safe only
+    // in this branch: unlike Main Template / OTHERS, the dynamicMatrix
+    // layout has no "Row N" Kuantiti columns keyed off these numbers.
+    if (isDynamicMatrix) lines = lines.map((ln, i) => ({ ...ln, num: i + 1 }));
 
     let matrixRows = [], columns = [], colTotals = [], grandTotal = 0, rows = [], blockTotalQty = 0;
     let namaKelasRows = [], namaKelasCount = 0, tahunField = null, extraRefColumns = [];
@@ -296,11 +320,11 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
           // person-name column — see excelImport.js's groupRosterHeaders.
           kelasName: cls.kelasName || '',
           setKelasName: (v) => updaters.onColumnField(colsKey, cls.id, 'kelasName', v),
-          // The engraved detail below the recipient name (CSV event_line_2)
-          // — jawatan + unit + class, however the teacher wants it stacked.
-          // Set only by an AI "prebuilt" roster import (aiImportMap.js);
-          // shown here as a free multi-line box so the teacher can reorder
-          // or trim the lines. Blank for every other KLAS_MATRIX shape.
+          // A fixed engraved line below the per-plaque line (CSV
+          // event_line_2) — a "TAHAP 1" / "TAHAP 2" from a parallel-class-
+          // list sheet (excelImport.js's readParallelClassLists); shown here
+          // as a free box so the teacher can adjust it. Blank for every
+          // other KLAS_MATRIX shape.
           eline2: cls.eline2 || '',
           setEline2: (v) => updaters.onColumnField(colsKey, cls.id, 'eline2', v),
         };
@@ -395,7 +419,7 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
     blocks.push({
       idx: b,
       qtyLabel: currentCat.hideQtyLabelSuffix ? '' : currentCat.label,
-      qtyColHeader: isMatrix ? 'QTY' : (currentCat.qtyColumnLabels ? currentCat.qtyColumnLabels[b] : 'QTY'),
+      qtyColHeader: isMatrix ? 'QTY' : (currentCat.qtyColumnLabels?.[b] || currentCat.qtyColumnLabels?.[0] || 'QTY'),
       sampleSlotId: `sample-${catKey}-${b}`,
       lines, isMatrix, isDynamicMatrix,
       // Main Template's "+ Add Reference Row" (see the extraRefLines note
@@ -469,6 +493,24 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
       // moment the teacher types a real Tahun/Tingkatan into a
       // manually-added row.
       hasTahun: isDynamicMatrix && matrixRows.some((r) => r.tahunFrom || r.tahunTo || r.tingkatanMode),
+      hasNamaKelas: isDynamicMatrix && matrixRows.some((r) => r.namaKelas),
+      // A flat-quantity section (a TOKOH award, ANUGERAH IKON MURID — one
+      // class, no Tahun / Nama Kelas / role axis at all, a real quantity):
+      // there is nothing for a row-identity column to hold, so the Nama
+      // Kelas column is dropped rather than shown as an empty placeholder
+      // the teacher has to ✕. Guarded to exactly one filled-in row so a
+      // teacher starting a fresh matrix by hand still gets the column.
+      matrixNoRowAxis: isDynamicMatrix && grandTotal > 0 && matrixRows.length === 1
+        && !matrixRows[0].tahunFrom && !matrixRows[0].tahunTo && !matrixRows[0].namaKelas
+        && !matrixRows[0].jawatan && !matrixRows[0].kelasName && !matrixRows[0].eline2
+        && !matrixRows[0].tingkatanMode,
+      // Only one subject column and it is blank / the synthetic "KUANTITI"
+      // stand-in (a TAHAP class list, a grade×class expansion, a plain
+      // Tahun quantity list — every row just gets N, there is no subject
+      // axis): render that column as a fixed "KUANTITI" header, not an
+      // editable "e.g. KEMAHIRAN HIDUP" box the teacher has to make sense of.
+      matrixNoSubjectAxis: isDynamicMatrix && columns.length === 1
+        && ['', 'KUANTITI', 'KEDUDUKAN'].includes((columns[0].subject || '').trim().toUpperCase()),
       hasJawatan: isDynamicMatrix && matrixRows.some((r) => r.jawatan),
       hasKelasName: isDynamicMatrix && matrixRows.some((r) => r.kelasName),
       hasEline2: isDynamicMatrix && matrixRows.some((r) => r.eline2),

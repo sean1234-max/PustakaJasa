@@ -69,7 +69,8 @@ describe('buildCsvRows — dynamicMatrix with a pre-written roster column (event
     id: 'r1', jenisPlak: 'OTHER - roster plak', qty: 2, categoryKey: 'KLAS_MATRIX', blockIdx: 0,
     detail: {
       lines: {
-        'KLAS_MATRIX::0::0': 'SMK X\nHEM 2024', 'KLAS_MATRIX::0::1': 'SESI 2024/2025',
+        'KLAS_MATRIX::0::0': 'SMK X', 'KLAS_MATRIX::0::0b': 'HEM 2024',
+        'KLAS_MATRIX::0::1': 'SESI 2024/2025',
         'KLAS_MATRIX::0::2': 'ANUGERAH KEPIMPINAN MURID CEMERLANG',
       },
       rows: [{ id: 's0', desc: '' }],
@@ -94,6 +95,27 @@ describe('buildCsvRows — dynamicMatrix with a pre-written roster column (event
     const plain = { ...item, detail: { ...item.detail, columns: item.detail.columns.map((c) => ({ ...c, eline2: '' })) } };
     const { rows } = buildCsvRows({ ...order, items: [plain] }, 'KLAS_MATRIX', [plain]);
     expect(rows.every((r) => r[4] === '')).toBe(true);
+  });
+
+  it('a combined TOKOH section (posFromKelas): position = the honour name (Nama Kelas), event_line_1 blank, no Tahun split', () => {
+    const tokoh = {
+      id: 't', jenisPlak: 'M1902B', categoryKey: 'KLAS_MATRIX', blockIdx: 0,
+      detail: {
+        lines: { 'KLAS_MATRIX::0::0': 'MAJLIS X', 'KLAS_MATRIX::0::2': 'TOKOH MURID', 'KLAS_MATRIX::0::posFromKelas': '1' },
+        rows: [{ id: 'r0', desc: 'KUANTITI' }],
+        columns: [
+          { id: 'c0', tahunFrom: '', tahunTo: '', namaKelas: 'TOKOH MURID' },
+          { id: 'c1', tahunFrom: '3', tahunTo: '6', namaKelas: 'TOKOH NILAM' },
+        ],
+        matrix: { 'KLAS_MATRIX::0::r0::c0': '1', 'KLAS_MATRIX::0::r0::c1': '2' },
+      },
+    };
+    const { rows } = buildCsvRows({ id: 'O', items: [tokoh], schoolLanguage: 'SK' }, 'KLAS_MATRIX', [tokoh]);
+    expect(rows).toEqual([
+      ['MAJLIS X', '', 'TOKOH MURID', '', ''],
+      ['MAJLIS X', '', 'TOKOH NILAM', '', ''],
+      ['MAJLIS X', '', 'TOKOH NILAM', '', ''],
+    ]);
   });
 });
 

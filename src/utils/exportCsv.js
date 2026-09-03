@@ -164,7 +164,7 @@ function buildRowsFromDescriptionRows(item, header, year, positionPart1) {
 // — in that case there's nothing to split by, so the full qty goes into a
 // single set of rows using just Nama Kelas for event_line_1, instead of
 // being dropped entirely.
-function buildPbdMatrixRows(item, header, year, positionPart1) {
+function buildPbdMatrixRows(item, header, year, positionPart1, posFromKelas) {
   const rows = [];
   const subjectRows = item.detail?.rows || [];
   const columns = item.detail?.columns || [];
@@ -174,11 +174,24 @@ function buildPbdMatrixRows(item, header, year, positionPart1) {
       const key = `${item.categoryKey}::${item.blockIdx}::${subjectRow.id}::${col.id}`;
       const qty = Number(matrix[key]) || 0;
       if (qty <= 0) return;
-      const position = [positionPart1, subjectRow.desc].filter(Boolean).join('\n');
-      // The 5th CSV column, normally blank — a named-recipient / pre-written
-      // roster import (aiImportMap.js) uses it for the engraved detail line
-      // that sits below the name (jawatan + unit). Plain here for every
-      // catalog-native PBD/ALIRAN order.
+      // A combined TOKOH section (excelImport.js's parseTokohSheet): the
+      // honour name is carried as the row's Nama Kelas and IS the engraved
+      // position on its own — no slot-2 prefix, no event_line_1 (TOKOH
+      // plaques have none), no Tahun split.
+      if (posFromKelas) {
+        const row = [header, year, col.namaKelas || '', '', col.eline2 || ''];
+        for (let n = 0; n < qty; n++) rows.push(row);
+        return;
+      }
+      // "KUANTITI" / "KEDUDUKAN" is a synthetic stand-in for "no subject
+      // axis" (a plain Tahun quantity list, a flat count) — it is not an
+      // engraved line.
+      const subj = ['KUANTITI', 'KEDUDUKAN'].includes(String(subjectRow.desc).trim().toUpperCase())
+        ? '' : subjectRow.desc;
+      const position = [positionPart1, subj].filter(Boolean).join('\n');
+      // The 5th CSV column, normally blank — a parallel-class-list import
+      // (excelImport.js's readParallelClassLists) puts a fixed "TAHAP 1" /
+      // "TAHAP 2" line here. Plain for every other order.
       const eventLine2 = col.eline2 || '';
       const tahunLabels = tahunRangeYears(col.tahunFrom, col.tahunTo);
       if (tahunLabels.length === 0) {
@@ -221,13 +234,21 @@ export function buildCsvRows(order, categoryKey, items) {
       return;
     }
     const cat = CATEGORIES.find((c) => c.key === item.categoryKey);
-    const header = getLine(item, 0);
+    // TAJUK BESAR can be two engraved lines (school + event) — a
+    // pre-written / roster import splits them into slot 0 + slot 0b so the
+    // teacher edits each as its own single-line field. Joined back here for
+    // the CSV's one event_header column. No slot 0b => header unchanged.
+    const header = [getLine(item, 0), getLine(item, '0b')].filter(Boolean).join('\n');
     const year = getLine(item, 1);
 
     if (cat?.mode === 'matrix') {
       rows.push(...buildMatrixRows(item, cat, header, year, getLine(item, 2), schoolLanguage));
     } else if (cat?.mode === 'dynamicMatrix') {
-      rows.push(...buildPbdMatrixRows(item, header, year, getLine(item, 2)));
+      // A combined TOKOH section marks slot '2' as a sample-only example
+      // (posFromKelas) — its real positions are the honour names carried
+      // as each row's Nama Kelas.
+      const posFromKelas = !!getLine(item, 'posFromKelas');
+      rows.push(...buildPbdMatrixRows(item, header, year, posFromKelas ? '' : getLine(item, 2), posFromKelas));
     } else if (cat?.hasNamaKelasList) {
       rows.push(...buildOthersRows(item, header, year, getLine(item, 2)));
     } else if (cat?.positionFromRows) {

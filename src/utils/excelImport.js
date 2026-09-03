@@ -48,6 +48,13 @@ function normalizeTahun(raw) {
 function cellAt(ws, row, col) {
   return ws[XLSX.utils.encode_cell({ r: row - 1, c: col - 1 })];
 }
+// A quantity table's own total/summary row — its label is "TOTAL" or the
+// Malay "JUMLAH" ("JUMLAH BESAR", "JUMLAH KESELURUHAN", ...). Every
+// row-reader below stops here rather than reading the grand total as one
+// more class/subject row.
+function isTotalLabel(text) {
+  return /^(TOTAL|JUMLAH)\b/i.test(String(text || '').trim());
+}
 function cellStr(ws, row, col) {
   const cell = cellAt(ws, row, col);
   return cell && cell.v != null ? String(cell.v).trim() : '';
@@ -101,8 +108,17 @@ function findLabelCells(ws, range, labels) {
 // leaving a gap in the middle. TOKOH only has 3 real lines to begin with
 // (TAJUK BESAR/YEAR/ACARA, no TAHUN slot at all) with no YEAR-skip pattern
 // observed in practice, so it gets its own, different by-count table.
-const KLAS_MATRIX_SLOTS_BY_COUNT = { 0: [], 1: [], 2: ['0', '2'], 3: ['0', '2', '3'], 4: ['0', '1', '2', '3'] };
-const TOKOH_SLOTS_BY_COUNT = { 0: [], 1: [], 2: ['0', '1'], 3: ['0', '1', '2'] };
+// A KLAS_MATRIX / MP THP sample box is laid out event-title / award-name /
+// subject-example / tahun-example — NOT event-title / YEAR / award / tahun.
+// So a 4-line box fills TAJUK BESAR (0), ACARA (2), the SUBJEK/POSITION
+// example (2b) and the TAHUN example (3); YEAR (1) is left blank.
+const KLAS_MATRIX_SLOTS_BY_COUNT = { 0: [], 1: [], 2: ['0', '2'], 3: ['0', '2', '3'], 4: ['0', '2', '2b', '3'] };
+
+// A YEAR / SESI line a school typed on its own, directly under TAJUK
+// BESAR — "2025", "2024/2025", "2024 / 25", "SESI 2024/2025", "TAHUN
+// 2025". Deliberately does NOT match "TAHUN 1".."TAHUN 6" (a TAHUN
+// example, slot '3') or a bare award name.
+const STANDALONE_YEAR_RE = /^(SESI\s+|TAHUN\s+)?(19|20)\d{2}\s*(\/\s*(19|20)?\d{2})?$/i;
 
 // Collects Reference Sample lines from a row-band (any column) — reads
 // whatever non-blank text appears there, in row order, and maps by COUNT
@@ -122,17 +138,29 @@ function readRefLinesInBand(ws, range, rowStart, rowEnd, slotsByCount = KLAS_MAT
     // the title across two merged cells) — keep them as ONE line, joined,
     // since they're on the same physical printed line.
     if (rowValues.length) values.push(rowValues.join(' '));
-    if (values.length >= maxSlots) break;
+    // +1 headroom so a pulled-out YEAR line (below) doesn't cost the band
+    // its last real slot.
+    if (values.length >= maxSlots + 1) break;
+  }
+  // When the slot table has no YEAR slot of its own (KLAS_MATRIX — a
+  // KLAS_MATRIX sample box is title / award / subject / tahun, never
+  // title / YEAR / award), a standalone year line the school wrote right
+  // under the title is still OUR slot '1'. Pull it out before the
+  // by-count mapping so it isn't counted as ACARA and doesn't push every
+  // following line down a slot. TOKOH's table already carries '1'
+  // positionally, so it's left alone.
+  const tableHasYearSlot = Object.values(slotsByCount).some((arr) => arr.includes('1'));
+  let yearLine = '';
+  if (!tableHasYearSlot && values.length >= 2 && STANDALONE_YEAR_RE.test(values[1].trim())) {
+    [yearLine] = values.splice(1, 1);
   }
   const slots = slotsByCount[Math.min(values.length, maxSlots)] || slotsByCount[maxSlots];
   const lines = {};
   values.slice(0, slots.length).forEach((val, i) => { lines[slots[i]] = val; });
+  if (yearLine) lines['1'] = yearLine.trim();
   return lines;
 }
 
-function hasAnyValue(obj) {
-  return Object.keys(obj).length > 0;
-}
 
 // A single class-shaped mini-order's own quantity/subject data, read from
 // whichever shape its own header row turned out to be (see classifyShape
@@ -143,7 +171,7 @@ function readTahunQtyRows(ws, range, { tahunCol, qtyCol, startRow, endRow, subje
   const classes = [];
   for (let r = startRow; r <= endRow; r++) {
     const label = cellText(ws, r, tahunCol);
-    if (label && label.toUpperCase().startsWith('TOTAL')) break;
+    if (isTotalLabel(label)) break;
     const qty = cellNum(ws, r, qtyCol);
     if (!label || qty <= 0) continue;
     const tahun = normalizeTahun(label);
@@ -167,12 +195,103 @@ function readNamaKelasQtyRows(ws, range, { namaKelasCol, qtyCol, startRow, endRo
   const classes = [];
   for (let r = startRow; r <= endRow; r++) {
     const raw = cellText(ws, r, namaKelasCol);
-    if (raw && raw.toUpperCase().startsWith('TOTAL')) break;
+    if (isTotalLabel(raw)) break;
     const qty = cellNum(ws, r, qtyCol);
     if (!raw || qty <= 0) continue;
     const { tahun, namaKelas } = splitGradeFromNamaKelas(raw);
     classes.push({ tahunFrom: tahun, tahunTo: tahun, namaKelas, subjects: [{ name: subjectLabel, qty }] });
   }
+  return classes;
+}
+
+// A "grade × class" order: a TAHUN 1..6 column, each with its own KUANTITI,
+// AND a separate NAMA KELAS list (AMANAH, BUDIMAN, ...) beside it. Every
+// class in the list exists in every year, so the real plaque list is the
+// two axes crossed — "1 AMANAH", "1 BUDIMAN", ... "6 HARMONI". Per-class
+// quantity comes from a "SETIAP KELAS N PLAK" note written in the KUANTITI
+// cell; failing that, the grade's KUANTITI divided by the number of
+// classes (e.g. 35 / 7 = 5). Each crossed entry becomes its own
+// KLAS_MATRIX class row — Nama Kelas "<grade> <class>", one blank subject
+// carrying the qty — matching the Reference Sample's own "1 AMANAH"
+// example. The NAMA KELAS list is read from its own column independently
+// of the TAHUN list's length (a school often writes one more class name
+// than there are grade rows, on the same row as the TOTAL).
+function readGradeClassExpansion(ws, { tahunCol, qtyCol, namaKelasCol, startRow, endRow }) {
+  const grades = [];
+  let sawSetiapKelas = false;
+  for (let r = startRow; r <= endRow; r++) {
+    const label = cellText(ws, r, tahunCol);
+    if (isTotalLabel(label)) break;
+    if (!label) continue;
+    const qtyCell = cellStr(ws, r, qtyCol);
+    const per = qtyCell.match(/SETIAP\s+KELAS\s+(\d+)/i);
+    if (/SETIAP\s+KELAS/i.test(qtyCell)) sawSetiapKelas = true;
+    const total = Number((qtyCell.match(/\d+/) || [])[0]) || 0;
+    const gradeNum = (label.match(/(\d+)/) || [])[1] || label.trim();
+    grades.push({ gradeNum, perClass: per ? Number(per[1]) : null, total });
+  }
+  // The "SETIAP KELAS N PLAK" marker is what makes this specific two-axis
+  // shape unambiguous — without it, a plain "NAMA KELAS + TAHUN + KUANTITI"
+  // table means something else entirely and must not be crossed out.
+  if (!sawSetiapKelas) return [];
+  const classNames = [];
+  for (let r = startRow; r <= endRow + 5; r++) {
+    const nm = cellText(ws, r, namaKelasCol);
+    if (!nm || isTotalLabel(nm)) {
+      if (classNames.length) break;
+      continue;
+    }
+    classNames.push(nm);
+  }
+  if (grades.length === 0 || classNames.length === 0) return [];
+  const classes = [];
+  grades.forEach((g) => {
+    const qty = g.perClass != null
+      ? g.perClass
+      : (g.total > 0 ? Math.round(g.total / classNames.length) : 0);
+    if (qty <= 0) return;
+    classNames.forEach((cn) => {
+      classes.push({
+        tahunFrom: '', tahunTo: '', namaKelas: `${g.gradeNum} ${cn}`.trim(),
+        subjects: [{ name: '', qty }],
+      });
+    });
+  });
+  return classes;
+}
+
+// A "TAHAP" sheet: the header row repeats "NAMA KELAS | TAHUN" 2-3 times,
+// one pair per year — each NAMA KELAS column a different (and differently
+// long) class list, the paired TAHUN column just that year's number
+// repeated down it. The real plaque list is each class crossed with ITS
+// OWN year: "1 TITANIA", "1 BELLATRIX", ..., then "2 TITANIA", ... One
+// plaque each. Read straight down each column here (exact) rather than
+// leaving the model to un-interleave the flattened text (it miscounts).
+function readParallelClassLists(ws, range, { pairs, startRow, eline2 }) {
+  const classes = [];
+  pairs.forEach(({ nameCol, yearCol }) => {
+    let year = '';
+    for (let r = startRow; r <= range.r2 && !year; r++) {
+      const m = cellText(ws, r, yearCol).match(/\d+/);
+      if (m) year = m[0];
+    }
+    let blanks = 0;
+    for (let r = startRow; r <= range.r2; r++) {
+      const name = cellText(ws, r, nameCol);
+      if (!name || isTotalLabel(name)) {
+        blanks += 1;
+        if (blanks >= 3) break;
+        continue;
+      }
+      blanks = 0;
+      classes.push({
+        tahunFrom: '', tahunTo: '',
+        namaKelas: year ? `${year} ${name}` : name,
+        eline2: eline2 || '',
+        subjects: [{ name: '', qty: 1 }],
+      });
+    }
+  });
   return classes;
 }
 // MP THP-style subject-by-class matrix: SUBJECT names run down a column,
@@ -189,7 +308,7 @@ function readSubjectMatrix(ws, range, { subjectCol, subjectStartRow, subjectEndR
   let totalRow = null;
   for (let r = subjectStartRow; r <= subjectEndRow; r++) {
     const name = cellText(ws, r, subjectCol);
-    if (name && name.toUpperCase().startsWith('TOTAL')) { totalRow = r; break; }
+    if (isTotalLabel(name)) { totalRow = r; break; }
     if (name) subjectNames.push({ row: r, name });
   }
   const classes = [];
@@ -219,7 +338,7 @@ function readSubjectFlatRows(ws, { subjectCol, qtyCol, startRow, endRow }) {
   const rows = [];
   for (let r = startRow; r <= endRow; r++) {
     const desc = cellText(ws, r, subjectCol);
-    if (desc && desc.toUpperCase().startsWith('TOTAL')) break;
+    if (isTotalLabel(desc)) break;
     const qty = cellNum(ws, r, qtyCol);
     if (!desc || qty <= 0) continue;
     rows.push({ desc, qty });
@@ -260,6 +379,7 @@ function scanSheetForSections(ws) {
     const candidates = shapeLabels.filter((h) => h.row >= bandStart && h.row < plakAnchor.row);
     let classes = [];
     let statedTotals = null; // subject-matrix shape only — the teacher's own per-column TOTAL row
+    let parallelEline2 = ''; // "TAHAP 1" / "TAHAP 2" — a fixed engraved line for a parallel-list section
     let headerRow = plakAnchor.row; // default: no table found, ref-line band runs right up to the footer
     if (candidates.length > 0) {
       headerRow = Math.max(...candidates.map((h) => h.row));
@@ -272,8 +392,35 @@ function scanSheetForSections(ws) {
       const subjekH = byLabel('SUBJEK');
       const qtyH = kuantitiH || kedudukanH;
       const qtyLabel = kuantitiH ? 'KUANTITI' : 'KEDUDUKAN';
+      // Several parallel "NAMA KELAS | TAHUN" pairs on the header row
+      // (TAHAP 1 / 2 — one class list per year). Pair each NAMA KELAS
+      // column with the next TAHUN column to its right and read every list
+      // straight down.
+      const nkHeaders = onRow.filter((h) => h.label === 'NAMA KELAS').sort((a, b) => a.col - b.col);
+      const yrHeaders = onRow.filter((h) => h.label === 'TAHUN').sort((a, b) => a.col - b.col);
+      const parallelPairs = nkHeaders.length > 1
+        ? nkHeaders.map((nk) => ({ nameCol: nk.col, yearCol: (yrHeaders.find((t) => t.col > nk.col) || {}).col }))
+          .filter((p) => p.yearCol != null)
+        : [];
 
-      if (subjekH) {
+      if (parallelPairs.length > 1) {
+        // eline2: a fixed extra line the sample box shows below the class
+        // example — "TAHAP 1" / "TAHAP 2". Pulled off the ref band here so
+        // it doesn't land in a reference-sample slot.
+        const bandVals = [];
+        for (let r = bandStart; r < headerRow; r++) {
+          for (let c = range.c1; c <= range.c2; c++) {
+            const v = cellText(ws, r, c);
+            if (v) { bandVals.push(v); break; }
+          }
+        }
+        if (bandVals.length >= 4 && /^TAHAP\b/i.test(bandVals[bandVals.length - 1])) {
+          parallelEline2 = bandVals[bandVals.length - 1];
+        }
+        classes = readParallelClassLists(ws, range, {
+          pairs: parallelPairs, startRow: headerRow + 1, eline2: parallelEline2,
+        });
+      } else if (subjekH) {
         // Class-level labels sit either beside SUBJEK on the same row, or on
         // the row directly below it (MP THP 2's own 2-row header) — whichever
         // has more non-blank cells to the right of the subject column wins.
@@ -327,6 +474,21 @@ function scanSheetForSections(ws) {
             classes = [{ tahunFrom: '', tahunTo: '', namaKelas: '', subjects: flatRows.map((r) => ({ name: r.desc, qty: r.qty })) }];
           }
         }
+      } else if (kuantitiH && tahunH && namaKelasH) {
+        // TAHUN column + a separate NAMA KELAS list + a per-grade KUANTITI
+        // ("35 (SETIAP KELAS 5 PLAK)") — cross the two axes out to one
+        // plaque row per (grade, class). See readGradeClassExpansion. Only
+        // fires on the explicit "SETIAP KELAS" marker; without it, read the
+        // TAHUN column plainly, same as a table with no NAMA KELAS list.
+        classes = readGradeClassExpansion(ws, {
+          tahunCol: tahunH.col, qtyCol: kuantitiH.col, namaKelasCol: namaKelasH.col,
+          startRow: headerRow + 1, endRow: plakAnchor.row - 1,
+        });
+        if (classes.length === 0) {
+          classes = readTahunQtyRows(ws, range, {
+            tahunCol: tahunH.col, qtyCol: kuantitiH.col, startRow: headerRow + 1, endRow: plakAnchor.row - 1, subjectLabel: 'KUANTITI',
+          });
+        }
       } else if (qtyH && namaKelasH && !tahunH) {
         classes = readNamaKelasQtyRows(ws, range, {
           namaKelasCol: namaKelasH.col, qtyCol: qtyH.col, startRow: headerRow + 1, endRow: plakAnchor.row - 1, subjectLabel: qtyLabel,
@@ -339,6 +501,13 @@ function scanSheetForSections(ws) {
     }
 
     const lines = readRefLinesInBand(ws, range, bandStart, headerRow - 1);
+    // A parallel-list section's own sample box has a 4th line ("TAHAP 1")
+    // that is event_line_2, not a reference slot — the by-count reader put
+    // it in slot '3' and the real class example in '2b'. Swap them back.
+    if (parallelEline2 && lines['3'] === parallelEline2) {
+      if (lines['2b']) lines['3'] = lines['2b']; else delete lines['3'];
+      delete lines['2b'];
+    }
 
     // Jenis Plak + its own QTY (used as a flat fallback quantity when no
     // breakdown table was found above at all) — read from the row(s)
@@ -589,8 +758,19 @@ function groupRosterHeaders(ws, range) {
 
 function scanSheetForRosters(ws, sampleCards) {
   const range = sheetRange(ws);
-  const nameHeaders = groupRosterHeaders(ws, range);
+  let nameHeaders = groupRosterHeaders(ws, range);
   if (nameHeaders.length === 0) return [];
+
+  // A NAMA KELAS list sitting on a sheet that ALSO has a "JENIS PLAK"
+  // footer belongs to that footer's award section — scanSheetForSections
+  // reads it (KOSAS PBD's grade×class list is exactly this) — and must not
+  // also be picked up here as a standalone "best class" roster. Person-name
+  // rosters (NAMA MURID / NAMA GURU) are the genuine roster shape and are
+  // never suppressed this way.
+  if (findLabelCells(ws, range, ['JENIS PLAK']).length > 0) {
+    nameHeaders = nameHeaders.filter((h) => h.label !== CLASS_NAME_LABEL);
+    if (nameHeaders.length === 0) return [];
+  }
 
   const sheetTitle = readTopmostTitle(ws, range, range.r1, nameHeaders[0].row - 1);
 
@@ -693,43 +873,136 @@ function scanSheetForRosters(ws, sampleCards) {
   return sections;
 }
 
-// TOKOH's own sheet still gets read (it's still an active category on its
-// own, with its own evolved data model for a manually-started order) but an
-// IMPORTED TOKOH sheet folds into KLAS_MATRIX like everything else, for the
-// one-place-to-review reason described up top. Its Section A (5 fixed award
-// types) is what a real past order actually used (a picked-per-award Jenis
-// Plak, no explicit quantity — one plaque per award type ordered) — each
-// ordered award type becomes its own class row (Nama Kelas = the award's
-// name) with a single "KUANTITI" column of 1, same trick as a roster's named
-// row. Found by NAME, not row position, same reasoning as everything else
-// here. Jenis Plak itself is NOT imported — Section A can name a different
-// Jenis Plak per award, which one shared Jenis Plak per KLAS_MATRIX section
-// can't represent, so it's left for the teacher to pick fresh on Step 2,
-// same as any manually-started order.
-const TOKOH_AWARD_NAMES = ['TOKOH MURID', 'TOKOH NILAM', 'TOKOH KURIKULUM', 'TOKOH KOKURIKULUM', 'TOKOH AKADEMIK'];
+const NON_PLAQUE_RE = /^(HAMPER|SELEMPANG|SASH|BOUQUET|BUNGA|TOTE|BEG|BAG)\b/i;
 
+// TOKOH's own sheet folds into KLAS_MATRIX like everything else. Its award
+// table is "TOKOH | [KUANTITI] | JENIS PLAK | **DESIGN | HARGA" — one
+// honour per row (award name in the TOKOH column, its own plaque code
+// beside it). A TOKOH plaque is just event header + award name — no
+// per-plaque class/year line.
+//
+// Rows are grouped by PLAQUE CODE — one KLAS_MATRIX section per distinct
+// code, every honour on that code becoming a position column inside it
+// (slot '0' = the majlis title, the reference sample carries no ACARA/TAHUN
+// line). Six TOKOH rows all on "M1902B" = ONE section with six positions,
+// not six sections; two codes = two sections. A HAMPER / SELEMPANG line, or
+// any row with no code at all, is a Remark note, never a plaque. Returns an
+// ARRAY of sections (possibly empty).
 function parseTokohSheet(ws) {
   const range = sheetRange(ws);
-  const anchors = findLabelCells(ws, range, TOKOH_AWARD_NAMES).sort((a, b) => a.row - b.row);
-  if (anchors.length === 0) return null;
-  const classes = [];
-  anchors.forEach(({ row, col, label }) => {
-    let hasData = false;
-    for (let c = col + 1; c <= Math.min(col + 4, range.c2); c++) {
-      if (cellText(ws, row, c)) { hasData = true; break; }
+  const tokohH = findLabelCells(ws, range, ['TOKOH'])[0];
+  if (!tokohH) return [];
+  const onRow = findLabelCells(
+    ws, { r1: tokohH.row, r2: tokohH.row, c1: range.c1, c2: range.c2 }, ['JENIS PLAK', 'KUANTITI'],
+  );
+  const jenisPlakH = onRow.find((h) => h.label === 'JENIS PLAK');
+  const kuantitiH = onRow.find((h) => h.label === 'KUANTITI');
+  let designCol = null;
+  for (let c = range.c1; c <= range.c2; c++) {
+    if (/DESIGN/i.test(cellStr(ws, tokohH.row, c))) { designCol = c; break; }
+  }
+  const footer = findLabelCells(
+    ws, { r1: tokohH.row + 1, r2: range.r2, c1: tokohH.col, c2: tokohH.col }, ['JENIS PLAK'],
+  )[0];
+  // The sheet often stacks plain "TAHUN | KUANTITI | JENIS PLAK" award
+  // tables BELOW the honour table (KEHADIRAN PENUH / KEHADIRAN TERBAIK) —
+  // the honour table ends where the first of those headers begins.
+  const subTableHeaders = findLabelCells(ws, range, ['KUANTITI', 'KEDUDUKAN'])
+    .filter((h) => h.row > tokohH.row)
+    .sort((a, b) => a.row - b.row);
+  const honourEnd = Math.min(
+    footer ? footer.row - 1 : range.r2,
+    subTableHeaders.length ? subTableHeaders[0].row - 1 : range.r2,
+  );
+
+  // The honour table's own reference box (① majlis title, ② one example
+  // TOKOH name) sits above it — read it as the section's reference sample.
+  const honourLines = readRefLinesInBand(ws, range, range.r1, tokohH.row - 1);
+
+  const groups = new Map(); // code -> { code, subjects: [{ name, qty }], order: [] }
+  const groupOrder = [];
+  const remarkNotes = [];
+  let blanks = 0;
+  let honourDataEnd = tokohH.row;
+  for (let r = tokohH.row + 1; r <= honourEnd; r++) {
+    const name = cellText(ws, r, tokohH.col);
+    if (!name || isTotalLabel(name)) { blanks += 1; if (blanks >= 3) break; continue; }
+    blanks = 0;
+    honourDataEnd = r;
+    const code = jenisPlakH ? cellText(ws, r, jenisPlakH.col) : '';
+    const qty = kuantitiH ? Math.max(1, cellNum(ws, r, kuantitiH.col)) : 1;
+    const design = designCol != null ? cellText(ws, r, designCol) : '';
+    if (NON_PLAQUE_RE.test(name) || !code) {
+      remarkNotes.push(`${name} (bukan plak — remark sahaja)`);
+      continue;
     }
-    if (hasData) classes.push({ tahunFrom: '', tahunTo: '', namaKelas: label, subjects: [{ name: 'KUANTITI', qty: 1 }] });
+    if (!groups.has(code)) { groups.set(code, { code, byName: new Map(), order: [] }); groupOrder.push(code); }
+    const g = groups.get(code);
+    if (!g.byName.has(name)) { g.byName.set(name, { name, qty: 0, design }); g.order.push(name); }
+    g.byName.get(name).qty += qty;
+  }
+
+  const sections = groupOrder.map((code) => {
+    const g = groups.get(code);
+    // Each honour is its own ROW (a class), one flat "KUANTITI" column —
+    // reads down the left like the SUBJEK list on an MP THP sheet. The
+    // honour name IS the engraved award line (positionFromNamaKelas tells
+    // exportCsv.js and computeBlocks.js) — shown under an "Acara" header.
+    const classes = g.order.map((n) => {
+      const { name, qty, design } = g.byName.get(n);
+      if (design) remarkNotes.push(`${name}: reka bentuk ${design}`);
+      return { tahunFrom: '', tahunTo: '', namaKelas: name, subjects: [{ name: 'KUANTITI', qty }] };
+    });
+    return {
+      lines: { ...honourLines },
+      classes,
+      jenisPlak: code,
+      namaKelasLabel: 'Acara',
+      positionFromNamaKelas: true,
+    };
   });
-  // The award table's own column headers ("TOKOH"/"JENIS PLAK"/"**DESIGN"/
-  // "HARGA") sit on one row just above the first award name — without
-  // excluding it, that whole header row reads as one more "reference
-  // line" of garbage text. Whichever "JENIS PLAK" label appears closest
-  // above the first award marks that header row.
-  const headerAbove = findLabelCells(ws, { r1: range.r1, r2: anchors[0].row - 1, c1: range.c1, c2: range.c2 }, ['JENIS PLAK']);
-  const bandEnd = headerAbove.length > 0 ? Math.min(...headerAbove.map((h) => h.row)) - 1 : anchors[0].row - 1;
-  const lines = readRefLinesInBand(ws, range, range.r1, bandEnd, TOKOH_SLOTS_BY_COUNT);
-  if (!hasAnyValue(lines) && classes.length === 0) return null;
-  return { lines, classes, jenisPlak: '' };
+  if (remarkNotes.length && sections.length) sections[0].remarkNote = remarkNotes.join('\n');
+
+  // Each stacked sub-table (KEHADIRAN PENUH / KEHADIRAN TERBAIK) — its own
+  // small reference box a few blank rows above a "TAHUN | KUANTITI | JENIS
+  // PLAK" table. Plaque code comes from that table's own JENIS PLAK column
+  // (KEHADIRAN PENUH writes it inline, no separate footer).
+  subTableHeaders.forEach((qh, idx) => {
+    const hdrCells = findLabelCells(
+      ws, { r1: qh.row, r2: qh.row, c1: range.c1, c2: range.c2 }, ['TAHUN', 'JENIS PLAK'],
+    );
+    const subTahunH = hdrCells.find((h) => h.label === 'TAHUN');
+    const subCodeH = hdrCells.find((h) => h.label === 'JENIS PLAK');
+    const dataEnd = idx + 1 < subTableHeaders.length ? subTableHeaders[idx + 1].row - 1 : range.r2;
+    // Look at most 8 rows above the header for this table's own box, never
+    // back into the previous table's data or the honour-table remarks.
+    const bandFrom = Math.max(
+      idx > 0 ? subTableHeaders[idx - 1].row + 2 : honourDataEnd + 1,
+      qh.row - 8,
+    );
+    const subLines = readRefLinesInBand(ws, range, bandFrom, qh.row - 1);
+
+    let subClasses = readTahunQtyRows(ws, range, {
+      tahunCol: (subTahunH || qh).col, qtyCol: qh.col, startRow: qh.row + 1, endRow: dataEnd, subjectLabel: 'KUANTITI',
+    });
+    let subCode = '';
+    if (subCodeH) {
+      for (let r = qh.row + 1; r <= dataEnd; r++) {
+        const v = cellText(ws, r, subCodeH.col);
+        if (v && v.toUpperCase() !== 'JENIS PLAK') { subCode = v; break; }
+      }
+    }
+    if (subClasses.length === 0) {
+      let flatQty = 0;
+      for (let r = qh.row + 1; r <= dataEnd && flatQty === 0; r++) flatQty = cellNum(ws, r, qh.col);
+      if (flatQty > 0) subClasses = [{ tahunFrom: '', tahunTo: '', namaKelas: '', subjects: [{ name: 'KUANTITI', qty: flatQty }] }];
+    }
+    if (subClasses.length > 0 || subCode) {
+      sections.push({ lines: subLines, classes: subClasses, jenisPlak: subCode });
+    }
+  });
+
+  return sections;
 }
 
 // A pending/placeholder line item — the school already knows they need it
@@ -975,8 +1248,7 @@ export function parseFormAnugerahExcel(arrayBuffer) {
   }
 
   const tokohSheet = findSheet(wb, 'TOKOH');
-  const tokoh = tokohSheet ? parseTokohSheet(tokohSheet) : null;
-  if (tokoh) allSections.push(tokoh);
+  if (tokohSheet) allSections.push(...parseTokohSheet(tokohSheet));
 
   allSections.push(...findPerasmiSections(wb));
   const kivNotes = findKivNotes(wb);
