@@ -1005,13 +1005,30 @@ function parseSubjectLevelSheet(ws) {
     // classes summed to 25 and only PPKI's column read 25; PRA SEKOLAH's
     // summed to 17 and only its own column read 17 — same per-level
     // isolation for the Moral Kelas sub-lists (3/6/5 respectively).
-    const subjectNames = [];
+    const subjectRows = [];
     for (let r = classHeaderRow + 1; r <= subjectEndRow; r++) {
       const name = cellText(ws, r, subjekH.col);
-      if (name) subjectNames.push(name);
+      if (name) subjectRows.push({ name, row: r });
     }
-    if (subjectNames.length === 0) return null;
+    if (subjectRows.length === 0) return null;
+    const subjectNames = subjectRows.map((s) => s.name);
     subjectOrder = subjectNames;
+    // The level-label columns (TAHUN 1/2/3, or PRA PPKI/PPKI/PRASEKOLAH),
+    // keyed by their own header text so a Nama Kelas block ("Tahun 1") can
+    // find its matching matrix column ("TAHUN 1").
+    const colByLabel = new Map();
+    classCols.forEach((c) => {
+      const raw = cellText(ws, classHeaderRow, c).trim().toUpperCase();
+      if (raw) colByLabel.set(raw, c);
+    });
+    // Whether the teacher typed (or the template's own SUM formula filled)
+    // ANY matrix cell. When some cells have values, a BLANK cell is a
+    // deliberate "this school doesn't offer this subject at this level" and
+    // must stay 0 — not silently get the level's class total like every
+    // other subject. Only a wholly-blank matrix (a formula-less sheet where
+    // the teacher filled ONLY the Nama Kelas lists) falls back to giving
+    // every subject that level's total.
+    const matrixHasAnyValue = subjectRows.some((s) => classCols.some((c) => cellNum(ws, s.row, c) > 0));
     const levelRows = blocks.map((b) => ({
       label: b.label,
       mainRows: readPpkiListRows(ws, range, b.nkCol, b.qtyCol, b.headerRow + 1),
@@ -1031,11 +1048,17 @@ function parseSubjectLevelSheet(ws) {
     // leaves them as plain namaKelas text, unchanged from before.
     classes = blocks.map((b, bi) => {
       const tahun = normalizeTahun(b.label);
+      const levelCol = colByLabel.get((b.label || '').trim().toUpperCase());
       return {
         tahunFrom: tahun, tahunTo: tahun, namaKelas: tahun ? '' : b.label,
-        subjects: subjectNames.map((name) => ({
-          name, qty: /^PENDIDIKAN MORAL$/i.test(name.trim()) ? levelTotals[bi].moralTotal : levelTotals[bi].mainTotal,
-        })),
+        subjects: subjectRows.map(({ name, row }) => {
+          const levelTotal = /^PENDIDIKAN MORAL$/i.test(name.trim())
+            ? levelTotals[bi].moralTotal : levelTotals[bi].mainTotal;
+          if (!matrixHasAnyValue) return { name, qty: levelTotal };
+          // Matrix has values elsewhere → this subject's own cell is the
+          // source of truth (blank cell = subject not offered here).
+          return { name, qty: levelCol != null ? cellNum(ws, row, levelCol) : 0 };
+        }),
       };
     });
     levelBreakdown = levelRows.map((lr) => ({ ...lr, label: normalizeTahun(lr.label) || lr.label }));

@@ -55,7 +55,14 @@ function recomputeLevelBreakdown(st, listKey, updatedRowsByBlock, matrixValuesFi
       }))
       : getCategorySubjects(cat, st.schoolLanguage).map((subject) => ({ rowKey: subject, moral: subject === moralSubject }));
     targets.forEach(({ rowKey, moral }) => {
-      newMatrixValues[matrixCellKey(catKey, rowKey, level)] = String(moral ? moralTotal : mainTotal);
+      const cellKey = matrixCellKey(catKey, rowKey, level);
+      // A subject the import left blank for this level (the school doesn't
+      // offer it — its Excel cell was empty, see excelImport.js's
+      // parseSubjectLevelSheet Case 2B) stays blank: the Nama Kelas re-sum
+      // only updates subjects that already carry a figure for this level.
+      const existing = st[matrixValuesField][cellKey];
+      if (existing === undefined || existing === '') return;
+      newMatrixValues[cellKey] = String(moral ? moralTotal : mainTotal);
     });
   }
   return { [matrixValuesField]: newMatrixValues };
