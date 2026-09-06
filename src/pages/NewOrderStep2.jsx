@@ -18,7 +18,7 @@ const DRAFT_FIELDS = {
 const EDITABLE = { lines: true, rowDesc: true, rowQty: true, addRemoveRows: true, matrix: true, jenisPlak: true };
 
 export default function NewOrderStep2() {
-  const { state, patch, addToCart, importFormAnugerahExcel } = useAppState();
+  const { state, patch, addToCart, addAllToCart, importFormAnugerahExcel } = useAppState();
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
   const [importStatus, setImportStatus] = useState(null); // { ok, message } | null
@@ -330,7 +330,18 @@ export default function NewOrderStep2() {
           <button type="button" className="btn btn-ghost" onClick={() => navigate('/order/step1')}>← Back</button>
           {state.cartToast && <span className="toast-inline">{state.cartToast}</span>}
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
-            <button type="button" className="btn btn-primary" onClick={addToCart} disabled={!state.category || unansweredChoices.length > 0}>Add to Cart</button>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {state.category && (
+                <button type="button" className="btn btn-ghost" onClick={addToCart} disabled={unansweredChoices.length > 0}>
+                  Add this category only
+                </button>
+              )}
+              {/* One click adds every category that has filled data — the
+                  common case after an import fills several at once. */}
+              <button type="button" className="btn btn-primary" onClick={addAllToCart} disabled={unansweredChoices.length > 0}>
+                Add All to Cart
+              </button>
+            </div>
             {unansweredChoices.length > 0 && (
               <span className="hint-text" style={{ margin: 0 }}>Answer the {unansweredChoices.length} question(s) above first.</span>
             )}
