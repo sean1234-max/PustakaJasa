@@ -21,27 +21,66 @@ const SUBJECTS_CORE_CN = [
   '音乐教育', '道德教育', '华文', '淡米尔语',
 ];
 
+// MP THP 2's own sheet carries two extra subjects — SEJARAH and REKA BENTUK
+// & TEKNOLOGI — and its sheet lists them right after PENDIDIKAN MORAL, before
+// BAHASA CINA / BAHASA TAMIL. computeBlocks renders the matrix rows in this
+// array's order, so it must match the sheet exactly or the teacher sees the
+// subjects jump around relative to the Excel they filled.
+const SUBJECTS_MP2 = [
+  ...SUBJECTS_CORE.slice(0, 11), 'SEJARAH', 'REKA BENTUK & TEKNOLOGI',
+  ...SUBJECTS_CORE.slice(11),
+];
+const SUBJECTS_MP2_CN = [
+  ...SUBJECTS_CORE_CN.slice(0, 11), '历史', '设计与工艺',
+  ...SUBJECTS_CORE_CN.slice(11),
+];
+
+// Which of SUBJECTS_CORE/SUBJECTS_CORE_CN is "Pendidikan Moral" — PPKI's own
+// Nama Kelas breakdown (hasLevelBreakdown below) sums a level's Moral Kelas
+// list into just this one subject's own KUANTITI cell, every other subject
+// getting the level's plain Nama Kelas sum instead (see excelImport.js's
+// parsePpkiSheet and draftUpdaters.js's recomputeLevelBreakdown).
+export const MORAL_SUBJECT_BY_LANGUAGE = { SK: 'PENDIDIKAN MORAL', SJKC: '道德教育' };
+
+// ALIRAN TERBAIK's KEDUDUKAN — Malay ordinals PERTAMA (1st) .. KESEPULUH
+// (10th). The sheet's KEDUDUKAN column is a "DARI → HINGGA KE" range
+// (excelImport.js's parseAliranSheet); a range PERTAMA→KESEPULUH means
+// every place from 1st to 10th gets its own plaque. Its own JENIS PLAK
+// footer maps position sub-ranges to plaque types (1st-3rd = one plak,
+// 4th-10th = another).
+export const MALAY_ORDINALS = [
+  'PERTAMA', 'KEDUA', 'KETIGA', 'KEEMPAT', 'KELIMA',
+  'KEENAM', 'KETUJUH', 'KELAPAN', 'KESEMBILAN', 'KESEPULUH',
+];
+// Word (or "KE-8" / "KE 8" / a bare "8") -> 1-based position, or null.
+export function ordinalToNum(text) {
+  const s = String(text || '').trim().toUpperCase();
+  if (!s || s === '-') return null;
+  const idx = MALAY_ORDINALS.indexOf(s);
+  if (idx >= 0) return idx + 1;
+  // also accept "KEDELAPAN" (Indonesian 8th) as an alias for KELAPAN
+  if (s === 'KEDELAPAN') return 8;
+  const m = s.match(/^KE[-\s]?(\d{1,2})$/) || s.match(/^(\d{1,2})$/);
+  if (m) { const n = Number(m[1]); if (n >= 1 && n <= MALAY_ORDINALS.length) return n; }
+  return null;
+}
+export function numToOrdinal(n) {
+  return MALAY_ORDINALS[n - 1] || '';
+}
+
 // Same TODO applies: class-level labels for the MP THP 1/2 matrix columns,
 // only PPKI kept untranslated (national programme name, used as-is).
-const CLASS_LEVELS_MY = ['PPKI', 'PRASEKOLAH', 'TAHUN 1', 'TAHUN 2', 'TAHUN 3'];
+// PRA PPKI/PPKI/PRASEKOLAH are their own separate PPKI category below —
+// no established CN translation exists for the first two, so PPKI has no
+// SJKC columnsByLanguage variant at all and falls back to SK (see
+// getCategoryColumns).
+const PPKI_LEVELS = ['PRA PPKI', 'PPKI', 'PRASEKOLAH'];
+const MP_THP1_LEVELS_MY = ['TAHUN 1', 'TAHUN 2', 'TAHUN 3'];
+const MP_THP1_LEVELS_CN = ['一年级', '二年级', '三年级'];
 const CLASS_LEVELS_MY_UPPER = ['TAHUN 4', 'TAHUN 5', 'TAHUN 6'];
-const CLASS_LEVELS_CN = ['PPKI', '学前班', '一年级', '二年级', '三年级'];
 const CLASS_LEVELS_CN_UPPER = ['四年级', '五年级', '六年级'];
 
-// Shared by both PBD TERBAIK and ALIRAN TERBAIK below (same subject list,
-// only "Kuantiti" vs "Kedudukan" differs between them).
-const SUBJECTS_PBD = {
-  SK: [
-    'BAHASA MELAYU', 'BAHASA INGGERIS', 'MATEMATIK', 'SAINS', 'PENDIDIKAN ISLAM',
-    'BAHASA ARAB', 'PENDIDIKAN SENI VISUAL', 'SEJARAH', 'REKA BENTUK & TEKNOLOGI',
-    'PENDIDIKAN JASMANI', 'PENDIDIKAN KESIHATAN', 'PENDIDIKAN MUZIK', 'PENDIDIKAN MORAL',
-  ],
-  SJKC: [
-    '国语', '英语', '数学', '科学', '伊斯兰教育',
-    '阿拉伯语', '视觉艺术教育', '历史', '设计与工艺',
-    '体育教育', '健康教育', '音乐教育', '道德教育',
-  ],
-};
+const ALL_TAHUN = ['TAHUN 1', 'TAHUN 2', 'TAHUN 3', 'TAHUN 4', 'TAHUN 5', 'TAHUN 6'];
 
 // Resolves a matrix category's subject/column labels for the given school
 // language ('SK' | 'SJKC'), falling back to the Malay ('SK') list for any
@@ -137,74 +176,228 @@ export function matrixCellKey(catKey, rowKey, colKey) {
 // only ever a CONTOH (the real per-cell/per-column subject always comes
 // from the fixed subject list or the teacher's own PBD columns, see
 // exportCsv.js's buildMatrixRows/buildPbdMatrixRows — the reference-sample
-// text was never read), so losing it doesn't change what exports.
+// text was never read), so losing it doesn't change what exports — true
+// for PBD/ALIRAN below, which still use this bare 4-line set. PPKI and MP
+// THP 1 add their own `positionLine2Placeholder` back on top of it (same
+// "( SUBJEK/POSITION )" second box Main Template already uses after its own
+// ACARA) — their own imported file's reference box genuinely has this line
+// (a worked example of ACARA + a real subject name), and the teacher should
+// see it, even though what actually gets engraved is still each cell's own
+// real subject, never this preview text (see exportCsv.js's buildMatrixRows).
 const STANDARD_REFERENCE_LINES = ['TAJUK BESAR', 'YEAR', 'ACARA', '( TAHUN ? )'];
+
+// TOKOH_SHEET's per-row metadata columns (catalog.js's tokohRowFields).
+// `place` says which side of the KUANTITI/JENIS PLAK columns each renders
+// on, so the review table matches the source sheet's column order. Stored
+// per row in rowsByBlock via the generic onRowField updater (same as
+// desc/qty) — no dedicated updater needed.
+export const TOKOH_ROW_FIELDS = [
+  { key: 'namaMurid', label: 'NAMA MURID', place: 'beforeQty' },
+  { key: 'gambar', label: 'GAMBAR', place: 'beforeQty', yesNo: true },
+  { key: 'design', label: 'DESIGN', place: 'afterPlak' },
+];
+
+// PPKI / MP THP 1 / MP THP 2 (and their "Kalau ada kelas" variants) — the
+// subject rows aren't a fixed engraving list: the teacher can rename a
+// subject on the source sheet ("PENDIDIKAN JASMANI" -> "PENDIDIKAN JASMANI &
+// HIPPO"), add one, or leave one blank, and the website must show exactly
+// what the sheet has, editable. `subjectsFromImport` tells computeBlocks /
+// exportCsv / draftUpdaters to build the matrix rows off the imported list
+// (stored as editable `custom-<id>` rows — see getCustomMatrixRowIds) instead
+// of subjectsByLanguage. The catalog list below is still the pre-import
+// default so the tab is usable before any file is dropped.
+const SUBJECTS_FROM_IMPORT = true;
 
 export const CATEGORIES = [
   {
-    key: 'MP1', label: 'MP THP 1', mode: 'matrix', blocksCount: 1, active: false,
-    columnsByLanguage: { SK: CLASS_LEVELS_MY, SJKC: CLASS_LEVELS_CN },
+    key: 'PPKI', label: 'PPKI', mode: 'matrix', blocksCount: 1, active: true,
+    columnsByLanguage: { SK: PPKI_LEVELS },
     subjectsByLanguage: { SK: SUBJECTS_CORE, SJKC: SUBJECTS_CORE_CN },
     linePlaceholders: STANDARD_REFERENCE_LINES,
+    positionLine2Placeholder: '( SUBJEK/POSITION )',
     requiredLineIndices: [0, 2],
     positionFieldsRedText: true,
     draggableReferenceSample: true,
+    subjectsFromImport: SUBJECTS_FROM_IMPORT,
+    // Each of the 3 levels (PRA PPKI/PPKI/PRASEKOLAH) can carry its own
+    // Nama Kelas + Moral Kelas breakdown, same shape as the source Excel —
+    // see computeBlocks.js's levelBreakdown / draftUpdaters.js's
+    // onLevelKelasField family. A KUANTITI cell filled by hand (no
+    // breakdown at all) is untouched; this only appears once a level
+    // actually has one.
+    hasLevelBreakdown: true,
   },
   {
-    key: 'MP2', label: 'MP THP 2', mode: 'matrix', blocksCount: 1, active: false,
+    key: 'MP1', label: 'MP THP 1', mode: 'matrix', blocksCount: 1, active: true,
+    columnsByLanguage: { SK: MP_THP1_LEVELS_MY, SJKC: MP_THP1_LEVELS_CN },
+    subjectsByLanguage: { SK: SUBJECTS_CORE, SJKC: SUBJECTS_CORE_CN },
+    linePlaceholders: STANDARD_REFERENCE_LINES,
+    positionLine2Placeholder: '( SUBJEK/POSITION )',
+    requiredLineIndices: [0, 2],
+    positionFieldsRedText: true,
+    draggableReferenceSample: true,
+    subjectsFromImport: SUBJECTS_FROM_IMPORT,
+  },
+  {
+    // Its own separate category from MP1 above, even though it's the same
+    // TAHUN 1/2/3 × subject matrix underneath — a school fills in ONE of
+    // these two source sheets, never both, and keeping them as distinct
+    // categories means whichever one a file actually used gets its own tab
+    // rather than the two competing for one shared slot (see
+    // excelImport.js's SOURCE_SHEET_TO_CATEGORY).
+    key: 'MP1_KELAS', label: 'MP THP 1 (Kalau ada kelas)', mode: 'matrix', blocksCount: 1, active: true,
+    columnsByLanguage: { SK: MP_THP1_LEVELS_MY, SJKC: MP_THP1_LEVELS_CN },
+    subjectsByLanguage: { SK: SUBJECTS_CORE, SJKC: SUBJECTS_CORE_CN },
+    linePlaceholders: STANDARD_REFERENCE_LINES,
+    positionLine2Placeholder: '( SUBJEK/POSITION )',
+    requiredLineIndices: [0, 2],
+    positionFieldsRedText: true,
+    draggableReferenceSample: true,
+    subjectsFromImport: SUBJECTS_FROM_IMPORT,
+    // A per-Tahun Nama Kelas + Moral Kelas breakdown instead of typing each
+    // Tahun's total straight in (see catalog.js's PPKI entry for the same
+    // mechanism, computeBlocks.js's levelBreakdown).
+    hasLevelBreakdown: true,
+  },
+  {
+    key: 'MP2', label: 'MP THP 2', mode: 'matrix', blocksCount: 1, active: true,
     columnsByLanguage: { SK: CLASS_LEVELS_MY_UPPER, SJKC: CLASS_LEVELS_CN_UPPER },
     subjectsByLanguage: {
-      SK: [...SUBJECTS_CORE, 'SEJARAH', 'REKA BENTUK & TEKNOLOGI'],
-      SJKC: [...SUBJECTS_CORE_CN, '历史', '设计与工艺'],
+      SK: SUBJECTS_MP2,
+      SJKC: SUBJECTS_MP2_CN,
     },
     linePlaceholders: STANDARD_REFERENCE_LINES,
+    positionLine2Placeholder: '( SUBJEK/POSITION )',
     requiredLineIndices: [0, 2],
     positionFieldsRedText: true,
     draggableReferenceSample: true,
+    subjectsFromImport: SUBJECTS_FROM_IMPORT,
   },
   {
-    key: 'PBD', label: 'PBD TERBAIK', mode: 'dynamicMatrix', blocksCount: 1, active: false,
-    // Subject columns are seeded from this list (editable per-order: teachers
-    // can add extra custom subject columns on top, but can't rename/remove
-    // these 13 — see computeBlocks.js/formDefaults.js). Rows (Tahun + Nama
-    // Kelas) are entirely teacher-defined per order, unlike MP THP's fixed
-    // columnsByLanguage, so PBD TERBAIK has no columnsByLanguage at all.
-    subjectsByLanguage: SUBJECTS_PBD,
+    // Its own separate category from MP2 above, same reasoning as MP1_KELAS
+    // — a school fills in ONE of the two source sheets, never both.
+    key: 'MP2_KELAS', label: 'MP THP 2 (Kalau ada kelas)', mode: 'matrix', blocksCount: 1, active: true,
+    columnsByLanguage: { SK: CLASS_LEVELS_MY_UPPER, SJKC: CLASS_LEVELS_CN_UPPER },
+    subjectsByLanguage: {
+      SK: SUBJECTS_MP2,
+      SJKC: SUBJECTS_MP2_CN,
+    },
     linePlaceholders: STANDARD_REFERENCE_LINES,
+    positionLine2Placeholder: '( SUBJEK/POSITION )',
     requiredLineIndices: [0, 2],
     positionFieldsRedText: true,
     draggableReferenceSample: true,
-    qtyColumnLabels: ['KUANTITI'],
+    subjectsFromImport: SUBJECTS_FROM_IMPORT,
+    hasLevelBreakdown: true,
   },
   {
-    key: 'ALIRAN', label: 'ALIRAN TERBAIK', mode: 'dynamicMatrix', blocksCount: 1, active: false,
-    // Same shape as PBD TERBAIK above, just "Kedudukan" (ranking) instead of
-    // "Kuantiti" (count) — used to be the same PBD category's second variant,
-    // split into its own tab so there's no variant dropdown to pick between.
-    subjectsByLanguage: SUBJECTS_PBD,
+    // PBD TERBAIK's real sheet has NO subject axis at all — just one
+    // KUANTITI total per TAHUN 1-6, optionally broken down into a Nama
+    // Kelas list per Tahun (no Moral Kelas). Modelled as a 1-column matrix
+    // whose "subject" rows ARE the six Tahuns, so the display reads as six
+    // vertical Tahun/QTY rows. `levelBreakdownAxis: 'subject'` tells
+    // computeBlocks.js/draftUpdaters.js the breakdown levels are those
+    // rows, not the (single) column.
+    key: 'PBD', label: 'PBD TERBAIK', mode: 'matrix', blocksCount: 1, active: true,
+    columnsByLanguage: { SK: ['KUANTITI'] },
+    subjectsByLanguage: { SK: ALL_TAHUN },
+    matrixRowLabel: 'Tahun',
     linePlaceholders: STANDARD_REFERENCE_LINES,
+    positionLine2Placeholder: '( SUBJEK/POSITION )',
     requiredLineIndices: [0, 2],
     positionFieldsRedText: true,
     draggableReferenceSample: true,
-    qtyColumnLabels: ['KEDUDUKAN'],
+    hasLevelBreakdown: true,
+    levelBreakdownAxis: 'subject',
+    levelBreakdownNoMoral: true,
   },
   {
-    key: 'LONJAKAN', label: 'LONJAKAN SAUJANA', mode: 'list', blocksCount: 1, active: false,
-    rows: ['TAHUN 1', 'TAHUN 2', 'TAHUN 3', 'TAHUN 4', 'TAHUN 5', 'TAHUN 6'],
-    // Line 3 used to be fixed/typed text ("LONJAKAN SAUJANA") prefixed
-    // literally onto the engraved position (positionPrefixFromLine3) — now
-    // relabeled "( SUBJEK/POSITION )" in red to match OTHERS' flexible-field
-    // convention, so it's CONTOH-only like TOKOH's own line 3 instead:
-    // positionPrefixFromLine3 is dropped along with it. The real per-plaque
-    // position is still each row's own description (TAHUN 1..6), see
-    // exportCsv.js's buildRowsFromDescriptionRows.
-    linePlaceholders: ['TAJUK BESAR', 'YEAR', '( SUBJEK/POSITION )'],
+    // ALIRAN TERBAIK — six fixed TAHUN rows, each carrying a KEDUDUKAN
+    // "hingga" place (DARI is always 1st): its QTY = that count (1st..Nth =
+    // N plaques, one per place). A blank KEDUDUKAN + a typed QTY is a flat
+    // "ikut sample, tukar TAHUN" count instead. Its own JENIS PLAK footer
+    // maps position sub-ranges to plaque types, each footer row's QTY
+    // derived by crossing its range with the TAHUNs that ordered it. See
+    // excelImport.js's parseAliranSheet, computeBlocks.js's ALIRAN
+    // handling, draftUpdaters.js's onAliran* family.
+    key: 'ALIRAN', label: 'ALIRAN TERBAIK', mode: 'list', blocksCount: 1, active: true,
+    rows: ALL_TAHUN,
+    aliranKedudukan: true,
+    descColumnLabel: 'Tahun',
+    hideQtyLabelSuffix: true,
+    linePlaceholders: STANDARD_REFERENCE_LINES,
+    positionLine2Placeholder: '( SUBJEK/POSITION )',
+    requiredLineIndices: [0, 2],
+    positionFieldsRedText: true,
+    draggableReferenceSample: true,
+  },
+  {
+    // LONJAKAN SAUJANA — six fixed TAHUN rows, each with its OWN KUANTITI
+    // and its OWN Jenis Plak (plakPerRow: one cart item per TAHUN row, no
+    // single block-level Jenis Plak). Each plaque engraves ACARA + that
+    // row's own TAHUN (positionFromRows + positionPrefixFromLine3,
+    // exportCsv.js).
+    key: 'LONJAKAN', label: 'LONJAKAN SAUJANA', mode: 'list', blocksCount: 1, active: true,
+    rows: ALL_TAHUN,
+    descColumnLabel: 'Tahun',
+    hideQtyLabelSuffix: true,
+    plakPerRow: true,
+    linePlaceholders: STANDARD_REFERENCE_LINES,
+    positionLine2Placeholder: '( SUBJEK/POSITION )',
+    requiredLineIndices: [0, 2],
+    positionFieldsRedText: true,
+    draggableReferenceSample: true,
+    positionFromRows: true,
+    positionPrefixFromLine3: true,
+  },
+  {
+    // KEHADIRAN PENUH — same shape as LONJAKAN SAUJANA above.
+    key: 'KEHADIRAN', label: 'KEHADIRAN PENUH', mode: 'list', blocksCount: 1, active: true,
+    rows: ALL_TAHUN,
+    descColumnLabel: 'Tahun',
+    hideQtyLabelSuffix: true,
+    plakPerRow: true,
+    linePlaceholders: STANDARD_REFERENCE_LINES,
+    positionLine2Placeholder: '( SUBJEK/POSITION )',
+    requiredLineIndices: [0, 2],
+    positionFieldsRedText: true,
+    draggableReferenceSample: true,
+    positionFromRows: true,
+    positionPrefixFromLine3: true,
+  },
+  {
+    // TOKOH's own FORM ANUGERAH sheet — a per-honour list the teacher fills
+    // straight from the sheet: TOKOH (award name, the engraved position) |
+    // NAMA MURID | GAMBAR (yes/no) | KUANTITI | JENIS PLAK | DESIGN | HARGA.
+    // Rows aren't a fixed preset (`rows` omitted) — they come from the
+    // sheet on import (excelImport.js's parseTokohAnugerahSheet /
+    // `isTokohList`) or the teacher adds them by hand. plakPerRow: each
+    // honour row carries its own Jenis Plak + Harga (one cart item per
+    // row), same as LONJAKAN. NAMA MURID / GAMBAR / DESIGN are per-row
+    // metadata shown on the review table (tokohRowFields) — NAMA MURID and
+    // GAMBAR sit before KUANTITI, DESIGN after JENIS PLAK, matching the
+    // sheet's own column order. The per-plaque engraved position is just
+    // the row's own TOKOH name (positionFromRows, no line-3 prefix).
+    key: 'TOKOH_SHEET', label: 'TOKOH', mode: 'list', blocksCount: 1, active: true,
+    descColumnLabel: 'TOKOH',
+    hideQtyLabelSuffix: true,
+    plakPerRow: true,
+    tokohRowFields: true,
+    linePlaceholders: STANDARD_REFERENCE_LINES,
+    positionLine2Placeholder: '( SUBJEK/POSITION )',
+    requiredLineIndices: [0, 2],
     positionFieldsRedText: true,
     draggableReferenceSample: true,
     positionFromRows: true,
   },
   {
-    key: 'TOKOH', label: 'Main Template', mode: 'list', blocksCount: 1,
+    // Retired from new-order selection (active: false) — every FORM ANUGERAH
+    // sheet now has its own dedicated category, so the generic "Main
+    // Template" / "Mata Pelajaran / Klas" / "...(Matrix)" catch-alls are no
+    // longer offered. Kept in CATEGORIES (not deleted) so existing orders
+    // that used one still resolve everywhere else — same as the other
+    // active:false entries.
+    key: 'TOKOH', label: 'Main Template', mode: 'list', blocksCount: 1, active: false,
     // Line 3 is CONTOH-only (red, like OTHERS/LONJAKAN's own flexible
     // field). `rows` is deliberately omitted (like OTHERS below) — Main
     // Template no longer ships a fixed preset Description list; the
@@ -246,7 +439,7 @@ export const CATEGORIES = [
     descColumnLabel: 'Row 4 Subjek/Position',
   },
   {
-    key: 'OTHERS', label: 'Mata Pelajaran / Klas', mode: 'list', blocksCount: 200,
+    key: 'OTHERS', label: 'Mata Pelajaran / Klas', mode: 'list', blocksCount: 200, active: false,
     // A catch-all for any award/plaque shape not covered by the 5 categories
     // above. Kuantiti is a per-Tahun "part": one TAHUN value (hasTahunField)
     // + a Description/QTY list (plain `rows`, same mechanism as
@@ -377,7 +570,7 @@ export const CATEGORIES = [
     // on every render regardless of how many are actually revealed, so the
     // number is a real (if generous) ceiling, not just a display cap;
     // matches OTHERS' own already-proven-fine 200 above.
-    key: 'KLAS_MATRIX', label: 'Mata Pelajaran / Klas (Matrix)', mode: 'dynamicMatrix', blocksCount: 200, multiBlock: true,
+    key: 'KLAS_MATRIX', label: 'Mata Pelajaran / Klas (Matrix)', mode: 'dynamicMatrix', blocksCount: 200, multiBlock: true, active: false,
     // Seeded with the same 13-subject list as OTHERS (editableDefaultSubjects
     // — unlike PBD/ALIRAN's own locked `custom: false` seed, see
     // formDefaults.js/AppState.jsx's resetCategoryFields) so the teacher can
@@ -409,12 +602,14 @@ export const CATEGORIES = [
 ];
 
 // New order/add-on category pickers (NewOrderStep2.jsx, AddOn.jsx) only
-// ever offer these — MP1/MP2/PBD/ALIRAN/LONJAKAN are retired from new
-// selection (`active: false` above) but deliberately kept in CATEGORIES
-// itself so every existing order that already used one still resolves
-// correctly everywhere else (reconstructBlocksForCategory, exportCsv's
-// getOrderCategories, print/production/admin pages) — those all read the
-// full CATEGORIES list, unfiltered.
+// ever offer these — TOKOH ("Main Template"), OTHERS ("Mata Pelajaran /
+// Klas") and KLAS_MATRIX ("...(Matrix)") are retired from new selection
+// (`active: false` above), now that every FORM ANUGERAH sheet has its own
+// dedicated category — but deliberately kept in CATEGORIES itself so every
+// existing order that already used one still resolves correctly everywhere
+// else (reconstructBlocksForCategory, exportCsv's getOrderCategories,
+// print/production/admin pages) — those all read the full CATEGORIES list,
+// unfiltered.
 export const ACTIVE_CATEGORIES = CATEGORIES.filter((c) => c.active !== false);
 
 // Production splits each order by Jenis Plak — one physical Adobe

@@ -1,7 +1,7 @@
 import {
   CATEGORIES, getCategorySubjects, getCategoryColumns, tahunRangeYears,
   getCustomMatrixRowIds, customMatrixLabelKey, matrixCellKey,
-  flattenPlakCatalog, isCustomPlakCode, MANUAL_MAX_QTY,
+  flattenPlakCatalog, isCustomPlakCode, MANUAL_MAX_QTY, numToOrdinal,
 } from '../data/catalog';
 
 export const CSV_COLUMNS = ['event_header', 'year', 'position', 'event_line_1', 'event_line_2'];
@@ -53,11 +53,17 @@ function buildMatrixRows(item, cat, header, year, positionPart1, schoolLanguage)
     for (let i = 0; i < qty; i++) rows.push(row);
   };
 
-  getCategorySubjects(cat, schoolLanguage).forEach((subject) => {
-    columns.forEach((column) => {
-      emitRow(subject, column, Number(matrix[matrixCellKey(cat.key, subject, column)]) || 0);
+  // `subjectsFromImport` categories keep every subject as an editable
+  // `custom-<id>` row once imported — the fixed catalog list is then just a
+  // stale default and must not be emitted alongside them.
+  const importedSubjects = !!cat.subjectsFromImport && getCustomMatrixRowIds(cat.key, matrix).length > 0;
+  if (!importedSubjects) {
+    getCategorySubjects(cat, schoolLanguage).forEach((subject) => {
+      columns.forEach((column) => {
+        emitRow(subject, column, Number(matrix[matrixCellKey(cat.key, subject, column)]) || 0);
+      });
     });
-  });
+  }
 
   // Teacher-added rows for a subject/award not on the fixed list above (see
   // OrderCategoryBlock's matrix "+ Add Row") — must be exported too, or
@@ -145,6 +151,32 @@ function buildRowsFromDescriptionRows(item, header, year, positionPart1) {
     const position = positionPart1 ? `${positionPart1}\n${r.desc || ''}` : (r.desc || '');
     const row = [header, year, position, '', ''];
     for (let i = 0; i < qty; i++) rows.push(row);
+  });
+  return rows;
+}
+
+// ALIRAN TERBAIK (catalog.js's aliranKedudukan). One plaque per
+// (TAHUN, place). Each cart item is one JENIS PLAK footer row carrying its
+// own place range on `item.posDari/posHingga` (AppState.jsx's addToCart);
+// a footer row with no range (a flat "ikut sample" plak) engraves ACARA
+// only, `qty` times, per flat TAHUN. `item.detail.rows` are the six TAHUN
+// rows, each with its own KEDUDUKAN "hingga" place (or 0 for a flat row).
+function buildAliranRows(item, header, year, acara) {
+  const rows = [];
+  const tahunRows = item.detail?.rows || [];
+  const pos = (p) => (acara ? `${acara}\n${numToOrdinal(p)}` : numToOrdinal(p));
+  tahunRows.forEach((tr) => {
+    const hingga = Number(tr.kedudukanHingga) || 0;
+    if (hingga > 0) {
+      if (!item.posDari) return; // a flat plak doesn't take the KEDUDUKAN TAHUNs
+      const lo = Number(item.posDari);
+      const hi = Math.min(Number(item.posHingga) || lo, hingga);
+      for (let p = lo; p <= hi; p++) rows.push([header, year, pos(p), tr.desc || '', '']);
+    } else if (!item.posDari) {
+      // flat TAHUN + flat plak — ACARA only, one row per plaque
+      const qty = Number(tr.qty) || 0;
+      for (let n = 0; n < qty; n++) rows.push([header, year, acara || '', tr.desc || '', '']);
+    }
   });
   return rows;
 }
@@ -249,6 +281,8 @@ export function buildCsvRows(order, categoryKey, items) {
       // as each row's Nama Kelas.
       const posFromKelas = !!getLine(item, 'posFromKelas');
       rows.push(...buildPbdMatrixRows(item, header, year, posFromKelas ? '' : getLine(item, 2), posFromKelas));
+    } else if (cat?.aliranKedudukan) {
+      rows.push(...buildAliranRows(item, header, year, getLine(item, 2)));
     } else if (cat?.hasNamaKelasList) {
       rows.push(...buildOthersRows(item, header, year, getLine(item, 2)));
     } else if (cat?.positionFromRows) {

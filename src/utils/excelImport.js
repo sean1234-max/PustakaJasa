@@ -1,4 +1,5 @@
 import * as XLSX from 'xlsx';
+import { ordinalToNum } from '../data/catalog';
 
 // Reads a teacher's own filled-in copy of the FORM ANUGERAH Excel template —
 // not just the new "KLAS MATRIX" sheet, but the ORIGINAL sheets teachers
@@ -33,6 +34,27 @@ import * as XLSX from 'xlsx';
 
 const TAHUN_OPTIONS = ['TAHUN 1', 'TAHUN 2', 'TAHUN 3', 'TAHUN 4', 'TAHUN 5', 'TAHUN 6'];
 
+// Which sheets have their own dedicated real category (catalog.js) rather
+// than folding into the generic KLAS_MATRIX catch-all — see
+// parseFormAnugerahExcel's `categorized` split at the bottom of this file.
+// Filled in one sheet at a time as each one's own parser/category ships;
+// a sheet not listed here still lands in KLAS_MATRIX exactly as before.
+const SOURCE_SHEET_TO_CATEGORY = {
+  PPKI: 'PPKI',
+  'MP THP 1': 'MP1',
+  // Its own separate category from MP1 (catalog.js) — a school fills in
+  // ONE of these two sheets, never both, and this way whichever one a file
+  // used lands in its own tab instead of the two competing for one slot.
+  'MP THP 1 (Kalau ada kelas)': 'MP1_KELAS',
+  'MP THP 2': 'MP2',
+  'MP THP 2 (Kalau ada kelas)': 'MP2_KELAS',
+  PBD: 'PBD',
+  'ALIRAN TERBAIK': 'ALIRAN',
+  'LONJAKAN SAUJANA': 'LONJAKAN',
+  'KEHADIRAN PENUH': 'KEHADIRAN',
+  TOKOH: 'TOKOH_SHEET',
+};
+
 function normalizeTahun(raw) {
   const s = String(raw || '').trim().toUpperCase();
   if (!s) return '';
@@ -66,12 +88,13 @@ function cellNum(ws, row, col) {
   return Number.isFinite(n) ? n : 0;
 }
 // The unfilled template's own Reference Sample cells hold a literal
-// "_ _ _ _ ..." placeholder string (the printed underline a teacher would
-// otherwise write on top of) — a real, non-blank cell VALUE, not visual
-// formatting, so a naive read treats an entirely-untouched sheet as if it
-// were filled in.
+// placeholder string — either underscores ("_ _ _ _ ...") or, on sheets
+// like MP THP 1, plain hyphens ("-----...") — for the printed underline a
+// teacher would otherwise write on top of. A real, non-blank cell VALUE,
+// not visual formatting, so a naive read treats an entirely-untouched
+// sheet as if it were filled in.
 function isPlaceholderDash(str) {
-  return /^[_\s]+$/.test(str);
+  return /^[-_\s]+$/.test(str);
 }
 function cellText(ws, row, col) {
   const val = cellStr(ws, row, col);
@@ -329,7 +352,12 @@ function readSubjectMatrix(ws, range, { subjectCol, subjectStartRow, subjectEndR
       if (stated > 0) statedTotals[label] = stated;
     }
   });
-  return { classes, statedTotals };
+  // Every subject name in sheet order — including any the teacher renamed
+  // or added, and ones left blank in every column (a real award row with no
+  // qty typed yet). Categories flagged `subjectsFromImport` (catalog.js)
+  // rebuild their editable matrix rows straight off this list rather than
+  // the fixed catalog one.
+  return { classes, statedTotals, subjectNames: subjectNames.map((s) => s.name) };
 }
 // A subject list with no class axis at all — each row is just its own
 // Description (subject name) and QTY, the same flat shape Mata Pelajaran/
@@ -873,136 +901,420 @@ function scanSheetForRosters(ws, sampleCards) {
   return sections;
 }
 
-const NON_PLAQUE_RE = /^(HAMPER|SELEMPANG|SASH|BOUQUET|BUNGA|TOTE|BEG|BAG)\b/i;
-
-// TOKOH's own sheet folds into KLAS_MATRIX like everything else. Its award
-// table is "TOKOH | [KUANTITI] | JENIS PLAK | **DESIGN | HARGA" — one
-// honour per row (award name in the TOKOH column, its own plaque code
-// beside it). A TOKOH plaque is just event header + award name — no
-// per-plaque class/year line.
+// PPKI's own sheet — and MP THP 1 (Kalau ada kelas)'s, same shape with
+// TAHUN 1/2/3 instead of PRA PPKI/PPKI/PRASEKOLAH as the 3 levels — is a
+// fixed layout, not a generic shape scanSheetForSections can guess at: a
+// real "SUBJEK/KUANTITI" matrix (row of subject names down column A, the
+// 3 levels as its sub-header columns — subject rows are NOT a fixed list,
+// a teacher can rename one or add extra rows, so this reads whatever text
+// actually appears down to the TOTAL row rather than assuming the usual
+// 13), PLUS — further down the same sheet — three side-by-side "Nama Kelas
+// / QTY / Moral Kelas / QTY" breakdown tables (one per level), which a
+// teacher can fill in INSTEAD of typing the matrix totals directly. A
+// worked-example "CONTOH" box sits above everything in
+// the very same shape (title / one "Nama Kelas/QTY/Moral Kelas/QTY" block)
+// — never confused with the real ones since the 3 real headers always land
+// on the SAME row, side by side, while the CONTOH box only ever has one.
 //
-// Rows are grouped by PLAQUE CODE — one KLAS_MATRIX section per distinct
-// code, every honour on that code becoming a position column inside it
-// (slot '0' = the majlis title, the reference sample carries no ACARA/TAHUN
-// line). Six TOKOH rows all on "M1902B" = ONE section with six positions,
-// not six sections; two codes = two sections. A HAMPER / SELEMPANG line, or
-// any row with no code at all, is a Remark note, never a plaque. Returns an
-// ARRAY of sections (possibly empty).
-function parseTokohSheet(ws) {
-  const range = sheetRange(ws);
-  const tokohH = findLabelCells(ws, range, ['TOKOH'])[0];
-  if (!tokohH) return [];
-  const onRow = findLabelCells(
-    ws, { r1: tokohH.row, r2: tokohH.row, c1: range.c1, c2: range.c2 }, ['JENIS PLAK', 'KUANTITI'],
-  );
-  const jenisPlakH = onRow.find((h) => h.label === 'JENIS PLAK');
-  const kuantitiH = onRow.find((h) => h.label === 'KUANTITI');
-  let designCol = null;
-  for (let c = range.c1; c <= range.c2; c++) {
-    if (/DESIGN/i.test(cellStr(ws, tokohH.row, c))) { designCol = c; break; }
-  }
-  const footer = findLabelCells(
-    ws, { r1: tokohH.row + 1, r2: range.r2, c1: tokohH.col, c2: tokohH.col }, ['JENIS PLAK'],
-  )[0];
-  // The sheet often stacks plain "TAHUN | KUANTITI | JENIS PLAK" award
-  // tables BELOW the honour table (KEHADIRAN PENUH / KEHADIRAN TERBAIK) —
-  // the honour table ends where the first of those headers begins.
-  const subTableHeaders = findLabelCells(ws, range, ['KUANTITI', 'KEDUDUKAN'])
-    .filter((h) => h.row > tokohH.row)
-    .sort((a, b) => a.row - b.row);
-  const honourEnd = Math.min(
-    footer ? footer.row - 1 : range.r2,
-    subTableHeaders.length ? subTableHeaders[0].row - 1 : range.r2,
-  );
-
-  // The honour table's own reference box (① majlis title, ② one example
-  // TOKOH name) sits above it — read it as the section's reference sample.
-  const honourLines = readRefLinesInBand(ws, range, range.r1, tokohH.row - 1);
-
-  const groups = new Map(); // code -> { code, subjects: [{ name, qty }], order: [] }
-  const groupOrder = [];
-  const remarkNotes = [];
-  let blanks = 0;
-  let honourDataEnd = tokohH.row;
-  for (let r = tokohH.row + 1; r <= honourEnd; r++) {
-    const name = cellText(ws, r, tokohH.col);
-    if (!name || isTotalLabel(name)) { blanks += 1; if (blanks >= 3) break; continue; }
-    blanks = 0;
-    honourDataEnd = r;
-    const code = jenisPlakH ? cellText(ws, r, jenisPlakH.col) : '';
-    const qty = kuantitiH ? Math.max(1, cellNum(ws, r, kuantitiH.col)) : 1;
-    const design = designCol != null ? cellText(ws, r, designCol) : '';
-    if (NON_PLAQUE_RE.test(name) || !code) {
-      remarkNotes.push(`${name} (bukan plak — remark sahaja)`);
-      continue;
-    }
-    if (!groups.has(code)) { groups.set(code, { code, byName: new Map(), order: [] }); groupOrder.push(code); }
-    const g = groups.get(code);
-    if (!g.byName.has(name)) { g.byName.set(name, { name, qty: 0, design }); g.order.push(name); }
-    g.byName.get(name).qty += qty;
-  }
-
-  const sections = groupOrder.map((code) => {
-    const g = groups.get(code);
-    // Each honour is its own ROW (a class), one flat "KUANTITI" column —
-    // reads down the left like the SUBJEK list on an MP THP sheet. The
-    // honour name IS the engraved award line (positionFromNamaKelas tells
-    // exportCsv.js and computeBlocks.js) — shown under an "Acara" header.
-    const classes = g.order.map((n) => {
-      const { name, qty, design } = g.byName.get(n);
-      if (design) remarkNotes.push(`${name}: reka bentuk ${design}`);
-      return { tahunFrom: '', tahunTo: '', namaKelas: name, subjects: [{ name: 'KUANTITI', qty }] };
-    });
+// Filling the breakdown tables means every subject's qty is the SAME
+// combined total across all three levels: sum each level's own Nama Kelas
+// QTY column for every subject except PENDIDIKAN MORAL, which instead sums
+// each level's own separate Moral Kelas QTY column (only some classes take
+// Moral, so its plaque count is always smaller and tracked as its own
+// mini-list rather than folded into the main one). Verified cell-for-cell
+// against a real filled sample: 5 PRA PPKI classes + 5 PPKI + 5 PRASEKOLAH
+// summed to 59, matching every non-Moral subject's own typed total; the
+// Moral sub-lists (2+5+3 classes) summed to 14, matching PENDIDIKAN
+// MORAL's own typed total exactly.
+function findPpkiNamaKelasBlocks(ws, range) {
+  const nkHeaders = findLabelCells(ws, range, ['NAMA KELAS']);
+  const byRow = new Map();
+  nkHeaders.forEach((h) => { if (!byRow.has(h.row)) byRow.set(h.row, []); byRow.get(h.row).push(h); });
+  const headerRow = [...byRow.entries()].find(([, cells]) => cells.length >= 2)?.[0];
+  if (headerRow == null) return null;
+  const anchors = byRow.get(headerRow).sort((a, b) => a.col - b.col);
+  return anchors.map((nk) => {
+    const qtyCol = nk.col + 1;
+    const moralCell = findLabelCells(
+      ws, { r1: headerRow, r2: headerRow, c1: nk.col + 2, c2: Math.min(nk.col + 3, range.c2) }, ['MORAL KELAS'],
+    )[0];
+    const label = cellText(ws, headerRow - 1, nk.col) || cellText(ws, headerRow - 1, qtyCol);
     return {
-      lines: { ...honourLines },
-      classes,
-      jenisPlak: code,
-      namaKelasLabel: 'Acara',
-      positionFromNamaKelas: true,
+      label, nkCol: nk.col, qtyCol,
+      moralCol: moralCell ? moralCell.col : null,
+      moralQtyCol: moralCell ? moralCell.col + 1 : null,
+      headerRow,
     };
   });
-  if (remarkNotes.length && sections.length) sections[0].remarkNote = remarkNotes.join('\n');
+}
+// Tolerant of a stray blank row (a class the teacher skipped rather than
+// deleted) the same way readTahunQtyRows/readNamaKelasQtyRows are — only a
+// real TOTAL label ends the list early, otherwise it just reads to the
+// bottom of the sheet. Returns every individual (name, qty) row, not just
+// their sum — the website's own PPKI review screen shows this same
+// Nama Kelas/Moral Kelas breakdown (catalog.js's hasLevelBreakdown), not
+// only the totals it adds up to.
+function readPpkiListRows(ws, range, nameCol, qtyCol, startRow) {
+  const rows = [];
+  for (let r = startRow; r <= range.r2; r++) {
+    const name = cellText(ws, r, nameCol);
+    if (isTotalLabel(name)) break;
+    if (!name) continue;
+    rows.push({ name, qty: cellNum(ws, r, qtyCol) });
+  }
+  return rows;
+}
+function sumPpkiRows(rows) {
+  return rows.reduce((sum, r) => sum + r.qty, 0);
+}
 
-  // Each stacked sub-table (KEHADIRAN PENUH / KEHADIRAN TERBAIK) — its own
-  // small reference box a few blank rows above a "TAHUN | KUANTITI | JENIS
-  // PLAK" table. Plaque code comes from that table's own JENIS PLAK column
-  // (KEHADIRAN PENUH writes it inline, no separate footer).
-  subTableHeaders.forEach((qh, idx) => {
-    const hdrCells = findLabelCells(
-      ws, { r1: qh.row, r2: qh.row, c1: range.c1, c2: range.c2 }, ['TAHUN', 'JENIS PLAK'],
-    );
-    const subTahunH = hdrCells.find((h) => h.label === 'TAHUN');
-    const subCodeH = hdrCells.find((h) => h.label === 'JENIS PLAK');
-    const dataEnd = idx + 1 < subTableHeaders.length ? subTableHeaders[idx + 1].row - 1 : range.r2;
-    // Look at most 8 rows above the header for this table's own box, never
-    // back into the previous table's data or the honour-table remarks.
-    const bandFrom = Math.max(
-      idx > 0 ? subTableHeaders[idx - 1].row + 2 : honourDataEnd + 1,
-      qh.row - 8,
-    );
-    const subLines = readRefLinesInBand(ws, range, bandFrom, qh.row - 1);
+function parseSubjectLevelSheet(ws) {
+  const range = sheetRange(ws);
+  const subjekH = findLabelCells(ws, range, ['SUBJEK'])[0];
+  if (!subjekH) return null;
+  const classHeaderRow = subjekH.row + 1;
+  const classCols = [];
+  for (let c = subjekH.col + 1; c <= range.c2; c++) {
+    if (cellText(ws, classHeaderRow, c)) classCols.push(c);
+  }
+  let subjectEndRow = range.r2;
+  for (let r = classHeaderRow + 1; r <= range.r2; r++) {
+    if (isTotalLabel(cellText(ws, r, subjekH.col))) { subjectEndRow = r - 1; break; }
+  }
 
-    let subClasses = readTahunQtyRows(ws, range, {
-      tahunCol: (subTahunH || qh).col, qtyCol: qh.col, startRow: qh.row + 1, endRow: dataEnd, subjectLabel: 'KUANTITI',
+  const blocks = findPpkiNamaKelasBlocks(ws, range);
+  const hasNamaKelasData = blocks && blocks.some((b) => cellText(ws, b.headerRow + 1, b.nkCol));
+
+  let classes;
+  let subjectOrder = null; // every subject name in sheet order — see readSubjectMatrix
+  // The individual rows behind each level's own total (only set when the
+  // file actually had a Nama Kelas breakdown to read — Case 2A's direct
+  // fill has no such rows) — read back by AppState.jsx's
+  // importFormAnugerahExcel into this block's own rowsByBlock, so the
+  // website can show (and let the teacher edit) the exact same Nama
+  // Kelas/Moral Kelas breakdown the source file had, with the KUANTITI
+  // cells above re-summing live off it — see draftUpdaters.js's
+  // onLevelKelasField family.
+  let levelBreakdown = null;
+  if (hasNamaKelasData) {
+    // Each level's own Nama Kelas list only ever feeds THAT level's own
+    // subject column — PRA PPKI's classes never add into PPKI's or PRA
+    // SEKOLAH's totals. Verified cell-for-cell against a corrected real
+    // sample: PRA PPKI's 5 classes (2+3+5+3+4) summed to 17 and only PRA
+    // PPKI's own column read 17 for every non-Moral subject; PPKI's 5
+    // classes summed to 25 and only PPKI's column read 25; PRA SEKOLAH's
+    // summed to 17 and only its own column read 17 — same per-level
+    // isolation for the Moral Kelas sub-lists (3/6/5 respectively).
+    const subjectNames = [];
+    for (let r = classHeaderRow + 1; r <= subjectEndRow; r++) {
+      const name = cellText(ws, r, subjekH.col);
+      if (name) subjectNames.push(name);
+    }
+    if (subjectNames.length === 0) return null;
+    subjectOrder = subjectNames;
+    const levelRows = blocks.map((b) => ({
+      label: b.label,
+      mainRows: readPpkiListRows(ws, range, b.nkCol, b.qtyCol, b.headerRow + 1),
+      moralRows: b.moralCol ? readPpkiListRows(ws, range, b.moralCol, b.moralQtyCol, b.headerRow + 1) : [],
+    }));
+    const levelTotals = levelRows.map((lr) => ({
+      mainTotal: sumPpkiRows(lr.mainRows), moralTotal: sumPpkiRows(lr.moralRows),
+    }));
+    if (levelTotals.every((t) => t.mainTotal === 0 && t.moralTotal === 0)) return null;
+    // A level named after a real Tahun (MP THP 1 (Kalau ada kelas)'s
+    // "Tahun 1"/"Tahun 2"/"Tahun 3") is canonicalized the same way
+    // readSubjectMatrix's Case 2A already does, so this level's own
+    // composite rowsByBlock key (AppState.jsx) and its class's own
+    // tahunFrom both agree on the exact same text the category's own
+    // columnsByLanguage uses (catalog.js) — PPKI's own level names
+    // (PRA PPKI/PPKI/PRASEKOLAH) aren't real Tahuns, so normalizeTahun
+    // leaves them as plain namaKelas text, unchanged from before.
+    classes = blocks.map((b, bi) => {
+      const tahun = normalizeTahun(b.label);
+      return {
+        tahunFrom: tahun, tahunTo: tahun, namaKelas: tahun ? '' : b.label,
+        subjects: subjectNames.map((name) => ({
+          name, qty: /^PENDIDIKAN MORAL$/i.test(name.trim()) ? levelTotals[bi].moralTotal : levelTotals[bi].mainTotal,
+        })),
+      };
     });
-    let subCode = '';
-    if (subCodeH) {
-      for (let r = qh.row + 1; r <= dataEnd; r++) {
-        const v = cellText(ws, r, subCodeH.col);
-        if (v && v.toUpperCase() !== 'JENIS PLAK') { subCode = v; break; }
-      }
-    }
-    if (subClasses.length === 0) {
-      let flatQty = 0;
-      for (let r = qh.row + 1; r <= dataEnd && flatQty === 0; r++) flatQty = cellNum(ws, r, qh.col);
-      if (flatQty > 0) subClasses = [{ tahunFrom: '', tahunTo: '', namaKelas: '', subjects: [{ name: 'KUANTITI', qty: flatQty }] }];
-    }
-    if (subClasses.length > 0 || subCode) {
-      sections.push({ lines: subLines, classes: subClasses, jenisPlak: subCode });
-    }
-  });
+    levelBreakdown = levelRows.map((lr) => ({ ...lr, label: normalizeTahun(lr.label) || lr.label }));
+  } else {
+    // Case: no Nama Kelas breakdown at all — the teacher typed each
+    // subject's total straight into the matrix, same shape MP THP's own
+    // sheets already use. readSubjectMatrix reads exactly this.
+    if (classCols.length === 0) return null;
+    const matrix = readSubjectMatrix(ws, range, {
+      subjectCol: subjekH.col, subjectStartRow: classHeaderRow + 1, subjectEndRow, classHeaderRow, classCols,
+    });
+    if (matrix.classes.length === 0) return null;
+    classes = matrix.classes;
+    subjectOrder = matrix.subjectNames;
+  }
 
-  return sections;
+  // Reference Sample: the sheet's own "TOLONG ISI DI SINI" instruction sits
+  // directly above the real TAJUK BESAR/ACARA lines and must never be read
+  // as content. Both those lines and the instruction live in whichever
+  // column sits left of the "CONTOH" example box, so the read is narrowed
+  // to that column range — otherwise a plain row-wide scan would run
+  // straight into the CONTOH box's own header text sharing the same row.
+  const contohH = findLabelCells(ws, range, ['CONTOH'])[0];
+  const titleColEnd = contohH ? contohH.col - 1 : range.c2;
+  const instructionRow = findLabelCells(
+    ws, { r1: range.r1, r2: classHeaderRow, c1: range.c1, c2: titleColEnd }, ['TOLONG ISI DI SINI'],
+  )[0];
+  const linesStart = instructionRow ? instructionRow.row + 1 : range.r1;
+  const lines = readRefLinesInBand(
+    ws, { r1: linesStart, r2: subjekH.row - 1, c1: range.c1, c2: titleColEnd }, linesStart, subjekH.row - 1,
+  );
+
+  let jenisPlak = '';
+  const plakH = findLabelCells(ws, range, ['JENIS PLAK'])[0];
+  if (plakH) {
+    for (let r = plakH.row + 1; r <= range.r2; r++) {
+      const val = cellText(ws, r, plakH.col);
+      if (val) { jenisPlak = val; break; }
+    }
+  }
+
+  return { lines, classes, jenisPlak, levelBreakdown, subjectOrder };
+}
+
+// PBD TERBAIK's sheet has NO subject axis — just "TAHUN | KUANTITI" down
+// the left (one total per TAHUN 1-6), optionally with a per-Tahun Nama
+// Kelas breakdown on the right (NAMA KELAS | QTY only, no Moral Kelas)
+// that a filled Tahun's KUANTITI is the sum of. Reuses
+// findPpkiNamaKelasBlocks / readPpkiListRows (both already tolerate a
+// block with no Moral Kelas column). Lands in the PBD category (catalog.js,
+// modelled as a 1-column matrix whose rows are the six Tahuns).
+function parsePbdSheet(ws) {
+  const range = sheetRange(ws);
+  const tahunH = findLabelCells(ws, range, ['TAHUN'])[0];
+  if (!tahunH) return null;
+  const kuantitiH = findLabelCells(
+    ws, { r1: tahunH.row, r2: tahunH.row, c1: tahunH.col + 1, c2: range.c2 }, ['KUANTITI'],
+  )[0];
+  const qtyCol = kuantitiH ? kuantitiH.col : tahunH.col + 1;
+
+  // Direct per-Tahun KUANTITI (Case 2A) — the rows under the "TAHUN" header.
+  const tahunRows = [];
+  for (let r = tahunH.row + 1; r <= range.r2; r++) {
+    const label = cellText(ws, r, tahunH.col);
+    if (isTotalLabel(label)) break;
+    const tahun = normalizeTahun(label);
+    if (!tahun) continue;
+    tahunRows.push({ tahun, qty: cellNum(ws, r, qtyCol) });
+  }
+
+  const blocks = findPpkiNamaKelasBlocks(ws, range);
+  const hasNamaKelasData = blocks && blocks.some((b) => cellText(ws, b.headerRow + 1, b.nkCol));
+  let levelBreakdown = null;
+  if (hasNamaKelasData) {
+    levelBreakdown = blocks
+      .map((b) => ({
+        label: normalizeTahun(b.label) || b.label,
+        mainRows: readPpkiListRows(ws, range, b.nkCol, b.qtyCol, b.headerRow + 1),
+        moralRows: [],
+      }))
+      .filter((lb) => lb.mainRows.length > 0);
+    // A level with a Nama Kelas list — its KUANTITI is that list's sum,
+    // overriding whatever was (or wasn't) typed directly in the main table.
+    levelBreakdown.forEach((lb) => {
+      const total = sumPpkiRows(lb.mainRows);
+      const existing = tahunRows.find((tr) => tr.tahun === lb.label);
+      if (existing) existing.qty = total;
+      else tahunRows.push({ tahun: lb.label, qty: total });
+    });
+  }
+
+  if (tahunRows.every((tr) => !tr.qty)) return null;
+
+  const linesStart = (findLabelCells(
+    ws, { r1: range.r1, r2: tahunH.row, c1: range.c1, c2: range.c2 }, ['TOLONG ISI DI SINI'],
+  )[0]?.row || 0) + 1;
+  const lines = readRefLinesInBand(
+    ws, { r1: linesStart, r2: tahunH.row - 1, c1: range.c1, c2: range.c2 }, linesStart, tahunH.row - 1,
+  );
+
+  let jenisPlak = '';
+  const plakH = findLabelCells(ws, range, ['JENIS PLAK'])[0];
+  if (plakH) {
+    for (let r = plakH.row + 1; r <= range.r2; r++) {
+      const val = cellText(ws, r, plakH.col);
+      if (val) { jenisPlak = val; break; }
+    }
+  }
+
+  return { lines, jenisPlak, levelBreakdown, tahunRows, isTahunList: true, classes: [] };
+}
+
+// ALIRAN TERBAIK's sheet: "TAHUN | KEDUDUKAN (DARI | HINGGA KE) | TOTAL"
+// down the left (one KEDUDUKAN range per TAHUN 1-6), plus a multi-row
+// "JENIS PLAK | CATATAN (DARI | HINGGA KE) | QTY" footer that maps
+// position sub-ranges to plaque types. Every quantity here is DERIVED
+// (a range's own size, ranges crossed with the TAHUNs that ordered them)
+// so the sheet's own typed TOTAL/QTY figures are ignored — the website
+// recomputes them (catalog.js's ALIRAN entry, computeBlocks.js).
+function parseAliranSheet(ws) {
+  const range = sheetRange(ws);
+  const tahunH = findLabelCells(ws, range, ['TAHUN'])[0];
+  const kedudukanH = findLabelCells(ws, range, ['KEDUDUKAN'])[0];
+  if (!tahunH || !kedudukanH) return null;
+  // "DARI" / "HINGGA KE" sub-headers sit on the row under "KEDUDUKAN".
+  const dariH = findLabelCells(ws, { r1: kedudukanH.row, r2: kedudukanH.row + 1, c1: range.c1, c2: range.c2 }, ['DARI'])[0];
+  const hinggaH = findLabelCells(ws, { r1: kedudukanH.row, r2: kedudukanH.row + 1, c1: range.c1, c2: range.c2 }, ['HINGGA KE'])[0];
+  if (!dariH || !hinggaH) return null;
+  const headerRow = dariH.row;
+
+  const tahunRows = [];
+  for (let r = headerRow + 1; r <= range.r2; r++) {
+    const label = cellText(ws, r, tahunH.col);
+    if (isTotalLabel(label)) break;
+    const tahun = normalizeTahun(label);
+    if (!tahun) continue;
+    const dari = ordinalToNum(cellText(ws, r, dariH.col));
+    const hingga = ordinalToNum(cellText(ws, r, hinggaH.col));
+    if (dari && hingga && hingga >= dari) {
+      // KEDUDUKAN range — one plaque per place from `dari` to `hingga`.
+      tahunRows.push({ tahun, dari, hingga });
+    } else {
+      // No KEDUDUKAN range — a flat count (teacher's own TOTAL figure),
+      // "ikut sample, tukar TAHUN sahaja". Column right after HINGGA KE is
+      // the TOTAL.
+      const flatQty = cellNum(ws, r, hinggaH.col + 1);
+      if (flatQty > 0) tahunRows.push({ tahun, flatQty });
+    }
+  }
+  if (tahunRows.length === 0) return null;
+
+  // JENIS PLAK footer — each row maps a position sub-range to a plaque.
+  const plakH = findLabelCells(ws, range, ['JENIS PLAK'])[0];
+  const plakRanges = [];
+  if (plakH) {
+    const catatanH = findLabelCells(ws, range, ['CATATAN'])[0];
+    const fDariH = catatanH && findLabelCells(ws, { r1: catatanH.row, r2: catatanH.row + 1, c1: range.c1, c2: range.c2 }, ['DARI'])[0];
+    const fHinggaH = catatanH && findLabelCells(ws, { r1: catatanH.row, r2: catatanH.row + 1, c1: range.c1, c2: range.c2 }, ['HINGGA KE'])[0];
+    const plakDataStart = (fDariH ? fDariH.row : plakH.row) + 1;
+    for (let r = plakDataStart; r <= range.r2; r++) {
+      const jp = cellText(ws, r, plakH.col);
+      if (!jp) continue;
+      const dari = fDariH ? ordinalToNum(cellText(ws, r, fDariH.col)) : null;
+      const hingga = fHinggaH ? ordinalToNum(cellText(ws, r, fHinggaH.col)) : null;
+      plakRanges.push({ jenisPlak: jp, dari, hingga });
+    }
+  }
+
+  // Title lines sit in the same column as the "TOLONG ISI DI SINI"
+  // instruction — read only that column, not the whole width, or the
+  // MALAY_ORDINALS helper list a teacher pasted into some far column
+  // (seen in real files) gets swept in as reference text.
+  const instructionCell = findLabelCells(
+    ws, { r1: range.r1, r2: tahunH.row, c1: range.c1, c2: range.c2 }, ['TOLONG ISI DI SINI'],
+  )[0];
+  const titleCol = instructionCell ? instructionCell.col : range.c1;
+  const linesStart = (instructionCell?.row || 0) + 1;
+  const lines = readRefLinesInBand(
+    ws, { r1: linesStart, r2: tahunH.row - 1, c1: titleCol, c2: titleCol }, linesStart, tahunH.row - 1,
+  );
+
+  return { lines, tahunRows, plakRanges, isAliran: true, classes: [], jenisPlak: '' };
+}
+
+// LONJAKAN SAUJANA / KEHADIRAN PENUH — identical shape: "TAHUN | KUANTITI |
+// JENIS PLAK | HARGA" down the left, one KUANTITI (and its OWN Jenis Plak)
+// per TAHUN 1-6. Lands in the matching plakPerRow list category (catalog.js).
+function parseTahunPlakRowSheet(ws) {
+  const range = sheetRange(ws);
+  const tahunH = findLabelCells(ws, range, ['TAHUN'])[0];
+  if (!tahunH) return null;
+  const kuantitiH = findLabelCells(
+    ws, { r1: tahunH.row, r2: tahunH.row, c1: tahunH.col + 1, c2: range.c2 }, ['KUANTITI'],
+  )[0];
+  if (!kuantitiH) return null;
+  const jpH = findLabelCells(
+    ws, { r1: tahunH.row, r2: tahunH.row, c1: kuantitiH.col + 1, c2: range.c2 }, ['JENIS PLAK'],
+  )[0];
+
+  const tahunRows = [];
+  for (let r = tahunH.row + 1; r <= range.r2; r++) {
+    const label = cellText(ws, r, tahunH.col);
+    if (isTotalLabel(label)) break;
+    const tahun = normalizeTahun(label);
+    if (!tahun) continue;
+    const qty = cellNum(ws, r, kuantitiH.col);
+    const jenisPlak = jpH ? cellText(ws, r, jpH.col) : '';
+    if (qty > 0 || jenisPlak) tahunRows.push({ tahun, qty, jenisPlak });
+  }
+  if (tahunRows.length === 0) return null;
+
+  const instructionCell = findLabelCells(
+    ws, { r1: range.r1, r2: tahunH.row, c1: range.c1, c2: range.c2 }, ['TOLONG ISI DI SINI'],
+  )[0];
+  const titleCol = instructionCell ? instructionCell.col : range.c1;
+  const linesStart = (instructionCell?.row || 0) + 1;
+  const lines = readRefLinesInBand(
+    ws, { r1: linesStart, r2: tahunH.row - 1, c1: titleCol, c2: titleCol }, linesStart, tahunH.row - 1,
+  );
+
+  return { lines, tahunRows, isSimpleTahunList: true, classes: [] };
+}
+
+// TOKOH's own FORM ANUGERAH sheet — a flat per-honour list:
+//   TOKOH (award name) | NAMA MURID | GAMBAR (YES/NO) | KUANTITI |
+//   JENIS PLAK | **DESIGN | HARGA
+// One honour per row; the award name in the TOKOH column is the engraved
+// position (no per-plaque class/year line). Lands in its own TOKOH_SHEET
+// list category (catalog.js) — `isTokohList`. NAMA MURID / GAMBAR / DESIGN
+// are carried through as per-row metadata for the review table; when NAMA
+// MURID is left blank the row behaves exactly like LONJAKAN/KEHADIRAN (its
+// KUANTITI plaques all engrave the one TOKOH name).
+function parseTokohAnugerahSheet(ws) {
+  const range = sheetRange(ws);
+  const tokohH = findLabelCells(ws, range, ['TOKOH'])[0];
+  if (!tokohH) return null;
+  // Header labels carry extra text ("GAMBAR (YES/NO)", "**DESIGN") so they
+  // need a substring scan, not findLabelCells' exact match.
+  const headerCol = (re) => {
+    for (let c = range.c1; c <= range.c2; c++) {
+      if (re.test(cellStr(ws, tokohH.row, c))) return c;
+    }
+    return null;
+  };
+  const qtyCol = headerCol(/KUANTITI|KUANTITY|QTY/i);
+  if (qtyCol == null) return null;
+  const namaCol = headerCol(/NAMA\s*MURID/i);
+  const gambarCol = headerCol(/GAMBAR/i);
+  const jpCol = headerCol(/JENIS\s*PLAK/i);
+  const designCol = headerCol(/DESIGN/i);
+
+  const tokohRows = [];
+  for (let r = tokohH.row + 1; r <= range.r2; r++) {
+    const name = cellText(ws, r, tokohH.col);
+    if (isTotalLabel(name)) break;
+    if (!name) continue;
+    tokohRows.push({
+      desc: name,
+      namaMurid: namaCol != null ? cellText(ws, r, namaCol) : '',
+      gambar: gambarCol != null ? cellText(ws, r, gambarCol) : '',
+      qty: cellNum(ws, r, qtyCol),
+      jenisPlak: jpCol != null ? cellText(ws, r, jpCol) : '',
+      design: designCol != null ? cellText(ws, r, designCol) : '',
+    });
+  }
+  if (tokohRows.length === 0) return null;
+
+  // The reference box (① majlis title, ② one example TOKOH name) sits to
+  // the RIGHT of the honour table, under its own "TOLONG ISI DI SINI".
+  const instr = findLabelCells(
+    ws, { r1: range.r1, r2: tokohH.row, c1: range.c1, c2: range.c2 }, ['TOLONG ISI DI SINI'],
+  )[0];
+  const titleCol = instr ? instr.col : range.c1;
+  const linesStart = instr ? instr.row + 1 : range.r1;
+  const lines = readRefLinesInBand(
+    ws, { r1: linesStart, r2: tokohH.row - 1, c1: titleCol, c2: range.c2 }, linesStart, tokohH.row - 1,
+  );
+
+  return { lines, tokohRows, isTokohList: true, classes: [] };
 }
 
 // A pending/placeholder line item — the school already knows they need it
@@ -1092,6 +1404,7 @@ function findPerasmiSections(wb) {
       jenisPlak: '',
       skipLineDerivation: true,
       remarkNote: lines.join(' / '),
+      sourceSheet: name,
     });
   });
   return sections;
@@ -1207,13 +1520,65 @@ export function parseFormAnugerahExcel(arrayBuffer) {
   const allSections = [];
   wb.SheetNames.forEach((name) => {
     const upper = name.trim().toUpperCase();
-    if (upper === 'KLAS MATRIX' || upper === 'FRONT PG' || upper === 'TOKOH') return;
+    if (upper === 'KLAS MATRIX' || upper === 'FRONT PG' || upper === 'TOKOH' || upper === 'PPKI' || upper === 'PBD'
+      || upper === 'ALIRAN TERBAIK' || upper === 'LONJAKAN SAUJANA' || upper === 'KEHADIRAN PENUH'
+      || upper === 'MP THP 1' || upper === 'MP THP 2'
+      || upper === 'MP THP 1 (KALAU ADA KELAS)' || upper === 'MP THP 2 (KALAU ADA KELAS)') return;
     const ws = wb.Sheets[name];
     // Mutually exclusive in practice — a "JENIS PLAK" footer sheet never
     // also carries a "NAMA MURID"/"NAMA GURU" roster header, so running
     // both scans on every sheet is safe and needs no shape pre-detection.
-    allSections.push(...scanSheetForSections(ws), ...scanSheetForRosters(ws, sampleCards));
+    // Tagged with the sheet it came from — see `sourceSheet` below —
+    // purely so the review screen can label each imported section by its
+    // actual origin ("PPKI", "MP THP 1", ...) instead of a bare ordinal
+    // when a file lands more than one.
+    const sheetSections = [...scanSheetForSections(ws), ...scanSheetForRosters(ws, sampleCards)];
+    sheetSections.forEach((s) => { s.sourceSheet = name; });
+    allSections.push(...sheetSections);
   });
+  const ppkiSheet = findSheet(wb, 'PPKI');
+  if (ppkiSheet) {
+    const ppkiSection = parseSubjectLevelSheet(ppkiSheet);
+    if (ppkiSection) { ppkiSection.sourceSheet = 'PPKI'; allSections.push(ppkiSection); }
+  }
+  // Plain "MP THP 1" / "MP THP 2" are the same fixed SUBJEK x level matrix,
+  // just without the optional Nama Kelas breakdown — parseSubjectLevelSheet's
+  // Case 2A reads exactly that, and (unlike the generic scanSheetForSections)
+  // reliably skips the "TOLONG ISI DI SINI" instruction row above the
+  // reference-sample lines.
+  [['MP THP 1', 'MP1'], ['MP THP 2', 'MP2']].forEach(([name]) => {
+    const sheet = findSheet(wb, name);
+    if (!sheet) return;
+    const section = parseSubjectLevelSheet(sheet);
+    if (section) { section.sourceSheet = name; allSections.push(section); }
+  });
+  const mpThp1KelasSheet = findSheet(wb, 'MP THP 1 (Kalau ada kelas)');
+  if (mpThp1KelasSheet) {
+    const mpThp1KelasSection = parseSubjectLevelSheet(mpThp1KelasSheet);
+    if (mpThp1KelasSection) { mpThp1KelasSection.sourceSheet = 'MP THP 1 (Kalau ada kelas)'; allSections.push(mpThp1KelasSection); }
+  }
+  const mpThp2KelasSheet = findSheet(wb, 'MP THP 2 (Kalau ada kelas)');
+  if (mpThp2KelasSheet) {
+    const mpThp2KelasSection = parseSubjectLevelSheet(mpThp2KelasSheet);
+    if (mpThp2KelasSection) { mpThp2KelasSection.sourceSheet = 'MP THP 2 (Kalau ada kelas)'; allSections.push(mpThp2KelasSection); }
+  }
+  const pbdSheet = findSheet(wb, 'PBD');
+  if (pbdSheet) {
+    const pbdSection = parsePbdSheet(pbdSheet);
+    if (pbdSection) { pbdSection.sourceSheet = 'PBD'; allSections.push(pbdSection); }
+  }
+  const aliranSheet = findSheet(wb, 'ALIRAN TERBAIK');
+  if (aliranSheet) {
+    const aliranSection = parseAliranSheet(aliranSheet);
+    if (aliranSection) { aliranSection.sourceSheet = 'ALIRAN TERBAIK'; allSections.push(aliranSection); }
+  }
+  [['LONJAKAN SAUJANA'], ['KEHADIRAN PENUH']].forEach(([name]) => {
+    const sheet = findSheet(wb, name);
+    if (!sheet) return;
+    const parsed2 = parseTahunPlakRowSheet(sheet);
+    if (parsed2) { parsed2.sourceSheet = name; allSections.push(parsed2); }
+  });
+
   const klasSheet = findSheet(wb, 'KLAS MATRIX');
   if (klasSheet) {
     const nativeClasses = [];
@@ -1243,12 +1608,15 @@ export function parseFormAnugerahExcel(arrayBuffer) {
       // Fixed layout we control — the sheet's own JENIS PLAK footer always
       // sits at B20 (header) / B21 (value), see the sheet writer.
       const jenisPlak = cellText(klasSheet, 21, 2);
-      allSections.push({ lines, classes: nativeClasses, jenisPlak });
+      allSections.push({ lines, classes: nativeClasses, jenisPlak, sourceSheet: 'KLAS MATRIX' });
     }
   }
 
   const tokohSheet = findSheet(wb, 'TOKOH');
-  if (tokohSheet) allSections.push(...parseTokohSheet(tokohSheet));
+  if (tokohSheet) {
+    const tokohSection = parseTokohAnugerahSheet(tokohSheet);
+    if (tokohSection) { tokohSection.sourceSheet = 'TOKOH'; allSections.push(tokohSection); }
+  }
 
   allSections.push(...findPerasmiSections(wb));
   const kivNotes = findKivNotes(wb);
@@ -1270,8 +1638,24 @@ export function parseFormAnugerahExcel(arrayBuffer) {
   if (allSections.length === 0 && kivNotes.length === 0) {
     return { klasMatrix: null, error: 'No filled-in data found in any recognized sheet of this file.' };
   }
+
+  // Sections from a sheet with its own dedicated real category (PPKI, MP
+  // THP 1, ...) land there instead of the generic KLAS_MATRIX catch-all —
+  // see catalog.js's PPKI/MP1 entries and the header comment at the top of
+  // this file for why every OTHER shape still funnels into one place.
+  // AppState.jsx's importFormAnugerahExcel reads `categorized` first, then
+  // whatever's left over in `klasMatrix.sections`.
+  const categorized = {};
+  const klasMatrixSections = [];
+  allSections.forEach((s) => {
+    const catKey = SOURCE_SHEET_TO_CATEGORY[s.sourceSheet];
+    if (catKey) (categorized[catKey] = categorized[catKey] || []).push(s);
+    else klasMatrixSections.push(s);
+  });
+
   return {
-    klasMatrix: allSections.length > 0 ? { sections: allSections } : null,
+    categorized,
+    klasMatrix: klasMatrixSections.length > 0 ? { sections: klasMatrixSections } : null,
     kivNotes,
   };
 }

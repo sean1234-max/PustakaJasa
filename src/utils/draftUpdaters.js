@@ -1,5 +1,7 @@
 import {
-  CATEGORIES, customMatrixLabelKey, getCategoryLinePlaceholders, getCategoryPositionLine2Placeholder,
+  CATEGORIES, customMatrixLabelKey, getCustomMatrixRowIds, getCategoryLinePlaceholders,
+  getCategoryPositionLine2Placeholder, getCategorySubjects, getCategoryColumns, matrixCellKey,
+  MORAL_SUBJECT_BY_LANGUAGE,
 } from '../data/catalog';
 
 // Reference Sample's base line count (catalog lines + optional second box),
@@ -10,6 +12,55 @@ function baseReferenceLineCount(cat) {
   return getCategoryLinePlaceholders(cat, 'SK').length + (getCategoryPositionLine2Placeholder(cat, 'SK') ? 1 : 0);
 }
 
+// PPKI's own Nama Kelas + Moral Kelas breakdown (catalog.js's
+// hasLevelBreakdown) — `listKey` is one of the composite rowsByBlock keys a
+// level's own two lists live under: `${catKey}::${blockIdx}::${level}::main`
+// / `...::moral` (see AppState.jsx's importFormAnugerahExcel and
+// computeBlocks.js's levelBreakdown). Every edit re-sums straight back into
+// that level's own KUANTITI column for every subject — mirroring the Excel
+// template's own SUM() formula behind those cells (see excelImport.js's
+// parsePpkiSheet) — except Pendidikan Moral, which instead sums the Moral
+// Kelas list. `updatedRowsByBlock` is the ALREADY-edited rowsByBlock (both
+// the main and moral list under this same level, whichever one actually
+// changed), so the total reflects the edit that's about to be applied, not
+// stale pre-edit state.
+function recomputeLevelBreakdown(st, listKey, updatedRowsByBlock, matrixValuesField) {
+  const m = /^(.+)::\d+::(.+)::(?:main|moral)$/.exec(listKey);
+  if (!m) return {};
+  const [, catKey, level] = m;
+  const cat = CATEGORIES.find((c) => c.key === catKey);
+  if (!cat) return {};
+  const base = listKey.replace(/::(main|moral)$/, '');
+  const sumQty = (rows) => (rows || []).reduce((sum, r) => sum + (Number(r.qty) || 0), 0);
+  const mainTotal = sumQty(updatedRowsByBlock[`${base}::main`]);
+  const moralTotal = sumQty(updatedRowsByBlock[`${base}::moral`]);
+  const newMatrixValues = { ...st[matrixValuesField] };
+  if (cat.levelBreakdownAxis === 'subject') {
+    // PBD — the level IS the subject row (TAHUN 1-6); its total goes into
+    // the single KUANTITI column. No Moral list on this shape.
+    const col = getCategoryColumns(cat, st.schoolLanguage)[0];
+    newMatrixValues[matrixCellKey(catKey, level, col)] = String(mainTotal);
+  } else {
+    const moralSubject = MORAL_SUBJECT_BY_LANGUAGE[st.schoolLanguage] || MORAL_SUBJECT_BY_LANGUAGE.SK;
+    const isMoral = (label) => label.trim().toUpperCase() === moralSubject.toUpperCase()
+      || /^PENDIDIKAN MORAL$/i.test(label.trim());
+    // `subjectsFromImport` (PPKI, MP THP 1/2 (Kalau ada kelas)) once imported
+    // keeps its subject rows as editable `custom-<id>` rows, not the fixed
+    // catalog list — re-sum straight into those, matching Moral by label.
+    const importedIds = getCustomMatrixRowIds(catKey, st[matrixValuesField]);
+    const targets = cat.subjectsFromImport && importedIds.length > 0
+      ? importedIds.map((id) => ({
+        rowKey: `custom-${id}`,
+        moral: isMoral(st[matrixValuesField][customMatrixLabelKey(catKey, id)] || ''),
+      }))
+      : getCategorySubjects(cat, st.schoolLanguage).map((subject) => ({ rowKey: subject, moral: subject === moralSubject }));
+    targets.forEach(({ rowKey, moral }) => {
+      newMatrixValues[matrixCellKey(catKey, rowKey, level)] = String(moral ? moralTotal : mainTotal);
+    });
+  }
+  return { [matrixValuesField]: newMatrixValues };
+}
+
 // Builds the block-editing callbacks (onLine, onMatrix, onRowField, ...) for
 // a given "draft" namespace inside global state — the same set of fields is
 // duplicated twice in state (main New Order draft, Add On draft), so this
@@ -17,7 +68,7 @@ function baseReferenceLineCount(cat) {
 export function createDraftUpdaters(patch, fields) {
   const {
     lineValues, matrixValues, rowsByBlock, plakRows, columnsByBlock,
-    nextRowId, nextColumnId, visibleBlocksByCategory,
+    nextRowId, nextColumnId, nextPlakRowId, visibleBlocksByCategory,
   } = fields;
 
   return {
@@ -469,5 +520,66 @@ export function createDraftUpdaters(patch, fields) {
         [visibleBlocksByCategory]: { ...st[visibleBlocksByCategory], [catKey]: blockIdx },
       };
     }),
+    onLevelKelasField: (listKey, id, field, val) => patch((st) => {
+      const updatedRowsByBlock = {
+        ...st[rowsByBlock],
+        [listKey]: (st[rowsByBlock][listKey] || []).map((r) => (r.id === id ? { ...r, [field]: val } : r)),
+      };
+      return { [rowsByBlock]: updatedRowsByBlock, ...recomputeLevelBreakdown(st, listKey, updatedRowsByBlock, matrixValues) };
+    }),
+    onAddLevelKelasRow: (listKey) => patch((st) => ({
+      [rowsByBlock]: {
+        ...st[rowsByBlock],
+        [listKey]: [...(st[rowsByBlock][listKey] || []), { id: st[nextRowId], desc: '', qty: '' }],
+      },
+      [nextRowId]: st[nextRowId] + 1,
+      // A fresh blank row (qty '') contributes 0 either way, so no
+      // recompute is needed here — only editing/removing a row can
+      // actually change the level's own total.
+    })),
+    onRemoveLevelKelasRow: (listKey, id) => patch((st) => {
+      const updatedRowsByBlock = {
+        ...st[rowsByBlock],
+        [listKey]: (st[rowsByBlock][listKey] || []).filter((r) => r.id !== id),
+      };
+      return { [rowsByBlock]: updatedRowsByBlock, ...recomputeLevelBreakdown(st, listKey, updatedRowsByBlock, matrixValues) };
+    }),
+
+    // ALIRAN TERBAIK (catalog.js's aliranKedudukan). A TAHUN row's
+    // KEDUDUKAN "hingga" place — QTY is derived from it (computeBlocks.js),
+    // so this just stores the number (0 / '' clears it back to a flat row).
+    onAliranKedudukan: (rowsKey, id, hinggaNum) => patch((st) => ({
+      [rowsByBlock]: {
+        ...st[rowsByBlock],
+        [rowsKey]: st[rowsByBlock][rowsKey].map((r) => (r.id === id ? { ...r, kedudukanHingga: Number(hinggaNum) || 0 } : r)),
+      },
+    })),
+    // A JENIS PLAK footer row's own field. Setting a row's `posHingga`
+    // auto-advances the NEXT row's `posDari` to the place right after it,
+    // so the footer's ranges tile 1st..last without gaps or overlaps
+    // (matching the Excel sheet's own DARI接龙 formula).
+    onAliranPlakField: (plakRowsKey, id, field, val) => patch((st) => {
+      const list = st[plakRows][plakRowsKey] || [];
+      const i = list.findIndex((pr) => pr.id === id);
+      if (i === -1) return {};
+      const n = val === '' || val == null ? null : Number(val);
+      const next = list.map((pr, idx) => (idx === i ? { ...pr, [field]: field === 'jenisPlak' ? val : n } : pr));
+      if (field === 'posHingga' && i + 1 < next.length) {
+        next[i + 1] = { ...next[i + 1], posDari: n ? n + 1 : null };
+      }
+      return { [plakRows]: { ...st[plakRows], [plakRowsKey]: next } };
+    }),
+    onAliranAddPlak: (plakRowsKey) => patch((st) => {
+      const list = st[plakRows][plakRowsKey] || [];
+      const last = list[list.length - 1];
+      const dari = last && last.posHingga ? Number(last.posHingga) + 1 : (list.length === 0 ? 1 : null);
+      return {
+        [plakRows]: { ...st[plakRows], [plakRowsKey]: [...list, { id: st[nextPlakRowId], jenisPlak: '', posDari: dari, posHingga: null }] },
+        [nextPlakRowId]: st[nextPlakRowId] + 1,
+      };
+    }),
+    onAliranRemovePlak: (plakRowsKey, id) => patch((st) => ({
+      [plakRows]: { ...st[plakRows], [plakRowsKey]: (st[plakRows][plakRowsKey] || []).filter((pr) => pr.id !== id) },
+    })),
   };
 }

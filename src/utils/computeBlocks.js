@@ -1,6 +1,6 @@
 import {
   CATEGORIES, flattenPlakCatalog, getCategorySubjects, getCategoryColumns, tahunRangeYears,
-  getCustomMatrixRowIds, customMatrixLabelKey, matrixCellKey, CUSTOM_MATRIX_LABEL_SUFFIX,
+  getCustomMatrixRowIds, customMatrixLabelKey, matrixCellKey, CUSTOM_MATRIX_LABEL_SUFFIX, TOKOH_ROW_FIELDS,
   getCategoryLinePlaceholders, getCategoryPositionLine2Placeholder,
   getCategoryTahunPlaceholder, getCategoryNamaKelasPlaceholder,
 } from '../data/catalog';
@@ -14,6 +14,15 @@ export function snapshotDetail(catKey, blockIdx, isMatrix, isDynamicMatrix, line
     detail.matrix = {};
     const matPrefix = `${catKey}::`;
     Object.keys(matrixValues).forEach((k) => { if (k.startsWith(matPrefix)) detail.matrix[k] = matrixValues[k]; });
+    // PPKI's own Nama Kelas + Moral Kelas breakdown (catalog.js's
+    // hasLevelBreakdown) lives in rowsByBlockMap under composite keys
+    // (`${catKey}::${blockIdx}::${level}::main`/`::moral`), not the single
+    // `${catKey}::${blockIdx}` key every other mode uses — snapshot every
+    // key under this block's own prefix so a submitted order's review
+    // screens can still show the exact breakdown behind its KUANTITI totals.
+    const breakdown = {};
+    Object.keys(rowsByBlockMap).forEach((k) => { if (k.startsWith(linePrefix)) breakdown[k] = JSON.parse(JSON.stringify(rowsByBlockMap[k])); });
+    if (Object.keys(breakdown).length) detail.namaKelasBreakdown = breakdown;
   } else if (isDynamicMatrix) {
     // PBD TERBAIK / ALIRAN TERBAIK: rows (subjects, including any
     // teacher-added extras) and columns (Tahun + Nama Kelas) are both
@@ -105,18 +114,18 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
     if (extraRefCount > 0) {
       catLinePlaceholders = [...catLinePlaceholders, ...Array.from({ length: extraRefCount }, () => '( Additional Line )')];
     }
-    // Mata Pelajaran/Klas only (catalog.js's deletableReferenceLines) — a
-    // teacher can hide any single row (base or extra) via its own ✕,
-    // except TAJUK BESAR (slotId '0'), which draftUpdaters.js's
-    // onDeleteReferenceLine refuses to add to this set in the first
-    // place. Filtered out of `lines`/`extraRefColumns` below — a hidden
-    // line is simply absent from `blk.lines`, so it drops out of
-    // required-line validation for free. SUBJEK/POSITION (slotId '2b')
-    // hidden this way is re-addable via its own button — see
+    // A slot an IMPORT skipped (e.g. no standalone YEAR line in the
+    // source, or PPKI/MP THP's box never having one to begin with) is
+    // hidden the same way regardless of category — not just on Mata
+    // Pelajaran/Klas (catalog.js's deletableReferenceLines, which ALSO
+    // gives every row its own ✕ to hide one by hand; unrelated to whether
+    // an already-hidden slot from data stays hidden). Filtered out of
+    // `lines`/`extraRefColumns` below — a hidden line is simply absent from
+    // `blk.lines`, so it drops out of required-line validation for free.
+    // SUBJEK/POSITION (slotId '2b') hidden this way is re-addable via its
+    // own button on a deletableReferenceLines category — see
     // `addSubjekPosition` below.
-    const hiddenLineSlots = currentCat.deletableReferenceLines
-      ? new Set((lineValues[`${catKey}::${b}::hiddenLines`] || '').split(',').filter(Boolean))
-      : null;
+    const hiddenLineSlots = new Set((lineValues[`${catKey}::${b}::hiddenLines`] || '').split(',').filter(Boolean));
     // Line 3's optional second box gets its own slotId ('2b') alongside
     // every other line's own index — flattened below (secondLine, if any,
     // right after its own first box) and numbered sequentially, so plain
@@ -215,16 +224,18 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
     let lines = hiddenLineSlots && hiddenLineSlots.size
       ? flatLines.filter((ln) => !hiddenLineSlots.has(ln.slotId))
       : flatLines;
-    // KLAS_MATRIX (dynamicMatrix) is the exception: an import here
-    // auto-hides the reference-sample slots its source file skipped —
-    // YEAR and SUBJEK/POSITION (see AppState.jsx's
-    // deriveKlasMatrixSectionLines) — so the teacher would otherwise see
-    // "1, 3, 5". Renumber what's left 1..N for a gapless list. Safe only
-    // in this branch: unlike Main Template / OTHERS, the dynamicMatrix
-    // layout has no "Row N" Kuantiti columns keyed off these numbers.
-    if (isDynamicMatrix) lines = lines.map((ln, i) => ({ ...ln, num: i + 1 }));
+    // KLAS_MATRIX (dynamicMatrix) and the fixed-matrix categories (PPKI,
+    // MP THP 1/2) are the exception: an import here auto-hides the
+    // reference-sample slots its source file skipped — YEAR and/or
+    // SUBJEK/POSITION (see AppState.jsx's deriveKlasMatrixSectionLines) —
+    // so the teacher would otherwise see "1, 3, 5". Renumber what's left
+    // 1..N for a gapless list. Safe only in these branches: unlike Main
+    // Template / OTHERS, neither layout has a "Row N" Kuantiti column keyed
+    // off a line's own number.
+    if (isDynamicMatrix || isMatrix) lines = lines.map((ln, i) => ({ ...ln, num: i + 1 }));
 
-    let matrixRows = [], columns = [], colTotals = [], grandTotal = 0, rows = [], blockTotalQty = 0;
+    let matrixRows = [], columns = [], colTotals = [], grandTotal = 0, rows = [], blockTotalQty = 0, levelBreakdown = null;
+    let aliranPlakQty = null;
     let namaKelasRows = [], namaKelasCount = 0, tahunField = null, extraRefColumns = [];
 
     if (isMatrix) {
@@ -249,13 +260,22 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
         return { id: rowId, subject, cells, rowTotal, custom };
       };
 
-      matrixRows = getCategorySubjects(currentCat, schoolLanguage).map((subj) => buildMatrixRow(subj, subj, false));
+      // `subjectsFromImport` categories (PPKI, MP THP 1/2 and variants):
+      // once a file has been imported, EVERY subject row is an editable
+      // `custom-<id>` row rebuilt from the sheet's own subject list (renamed
+      // / added / blank rows and all) — the fixed catalog list is only the
+      // pre-import default, so it's suppressed the moment imported rows exist.
+      const importedRowIds = getCustomMatrixRowIds(catKey, matrixValues);
+      const useImportedSubjects = !!currentCat.subjectsFromImport && importedRowIds.length > 0;
+      matrixRows = useImportedSubjects
+        ? []
+        : getCategorySubjects(currentCat, schoolLanguage).map((subj) => buildMatrixRow(subj, subj, false));
 
       // Teacher-added rows for a subject/award not on the fixed list above
       // (see OrderCategoryBlock's matrix "+ Add Row") — same cell shape, just
       // sourced from getCustomMatrixRowIds instead of the catalog list, and
       // with an editable subject label instead of a fixed one.
-      matrixRows.push(...getCustomMatrixRowIds(catKey, matrixValues).map((rowId) => {
+      matrixRows.push(...importedRowIds.map((rowId) => {
         const labelKey = customMatrixLabelKey(catKey, rowId);
         const row = buildMatrixRow(`custom-${rowId}`, matrixValues[labelKey] || '', true, rowId);
         row.setSubject = (v) => updaters.onMatrix(labelKey, v);
@@ -265,6 +285,40 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
 
       grandTotal = colTotals.reduce((a, b2) => a + b2, 0);
       blockTotalQty = grandTotal;
+
+      // Nama Kelas (+ optional Moral Kelas) breakdown, one entry per level
+      // (catalog.js's hasLevelBreakdown) — only present once an import
+      // actually found one to read (excelImport.js's parsePpkiSheet /
+      // parsePbdSheet); a level filled in by hand (no breakdown at all)
+      // simply has neither list, so nothing extra renders for it. Editing
+      // any row here re-sums straight back into this SAME level's own
+      // KUANTITI cell above — see draftUpdaters.js's onLevelKelasField
+      // family. `levelBreakdownAxis: 'subject'` (PBD) — the levels are the
+      // subject ROWS (TAHUN 1-6), not the single column;
+      // `levelBreakdownNoMoral` (PBD) — Nama Kelas only.
+      if (currentCat.hasLevelBreakdown) {
+        const noMoral = !!currentCat.levelBreakdownNoMoral;
+        const axisItems = currentCat.levelBreakdownAxis === 'subject'
+          ? matrixRows.map((r) => r.subject)
+          : columns.map((c) => c.colKey);
+        levelBreakdown = axisItems.map((level) => {
+          const mainKey = `${catKey}::${b}::${level}::main`;
+          const moralKey = `${catKey}::${b}::${level}::moral`;
+          const buildRows = (listKey) => (rowsByBlockMap[listKey] || []).map((r) => ({
+            id: r.id, desc: r.desc || '', qty: r.qty || '',
+            setDesc: (v) => updaters.onLevelKelasField(listKey, r.id, 'desc', v),
+            setQty: (v) => updaters.onLevelKelasField(listKey, r.id, 'qty', v),
+            remove: () => updaters.onRemoveLevelKelasRow(listKey, r.id),
+          }));
+          return {
+            level,
+            mainRows: buildRows(mainKey),
+            moralRows: noMoral ? [] : buildRows(moralKey),
+            addMain: () => updaters.onAddLevelKelasRow(mainKey),
+            addMoral: noMoral ? undefined : () => updaters.onAddLevelKelasRow(moralKey),
+          };
+        }).filter((lb) => lb.mainRows.length > 0 || lb.moralRows.length > 0);
+      }
     } else if (isDynamicMatrix) {
       // PBD TERBAIK / ALIRAN TERBAIK: subjects (default 13 + any
       // teacher-added extras) and classes (Tahun + Nama Kelas) are both
@@ -378,21 +432,85 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
         // drops its matching Kuantiti column too, same as any hidden base row.
         }).filter((col) => !(hiddenLineSlots && hiddenLineSlots.has(col.slotId)))
         : [];
-      rows = rawRows.map((row) => ({
-        id: row.id, desc: row.desc, qty: row.qty,
-        qtyMismatch: namaKelasCount > 0 && Number(row.qty) > 0 && Number(row.qty) !== namaKelasCount,
-        // See Reference Sample's own typoHint above — same word-list hint,
-        // just for the Description field (subject names in particular).
-        typoHint: findPossibleTypo(row.desc),
-        setDesc: (v) => updaters.onRowField(rowsKey, row.id, 'desc', v),
-        setQty: (v) => updaters.onRowField(rowsKey, row.id, 'qty', v),
-        remove: () => updaters.onRowRemove(rowsKey, row.id),
-        extraRefValues: extraRefColumns.map((col) => ({
-          key: col.key, value: row[col.key] || '',
-          onChange: (v) => updaters.onRowField(rowsKey, row.id, col.key, v),
-        })),
-      }));
+      rows = rawRows.map((row) => {
+        // LONJAKAN (catalog.js's plakPerRow) — each row picks its own Jenis
+        // Plak and is priced on its own (one cart item per row); there's no
+        // single block-level Jenis Plak table.
+        let plakFields = {};
+        if (currentCat.plakPerRow) {
+          const rowUnitPrice = row.unitPrice != null ? row.unitPrice : priceFor(row.jenisPlak);
+          const rowHarga = rowUnitPrice != null ? (Number(row.qty) || 0) * rowUnitPrice : 0;
+          plakFields = {
+            jenisPlak: row.jenisPlak || '',
+            unitPrice: rowUnitPrice,
+            rawHarga: rowHarga,
+            hargaLabel: rowUnitPrice != null ? `RM ${rowHarga.toFixed(2)}` : '—',
+            setJenisPlak: (v) => updaters.onRowField(rowsKey, row.id, 'jenisPlak', v),
+          };
+        }
+        // TOKOH_SHEET (catalog.js's tokohRowFields) — NAMA MURID / GAMBAR /
+        // DESIGN per-row metadata, editable, stored via the generic
+        // onRowField updater like desc/qty.
+        const tokohFields = currentCat.tokohRowFields
+          ? TOKOH_ROW_FIELDS.map((f) => ({
+            ...f, value: row[f.key] || '',
+            onChange: (v) => updaters.onRowField(rowsKey, row.id, f.key, v),
+          }))
+          : null;
+        return {
+          id: row.id, desc: row.desc, qty: row.qty,
+          qtyMismatch: namaKelasCount > 0 && Number(row.qty) > 0 && Number(row.qty) !== namaKelasCount,
+          // See Reference Sample's own typoHint above — same word-list hint,
+          // just for the Description field (subject names in particular).
+          typoHint: findPossibleTypo(row.desc),
+          setDesc: (v) => updaters.onRowField(rowsKey, row.id, 'desc', v),
+          setQty: (v) => updaters.onRowField(rowsKey, row.id, 'qty', v),
+          remove: () => updaters.onRowRemove(rowsKey, row.id),
+          extraRefValues: extraRefColumns.map((col) => ({
+            key: col.key, value: row[col.key] || '',
+            onChange: (v) => updaters.onRowField(rowsKey, row.id, col.key, v),
+          })),
+          tokohFields,
+          ...plakFields,
+        };
+      });
       blockTotalQty = rawRows.reduce((sum, r) => sum + (Number(r.qty) || 0), 0);
+
+      // ALIRAN TERBAIK (catalog.js's aliranKedudukan) — each TAHUN row's
+      // QTY is DERIVED: a KEDUDUKAN "hingga" place N means N plaques (1st
+      // to Nth), so QTY = N; a blank KEDUDUKAN keeps the teacher-typed flat
+      // QTY. The JENIS PLAK footer's per-row QTY (see the plakRows map
+      // below) is each position sub-range crossed with the TAHUNs that
+      // ordered it.
+      if (currentCat.aliranKedudukan) {
+        rows = rawRows.map((row) => {
+          const hingga = Number(row.kedudukanHingga) || 0;
+          const derivedQty = hingga > 0 ? hingga : (Number(row.qty) || 0);
+          return {
+            id: row.id, desc: row.desc,
+            kedudukanHingga: hingga,
+            qty: derivedQty ? String(derivedQty) : '',
+            qtyReadOnly: hingga > 0,
+            setKedudukanHingga: (v) => updaters.onAliranKedudukan(rowsKey, row.id, v),
+            setQty: (v) => updaters.onRowField(rowsKey, row.id, 'qty', v),
+          };
+        });
+        blockTotalQty = rows.reduce((sum, r) => sum + (Number(r.qty) || 0), 0);
+        // Per-footer-row QTY: for a plak covering places [d..h], count
+        // every (TAHUN, place) it wins — place p counts for a TAHUN whose
+        // own KEDUDUKAN reaches at least p. A footer row with no range
+        // (posDari null) takes the flat-KEDUDUKAN TAHUNs' own totals.
+        const flatTotal = rawRows.reduce((s, r) => s + ((Number(r.kedudukanHingga) || 0) > 0 ? 0 : (Number(r.qty) || 0)), 0);
+        aliranPlakQty = (pr) => {
+          if (!pr.posDari) return flatTotal;
+          const d = Number(pr.posDari);
+          const h = Number(pr.posHingga) || d;
+          return rawRows.reduce((sum, r) => {
+            const n = Number(r.kedudukanHingga) || 0;
+            return sum + Math.max(0, Math.min(h, n) - d + 1);
+          }, 0);
+        };
+      }
     }
 
     const plakRowsKey = `${catKey}::${b}`;
@@ -407,12 +525,19 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
       // Add On) never set pr.unitPrice since no price exists yet there, so
       // they keep falling back to the catalog lookup as before.
       const unitPrice = pr.unitPrice != null ? pr.unitPrice : priceFor(pr.jenisPlak);
-      const harga = unitPrice != null ? blockTotalQty * unitPrice : 0;
+      // ALIRAN's footer rows each carry their own derived qty (a position
+      // sub-range crossed with the TAHUNs that ordered it); every other
+      // category's plak row is just the whole block's total.
+      const qty = aliranPlakQty ? aliranPlakQty(pr) : blockTotalQty;
+      const harga = unitPrice != null ? qty * unitPrice : 0;
       return {
-        id: pr.id, jenisPlak: pr.jenisPlak, qty: blockTotalQty, rawHarga: harga,
+        id: pr.id, jenisPlak: pr.jenisPlak, qty, rawHarga: harga,
         unitPrice,
+        posDari: pr.posDari, posHingga: pr.posHingga,
         hargaLabel: unitPrice != null ? `RM ${harga.toFixed(2)}` : '—',
         setJenisPlak: (v) => updaters.onPlakSelect(plakRowsKey, pr.id, v),
+        setPosField: (field, v) => updaters.onAliranPlakField(plakRowsKey, pr.id, field, v),
+        remove: () => updaters.onAliranRemovePlak(plakRowsKey, pr.id),
       };
     });
 
@@ -449,10 +574,17 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
       descColumnLabel: currentCat.descColumnLabel,
       extraRefColumns,
       canAddRow: !currentCat.capRowsAt5 || rows.length < 5,
-      columns, matrixRows,
+      columns, matrixRows, levelBreakdown,
+      levelBreakdownNoMoral: !!currentCat.levelBreakdownNoMoral,
+      matrixRowLabel: currentCat.matrixRowLabel || 'Subjek',
       colTotals: colTotals.map((v) => ({ value: v })), grandTotal,
       rows,
       hasNamaKelasList: !!currentCat.hasNamaKelasList,
+      plakPerRow: !!currentCat.plakPerRow,
+      tokohRowFields: !!currentCat.tokohRowFields,
+      tokohFieldCols: currentCat.tokohRowFields ? TOKOH_ROW_FIELDS : [],
+      aliranKedudukan: !!currentCat.aliranKedudukan,
+      addAliranPlak: () => updaters.onAliranAddPlak(`${catKey}::${b}`),
       namaKelasRows, namaKelasCount, tahun: tahunField,
       namaKelasPlaceholder: getCategoryNamaKelasPlaceholder(currentCat, schoolLanguage),
       tahunPlaceholder: getCategoryTahunPlaceholder(currentCat, schoolLanguage),
@@ -520,6 +652,11 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
       // overriding it here — see excelImport.js's namaKelasLabel /
       // AppState.jsx's merge into lineValues.
       namaKelasLabel: lineValues[`${catKey}::${b}::namaKelasLabel`] || 'Nama Kelas',
+      // Which sheet this section was imported from ("PPKI", "MP THP 1", ...)
+      // — see excelImport.js's `sourceSheet` / AppState.jsx's merge into
+      // lineValues. Blank for a hand-added or hand-duplicated block that
+      // never came from a file.
+      sourceSheet: lineValues[`${catKey}::${b}::sourceSheet`] || '',
     });
   }
 
@@ -533,6 +670,8 @@ export const noopUpdaters = {
   onAddNamaKelas: () => {}, onDuplicateBlock: () => {}, onRemoveBlock: () => {},
   onAddMatrixRow: () => {}, onMatrixRowRemove: () => {},
   onAddReferenceLine: () => {}, onRemoveReferenceLine: () => {}, onDeleteReferenceLine: () => {}, onRestoreReferenceLine: () => {},
+  onLevelKelasField: () => {}, onAddLevelKelasRow: () => {}, onRemoveLevelKelasRow: () => {},
+  onAliranKedudukan: () => {}, onAliranPlakField: () => {}, onAliranAddPlak: () => {}, onAliranRemovePlak: () => {},
 };
 
 // Rebuilds read-only `blocks` (the same shape NewOrderStep2 renders live)
@@ -613,6 +752,25 @@ function mergeItemDetailIntoMaps(it, key, lineValues, matrixValues, rowsByBlock,
         else columnsByBlock[key].push({ ...c });
       });
     }
+  }
+  // PPKI's own Nama Kelas + Moral Kelas breakdown (catalog.js's
+  // hasLevelBreakdown, snapshotDetail above) — each of its own composite
+  // keys (`${catKey}::${blockIdx}::${level}::main`/`::moral`) restores
+  // straight into rowsByBlock under that SAME key, not `key` (the plain
+  // `${catKey}::${blockIdx}` this function's other branches use), since a
+  // level's own two lists are keyed more specifically than that.
+  if (it.detail.namaKelasBreakdown) {
+    Object.entries(it.detail.namaKelasBreakdown).forEach(([k, rows]) => {
+      if (!rowsByBlock[k]) {
+        rowsByBlock[k] = rows.map((r) => ({ ...r }));
+      } else {
+        rows.forEach((r) => {
+          const existing = rowsByBlock[k].find((er) => er.id === r.id);
+          if (existing) Object.assign(existing, r);
+          else rowsByBlock[k].push({ ...r });
+        });
+      }
+    });
   }
 }
 

@@ -1,5 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { CATEGORIES, formatDate, standardUnitPrice, getCategorySubjects } from '../data/catalog';
+import {
+  CATEGORIES, formatDate, standardUnitPrice, getCategorySubjects, matrixCellKey, customMatrixLabelKey,
+} from '../data/catalog';
 import { buildInitialRowsByBlock, buildInitialColumnsByBlock, buildInitialPlakRows } from '../data/formDefaults';
 import {
   computeBlocks, snapshotDetail, noopUpdaters, buildDraftFromOrder,
@@ -96,7 +98,14 @@ function deriveKlasMatrixSectionLines(section) {
   }
   const hidden = ['1', '2', '2b', '3'].filter((slot) => !lines[slot]);
   if (hidden.length) lines.hiddenLines = hidden.join(',');
-  lines.refOrder = ['0', '0b', '1', '2', '2b', '3'].filter((slot) => lines[slot]).join(',');
+  // TAJUK BESAR (slot '0') always leads, filled or not — it's never
+  // hidden (see `hidden` above, which never includes it either), so an
+  // import that happened to leave it blank while deriving some LATER slot
+  // (e.g. slot '3' above) must not let this reorder push it behind that
+  // slot on a draggableReferenceSample category (PPKI, MP THP 1/1 (Kalau
+  // ada kelas)) — a teacher would see the derived line first and an empty,
+  // easy-to-miss TAJUK BESAR pushed to the back.
+  lines.refOrder = ['0', '0b', '1', '2', '2b', '3'].filter((slot) => slot === '0' || lines[slot]).join(',');
   return lines;
 }
 
@@ -193,7 +202,11 @@ function initialState() {
     schoolType: null,
     stepError: '',
 
-    category: 'TOKOH',
+    // No category open on entry to Order Details — the teacher either
+    // uploads a FORM ANUGERAH file (which auto-selects whichever categories
+    // it filled) or clicks a category tab to fill one in by hand. See
+    // NewOrderStep2.jsx's "pick a category or upload" placeholder.
+    category: null,
     lineValues: {},
     matrixValues: {},
     rowsByBlock: buildInitialRowsByBlock('SK'),
@@ -225,7 +238,7 @@ function initialState() {
     draftRestoredToast: '',
 
     addOnOrderId: null,
-    addOnCategory: 'TOKOH',
+    addOnCategory: null,
     addOnLineValues: {},
     addOnMatrixValues: {},
     addOnRowsByBlock: buildInitialRowsByBlock('SK'),
@@ -460,7 +473,7 @@ export function AppStateProvider({ children }) {
       dueSelected: null, funcSelected: null,
       logoDataUrl: null, logoFileName: '', logoRemark: '', schoolType: null, stepError: '',
 
-      category: 'TOKOH',
+      category: null,
       lineValues: {}, matrixValues: {},
       rowsByBlock: buildInitialRowsByBlock(st.schoolLanguage), columnsByBlock: buildInitialColumnsByBlock(), plakRows: buildInitialPlakRows(),
       nextRowId: 1000, nextPlakRowId: 1000, nextColumnId: 1000, visibleBlocksByCategory: {},
@@ -491,7 +504,9 @@ export function AppStateProvider({ children }) {
         // CONTOH, etc.) is reference-sample context the teacher may not
         // always have yet, so it can stay blank.
         const hasQty = blk.blockTotalQty > 0;
-        const hasJenisPlak = blk.plakRows.some((pr) => pr.jenisPlak);
+        const hasJenisPlak = blk.plakPerRow
+          ? blk.rows.some((r) => r.jenisPlak && Number(r.qty) > 0)
+          : blk.plakRows.some((pr) => pr.jenisPlak);
         const engaged = hasQty || hasJenisPlak || blk.lines.some(lineHasValue);
         if (!engaged) continue;
         // hasNamaKelasList categories (OTHERS) can have several blocks
@@ -535,13 +550,35 @@ export function AppStateProvider({ children }) {
         }
       }
 
+      const cat = CATEGORIES.find((c) => c.key === st.category);
       const newItems = [];
       blocks.forEach((b) => {
+        const baseDetail = snapshotDetail(st.category, b.idx, isMatrix, isDynamicMatrix, st.lineValues, st.matrixValues, st.rowsByBlock, st.columnsByBlock);
+        if (cat?.plakPerRow) {
+          // LONJAKAN — one item per TAHUN row, each with its own Jenis Plak;
+          // the item's detail carries only that row so exportCsv emits just
+          // its own plaques.
+          b.rows.forEach((row) => {
+            if (row.jenisPlak && row.qty) {
+              const tokoh = {};
+              (row.tokohFields || []).forEach((f) => { if (f.value) tokoh[f.key] = f.value; });
+              newItems.push({
+                id: crypto.randomUUID(), jenisPlak: row.jenisPlak, qty: row.qty, harga: row.rawHarga, unitPrice: row.unitPrice,
+                categoryLabel: b.qtyLabel, categoryKey: st.category, blockIdx: b.idx,
+                detail: { ...baseDetail, rows: [{ id: row.id, desc: row.desc, qty: row.qty, ...tokoh }] },
+              });
+            }
+          });
+          return;
+        }
         b.plakRows.forEach((pr) => {
           if (pr.jenisPlak && pr.qty) newItems.push({
             id: crypto.randomUUID(), jenisPlak: pr.jenisPlak, qty: pr.qty, harga: pr.rawHarga, unitPrice: pr.unitPrice,
             categoryLabel: b.qtyLabel, categoryKey: st.category, blockIdx: b.idx,
-            detail: snapshotDetail(st.category, b.idx, isMatrix, isDynamicMatrix, st.lineValues, st.matrixValues, st.rowsByBlock, st.columnsByBlock),
+            // ALIRAN — which places (1st..Nth) this plak covers, so
+            // exportCsv can engrave one plaque per (Tahun, place).
+            ...(pr.posDari ? { posDari: pr.posDari, posHingga: pr.posHingga } : {}),
+            detail: baseDetail,
           });
         });
       });
@@ -610,7 +647,20 @@ export function AppStateProvider({ children }) {
     const st = stateRef.current;
     let next = st;
 
-    if (parsed.klasMatrix) {
+    // KLAS_MATRIX ("Mata Pelajaran / Klas (Matrix)") is retired from new
+    // orders (catalog.js) — every FORM ANUGERAH sheet now has its own
+    // category. A generic/legacy sheet that would once have landed there
+    // (e.g. a stray "TOKOH" or "KLAS MATRIX" sheet) is reported as skipped
+    // rather than filling a category the teacher can no longer see or edit.
+    const klasMatrixActive = CATEGORIES.find((c) => c.key === 'KLAS_MATRIX')?.active !== false;
+    if (parsed.klasMatrix && !klasMatrixActive) {
+      warnings.push({
+        type: 'truncated',
+        text: `${parsed.klasMatrix.sections.length} section(s) in this file didn't match any FORM ANUGERAH sheet and were skipped — please add them by hand.`,
+      });
+    }
+
+    if (parsed.klasMatrix && klasMatrixActive) {
       const catKey = 'KLAS_MATRIX';
       const cat = CATEGORIES.find((c) => c.key === catKey);
       const maxSections = Math.min(parsed.klasMatrix.sections.length, cat.blocksCount || 1);
@@ -710,6 +760,11 @@ export function AppStateProvider({ children }) {
         // along the same way hiddenLines/refOrder do, read back by
         // computeBlocks.js to override the generic "Nama Kelas" header.
         if (section.namaKelasLabel) newLineValues[`${key}::namaKelasLabel`] = section.namaKelasLabel;
+        // Which sheet this section came from (excelImport.js's
+        // `sourceSheet` — "PPKI", "MP THP 1", ...), read back by
+        // computeBlocks.js so a multi-section import can label each block
+        // by its real origin instead of a bare "Section N of M".
+        if (section.sourceSheet) newLineValues[`${key}::sourceSheet`] = section.sourceSheet;
         newRowsByBlock[key] = subjectRows;
         newColumnsByBlock[key] = classColumns;
         // "SM - 13187 (GOLD)" etc isn't itself a valid Jenis Plak value —
@@ -806,6 +861,175 @@ export function AppStateProvider({ children }) {
         });
       });
 
+    }
+
+    // Sections from a sheet with its own dedicated real category (PPKI, MP
+    // THP 1, ...) — see excelImport.js's `categorized` split — write
+    // straight into that category's own fixed matrix instead of
+    // KLAS_MATRIX. These are `mode:'matrix'` categories (catalog.js): the
+    // subject/column list is a fixed catalog list, not per-order like
+    // KLAS_MATRIX's own teacher-defined rows/columns, so there's no
+    // rowsByBlock/columnsByBlock bookkeeping needed here at all — just one
+    // matrixValues cell per (subject, column) pair, keyed by their own
+    // literal text (matrixCellKey), the same key shape MP THP has always
+    // used for a hand-filled block.
+    if (parsed.categorized) {
+      Object.entries(parsed.categorized).forEach(([catKey, sections]) => {
+        const cat = CATEGORIES.find((c) => c.key === catKey);
+        if (!cat || sections.length === 0) return;
+        // blocksCount is always 1 for these categories today — a file with
+        // more than one independent section for the same sheet has nowhere
+        // else to land the rest, same overflow story as KLAS_MATRIX's own
+        // maxSections above.
+        if (sections.length > (cat.blocksCount || 1)) {
+          warnings.push({ type: 'truncated', text: `${cat.label}: this file has ${sections.length} sections, but only the first could be imported — please upload the rest separately.` });
+        }
+        const section = sections[0];
+        const key = `${catKey}::0`;
+        const newLineValues = { ...next.lineValues };
+        const newMatrixValues = { ...next.matrixValues };
+        const newRowsByBlock = { ...next.rowsByBlock };
+        let nextRowId = next.nextRowId;
+        // A fresh import fully replaces whatever was there before, same as
+        // KLAS_MATRIX's own per-block clear above.
+        Object.keys(newLineValues).forEach((k) => { if (k.startsWith(`${key}::`)) delete newLineValues[k]; });
+        Object.keys(newMatrixValues).forEach((k) => { if (k.startsWith(`${catKey}::`)) delete newMatrixValues[k]; });
+        Object.keys(newRowsByBlock).forEach((k) => { if (k.startsWith(`${key}::`)) delete newRowsByBlock[k]; });
+        if (section.isSimpleTahunList) {
+          // LONJAKAN SAUJANA — TAHUN 1-6, each with its own QTY + Jenis Plak.
+          const byTahun = new Map(section.tahunRows.map((tr) => [tr.tahun, tr]));
+          newRowsByBlock[key] = ['TAHUN 1', 'TAHUN 2', 'TAHUN 3', 'TAHUN 4', 'TAHUN 5', 'TAHUN 6'].map((tahun) => {
+            const tr = byTahun.get(tahun);
+            const matched = tr?.jenisPlak ? matchJenisPlakPath(tr.jenisPlak, next.plakCatalog) : '';
+            if (tr?.jenisPlak && !matched) {
+              warnings.push({ type: 'plakMismatch', catKey, blockIdx: 0, text: `${cat.label} (${tahun}): couldn't match Jenis Plak "${tr.jenisPlak}" — please choose it manually.` });
+            }
+            return { id: nextRowId++, desc: tahun, qty: tr && tr.qty ? String(tr.qty) : '', jenisPlak: matched };
+          });
+        } else if (section.isTokohList) {
+          // TOKOH (excelImport.js's parseTokohAnugerahSheet) — one honour
+          // per row, in sheet order (not a fixed preset). Each row keeps
+          // its own NAMA MURID / GAMBAR / DESIGN metadata + its own Jenis
+          // Plak (plakPerRow).
+          newRowsByBlock[key] = section.tokohRows.map((tr) => {
+            const matched = tr.jenisPlak ? matchJenisPlakPath(tr.jenisPlak, next.plakCatalog) : '';
+            if (tr.jenisPlak && !matched) {
+              warnings.push({ type: 'plakMismatch', catKey, blockIdx: 0, text: `${cat.label} (${tr.desc}): couldn't match Jenis Plak "${tr.jenisPlak}" — please choose it manually.` });
+            }
+            return {
+              id: nextRowId++, desc: tr.desc, qty: tr.qty ? String(tr.qty) : '',
+              jenisPlak: matched, namaMurid: tr.namaMurid || '', gambar: tr.gambar || '', design: tr.design || '',
+            };
+          });
+        } else if (section.isAliran) {
+          // ALIRAN TERBAIK (excelImport.js's parseAliranSheet) — six fixed
+          // TAHUN rows, each carrying a KEDUDUKAN "hingga" place or a flat
+          // qty; plus a multi-row JENIS PLAK footer of position ranges.
+          const byTahun = new Map(section.tahunRows.map((tr) => [tr.tahun, tr]));
+          newRowsByBlock[key] = ['TAHUN 1', 'TAHUN 2', 'TAHUN 3', 'TAHUN 4', 'TAHUN 5', 'TAHUN 6'].map((tahun) => {
+            const tr = byTahun.get(tahun);
+            if (tr && tr.hingga) return { id: nextRowId++, desc: tahun, qty: String(tr.hingga - (tr.dari || 1) + 1), kedudukanHingga: tr.hingga };
+            if (tr && tr.flatQty) return { id: nextRowId++, desc: tahun, qty: String(tr.flatQty), kedudukanHingga: 0 };
+            return { id: nextRowId++, desc: tahun, qty: '', kedudukanHingga: 0 };
+          });
+        } else if (section.isTahunList) {
+          // PBD (excelImport.js's parsePbdSheet) — no subject axis, one
+          // KUANTITI total per Tahun. The category is a 1-column matrix
+          // whose "subject" rows ARE the Tahuns (catalog.js), so the cell
+          // key is (tahun, 'KUANTITI').
+          section.tahunRows.forEach(({ tahun, qty }) => {
+            if (!qty) return;
+            newMatrixValues[matrixCellKey(catKey, tahun, 'KUANTITI')] = String(qty);
+          });
+        } else if (cat.subjectsFromImport && section.subjectOrder) {
+          // PPKI / MP THP 1 / MP THP 2 (+ variants): the subject list is
+          // whatever the sheet has — renamed, added or blank rows and all —
+          // so every subject becomes an editable `custom-<id>` matrix row
+          // (getCustomMatrixRowIds), in sheet order, rather than being
+          // matched against the fixed catalog list. The column labels are
+          // still the fixed catalog ones (PRA PPKI/PPKI/PRASEKOLAH, TAHUN N).
+          const qtyByColThenName = new Map();
+          section.classes.forEach((cls) => {
+            const column = cls.namaKelas || cls.tahunFrom;
+            if (!column) return;
+            const byName = qtyByColThenName.get(column) || new Map();
+            cls.subjects.forEach(({ name, qty }) => { if (name) byName.set(name, qty); });
+            qtyByColThenName.set(column, byName);
+          });
+          section.subjectOrder.forEach((name) => {
+            if (!name) return;
+            const rowId = nextRowId++;
+            newMatrixValues[customMatrixLabelKey(catKey, rowId)] = name;
+            qtyByColThenName.forEach((byName, column) => {
+              const qty = byName.get(name);
+              if (qty) newMatrixValues[matrixCellKey(catKey, `custom-${rowId}`, column)] = String(qty);
+            });
+          });
+        } else {
+          section.classes.forEach((cls) => {
+            // PPKI's classes carry their level in `namaKelas` (PRA PPKI/PPKI/
+            // PRASEKOLAH — free text, not a real TAHUN), MP THP 1's in
+            // `tahunFrom` (TAHUN 1/2/3) — either way this must exactly match
+            // one of the category's own fixed columnsByLanguage labels.
+            const column = cls.namaKelas || cls.tahunFrom;
+            if (!column) return;
+            cls.subjects.forEach(({ name, qty }) => {
+              if (!name || !qty) return;
+              newMatrixValues[matrixCellKey(catKey, name, column)] = String(qty);
+            });
+          });
+        }
+        // PPKI's own Nama Kelas + Moral Kelas breakdown behind those KUANTITI
+        // totals (catalog.js's hasLevelBreakdown, excelImport.js's
+        // parsePpkiSheet) — stored per level under its own composite
+        // rowsByBlock key so computeBlocks.js/draftUpdaters.js can show and
+        // re-sum it independently of the other levels.
+        if (cat.hasLevelBreakdown && section.levelBreakdown) {
+          section.levelBreakdown.forEach(({ label, mainRows, moralRows }) => {
+            newRowsByBlock[`${key}::${label}::main`] = mainRows.map((r) => ({ id: nextRowId++, desc: r.name, qty: String(r.qty) }));
+            newRowsByBlock[`${key}::${label}::moral`] = moralRows.map((r) => ({ id: nextRowId++, desc: r.name, qty: String(r.qty) }));
+          });
+        }
+        const sectionLines = section.skipLineDerivation ? section.lines : deriveKlasMatrixSectionLines(section);
+        Object.entries(sectionLines).forEach(([slot, val]) => { newLineValues[`${key}::${slot}`] = val; });
+
+        let nextPlakRowId = next.nextPlakRowId;
+        let newPlakRows;
+        if (section.isSimpleTahunList || section.isTokohList) {
+          // LONJAKAN / TOKOH — Jenis Plak lives per row (plakPerRow), no
+          // block-level plak row.
+          newPlakRows = { ...next.plakRows, [key]: [] };
+        } else if (section.isAliran) {
+          // One plak row per JENIS PLAK footer entry, each carrying its own
+          // position range (posDari/posHingga). QTY per row is derived
+          // later (computeBlocks.js). An un-matched code is left blank and
+          // flagged, same as everywhere else.
+          newPlakRows = {
+            ...next.plakRows,
+            [key]: (section.plakRanges || []).map((pr) => {
+              const matched = matchJenisPlakPath(pr.jenisPlak, next.plakCatalog);
+              if (pr.jenisPlak && !matched) {
+                warnings.push({ type: 'plakMismatch', catKey, blockIdx: 0, text: `${cat.label}: couldn't match Jenis Plak "${pr.jenisPlak}" — please choose it manually.` });
+              }
+              return { id: nextPlakRowId++, jenisPlak: matched, posDari: pr.dari || null, posHingga: pr.hingga || null };
+            }),
+          };
+          if (newPlakRows[key].length === 0) newPlakRows[key] = [{ id: nextPlakRowId++, jenisPlak: '', posDari: 1, posHingga: null }];
+        } else {
+          const matchedPlak = matchJenisPlakPath(section.jenisPlak, next.plakCatalog);
+          if (section.jenisPlak && !matchedPlak) {
+            warnings.push({ type: 'plakMismatch', catKey, blockIdx: 0, text: `${cat.label}: couldn't match Jenis Plak "${section.jenisPlak}" to anything in the catalog — please choose it manually.` });
+          }
+          newPlakRows = { ...next.plakRows, [key]: [{ id: nextPlakRowId++, jenisPlak: matchedPlak }] };
+        }
+        next = {
+          ...next,
+          lineValues: newLineValues, matrixValues: newMatrixValues, rowsByBlock: newRowsByBlock, plakRows: newPlakRows,
+          nextPlakRowId, nextRowId,
+        };
+        if (!landOn) landOn = catKey;
+        messages.push(`${cat.label}: imported`);
+      });
     }
 
     // A KIV line (excelImport.js's findKivNotes) has no recipient data at
@@ -1071,7 +1295,7 @@ export function AppStateProvider({ children }) {
 
   const openAddOn = useCallback((ord) => {
     patch((st) => ({
-      addOnOrderId: ord.id, addOnCategory: 'TOKOH',
+      addOnOrderId: ord.id, addOnCategory: null,
       addOnLineValues: {}, addOnMatrixValues: {},
       addOnRowsByBlock: buildInitialRowsByBlock(st.schoolLanguage), addOnColumnsByBlock: buildInitialColumnsByBlock(), addOnPlakRows: buildInitialPlakRows(),
       addOnNextRowId: 1000, addOnNextPlakRowId: 1000, addOnNextColumnId: 1000, addOnVisibleBlocksByCategory: {},

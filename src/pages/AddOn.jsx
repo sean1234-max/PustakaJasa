@@ -29,7 +29,7 @@ export default function AddOn() {
   ), [state.addOnCategory, state.addOnLineValues, state.addOnMatrixValues, state.addOnRowsByBlock, state.addOnPlakRows, state.addOnColumnsByBlock, updaters, state.plakCatalog, state.schoolLanguage]);
 
   const visibleCount = state.addOnVisibleBlocksByCategory[state.addOnCategory] || 1;
-  const blocks = allBlocks.slice(0, visibleCount);
+  const blocks = state.addOnCategory ? allBlocks.slice(0, visibleCount) : [];
 
   const visiblePlakCatalog = useMemo(() => filterHiddenPlakCatalog(state.plakCatalog), [state.plakCatalog]);
 
@@ -47,13 +47,19 @@ export default function AddOn() {
           <CategoryTabs categories={ACTIVE_CATEGORIES} active={state.addOnCategory} onSelect={(key) => patch({ addOnCategory: key })} />
         </div>
 
+        {!state.addOnCategory && (
+          <div className="hint-text" style={{ textAlign: 'center', padding: 'var(--space-8) var(--space-4)', color: 'var(--text-muted, #6b7280)' }}>
+            Pilih satu kategori di atas untuk mula.
+          </div>
+        )}
+
         {blocks.map((blk, i) => (
           <OrderCategoryBlock key={blk.idx} blk={blk} editable={EDITABLE} plakOptions={visiblePlakCatalog} isLastBlock={i === blocks.length - 1} />
         ))}
 
         <div className="row-split" style={{ marginTop: 'var(--space-6)' }}>
           <button type="button" className="btn btn-ghost" onClick={() => navigate('/dashboard')}>← Cancel</button>
-          <button type="button" className="btn btn-primary" onClick={() => navigate(`/addon/${order.id}/summary`)}>Next</button>
+          <button type="button" className="btn btn-primary" onClick={() => navigate(`/addon/${order.id}/summary`)} disabled={!state.addOnCategory}>Next</button>
         </div>
       </div>
     </div>
