@@ -7,6 +7,7 @@ import {
   fetchAllProfiles, fetchInvoicingSalesmanAssignments, assignInvoicingSalesman, unassignInvoicingSalesman,
   updateProfile, resetPassword, deleteAccount, logAdminAction,
 } from '../lib/adminApi';
+import { loadWithRetry } from '../lib/loadWithRetry';
 
 const secondaryBtnClass = 'w-full sm:w-auto bg-surface-container-lowest border border-outline-variant text-on-surface-variant hover:text-on-surface text-label-bold font-semibold py-2.5 px-4 rounded-lg shadow-sm hover:shadow-md transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed';
 
@@ -38,10 +39,12 @@ export default function AdminStoreAdminDetail() {
   const [newPassword, setNewPassword] = useState('');
   const [deleting, setDeleting] = useState(false);
 
+  const [loadError, setLoadError] = useState('');
   const load = () => {
-    Promise.all([fetchAllProfiles(), fetchInvoicingSalesmanAssignments()])
+    setLoadError('');
+    loadWithRetry(() => Promise.all([fetchAllProfiles(), fetchInvoicingSalesmanAssignments()]))
       .then(([p, a]) => { setProfiles(p); setAssignments(a); })
-      .catch((err) => console.error('Failed to load store admin:', err));
+      .catch((err) => { console.error('Failed to load store admin:', err); setLoadError('Could not load this account. Check your connection and try again.'); });
   };
 
   useEffect(load, [id]);
@@ -57,6 +60,7 @@ export default function AdminStoreAdminDetail() {
     [assignments, id],
   );
 
+  if (loadError) return <AdminLayout title="Store Admin Details"><p className="text-body-md text-error mb-2">{loadError}</p><button type="button" onClick={load} className="text-label-bold font-semibold text-primary hover:underline">Retry</button></AdminLayout>;
   if (!profiles) return <AdminLayout title="Store Admin Details"><p className="text-body-md text-on-surface-variant">Loading...</p></AdminLayout>;
 
   const storeAdmin = profiles.find((p) => p.id === id && p.role === 'store_admin');

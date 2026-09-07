@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import AdminLayout from '../components/AdminLayout';
 import { useAppState } from '../state/useAppState';
 import { fetchAllProfiles, updateProfile, resetPassword, logAdminAction } from '../lib/adminApi';
+import { loadWithRetry } from '../lib/loadWithRetry';
 import AdminProfileEditor from '../components/AdminProfileEditor';
 
 const secondaryBtnClass = 'w-full sm:w-auto bg-surface-container-lowest border border-outline-variant text-on-surface-variant hover:text-on-surface text-label-bold font-semibold py-2.5 px-4 rounded-lg shadow-sm hover:shadow-md transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed';
@@ -29,10 +30,12 @@ export default function AdminSalesmanDetail() {
   const [confirmingStatus, setConfirmingStatus] = useState(null);
   const [newPassword, setNewPassword] = useState('');
 
+  const [loadError, setLoadError] = useState('');
   const load = () => {
-    fetchAllProfiles()
+    setLoadError('');
+    loadWithRetry(fetchAllProfiles)
       .then(setProfiles)
-      .catch((err) => console.error('Failed to load salesman:', err));
+      .catch((err) => { console.error('Failed to load salesman:', err); setLoadError('Could not load this account. Check your connection and try again.'); });
   };
 
   useEffect(load, [id]);
@@ -43,6 +46,7 @@ export default function AdminSalesmanDetail() {
     return () => clearTimeout(t);
   }, [toast]);
 
+  if (loadError) return <AdminLayout title="Salesman Details"><p className="text-body-md text-error mb-2">{loadError}</p><button type="button" onClick={load} className="text-label-bold font-semibold text-primary hover:underline">Retry</button></AdminLayout>;
   if (!profiles) return <AdminLayout title="Salesman Details"><p className="text-body-md text-on-surface-variant">Loading...</p></AdminLayout>;
 
   const salesman = profiles.find((p) => p.id === id);

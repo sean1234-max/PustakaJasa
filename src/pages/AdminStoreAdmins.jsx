@@ -5,6 +5,7 @@ import { useAppState } from '../state/useAppState';
 import {
   fetchAllProfiles, fetchInvoicingSalesmanAssignments, createAccount, logAdminAction,
 } from '../lib/adminApi';
+import { loadWithRetry } from '../lib/loadWithRetry';
 
 // Admin's list of every Store Admin account (role 'store_admin', formerly
 // 'invoicing' — renamed 0047). Same shape as AdminSalesmen.jsx; the one
@@ -34,11 +35,13 @@ export default function AdminStoreAdmins() {
   const [formError, setFormError] = useState('');
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState('');
+  const [loadError, setLoadError] = useState('');
 
   const load = () => {
-    Promise.all([fetchAllProfiles(), fetchInvoicingSalesmanAssignments()])
+    setLoadError('');
+    loadWithRetry(() => Promise.all([fetchAllProfiles(), fetchInvoicingSalesmanAssignments()]))
       .then(([p, a]) => { setProfiles(p); setAssignments(a); })
-      .catch((err) => console.error('Failed to load store admins:', err));
+      .catch((err) => { console.error('Failed to load store admins:', err); setLoadError('Could not load. Check your connection and try again.'); });
   };
 
   useEffect(load, []);
@@ -158,7 +161,12 @@ export default function AdminStoreAdmins() {
         </div>
       </div>
 
-      {profiles === null ? (
+      {loadError ? (
+        <div className="text-body-md">
+          <p className="text-error mb-2">{loadError}</p>
+          <button type="button" onClick={load} className="text-label-bold font-semibold text-primary hover:underline">Retry</button>
+        </div>
+      ) : profiles === null ? (
         <p className="text-body-md text-on-surface-variant">Loading store admins...</p>
       ) : filtered.length === 0 ? (
         <p className="text-body-md text-on-surface-variant">No store admins found. Try changing your search.</p>

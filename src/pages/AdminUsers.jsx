@@ -6,6 +6,7 @@ import {
   fetchAllProfiles, createAccount, updateProfile, resetPassword, deleteAccount, logAdminAction,
   fetchInvoicingSalesmanAssignments, assignInvoicingSalesman, unassignInvoicingSalesman,
 } from '../lib/adminApi';
+import { loadWithRetry } from '../lib/loadWithRetry';
 
 const ROLE_LABELS = { teacher: 'School', salesman: 'Salesman', production: 'Production', store_admin: 'Store Admin', admin: 'Admin' };
 const ROLE_OPTIONS = Object.keys(ROLE_LABELS);
@@ -41,7 +42,8 @@ export default function AdminUsers() {
   const [newPassword, setNewPassword] = useState('');
 
   const load = () => {
-    Promise.all([fetchAllProfiles(), fetchInvoicingSalesmanAssignments()])
+    setLoadError('');
+    loadWithRetry(() => Promise.all([fetchAllProfiles(), fetchInvoicingSalesmanAssignments()]))
       .then(([p, a]) => { setProfiles(p); setInvoicingAssignments(a); })
       .catch((err) => { console.error('Failed to load users:', err); setLoadError('Unable to load users. Please try again.'); });
   };

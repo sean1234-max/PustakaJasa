@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import AdminLayout from '../components/AdminLayout';
 import { useAppState } from '../state/useAppState';
 import { fetchAllProfiles, createAccount, logAdminAction } from '../lib/adminApi';
+import { loadWithRetry } from '../lib/loadWithRetry';
 
 const EMPTY_FORM = { sekolah: '', address: '', displayName: '', email: '', password: '' };
 
@@ -45,10 +46,13 @@ export default function AdminSchools() {
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState('');
 
+  const [loadError, setLoadError] = useState('');
+
   const load = () => {
-    fetchAllProfiles()
+    setLoadError('');
+    loadWithRetry(fetchAllProfiles)
       .then(setProfiles)
-      .catch((err) => console.error('Failed to load schools:', err));
+      .catch((err) => { console.error('Failed to load schools:', err); setLoadError('Could not load. Check your connection and try again.'); });
   };
 
   useEffect(load, []);
@@ -178,7 +182,12 @@ export default function AdminSchools() {
         </div>
       </div>
 
-      {profiles === null ? (
+      {loadError ? (
+        <div className="text-body-md">
+          <p className="text-error mb-2">{loadError}</p>
+          <button type="button" onClick={load} className="text-label-bold font-semibold text-primary hover:underline">Retry</button>
+        </div>
+      ) : profiles === null ? (
         <p className="text-body-md text-on-surface-variant">Loading schools...</p>
       ) : filtered.length === 0 ? (
         <p className="text-body-md text-on-surface-variant">No schools found. Try changing your search.</p>

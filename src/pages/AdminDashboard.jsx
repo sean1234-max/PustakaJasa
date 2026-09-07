@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import AdminLayout from '../components/AdminLayout';
 import { useAppState } from '../state/useAppState';
 import { fetchAllProfiles } from '../lib/adminApi';
+import { loadWithRetry } from '../lib/loadWithRetry';
 import { STATUS_STAGES, statusPillStyle } from '../data/catalog';
 
 function StatTile({ value, label }) {
@@ -18,14 +19,17 @@ export default function AdminDashboard() {
   const { state } = useAppState();
   const navigate = useNavigate();
   const [profiles, setProfiles] = useState(null);
+  const [loadError, setLoadError] = useState('');
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
-    fetchAllProfiles()
+    setLoadError('');
+    loadWithRetry(fetchAllProfiles)
       .then((rows) => { if (!cancelled) setProfiles(rows); })
-      .catch((err) => console.error('Failed to load users:', err));
+      .catch((err) => { console.error('Failed to load users:', err); if (!cancelled) setLoadError('Could not load. Check your connection and try again.'); });
     return () => { cancelled = true; };
-  }, []);
+  }, [reloadKey]);
 
   const schools = (profiles || []).filter((p) => p.role === 'teacher');
   const salesmen = (profiles || []).filter((p) => p.role === 'salesman');
@@ -40,7 +44,12 @@ export default function AdminDashboard() {
 
   return (
     <AdminLayout title="Admin Dashboard" subtitle="What's happening in the system right now.">
-      {profiles === null ? (
+      {loadError ? (
+        <div className="text-body-md">
+          <p className="text-error mb-2">{loadError}</p>
+          <button type="button" onClick={() => setReloadKey((k) => k + 1)} className="text-label-bold font-semibold text-primary hover:underline">Retry</button>
+        </div>
+      ) : profiles === null ? (
         <p className="text-body-md text-on-surface-variant">Loading users...</p>
       ) : (
         <section className="mb-10">
