@@ -497,7 +497,8 @@ a:hover { color: var(--color-accent-900); text-decoration: underline; }
   display: flex; align-items: center; gap: var(--space-3);
   padding: 8px 0; border-bottom: 1px solid var(--color-neutral-100);
 }
-.catalog-admin-code { flex: 1; font-size: 13px; }
+.catalog-admin-code { flex: 1; font-size: 13px; min-width: 0; }
+input.catalog-admin-code { padding: 6px 8px; }
 .catalog-admin-code-hidden { opacity: 0.4; text-decoration: line-through; }
 .catalog-admin-price { width: 90px; flex: none; padding: 6px 8px; font-size: 13px; }
 .catalog-admin-header-row {

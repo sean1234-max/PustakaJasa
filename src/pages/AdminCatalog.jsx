@@ -84,14 +84,17 @@ const catalogAnnouncements = {
 };
 
 function CatalogRow({
-  node, depth, parentId, canMoveUp, canMoveDown, onAddChild, onRemove, onPriceChange, onStockChange, onToggleHidden, onMove,
+  node, depth, parentId, canMoveUp, canMoveDown, onAddChild, onRemove, onRename, onPriceChange, onStockChange, onToggleHidden, onMove,
   collapsedIds, onToggleCollapsed, dragActive,
 }) {
   const [addingChild, setAddingChild] = useState(false);
   const [newCode, setNewCode] = useState('');
   const [newPrice, setNewPrice] = useState('');
+  const [codeDraft, setCodeDraft] = useState(node.code);
   const [priceDraft, setPriceDraft] = useState(String(node.price ?? 0));
   const [stockDraft, setStockDraft] = useState(node.stockQty == null ? '' : String(node.stockQty));
+
+  useEffect(() => { setCodeDraft(node.code); }, [node.code]);
 
   // Unlike price, stock changes constantly from a source outside this
   // page — every teacher order deducts it — so the mount-only useState
@@ -126,6 +129,16 @@ function CatalogRow({
   useEffect(() => {
     if (dragActive) setAddingChild(false);
   }, [dragActive]);
+
+  const commitCode = () => {
+    const next = codeDraft.trim();
+    if (!next || next === node.code) { setCodeDraft(node.code); return; }
+    if (window.confirm(`Rename "${node.code}" to "${next}"?\n\nOrders already placed keep the old name — only new orders use "${next}".`)) {
+      onRename(node.id, next);
+    } else {
+      setCodeDraft(node.code);
+    }
+  };
 
   const commitPrice = () => {
     const val = Number(priceDraft);
@@ -174,9 +187,14 @@ function CatalogRow({
               <span className="material-symbols-outlined text-sm">{collapsed ? 'chevron_right' : 'expand_more'}</span>
             </button>
           )}
-          <span className={depth === 0 ? 'text-headline-sm text-primary uppercase' : 'text-body-md font-medium text-on-surface uppercase'}>
-            {node.code}
-          </span>
+          <input
+            className={`flex-1 min-w-0 px-2 py-1 bg-transparent border border-transparent hover:border-outline-variant focus:border-primary rounded outline-none uppercase ${depth === 0 ? 'text-headline-sm text-primary' : 'text-body-md font-medium text-on-surface'} ${node.hidden ? 'line-through opacity-50' : ''}`}
+            value={codeDraft}
+            aria-label={`Rename ${node.code}`}
+            onChange={(e) => setCodeDraft(e.target.value)}
+            onBlur={commitCode}
+            onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
+          />
           {node.hidden && <span className="text-label-bold text-on-surface-variant uppercase">(hidden)</span>}
         </div>
         <div className="flex items-center gap-4 w-full sm:w-auto justify-end">
@@ -249,6 +267,7 @@ function CatalogRow({
               canMoveDown={i < node.children.length - 1}
               onAddChild={onAddChild}
               onRemove={onRemove}
+              onRename={onRename}
               onPriceChange={onPriceChange}
               onStockChange={onStockChange}
               onToggleHidden={onToggleHidden}
@@ -266,7 +285,7 @@ function CatalogRow({
 
 export default function AdminCatalog() {
   const {
-    state, addCatalogNode, removeCatalogNode, updateCatalogNodePrice, updateCatalogNodeStock, setCatalogNodeHidden, moveCatalogNode, reorderCatalogSiblings,
+    state, addCatalogNode, removeCatalogNode, updateCatalogNodePrice, renameCatalogNode, updateCatalogNodeStock, setCatalogNodeHidden, moveCatalogNode, reorderCatalogSiblings,
   } = useAppState();
   const [newTopCode, setNewTopCode] = useState('');
   const [newTopPrice, setNewTopPrice] = useState('');
@@ -296,6 +315,10 @@ export default function AdminCatalog() {
   const handleRemove = (id) => {
     removeCatalogNode(id);
     logCatalogAction('Admin removed a catalog code', id);
+  };
+  const handleRename = (id, code) => {
+    renameCatalogNode(id, code);
+    logCatalogAction('Admin renamed a catalog code', id, { code });
   };
   const handlePriceChange = (id, price) => {
     updateCatalogNodePrice(id, price);
@@ -400,6 +423,7 @@ export default function AdminCatalog() {
                   canMoveDown={i < state.plakCatalog.length - 1}
                   onAddChild={(parentId, code, price) => handleAddChild(parentId, code, price, 0)}
                   onRemove={handleRemove}
+                  onRename={handleRename}
                   onPriceChange={handlePriceChange}
                   onStockChange={handleStockChange}
                   onToggleHidden={handleToggleHidden}

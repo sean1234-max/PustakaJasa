@@ -1775,6 +1775,19 @@ export function AppStateProvider({ children }) {
     }
   }, [refreshPlakCatalog]);
 
+  // Renames a code / variant. Only NEW orders pick up the new name — an
+  // order already placed stores its Jenis Plak as the old " / "-joined
+  // path text, and nothing rewrites that (the catalog page warns before
+  // it saves). Fine for a typo fix; risky for a code with live orders.
+  const renameCatalogNode = useCallback(async (id, code) => {
+    try {
+      await updatePlakNode(id, { code });
+      await refreshPlakCatalog();
+    } catch (err) {
+      console.error('Failed to rename Jenis Plak code in Supabase:', err);
+    }
+  }, [refreshPlakCatalog]);
+
   // Sets a leaf's current stock count — also resets stock_baseline to the
   // same value (see updatePlakNodeStock), so every time Production/Admin
   // types a new number here (first count, restock, or correction) the
@@ -1857,7 +1870,7 @@ export function AppStateProvider({ children }) {
     recordPrint,
     ensureOrderLoaded,
     markProductionDone,
-    addCatalogNode, removeCatalogNode, updateCatalogNodePrice, updateCatalogNodeStock, setCatalogNodeHidden, moveCatalogNode,
+    addCatalogNode, removeCatalogNode, updateCatalogNodePrice, renameCatalogNode, updateCatalogNodeStock, setCatalogNodeHidden, moveCatalogNode,
     reorderCatalogSiblings,
     refreshAssignedSalesman,
   };

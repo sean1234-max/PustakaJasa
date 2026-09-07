@@ -81,14 +81,17 @@ function sumDescendantStock(node) {
 // opening the catalog shows only top-level codes, not every nested variant
 // at once.
 function CatalogRow({
-  node, depth, parentId, canReorder, onAddChild, onRemove, onPriceChange, onStockChange, onToggleHidden,
+  node, depth, parentId, canReorder, onAddChild, onRemove, onRename, onPriceChange, onStockChange, onToggleHidden,
   collapsedIds, onToggleCollapsed, dragActive,
 }) {
   const [addingChild, setAddingChild] = useState(false);
   const [newCode, setNewCode] = useState('');
   const [newPrice, setNewPrice] = useState('');
+  const [codeDraft, setCodeDraft] = useState(node.code);
   const [priceDraft, setPriceDraft] = useState(String(node.price ?? 0));
   const [stockDraft, setStockDraft] = useState(node.stockQty == null ? '' : String(node.stockQty));
+
+  useEffect(() => { setCodeDraft(node.code); }, [node.code]);
 
   const { setNodeRef, attributes, listeners, transform, transition, isDragging } = useSortable({
     id: node.id,
@@ -123,6 +126,17 @@ function CatalogRow({
   const collapsed = collapsedIds.has(node.id);
   const zone = stockZoneFor(node.stockQty, node.stockBaseline);
   const descendantStock = hasChildren ? sumDescendantStock(node) : null;
+
+  const commitCode = () => {
+    const next = codeDraft.trim();
+    if (!next || next === node.code) { setCodeDraft(node.code); return; }
+    // Only new orders pick up the new name — see renameCatalogNode.
+    if (window.confirm(`Rename "${node.code}" to "${next}"?\n\nOrders already placed keep the old name — only new orders use "${next}".`)) {
+      onRename(node.id, next);
+    } else {
+      setCodeDraft(node.code);
+    }
+  };
 
   const commitPrice = () => {
     const val = Number(priceDraft);
@@ -166,7 +180,14 @@ function CatalogRow({
             {collapsed ? '▶' : '▼'}
           </button>
         ) : <span style={{ display: 'inline-block', width: 28 }} />}
-        <span className={node.hidden ? 'catalog-admin-code catalog-admin-code-hidden' : 'catalog-admin-code'}>{node.code}</span>
+        <input
+          className={node.hidden ? 'input catalog-admin-code catalog-admin-code-hidden' : 'input catalog-admin-code'}
+          value={codeDraft}
+          aria-label={`Rename ${node.code}`}
+          onChange={(e) => setCodeDraft(e.target.value)}
+          onBlur={commitCode}
+          onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
+        />
         <input
           className="input catalog-admin-price"
           type="number"
@@ -234,6 +255,7 @@ function CatalogRow({
               canReorder={node.children.length > 1}
               onAddChild={onAddChild}
               onRemove={onRemove}
+              onRename={onRename}
               onPriceChange={onPriceChange}
               onStockChange={onStockChange}
               onToggleHidden={onToggleHidden}
@@ -262,7 +284,7 @@ function collectParentIds(nodes, out) {
 
 export default function ProductionCatalog() {
   const {
-    state, addCatalogNode, removeCatalogNode, updateCatalogNodePrice, updateCatalogNodeStock, setCatalogNodeHidden, reorderCatalogSiblings,
+    state, addCatalogNode, removeCatalogNode, updateCatalogNodePrice, renameCatalogNode, updateCatalogNodeStock, setCatalogNodeHidden, reorderCatalogSiblings,
   } = useAppState();
   const [newTopCode, setNewTopCode] = useState('');
   const [newTopPrice, setNewTopPrice] = useState('');
@@ -286,6 +308,9 @@ export default function ProductionCatalog() {
   };
   const handleRemove = (id) => {
     removeCatalogNode(id);
+  };
+  const handleRename = (id, code) => {
+    renameCatalogNode(id, code);
   };
   const handlePriceChange = (id, price) => {
     updateCatalogNodePrice(id, price);
@@ -383,6 +408,7 @@ export default function ProductionCatalog() {
                     canReorder={state.plakCatalog.length > 1}
                     onAddChild={(parentId, code, price) => handleAddChild(parentId, code, price, 0)}
                     onRemove={handleRemove}
+                    onRename={handleRename}
                     onPriceChange={handlePriceChange}
                     onStockChange={handleStockChange}
                     onToggleHidden={handleToggleHidden}
