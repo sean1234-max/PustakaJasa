@@ -72,7 +72,10 @@ function PlakMenuLevel({ nodes, path, onPick }) {
 
   return (
     <div className="plak-menu-root-split">
-      {plainCodes.length > 0 && <div className="plak-menu">{plainCodes.map(renderItem)}</div>}
+      {/* Plain leaf codes only (no flyouts here) — safe to cap + scroll when
+          the list is taller than the screen. The expandable column keeps
+          overflow visible so its flyouts can escape. */}
+      {plainCodes.length > 0 && <div className="plak-menu plak-menu-col-plain">{plainCodes.map(renderItem)}</div>}
       {expandableCodes.length > 0 && (
         <div className={`plak-menu${plainCodes.length > 0 ? ' plak-menu-col-divided' : ''}`}>
           {expandableCodes.map(renderItem)}
@@ -98,9 +101,21 @@ export default function PlakPicker({ value, onChange, catalog }) {
   // of just recording the bare word "OTHERS".
   const [othersMode, setOthersMode] = useState(false);
   const [othersText, setOthersText] = useState('');
+  // The Jenis Plak row is often near the bottom of the page (ALIRAN's
+  // footer, the last block on a long order) — a menu that only ever drops
+  // DOWN would then open below the fold and force a page scroll. Flip it
+  // UP whenever there's more room above the trigger than below.
+  const [openUp, setOpenUp] = useState(false);
   const ref = useRef(null);
 
   useEffect(() => { setQuery(value || ''); }, [value]);
+
+  useEffect(() => {
+    if (!open || !ref.current) return;
+    const rect = ref.current.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    setOpenUp(spaceBelow < 340 && rect.top > spaceBelow);
+  }, [open, othersMode]);
 
   const closeMenu = () => { setOpen(false); setOthersMode(false); setQuery(value || ''); };
 
@@ -160,7 +175,7 @@ export default function PlakPicker({ value, onChange, catalog }) {
         }}
       />
       {open && othersMode && (
-        <div className="plak-menu-root card elev-lg" style={{ padding: 'var(--space-3)', width: 280 }}>
+        <div className={`plak-menu-root card elev-lg${openUp ? ' plak-menu-root-up' : ''}`} style={{ padding: 'var(--space-3)', width: 280 }}>
           <div className="hint-text" style={{ margin: '0 0 var(--space-2)' }}>Describe the item for Production (e.g. STAND MEDAL 1453):</div>
           <input
             className="input"
@@ -180,7 +195,7 @@ export default function PlakPicker({ value, onChange, catalog }) {
         </div>
       )}
       {open && !othersMode && (
-        <div className="plak-menu-root card elev-lg">
+        <div className={`plak-menu-root card elev-lg${openUp ? ' plak-menu-root-up' : ''}`}>
           {filtered.length === 0 && deepMatches.length === 0 && <div className="combo-empty">No match</div>}
           <PlakMenuLevel nodes={filtered} path={[]} onPick={handlePick} />
           {deepMatches.length > 0 && (

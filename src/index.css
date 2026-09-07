@@ -597,9 +597,18 @@ input.catalog-admin-code { padding: 6px 8px; }
   margin-top: var(--space-1);
   padding: var(--space-1);
 }
-/* No max-height/overflow here on purpose — clipping this box would also
-   clip every flyout submenu positioned relative to an item inside it. */
+/* Flipped to open upward (PlakPicker's openUp) when the trigger sits low
+   on the page — otherwise the menu would open below the fold. */
+.plak-menu-root-up {
+  top: auto; bottom: 100%;
+  margin-top: 0; margin-bottom: var(--space-1);
+}
+/* No max-height/overflow on .plak-menu-root or the expandable column — it
+   would clip the flyout submenus, which are positioned outside the box. */
 .plak-menu { min-width: 150px; }
+/* The plain-leaf column has no flyouts, so it's safe to cap + scroll it
+   when the catalog is taller than the screen. */
+.plak-menu-col-plain { max-height: min(62vh, 460px); overflow-y: auto; }
 .plak-menu-root-split { display: flex; align-items: flex-start; }
 .plak-menu-col-divided { border-left: 1px solid var(--color-neutral-300); }
 .plak-menu-item-wrap { position: relative; }
