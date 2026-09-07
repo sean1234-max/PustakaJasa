@@ -17,7 +17,7 @@ import { getOrderChangeStamp } from '../utils/orderStamp';
 async function downloadOrderImport(order, setErr) {
   setErr('');
   const url = await getOrderImportUrl(order.importFilePath);
-  if (!url) { setErr('Tak dapat muat turun fail sekarang. Cuba lagi.'); return; }
+  if (!url) { setErr('Could not download the file right now. Please try again.'); return; }
   const a = document.createElement('a');
   a.href = url;
   a.download = order.importFileName || 'order.xlsx';
@@ -167,9 +167,9 @@ export default function StoreAdminOrderDetail() {
 
             {order.importFilePath && (
               <div style={{ marginTop: 'var(--space-4)' }}>
-                <div className="dim">Fail Excel asal (backup — muat naik oleh cikgu)</div>
-                <button type="button" className="btn btn-ghost" style={{ marginTop: 4 }} onClick={() => downloadOrderImport(order, setImportErr)}>
-                  ⬇ {order.importFileName || 'Muat turun fail'}
+                <div className="dim">Download Excel File (Backup)</div>
+                <button type="button" className="btn btn-primary" style={{ marginTop: 4 }} onClick={() => downloadOrderImport(order, setImportErr)}>
+                  ⬇ {order.importFileName || 'Download file'}
                 </button>
                 {importErr && <div className="login-error" style={{ marginTop: 4 }}>{importErr}</div>}
               </div>

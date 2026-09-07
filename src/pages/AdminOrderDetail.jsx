@@ -16,7 +16,7 @@ import { getOrderImportUrl } from '../lib/storageApi';
 async function downloadOrderImport(order, setErr) {
   setErr('');
   const url = await getOrderImportUrl(order.importFilePath);
-  if (!url) { setErr('Could not get the file right now. Try again.'); return; }
+  if (!url) { setErr('Could not download the file right now. Please try again.'); return; }
   const a = document.createElement('a');
   a.href = url;
   a.download = order.importFileName || 'order.xlsx';
@@ -158,8 +158,8 @@ export default function AdminOrderDetail() {
 
             {order.importFilePath && (
               <div className="mt-6">
-                <span className="text-body-sm text-on-surface-variant block mb-1">Original Excel (teacher upload — backup)</span>
-                <button type="button" onClick={() => downloadOrderImport(order, setImportErr)} className="text-label-bold font-semibold text-secondary hover:text-primary">
+                <span className="text-body-sm text-on-surface-variant block mb-1">Download Excel File (Backup)</span>
+                <button type="button" onClick={() => downloadOrderImport(order, setImportErr)} className="inline-flex items-center gap-1 bg-primary text-on-primary text-label-bold font-semibold py-2 px-4 rounded-lg shadow-sm hover:shadow-md transition-all active:scale-95">
                   ⬇ {order.importFileName || 'Download file'}
                 </button>
                 {importErr && <p className="text-body-sm text-error mt-1">{importErr}</p>}
