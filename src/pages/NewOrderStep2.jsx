@@ -427,11 +427,11 @@ export default function NewOrderStep2() {
         {pendingCheck && (
           <div className="confirm-panel" style={{ marginTop: 'var(--space-5)' }}>
             <div className="confirm-panel-title">
-              Semak ejaan — {pendingCheck.issues.length} perkara nak semak
+              Spelling check — {pendingCheck.issues.length === 0 ? 'nothing left to review' : `${pendingCheck.issues.length} thing(s) to review`}
               <span className="confirm-panel-count">AI</span>
             </div>
             <p className="hint-text" style={{ margin: '0 0 var(--space-3)' }}>
-              Teks ini akan diukir pada plak. Semak dulu — atau abaikan dan teruskan.
+              This text gets engraved on the plaque. Review it below, or add to cart as-is.
             </p>
             {pendingCheck.issues.map((issue, k) => (
               <div key={k} className="confirm-item">
@@ -443,16 +443,16 @@ export default function NewOrderStep2() {
                 </p>
                 {issue.note && <p className="hint-text" style={{ margin: '2px 0 6px' }}>{issue.note}</p>}
                 <div className="confirm-item-opts">
-                  <button type="button" className="btn btn-ghost" onClick={() => applyFix(issue)}>Guna cadangan</button>
-                  <button type="button" className="btn btn-ghost" onClick={() => dismissIssue(issue)}>Abaikan</button>
+                  <button type="button" className="btn btn-ghost" onClick={() => applyFix(issue)}>Use fix</button>
+                  <button type="button" className="btn btn-ghost" onClick={() => dismissIssue(issue)}>Ignore</button>
                 </div>
               </div>
             ))}
             <div className="row-actions" style={{ marginTop: 'var(--space-3)' }}>
               <button type="button" className="btn btn-primary" onClick={proceedFromPanel}>
-                {pendingCheck.issues.length === 0 ? 'Tambah ke troli' : 'Tambah ke troli (biar macam ni)'}
+                {pendingCheck.issues.length === 0 ? 'Add to cart' : 'Add to cart anyway'}
               </button>
-              <button type="button" className="btn btn-ghost" onClick={() => setPendingCheck(null)}>Kembali edit</button>
+              <button type="button" className="btn btn-ghost" onClick={() => setPendingCheck(null)}>Back to editing</button>
             </div>
           </div>
         )}
@@ -460,18 +460,18 @@ export default function NewOrderStep2() {
         <div className="row-split" style={{ marginTop: 'var(--space-6)' }}>
           <button type="button" className="btn btn-ghost" onClick={() => navigate('/order/step1')}>← Back</button>
           {state.cartToast && <span className="toast-inline">{state.cartToast}</span>}
-          {!state.cartToast && checkOkToast && <span className="toast-inline">✓ Ejaan OK</span>}
+          {!state.cartToast && checkOkToast && <span className="toast-inline">✓ Spelling OK</span>}
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
             <div style={{ display: 'flex', gap: 8 }}>
               {state.category && (
                 <button type="button" className="btn btn-ghost" onClick={handleAddCategory} disabled={unansweredChoices.length > 0 || checking}>
-                  {checking ? 'Menyemak…' : 'Add this category only'}
+                  {checking ? 'Checking…' : 'Add this category only'}
                 </button>
               )}
               {/* One click adds every category that has filled data — the
                   common case after an import fills several at once. */}
               <button type="button" className="btn btn-primary" onClick={handleAddAll} disabled={unansweredChoices.length > 0 || incompleteCategories.length > 0 || checking}>
-                {checking ? 'Menyemak…' : 'Add All to Cart'}
+                {checking ? 'Checking…' : 'Add All to Cart'}
               </button>
             </div>
             {unansweredChoices.length > 0 && (
