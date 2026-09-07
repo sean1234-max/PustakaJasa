@@ -167,7 +167,7 @@ export default function StoreAdminOrderDetail() {
                   <input
                     className="input"
                     id="invoiceId"
-                    placeholder="e.g. INV-2026-090"
+                    placeholder="e.g. INV-0090"
                     value={invoiceDraft}
                     onChange={(e) => setInvoiceDraft(e.target.value)}
                   />
@@ -195,7 +195,7 @@ export default function StoreAdminOrderDetail() {
                       <input
                         className="input"
                         id="invoiceId"
-                        placeholder="e.g. INV-2026-090"
+                        placeholder="e.g. INV-0090"
                         value={invoiceDraft}
                         onChange={(e) => setInvoiceDraft(e.target.value)}
                       />

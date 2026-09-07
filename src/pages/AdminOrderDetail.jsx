@@ -153,7 +153,7 @@ export default function AdminOrderDetail() {
                   <input
                     className="flex-1 border border-outline-variant rounded-lg px-4 py-2.5 text-body-md text-on-surface focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                     id="invoiceId"
-                    placeholder="e.g. INV-2026-090"
+                    placeholder="e.g. INV-0090"
                     value={invoiceDraft}
                     onChange={(e) => setInvoiceDraft(e.target.value)}
                   />

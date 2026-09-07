@@ -82,7 +82,7 @@ export default function StoreAdminDashboard() {
       <div className="form-grid-2" style={{ margin: 'var(--space-3) 0 var(--space-4)' }}>
         <div className="field">
           <label htmlFor="invoiceSearch">Order ID or Invoice Number</label>
-          <input className="input" id="invoiceSearch" placeholder="e.g. ORD-2026-097 or INV-2026-090" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <input className="input" id="invoiceSearch" placeholder="e.g. ORD-0097 or INV-0097" value={search} onChange={(e) => setSearch(e.target.value)} />
         </div>
         <div className="field">
           <label htmlFor="salesmanFilter">Salesman</label>

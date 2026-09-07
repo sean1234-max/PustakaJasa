@@ -113,7 +113,7 @@ export async function fetchOrderById(id) {
   return data ? fromDbOrder(data) : null;
 }
 
-// Atomically reserves the next order number for `prefix` (e.g. "ORD-2026-")
+// Atomically reserves the next order number for `prefix` (e.g. "ORD-")
 // via the next_order_seq() Postgres function (supabase/migrations/0009) —
 // a single database statement, so concurrent submissions can never be
 // handed the same number. `minSeq` only matters the very first time a

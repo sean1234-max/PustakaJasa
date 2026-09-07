@@ -1047,9 +1047,9 @@ export function AppStateProvider({ children }) {
   }, [patch]);
 
   // The order id used to come from a nextOrderSeq counter that lived only
-  // in this tab's in-memory state — it reset to 96 on every login *and*
-  // every refresh, so two submissions from different sessions (or just a
-  // refreshed tab) regularly generated the same "ORD-2026-096" id. That was
+  // in this tab's in-memory state — it reset on every login *and* every
+  // refresh, so two submissions from different sessions (or just a
+  // refreshed tab) regularly generated the same "ORD-096" id. That was
   // later changed to a client-side "read the current max, then +1" lookup,
   // but that's still a race: two teachers submitting close together can
   // both read the same max before either has inserted, so both compute the
@@ -1071,17 +1071,17 @@ export function AppStateProvider({ children }) {
       patch({ cartToast: st.assignedSalesmen.length === 0 ? 'Your school has not been assigned to a salesman yet. Please contact the administrator.' : 'Please select which salesman this order is for.' });
       return null;
     }
-    const year = TODAY.getFullYear();
-    const prefix = `ORD-${year}-`;
+    // One continuous sequence, no year in the id — ORD-0001, ORD-0002, …
+    const prefix = 'ORD-';
     let seq;
     try {
-      seq = await nextOrderSeq(prefix, 96);
+      seq = await nextOrderSeq(prefix, 1);
     } catch (err) {
       console.error('Failed to reserve the next order number:', err);
       patch({ cartToast: `Could not submit the order: ${err.message || 'unknown error'}. Please try again.` });
       return null;
     }
-    const newId = `${prefix}${String(seq).padStart(3, '0')}`;
+    const newId = `${prefix}${String(seq).padStart(4, '0')}`;
 
     const totalAmt = st.cart.reduce((sum, ci) => sum + ci.harga, 0);
     // Only the category-draft portion needs to survive here — sekolah,
