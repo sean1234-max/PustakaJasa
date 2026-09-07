@@ -348,6 +348,35 @@ export function AppStateProvider({ children }) {
     return () => { cancelled = true; };
   }, [patch]);
 
+  // Set by logout() so the SIGNED_OUT handler below knows this sign-out was
+  // the user's own choice (no "session expired" message) rather than a
+  // token that finally couldn't be refreshed.
+  const deliberateLogoutRef = useRef(false);
+
+  // Without this, once the auth token expired the UI kept showing the
+  // logged-in pages (role is still in memory) while every request went out
+  // as `anon` — surfacing as "permission denied for function current_role"
+  // and "Missing Authorization header" instead of a clean sign-out. This
+  // catches the moment the session actually ends — an expired token that
+  // couldn't be refreshed, a sign-out in another tab, a revoked account —
+  // and drops straight back to Login with a plain message.
+  useEffect(() => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
+      if (event !== 'SIGNED_OUT') return;
+      const wasDeliberate = deliberateLogoutRef.current;
+      deliberateLogoutRef.current = false;
+      // Keep a more specific message if one is already on screen (e.g. the
+      // "account deactivated" the session-restore / login flow sets right
+      // before it signs the user out).
+      setState((prev) => ({
+        ...initialState(),
+        sessionChecked: true,
+        loginError: prev.loginError || (wasDeliberate ? '' : 'Sesi anda telah tamat. Sila log masuk semula.'),
+      }));
+    });
+    return () => sub.subscription.unsubscribe();
+  }, []);
+
   // Orders live in Supabase (see supabase/migrations/0001_orders.sql) —
   // pull whatever's really in the table on first load. No mock/sample
   // fallback: an empty table means an empty dashboard.
@@ -457,6 +486,7 @@ export function AppStateProvider({ children }) {
   // session-restore effect above would silently log the same account back
   // in on the next refresh.
   const logout = useCallback(() => {
+    deliberateLogoutRef.current = true;
     supabase.auth.signOut().catch((err) => console.error('Failed to sign out of Supabase:', err));
     setState({ ...initialState(), sessionChecked: true });
   }, []);
