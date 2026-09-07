@@ -19,6 +19,7 @@ import {
   deductPlakStock, restorePlakStock,
 } from '../lib/catalogAdminApi';
 import { supabase } from '../lib/supabaseClient';
+import { uploadOrderImportFile, removeOrderImportFile } from '../lib/storageApi';
 
 // Real "today", normalized to midnight so it compares cleanly against the
 // midnight-constructed dates the calendar cells and date-math use.
@@ -203,6 +204,13 @@ function initialState() {
     logoRemark: '',
     schoolType: null,
     stepError: '',
+
+    // The teacher's raw FORM ANUGERAH upload, kept as a backup on the order
+    // for Production/Store Admin/Admin to cross-check (see storageApi's
+    // uploadOrderImportFile, migration 0055). Set async after an import,
+    // stamped onto the order at submit.
+    importFilePath: null,
+    importFileName: null,
 
     // No category open on entry to Order Details — the teacher either
     // uploads a FORM ANUGERAH file (which auto-selects whichever categories
@@ -504,6 +512,7 @@ export function AppStateProvider({ children }) {
       sales: '', picName: '', phone: '', ketuaPanitia: '', terms: '', remark: '',
       dueSelected: null, funcSelected: null,
       logoDataUrl: null, logoFileName: '', logoRemark: '', schoolType: null, stepError: '',
+      importFilePath: null, importFileName: null,
 
       category: null,
       lineValues: {}, matrixValues: {},
@@ -1032,8 +1041,21 @@ export function AppStateProvider({ children }) {
 
     setState({ ...next, category: landOn || next.category });
 
+    // Keep the raw upload as a backup on the order — Production / Store
+    // Admin / Admin download it to cross-check the order details (0055).
+    // Fire-and-forget: a failure here just means no backup file, the import
+    // already succeeded. Replaces a file from an earlier import in the same
+    // draft.
+    const prevImportPath = st.importFilePath;
+    uploadOrderImportFile(file).then((res) => {
+      if (res) {
+        patch({ importFilePath: res.path, importFileName: res.name });
+        if (prevImportPath && prevImportPath !== res.path) removeOrderImportFile(prevImportPath);
+      }
+    });
+
     return { ok: true, message: `Imported — ${messages.join('; ')}. Please review carefully before adding to cart.`, warnings };
-  }, []);
+  }, [patch]);
 
   const removeFromCart = useCallback((id) => {
     patch((st) => ({ cart: st.cart.filter((c) => c.id !== id) }));
@@ -1132,6 +1154,7 @@ export function AppStateProvider({ children }) {
       sekolah: st.sekolah, schoolLanguage: st.schoolLanguage, sales: selectedSalesman.name, picName: st.picName, phone: st.phone, ketuaPanitia: st.ketuaPanitia, terms: st.terms, remark: st.remark,
       dueDate: st.dueSelected, functionDate: st.funcSelected,
       logoDataUrl: st.logoDataUrl, logoFileName: st.logoFileName, logoRemark: st.logoRemark, schoolType: st.schoolType,
+      importFilePath: st.importFilePath, importFileName: st.importFileName,
       snapshot, items: st.cart.map((ci) => ({ ...ci })),
     };
 
@@ -1189,6 +1212,9 @@ export function AppStateProvider({ children }) {
       sekolah: ord.sekolah, sales: ord.sales, picName: ord.picName, phone: ord.phone, ketuaPanitia: ord.ketuaPanitia || '', terms: ord.terms || '', remark: ord.remark,
       dueSelected: ord.dueDate || null, funcSelected: ord.functionDate || null,
       logoDataUrl: ord.logoDataUrl || null, logoFileName: ord.logoFileName || '', logoRemark: ord.logoRemark || '', schoolType: ord.schoolType || null,
+      // A reorder is a fresh order — no upload behind it unless the teacher
+      // imports one now.
+      importFilePath: null, importFileName: null,
       stepError: '',
 
       category: restored.category || 'TOKOH',

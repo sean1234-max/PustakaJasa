@@ -8,8 +8,23 @@ import { useAppState } from '../state/useAppState';
 import { statusPillStyle, formatDate, standardUnitPrice } from '../data/catalog';
 import { reconstructBlocksForCategory } from '../utils/computeBlocks';
 import { getOrderCategories } from '../utils/exportCsv';
+import { getOrderImportUrl } from '../lib/storageApi';
 import { groupItemsByBatch } from '../utils/orderBatches';
 import { getOrderChangeStamp } from '../utils/orderStamp';
+
+// Downloads the teacher's original FORM ANUGERAH upload (0055) via a
+// short-lived signed URL — for cross-checking the order against the file.
+async function downloadOrderImport(order, setErr) {
+  setErr('');
+  const url = await getOrderImportUrl(order.importFilePath);
+  if (!url) { setErr('Tak dapat muat turun fail sekarang. Cuba lagi.'); return; }
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = order.importFileName || 'order.xlsx';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
 
 const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: false, matrix: false, jenisPlak: false };
 
@@ -38,6 +53,7 @@ export default function StoreAdminOrderDetail() {
   const [invoiceDraft, setInvoiceDraft] = useState('');
   const [page, setPage] = useState('summary');
   const [busy, setBusy] = useState(false);
+  const [importErr, setImportErr] = useState('');
 
   // Same pattern as SalesOrderSummary's own priceDrafts — only meaningful
   // while awaitingApproval; a not-yet-approved order never has a Tambahan
@@ -146,6 +162,16 @@ export default function StoreAdminOrderDetail() {
               <div style={{ marginTop: 'var(--space-4)' }}>
                 <div className="dim">Remark</div>
                 <div>{order.remark}</div>
+              </div>
+            )}
+
+            {order.importFilePath && (
+              <div style={{ marginTop: 'var(--space-4)' }}>
+                <div className="dim">Fail Excel asal (backup — muat naik oleh cikgu)</div>
+                <button type="button" className="btn btn-ghost" style={{ marginTop: 4 }} onClick={() => downloadOrderImport(order, setImportErr)}>
+                  ⬇ {order.importFileName || 'Muat turun fail'}
+                </button>
+                {importErr && <div className="login-error" style={{ marginTop: 4 }}>{importErr}</div>}
               </div>
             )}
 

@@ -9,6 +9,21 @@ import CancelOrderControl from '../components/CancelOrderControl';
 import { reconstructOrderDetailGroups } from '../utils/computeBlocks';
 import { getOrderCategories, getOrderJenisPlakGroups, buildCsvRows, rowsToCsv, buildCategoryCsvFilename, validateExport } from '../utils/exportCsv';
 import { downloadTextFile } from '../utils/downloadBlob';
+import { getOrderImportUrl } from '../lib/storageApi';
+
+// Downloads the teacher's original FORM ANUGERAH upload (0055) via a
+// short-lived signed URL — for cross-checking the order against the file.
+async function downloadOrderImport(order, setErr) {
+  setErr('');
+  const url = await getOrderImportUrl(order.importFilePath);
+  if (!url) { setErr('Could not get the file right now. Try again.'); return; }
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = order.importFileName || 'order.xlsx';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
 import { groupItemsByBatch } from '../utils/orderBatches';
 
 // Admin-only fork of ProductionOrderDetail.jsx — same order data and the
@@ -28,6 +43,7 @@ export default function AdminOrderDetail() {
   const [invoiceDraft, setInvoiceDraft] = useState('');
   const [savingInvoice, setSavingInvoice] = useState(false);
   const [exportNote, setExportNote] = useState('');
+  const [importErr, setImportErr] = useState('');
   const exportNoteTimer = useRef(null);
   const [page, setPage] = useState('summary');
 
@@ -139,6 +155,16 @@ export default function AdminOrderDetail() {
               <div><span className="text-body-sm text-on-surface-variant block mb-0.5">Date Placed</span><span className="text-body-md text-on-surface">{order.datePlaced}</span></div>
               <div><span className="text-body-sm text-on-surface-variant block mb-0.5">Total Amount</span><span className="text-body-md text-on-surface">RM {order.totalAmount.toFixed(2)}</span></div>
             </div>
+
+            {order.importFilePath && (
+              <div className="mt-6">
+                <span className="text-body-sm text-on-surface-variant block mb-1">Original Excel (teacher upload — backup)</span>
+                <button type="button" onClick={() => downloadOrderImport(order, setImportErr)} className="text-label-bold font-semibold text-secondary hover:text-primary">
+                  ⬇ {order.importFileName || 'Download file'}
+                </button>
+                {importErr && <p className="text-body-sm text-error mt-1">{importErr}</p>}
+              </div>
+            )}
 
             <h3 className="text-label-bold text-on-surface-variant uppercase tracking-widest mt-8 mb-2">Invoice</h3>
             {order.invoiceId ? (
