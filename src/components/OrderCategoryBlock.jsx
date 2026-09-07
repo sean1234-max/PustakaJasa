@@ -974,7 +974,12 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
               </tbody>
             </table>
           </div>
-          {(() => {
+          {/* Only while the teacher is actually filling this in (New Order /
+              Amend). A read-only review screen — Production / Sales / Store
+              Admin / Admin viewing a submitted order — must never show a
+              "you can't add this to cart" nag about an order that's already
+              placed. */}
+          {editable.jenisPlak && (() => {
             const plakTotal = blk.plakRows.reduce((s, pr) => s + (Number(pr.qty) || 0), 0);
             const missingPlak = blk.plakRows.some((pr) => (Number(pr.qty) || 0) > 0 && !pr.jenisPlak);
             if (plakTotal === blk.blockTotalQty && !missingPlak) return null;
