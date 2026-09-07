@@ -4,6 +4,7 @@ import Nav from '../components/Nav';
 import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import { useAppState } from '../state/useAppState';
+import { buildCategoryCartItems } from '../state/categoryCartItems';
 import { ACTIVE_CATEGORIES, filterHiddenPlakCatalog } from '../data/catalog';
 import { computeBlocks } from '../utils/computeBlocks';
 import { createDraftUpdaters } from '../utils/draftUpdaters';
@@ -164,6 +165,28 @@ export default function NewOrderStep2() {
   const visibleCount = state.visibleBlocksByCategory[state.category] || 1;
   const blocks = state.category ? allBlocks.slice(0, visibleCount) : [];
 
+  // Every category that's been started (a qty typed, a line filled) but
+  // isn't ready to add — no Jenis Plak picked, a total that doesn't add
+  // up, etc. Same check Add to Cart runs (buildCategoryCartItems), just
+  // surfaced up front for all categories at once instead of one toast at
+  // a time. Blocks "Add All to Cart" while any remain. `draftForCheck` is
+  // the exact slice of state that check reads — memoized so it only
+  // rebuilds when a real field changes, not on every unrelated patch.
+  const draftForCheck = useMemo(() => ({
+    lineValues: state.lineValues, matrixValues: state.matrixValues, rowsByBlock: state.rowsByBlock,
+    plakRows: state.plakRows, columnsByBlock: state.columnsByBlock,
+    plakCatalog: state.plakCatalog, schoolLanguage: state.schoolLanguage,
+  }), [
+    state.lineValues, state.matrixValues, state.rowsByBlock, state.plakRows,
+    state.columnsByBlock, state.plakCatalog, state.schoolLanguage,
+  ]);
+  const incompleteCategories = useMemo(() => (
+    ACTIVE_CATEGORIES
+      .map((cat) => ({ cat, res: buildCategoryCartItems(draftForCheck, cat.key) }))
+      .filter(({ res }) => res.engaged && res.error)
+      .map(({ cat, res }) => ({ key: cat.key, label: cat.label, error: res.error }))
+  ), [draftForCheck]);
+
   // Codes Production has hidden (e.g. out of stock) never appear in the
   // teacher's picker — see filterHiddenPlakCatalog.
   const visiblePlakCatalog = useMemo(() => filterHiddenPlakCatalog(state.plakCatalog), [state.plakCatalog]);
@@ -273,6 +296,26 @@ export default function NewOrderStep2() {
         </div>
         <div style={{ marginBottom: 'var(--space-6)' }} />
 
+        {incompleteCategories.length > 0 && (
+          <div className="login-error" style={{ margin: '0 0 var(--space-4)', textAlign: 'left' }}>
+            <strong>These categories can’t be added to cart yet:</strong>
+            <ul style={{ margin: 'var(--space-2) 0 0', paddingLeft: 18 }}>
+              {incompleteCategories.map((c) => (
+                <li key={c.key} style={{ marginBottom: 2 }}>
+                  <button
+                    type="button"
+                    onClick={() => patch({ category: c.key })}
+                    style={{ background: 'none', border: 'none', padding: 0, font: 'inherit', color: 'inherit', textAlign: 'left', textDecoration: 'underline', cursor: 'pointer' }}
+                  >
+                    {c.label}
+                  </button>
+                  {' — '}{c.error}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         {choiceWarnings.length > 0 && (
           <div className="confirm-panel">
             <div className="confirm-panel-title">
@@ -346,12 +389,15 @@ export default function NewOrderStep2() {
               )}
               {/* One click adds every category that has filled data — the
                   common case after an import fills several at once. */}
-              <button type="button" className="btn btn-primary" onClick={addAllToCart} disabled={unansweredChoices.length > 0}>
+              <button type="button" className="btn btn-primary" onClick={addAllToCart} disabled={unansweredChoices.length > 0 || incompleteCategories.length > 0}>
                 Add All to Cart
               </button>
             </div>
             {unansweredChoices.length > 0 && (
               <span className="hint-text" style={{ margin: 0 }}>Answer the {unansweredChoices.length} question(s) above first.</span>
+            )}
+            {unansweredChoices.length === 0 && incompleteCategories.length > 0 && (
+              <span className="hint-text" style={{ margin: 0 }}>Fix the {incompleteCategories.length} category(s) flagged above first.</span>
             )}
           </div>
         </div>
