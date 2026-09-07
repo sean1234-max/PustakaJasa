@@ -15,7 +15,7 @@ export default function Nav() {
   if (state.role === 'salesman') {
     return (
       <nav className="nav">
-        <span className="nav-brand">Sales Portal</span>
+        <span className="nav-brand">{state.isSalesManager ? 'Sales Manager Portal' : 'Sales Portal'}</span>
         <Link to="/sales/dashboard" aria-current={pathname === '/sales/dashboard' ? 'page' : undefined}>Orders</Link>
         <button type="button" className="nav-logout" onClick={handleLogout}>Log Out</button>
       </nav>
@@ -34,12 +34,12 @@ export default function Nav() {
     );
   }
 
-  if (state.role === 'invoicing') {
-    const ordersActive = pathname === '/invoicing/dashboard' || pathname.startsWith('/invoicing/orders');
+  if (state.role === 'store_admin') {
+    const ordersActive = pathname === '/store-admin/dashboard' || pathname.startsWith('/store-admin/orders');
     return (
       <nav className="nav">
-        <span className="nav-brand">Invoicing Department</span>
-        <Link to="/invoicing/dashboard" aria-current={ordersActive ? 'page' : undefined}>Orders</Link>
+        <span className="nav-brand">Store Admin</span>
+        <Link to="/store-admin/dashboard" aria-current={ordersActive ? 'page' : undefined}>Orders</Link>
         <button type="button" className="nav-logout" onClick={handleLogout}>Log Out</button>
       </nav>
     );
@@ -53,6 +53,7 @@ export default function Nav() {
         <Link to="/admin/orders" aria-current={pathname.startsWith('/admin/orders') ? 'page' : undefined}>Orders</Link>
         <Link to="/admin/schools" aria-current={pathname.startsWith('/admin/schools') ? 'page' : undefined}>Schools</Link>
         <Link to="/admin/salesmen" aria-current={pathname.startsWith('/admin/salesmen') ? 'page' : undefined}>Salesmen</Link>
+        <Link to="/admin/store-admins" aria-current={pathname.startsWith('/admin/store-admins') ? 'page' : undefined}>Store Admin</Link>
         <Link to="/admin/users" aria-current={pathname === '/admin/users' ? 'page' : undefined}>Users</Link>
         <Link to="/admin/catalog" aria-current={pathname === '/admin/catalog' ? 'page' : undefined}>Products</Link>
         <Link to="/admin/audit-log" aria-current={pathname === '/admin/audit-log' ? 'page' : undefined}>Activity Log</Link>

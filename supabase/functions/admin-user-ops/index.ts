@@ -25,7 +25,9 @@ function jsonResponse(body: unknown, status = 200) {
   });
 }
 
-const VALID_ROLES = ['teacher', 'salesman', 'production', 'admin', 'invoicing'];
+// 'store_admin' was formerly 'invoicing' (renamed 0047). The assignment
+// table it still writes below keeps its historical name (invoicing_salesman_assignments).
+const VALID_ROLES = ['teacher', 'salesman', 'production', 'admin', 'store_admin'];
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
@@ -154,6 +156,44 @@ Deno.serve(async (req) => {
     });
     if (updateError) {
       return jsonResponse({ error: 'Unable to change the password. Please try again.' }, 500);
+    }
+    return jsonResponse({ ok: true });
+  }
+
+  // Changing the login email is an Auth-side change (auth.users), so it can't
+  // be a plain profiles UPDATE from the browser — it goes through here.
+  // `email_confirm: true` applies it immediately (no confirmation email),
+  // matching how `create` above provisions accounts. The profiles.email
+  // mirror column is updated in the same call so the Admin lists stay right.
+  if (body.action === 'update_email') {
+    const userId = typeof body.userId === 'string' ? body.userId : '';
+    const email = typeof body.email === 'string' ? body.email.trim() : '';
+    if (!userId || !email) {
+      return jsonResponse({ error: 'User and email are required.' }, 400);
+    }
+    if (!/^\S+@\S+\.\S+$/.test(email)) {
+      return jsonResponse({ error: 'Please enter a valid email address.' }, 400);
+    }
+    // Pre-check against the profiles mirror — supabase-js flattens GoTrue's
+    // 422 "email_exists" into a generic "Error updating user", so this is the
+    // only reliable way to give the admin a clear "already used" message.
+    const { data: emailOwner } = await adminClient.from('profiles').select('id').eq('email', email).maybeSingle();
+    if (emailOwner && emailOwner.id !== userId) {
+      return jsonResponse({ error: 'This email address is already being used by another account.' }, 400);
+    }
+    const { error: authError } = await adminClient.auth.admin.updateUserById(userId, {
+      email, email_confirm: true,
+    });
+    if (authError) {
+      const blob = `${authError.code || ''} ${authError.message || ''}`.toLowerCase();
+      const message = /already|registered|in use|exists|duplicate|taken/.test(blob)
+        ? 'This email address is already being used by another account.'
+        : 'Unable to change the email. Please try again.';
+      return jsonResponse({ error: message }, 400);
+    }
+    const { error: profileError2 } = await adminClient.from('profiles').update({ email }).eq('id', userId);
+    if (profileError2) {
+      return jsonResponse({ error: 'The login email changed, but updating the profile record failed. Please try again.' }, 500);
     }
     return jsonResponse({ ok: true });
   }

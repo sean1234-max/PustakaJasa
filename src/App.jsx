@@ -18,14 +18,16 @@ import SalesOrderSummary from './pages/SalesOrderSummary';
 import ProductionDashboard from './pages/ProductionDashboard';
 import ProductionOrderDetail from './pages/ProductionOrderDetail';
 import ProductionCatalog from './pages/ProductionCatalog';
-import InvoicingDashboard from './pages/InvoicingDashboard';
-import InvoicingOrderDetail from './pages/InvoicingOrderDetail';
+import StoreAdminDashboard from './pages/StoreAdminDashboard';
+import StoreAdminOrderDetail from './pages/StoreAdminOrderDetail';
 import AdminDashboard from './pages/AdminDashboard';
 import AdminUsers from './pages/AdminUsers';
 import AdminSchools from './pages/AdminSchools';
 import AdminSchoolDetail from './pages/AdminSchoolDetail';
 import AdminSalesmen from './pages/AdminSalesmen';
 import AdminSalesmanDetail from './pages/AdminSalesmanDetail';
+import AdminStoreAdmins from './pages/AdminStoreAdmins';
+import AdminStoreAdminDetail from './pages/AdminStoreAdminDetail';
 import AdminOrders from './pages/AdminOrders';
 import AdminOrderDetail from './pages/AdminOrderDetail';
 import AdminCatalog from './pages/AdminCatalog';
@@ -64,8 +66,8 @@ function AppRoutes() {
       <Route path="/production/orders/:id" element={<RequireRole role="production"><ProductionOrderDetail /></RequireRole>} />
       <Route path="/production/catalog" element={<RequireRole role="production"><ProductionCatalog /></RequireRole>} />
 
-      <Route path="/invoicing/dashboard" element={<RequireRole role="invoicing"><InvoicingDashboard /></RequireRole>} />
-      <Route path="/invoicing/orders/:id" element={<RequireRole role="invoicing"><InvoicingOrderDetail /></RequireRole>} />
+      <Route path="/store-admin/dashboard" element={<RequireRole role="store_admin"><StoreAdminDashboard /></RequireRole>} />
+      <Route path="/store-admin/orders/:id" element={<RequireRole role="store_admin"><StoreAdminOrderDetail /></RequireRole>} />
 
       <Route path="/admin/dashboard" element={<RequireRole role="admin"><AdminDashboard /></RequireRole>} />
       <Route path="/admin/users" element={<RequireRole role="admin"><AdminUsers /></RequireRole>} />
@@ -73,6 +75,8 @@ function AppRoutes() {
       <Route path="/admin/schools/:id" element={<RequireRole role="admin"><AdminSchoolDetail /></RequireRole>} />
       <Route path="/admin/salesmen" element={<RequireRole role="admin"><AdminSalesmen /></RequireRole>} />
       <Route path="/admin/salesmen/:id" element={<RequireRole role="admin"><AdminSalesmanDetail /></RequireRole>} />
+      <Route path="/admin/store-admins" element={<RequireRole role="admin"><AdminStoreAdmins /></RequireRole>} />
+      <Route path="/admin/store-admins/:id" element={<RequireRole role="admin"><AdminStoreAdminDetail /></RequireRole>} />
       <Route path="/admin/orders" element={<RequireRole role="admin"><AdminOrders /></RequireRole>} />
       <Route path="/admin/orders/:id" element={<RequireRole role="admin"><AdminOrderDetail /></RequireRole>} />
       <Route path="/admin/catalog" element={<RequireRole role="admin"><AdminCatalog /></RequireRole>} />

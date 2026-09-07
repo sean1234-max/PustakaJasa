@@ -7,9 +7,9 @@ import { getOrderChangeStamp } from '../utils/orderStamp';
 
 // Production only ever works orders that are already 'In Production' — one
 // active tab, regardless of whether an invoice number has been assigned
-// yet (that's now Invoicing Department's job, not a gate on Production
+// yet (that's now Store Admin's job, not a gate on Production
 // starting work — see supabase/migrations/0036_add_invoicing_role.sql and
-// InvoicingDashboard.jsx). Order History is everything Production has
+// StoreAdminDashboard.jsx). Order History is everything Production has
 // already marked Done (see markProductionDone in src/state/AppState.jsx).
 const TABS = [
   { key: 'active', label: 'In Production', match: (o) => o.status === 'In Production' },
@@ -150,7 +150,7 @@ export default function ProductionDashboard() {
                       className="btn btn-primary"
                       style={{ flex: 1 }}
                       disabled={!ord.invoiceId}
-                      title={!ord.invoiceId ? 'Waiting for Invoicing Department to assign an Invoice Number' : undefined}
+                      title={!ord.invoiceId ? 'Waiting for Store Admin to assign an Invoice Number' : undefined}
                       onClick={() => handleMarkDone(ord)}
                     >
                       {ord.invoiceId ? 'Done' : 'Awaiting Invoice'}

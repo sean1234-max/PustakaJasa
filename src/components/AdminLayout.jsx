@@ -18,6 +18,7 @@ const NAV_ITEMS = [
   { to: '/admin/orders', icon: 'shopping_cart', label: 'Orders', match: (p) => p.startsWith('/admin/orders') },
   { to: '/admin/schools', icon: 'school', label: 'Schools', match: (p) => p.startsWith('/admin/schools') },
   { to: '/admin/salesmen', icon: 'badge', label: 'Salesmen', match: (p) => p.startsWith('/admin/salesmen') },
+  { to: '/admin/store-admins', icon: 'storefront', label: 'Store Admin', match: (p) => p.startsWith('/admin/store-admins') },
   { to: '/admin/users', icon: 'group', label: 'Users', match: (p) => p === '/admin/users' },
   { to: '/admin/catalog', icon: 'inventory_2', label: 'Products', match: (p) => p === '/admin/catalog' },
   { to: '/admin/audit-log', icon: 'history', label: 'Activity Log', match: (p) => p === '/admin/audit-log' },

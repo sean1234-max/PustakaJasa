@@ -5,21 +5,22 @@ import { useAppState } from '../state/useAppState';
 import { STATUS_STAGES, statusPillStyle } from '../data/catalog';
 import { getOrderChangeStamp } from '../utils/orderStamp';
 
-// Invoicing Department can now see and act on every order, including ones
-// still 'Submitted to Sales' — a Salesman sometimes hands over a paper
-// hard copy before ever clicking Approve in the system, and opening one
-// of those here lets Invoicing approve it (with pricing) and save its
-// Invoice Number in one action (see InvoicingOrderDetail.jsx's
-// approveAndSetInvoiceId, supabase/migrations/0038_invoicing_can_approve.sql).
-// Split by whether an Invoice Number has been assigned yet — the exact
-// responsibility Production used to own (see ProductionOrderDetail.jsx's
-// history before this change) and no longer does.
+// Store Admin (formerly "Invoicing Department" — role renamed 0047) can see
+// and act on every order, including ones still 'Submitted to Sales' — a
+// Salesman sometimes hands over a paper hard copy before ever clicking
+// Approve in the system, and opening one of those here lets Store Admin
+// approve it (with pricing) and save its Invoice Number in one action (see
+// StoreAdminOrderDetail.jsx's approveAndSetInvoiceId,
+// supabase/migrations/0038_invoicing_can_approve.sql). Split by whether an
+// Invoice Number has been assigned yet — the exact responsibility
+// Production used to own (see ProductionOrderDetail.jsx's history before
+// this change) and no longer does.
 const TABS = [
   { key: 'pending', label: 'Waiting for Invoice', match: (o) => !o.invoiceId },
   { key: 'invoiced', label: 'Invoiced', match: (o) => !!o.invoiceId },
 ];
 
-export default function InvoicingDashboard() {
+export default function StoreAdminDashboard() {
   const { state } = useAppState();
   const navigate = useNavigate();
   const [tab, setTab] = useState(TABS[0].key);
@@ -56,7 +57,7 @@ export default function InvoicingDashboard() {
 
       <div className="dashboard-header">
         <div>
-          <div className="card-title" style={{ marginBottom: 'var(--space-2)' }}>Invoicing</div>
+          <div className="card-title" style={{ marginBottom: 'var(--space-2)' }}>Store Admin</div>
           <p className="hint-text" style={{ margin: 0 }}>Assign Invoice Numbers for approved orders — or approve one yourself (with pricing) straight from a hard copy — and search/track ones already invoiced.</p>
         </div>
       </div>
@@ -138,7 +139,7 @@ export default function InvoicingDashboard() {
               <div className={`order-card-total${ord.priceAdjusted ? ' amount-adjusted' : ''}`}>RM {ord.totalAmount.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
 
               <div className="order-card-actions">
-                <button type="button" className="btn btn-primary btn-block" onClick={() => navigate(`/invoicing/orders/${ord.id}`)}>
+                <button type="button" className="btn btn-primary btn-block" onClick={() => navigate(`/store-admin/orders/${ord.id}`)}>
                   {ord.invoiceId ? 'View Order' : ord.status === 'Submitted to Sales' ? 'Approve & Invoice' : 'Assign Invoice'}
                 </button>
               </div>

@@ -161,7 +161,7 @@ export default function ProductionOrderDetail() {
             <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Invoice</div>
             <div style={{ marginTop: 'var(--space-2)' }}>
               <div className="dim">Invoice Number</div>
-              <div>{order.invoiceId || 'Not assigned yet — Invoicing Department handles this.'}</div>
+              <div>{order.invoiceId || 'Not assigned yet — Store Admin handles this.'}</div>
             </div>
             {state.productionToast && <p className="hint-text" style={{ marginTop: 'var(--space-2)' }}>{state.productionToast}</p>}
 

@@ -13,20 +13,21 @@ import { getOrderChangeStamp } from '../utils/orderStamp';
 
 const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: false, matrix: false, jenisPlak: false };
 
-// Invoicing Department's own order view — assigns/displays the Invoice
-// Number and shows the original-vs-Tambahan breakdown (groupItemsByBatch,
-// same helper SalesOrderSummary/ProductionOrderDetail already use).
+// Store Admin's own order view (role formerly "Invoicing Department",
+// renamed 0047) — assigns/displays the Invoice Number and shows the
+// original-vs-Tambahan breakdown (groupItemsByBatch, same helper
+// SalesOrderSummary/ProductionOrderDetail already use).
 //
-// A Salesman sometimes hands Invoicing a paper hard copy of an order
+// A Salesman sometimes hands Store Admin a paper hard copy of an order
 // before ever clicking Approve in the system — receiving that hard copy
 // already means they've agreed to it. So while an order is still
-// "Submitted to Sales", this page lets Invoicing adjust pricing (same
+// "Submitted to Sales", this page lets Store Admin adjust pricing (same
 // capability Sales would have had) and Approve + save the Invoice Number
 // in one action (approveAndSetInvoiceId, src/state/AppState.jsx) — no
 // separate Sales click needed. Once an order is already "In Production"
 // (approved via either path), pricing is frozen and this page falls back
 // to the simple invoice-only entry (setInvoiceId), same as before.
-export default function InvoicingOrderDetail() {
+export default function StoreAdminOrderDetail() {
   const { state, setInvoiceId, approveAndSetInvoiceId, ensureOrderLoaded } = useAppState();
   const { id } = useParams();
   const navigate = useNavigate();
@@ -96,8 +97,8 @@ export default function InvoicingOrderDetail() {
     <div className="screen-wrap">
       <Nav />
 
-      <button type="button" className="btn btn-ghost" style={{ marginBottom: 'var(--space-4)' }} onClick={() => navigate('/invoicing/dashboard')}>
-        ← Back to Invoicing
+      <button type="button" className="btn btn-ghost" style={{ marginBottom: 'var(--space-4)' }} onClick={() => navigate('/store-admin/dashboard')}>
+        ← Back to Store Admin
       </button>
 
       <div className="step-header">

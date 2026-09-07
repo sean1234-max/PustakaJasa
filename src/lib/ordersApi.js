@@ -94,10 +94,11 @@ export async function fetchOrders(userId, role, { limit = 500 } = {}) {
   if (role === 'teacher' && userId) {
     query = query.eq('created_by', userId);
   }
-  // salesman/invoicing/production/admin all get a plain select — RLS
+  // salesman/store_admin/production/admin all get a plain select — RLS
   // (supabase/migrations/0039_teacher_free_salesman_pick_invoicing_assign.sql,
-  // 0038_invoicing_can_approve.sql) already scopes exactly which rows come
-  // back for each of those roles, so no client-side filter is needed here.
+  // 0038_invoicing_can_approve.sql, 0047_rename_invoicing_role_to_store_admin.sql)
+  // already scopes exactly which rows come back for each of those roles, so
+  // no client-side filter is needed here.
   const { data, error } = await query;
   if (error) throw error;
   return data.map(fromDbOrder);

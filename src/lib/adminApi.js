@@ -18,23 +18,27 @@ export async function updateProfile(id, patch) {
   if (error) throw error;
 }
 
+// The "invoicing" name throughout this file (table invoicing_salesman_assignments,
+// column invoicing_id, these function names) is the historical name of the
+// role now called "Store Admin" — the role string was renamed in 0047 but
+// the assignment table/column were deliberately left alone (internal only).
 export async function fetchInvoicingSalesmanAssignments() {
   const { data, error } = await supabase.from('invoicing_salesman_assignments').select('*');
   if (error) throw error;
   return data;
 }
 
-// An Invoicing Department user can be assigned any number of salesmen, no
-// cap (see supabase/migrations/0039_teacher_free_salesman_pick_invoicing_assign.sql)
+// A Store Admin user can be assigned any number of salesmen, no cap (see
+// supabase/migrations/0039_teacher_free_salesman_pick_invoicing_assign.sql)
 // — this is a bare insert, so assigning the same salesman to the same
-// invoicing user twice FAILS on the (invoicing_id, salesman_id) unique
+// Store Admin user twice FAILS on the (invoicing_id, salesman_id) unique
 // constraint instead of silently creating a duplicate row.
 export async function assignInvoicingSalesman(invoicingId, salesmanId) {
   const { error } = await supabase
     .from('invoicing_salesman_assignments')
     .insert({ invoicing_id: invoicingId, salesman_id: salesmanId });
   if (error) {
-    if (error.code === '23505') throw new Error('This salesman is already assigned to this Invoicing Department user.');
+    if (error.code === '23505') throw new Error('This salesman is already assigned to this Store Admin user.');
     throw error;
   }
 }
@@ -75,6 +79,13 @@ export async function createAccount({ role, sekolah, address, schoolLanguage, di
 
 export async function resetPassword(userId, newPassword) {
   await invokeAdminUserOps({ action: 'reset_password', userId, newPassword });
+}
+
+// The login email lives in auth.users, so (like a password change) it goes
+// through the Edge Function — a plain profiles UPDATE would only change the
+// mirror column and leave the account logging in with the old address.
+export async function updateUserEmail(userId, email) {
+  await invokeAdminUserOps({ action: 'update_email', userId, email });
 }
 
 // Hard-deletes the account (profile row + Supabase Auth user), not a status

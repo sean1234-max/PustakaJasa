@@ -1,12 +1,13 @@
 import { Fragment, useEffect, useState } from 'react';
 import AdminLayout from '../components/AdminLayout';
+import AdminProfileEditor from '../components/AdminProfileEditor';
 import { useAppState } from '../state/useAppState';
 import {
   fetchAllProfiles, createAccount, updateProfile, resetPassword, deleteAccount, logAdminAction,
   fetchInvoicingSalesmanAssignments, assignInvoicingSalesman, unassignInvoicingSalesman,
 } from '../lib/adminApi';
 
-const ROLE_LABELS = { teacher: 'School', salesman: 'Salesman', production: 'Production', invoicing: 'Invoicing Department', admin: 'Admin' };
+const ROLE_LABELS = { teacher: 'School', salesman: 'Salesman', production: 'Production', store_admin: 'Store Admin', admin: 'Admin' };
 const ROLE_OPTIONS = Object.keys(ROLE_LABELS);
 const STATUS_OPTIONS = ['active', 'inactive', 'suspended'];
 
@@ -95,7 +96,7 @@ export default function AdminUsers() {
         email: form.email.trim(),
         password: form.password,
       });
-      if (form.role === 'invoicing' && form.assignedSalesmanIds.length > 0) {
+      if (form.role === 'store_admin' && form.assignedSalesmanIds.length > 0) {
         await Promise.all(form.assignedSalesmanIds.map((salesmanId) => assignInvoicingSalesman(result.id, salesmanId)));
       }
       await logAdminAction({
@@ -117,15 +118,18 @@ export default function AdminUsers() {
 
   const startEdit = (p) => {
     setExpandedId(p.id === expandedId ? null : p.id);
-    setEditDraft({ display_name: p.display_name || '', sekolah: p.sekolah || '', status: p.status });
+    // Name + email are handled by AdminProfileEditor (its own save); this
+    // draft is only the School name + Account Status.
+    setEditDraft({ sekolah: p.sekolah || '', status: p.status });
     setNewPassword('');
   };
 
   const saveEdit = async (p) => {
-    const before = { display_name: p.display_name, sekolah: p.sekolah, status: p.status };
+    const before = { sekolah: p.sekolah, status: p.status };
+    const patch = p.role === 'teacher' ? editDraft : { status: editDraft.status };
     try {
-      await updateProfile(p.id, editDraft);
-      await logAdminAction({ action: 'Admin updated a user account', targetTable: 'profiles', targetId: p.id, before, after: editDraft });
+      await updateProfile(p.id, patch);
+      await logAdminAction({ action: 'Admin updated a user account', targetTable: 'profiles', targetId: p.id, before, after: patch });
       setToast('User updated successfully.');
       setExpandedId(null);
       load();
@@ -151,6 +155,23 @@ export default function AdminUsers() {
     try {
       if (checked) await assignInvoicingSalesman(invoicingId, salesmanId);
       else await unassignInvoicingSalesman(invoicingId, salesmanId);
+      load();
+    } catch (err) {
+      setFormError(err.message);
+    }
+  };
+
+  const handleToggleSalesManager = async (p, checked) => {
+    try {
+      await updateProfile(p.id, { is_sales_manager: checked });
+      await logAdminAction({
+        action: checked ? 'Admin made a salesman a Sales Manager' : 'Admin removed Sales Manager from a salesman',
+        targetTable: 'profiles',
+        targetId: p.id,
+        before: { is_sales_manager: p.is_sales_manager },
+        after: { is_sales_manager: checked },
+      });
+      setToast(checked ? 'Now a Sales Manager.' : 'No longer a Sales Manager.');
       load();
     } catch (err) {
       setFormError(err.message);
@@ -225,7 +246,7 @@ export default function AdminUsers() {
             <input className={inputClass} id="new-password" type="password" placeholder="At least 6 characters" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
           </Field>
 
-          {form.role === 'invoicing' && (
+          {form.role === 'store_admin' && (
             <Field label="Assigned Salesmen" htmlFor="new-salesmen">
               <div id="new-salesmen" className="flex flex-col gap-2 max-h-48 overflow-y-auto border border-outline-variant rounded-lg p-3">
                 {salesmenOptions.length === 0 ? (
@@ -309,7 +330,10 @@ export default function AdminUsers() {
                   <Fragment key={p.id}>
                     <tr className="hover:bg-surface-container-low transition-colors">
                       <td className="py-4 px-6 font-medium">{p.display_name || '—'}</td>
-                      <td className="py-4 px-6 text-on-surface-variant">{ROLE_LABELS[p.role] || p.role}</td>
+                      <td className="py-4 px-6 text-on-surface-variant">
+                        {ROLE_LABELS[p.role] || p.role}
+                        {p.role === 'salesman' && p.is_sales_manager && <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-md bg-primary-container/20 text-primary text-[10px] font-semibold uppercase">Manager</span>}
+                      </td>
                       <td className="py-4 px-6 text-on-surface-variant">{p.email || '—'}</td>
                       <td className="py-4 px-6 text-on-surface-variant">{p.sekolah || '—'}</td>
                       <td className="py-4 px-6">
@@ -323,11 +347,10 @@ export default function AdminUsers() {
                       <tr className="bg-surface-container-lowest border-b-2 border-primary">
                         <td className="p-0" colSpan={6}>
                           <div className="p-6 md:p-8 bg-surface-container-lowest border-t border-outline-variant">
+                            <div className="mb-8">
+                              <AdminProfileEditor profile={p} onSaved={load} setToast={setToast} setError={setFormError} heading="Name & Email" />
+                            </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                              <div>
-                                <label className="block text-label-bold text-on-surface-variant mb-1">Name</label>
-                                <input className={inputClass} value={editDraft.display_name} onChange={(e) => setEditDraft({ ...editDraft, display_name: e.target.value })} />
-                              </div>
                               {p.role === 'teacher' && (
                                 <div>
                                   <label className="block text-label-bold text-on-surface-variant mb-1">School Name</label>
@@ -342,10 +365,21 @@ export default function AdminUsers() {
                               </div>
                             </div>
                             <button type="button" onClick={() => saveEdit(p)} className="bg-secondary text-on-secondary text-label-bold font-semibold px-5 py-2.5 rounded-lg hover:opacity-90 transition-opacity shadow-sm mb-8">
-                              Save Changes
+                              Save Status{p.role === 'teacher' ? ' & School' : ''}
                             </button>
 
-                            {p.role === 'invoicing' && (
+                            {p.role === 'salesman' && (
+                              <div className="max-w-xl border-t border-outline-variant pt-6 mb-8">
+                                <h4 className="text-label-bold text-on-surface-variant uppercase tracking-wider mb-2">Sales Manager</h4>
+                                <p className="text-body-sm text-on-surface-variant mb-3">A Sales Manager can see every salesman’s orders (view-only for ones that aren’t theirs).</p>
+                                <label className="inline-flex items-center gap-3 text-body-md text-on-surface cursor-pointer">
+                                  <input type="checkbox" className="w-4 h-4" checked={!!p.is_sales_manager} onChange={(e) => handleToggleSalesManager(p, e.target.checked)} />
+                                  {p.is_sales_manager ? 'Is a Sales Manager' : 'Make Sales Manager'}
+                                </label>
+                              </div>
+                            )}
+
+                            {p.role === 'store_admin' && (
                               <div className="max-w-xl border-t border-outline-variant pt-6 mb-8">
                                 <h4 className="text-label-bold text-on-surface-variant uppercase tracking-wider mb-4">Assigned Salesmen</h4>
                                 {salesmenOptions.length === 0 ? (

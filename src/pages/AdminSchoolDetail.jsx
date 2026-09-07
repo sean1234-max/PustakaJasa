@@ -4,6 +4,7 @@ import AdminLayout from '../components/AdminLayout';
 import { useAppState } from '../state/useAppState';
 import { statusPillStyle } from '../data/catalog';
 import { fetchAllProfiles, updateProfile, resetPassword, logAdminAction } from '../lib/adminApi';
+import AdminProfileEditor from '../components/AdminProfileEditor';
 
 const inputClass = 'w-full rounded-lg border border-outline-variant bg-surface-container-lowest text-on-surface focus:ring-2 focus:ring-primary focus:border-primary py-2.5 px-4 shadow-sm outline-none transition-all';
 const secondaryBtnClass = 'w-full sm:w-auto bg-surface-container-lowest border border-outline-variant text-on-surface-variant hover:text-on-surface text-label-bold font-semibold py-2.5 px-4 rounded-lg shadow-sm hover:shadow-md transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed';
@@ -124,17 +125,19 @@ export default function AdminSchoolDetail() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-10">
             <div>
-              <span className="text-label-bold text-on-surface-variant mb-1 block">Teacher Name</span>
-              <p className="text-headline-sm text-on-surface">{school.display_name || '—'}</p>
-            </div>
-            <div>
-              <span className="text-label-bold text-on-surface-variant mb-1 block">Teacher Email</span>
-              <p className="text-headline-sm text-on-surface-variant">{school.email || '—'}</p>
-            </div>
-            <div>
               <span className="text-label-bold text-on-surface-variant mb-1 block">School Address</span>
               <p className="text-headline-sm text-on-surface-variant">{school.address || '—'}</p>
             </div>
+          </div>
+
+          <div className="mb-10">
+            <AdminProfileEditor
+              profile={school}
+              onSaved={load}
+              setToast={setToast}
+              setError={setError}
+              heading="Teacher Name & Email"
+            />
           </div>
 
           <div className="mb-10 bg-surface p-6 rounded-lg border border-outline-variant/50">

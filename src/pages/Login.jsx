@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAppState } from '../state/useAppState';
 
-const ROLE_HOME = { teacher: '/dashboard', salesman: '/sales/dashboard', production: '/production/dashboard', invoicing: '/invoicing/dashboard', admin: '/admin/dashboard' };
+const ROLE_HOME = { teacher: '/dashboard', salesman: '/sales/dashboard', production: '/production/dashboard', store_admin: '/store-admin/dashboard', admin: '/admin/dashboard' };
 
 export default function Login() {
   const { state, patch, login } = useAppState();
@@ -66,9 +66,6 @@ export default function Login() {
         {state.loginError && <div className="login-error">{state.loginError}</div>}
 
         <button type="submit" className="btn btn-primary btn-block">Log In</button>
-        <div style={{ textAlign: 'center', marginTop: 'var(--space-4)' }}>
-          <a href="#forgot" onClick={(e) => e.preventDefault()}>Forgot password?</a>
-        </div>
       </form>
     </div>
   );
