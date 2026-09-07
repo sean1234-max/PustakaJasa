@@ -369,8 +369,21 @@ export function AppStateProvider({ children }) {
   // couldn't be refreshed, a sign-out in another tab, a revoked account —
   // and drops straight back to Login with a plain message.
   useEffect(() => {
-    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
+    const { data: sub } = supabase.auth.onAuthStateChange(async (event) => {
       if (event !== 'SIGNED_OUT') return;
+      // GoTrue emits SIGNED_OUT during its own start-up (recover-and-refresh)
+      // too — before we've even restored the session. Let the session-restore
+      // effect above own that first check, or a cold-start token refresh on
+      // the free tier would bounce a login that's actually fine.
+      if (!stateRef.current.sessionChecked) return;
+      // Already on a logged-out screen — nothing to tear down (this also
+      // covers a SIGNED_OUT echoed in from another tab while we sit on Login).
+      if (!stateRef.current.role) return;
+      // Double-check the session is really gone before showing "expired" and
+      // wiping state: a transient refresh hiccup can emit SIGNED_OUT while a
+      // usable session is still in storage.
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) return;
       const wasDeliberate = deliberateLogoutRef.current;
       deliberateLogoutRef.current = false;
       // Keep a more specific message if one is already on screen (e.g. the

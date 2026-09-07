@@ -8,11 +8,21 @@ export default function Login() {
   const { state, patch, login } = useAppState();
   const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   const submit = async (e) => {
     e.preventDefault();
-    const role = await login(state.userId, state.password);
-    if (role) navigate(ROLE_HOME[role]);
+    // Guard against a double submit (Enter + click, autofill + click, a
+    // slow first request): two signInWithPassword calls each open their
+    // own auth session server-side, leaving an orphan one behind.
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      const role = await login(state.userId, state.password);
+      if (role) navigate(ROLE_HOME[role]);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -65,7 +75,7 @@ export default function Login() {
 
         {state.loginError && <div className="login-error">{state.loginError}</div>}
 
-        <button type="submit" className="btn btn-primary btn-block">Log In</button>
+        <button type="submit" className="btn btn-primary btn-block" disabled={submitting}>{submitting ? 'Logging in…' : 'Log In'}</button>
       </form>
     </div>
   );
