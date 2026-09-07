@@ -223,6 +223,21 @@ function buildCategoryCartItems(st, catKey) {
     if (!hasJenisPlak) {
       return { engaged, error: `Please choose a Jenis Plak for ${blockLabel} before adding to cart.` };
     }
+    // ALIRAN TERBAIK: every plaque the Tahun table asks for must be covered
+    // by a Jenis Plak footer row. The footer QTY can be derived or a
+    // teacher override (computeBlocks.js) — either way its sum has to equal
+    // the Tahun total, and no footer row can carry a QTY with no plak
+    // picked. Same check as the on-screen red warning, but blocking here.
+    if (blk.aliranKedudukan) {
+      const plakTotal = blk.plakRows.reduce((s, pr) => s + (Number(pr.qty) || 0), 0);
+      if (blk.plakRows.some((pr) => (Number(pr.qty) || 0) > 0 && !pr.jenisPlak)) {
+        return { engaged, error: `A Jenis Plak row for ${blockLabel} has a quantity but no Jenis Plak selected — choose one or clear its quantity.` };
+      }
+      if (plakTotal !== blk.blockTotalQty) {
+        const diff = blk.blockTotalQty - plakTotal;
+        return { engaged, error: `Jenis Plak total (${plakTotal}) doesn't match the Tahun total (${blk.blockTotalQty}) for ${blockLabel} — ${diff > 0 ? `${diff} plaque(s) still have no Jenis Plak` : `${-diff} plaque(s) too many`}. Fix it before adding to cart.` };
+      }
+    }
     // A Tahun range spanning N years needs at least N medals per
     // subject (one per year) — a qty below that would silently lose
     // years when exportCsv.js splits it back out per-year.

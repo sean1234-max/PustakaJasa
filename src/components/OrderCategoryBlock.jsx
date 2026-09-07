@@ -976,12 +976,15 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
           </div>
           {(() => {
             const plakTotal = blk.plakRows.reduce((s, pr) => s + (Number(pr.qty) || 0), 0);
-            if (plakTotal === blk.blockTotalQty) return null;
+            const missingPlak = blk.plakRows.some((pr) => (Number(pr.qty) || 0) > 0 && !pr.jenisPlak);
+            if (plakTotal === blk.blockTotalQty && !missingPlak) return null;
             const diff = blk.blockTotalQty - plakTotal;
             return (
               <div className="typo-hint" style={{ color: 'var(--color-error)', fontWeight: 600, marginTop: 'var(--space-2)' }}>
-                Jumlah QTY Jenis Plak ({plakTotal}) tak sama dengan jumlah Tahun ({blk.blockTotalQty})
-                {diff > 0 ? ` — ${diff} plak belum ada Jenis Plak.` : ` — ${-diff} plak lebih.`}
+                {missingPlak
+                  ? 'A Jenis Plak row has a quantity but no Jenis Plak selected — choose one or clear its quantity.'
+                  : `Jenis Plak total (${plakTotal}) doesn't match the Tahun total (${blk.blockTotalQty})${diff > 0 ? ` — ${diff} plaque(s) still have no Jenis Plak.` : ` — ${-diff} plaque(s) too many.`}`}
+                {' '}You can’t add this to cart until it matches.
               </div>
             );
           })()}
