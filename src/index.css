@@ -437,12 +437,15 @@ a:hover { color: var(--color-accent-900); text-decoration: underline; }
 .typo-hint { font-size: 11px; color: #c0392b; margin-top: 2px; }
 .ref-sample-grid {
   display: grid;
-  /* Left (the live plaque preview) takes the slack so a long Tajuk Besar
-     has room to sit on ONE line; right (the numbered inputs the teacher
-     fills) is capped narrower — it never needs to be wide. */
-  grid-template-columns: minmax(280px, 1fr) minmax(200px, 300px);
+  /* Left column = the live plaque preview, sized to exactly fit its own
+     widest line (the Tajuk Besar) so it always sits on ONE row — measured
+     per block, capped at 600px. Right column = the numbered inputs the
+     teacher fills, a fixed sensible width so a long title on the left can
+     never squeeze it out of view. */
+  grid-template-columns: fit-content(600px) minmax(300px, 560px);
   gap: var(--space-6);
   margin-bottom: var(--space-8);
+  align-items: start;
 }
 @media (max-width: 640px) {
   .ref-sample-grid { grid-template-columns: 1fr; }
@@ -458,23 +461,23 @@ a:hover { color: var(--color-accent-900); text-decoration: underline; }
   border: 1px dashed var(--color-neutral-500);
   background: #fafafa; color: var(--color-text); opacity: 0.5; font-size: 13px;
 }
-/* Live text preview — fully replaces the reference image/placeholder
-   (opaque, covers the whole box) with whatever the teacher has typed into
-   the numbered lines so far, updating live as they type. No original
-   artwork/placeholder text shows through underneath. */
-.ref-sample-image { position: relative; height: 200px; }
+/* Live text preview — shows whatever the teacher has typed into the
+   numbered lines so far, updating live as they type. Its own width drives
+   the grid's left column (see .ref-sample-grid), so it sizes to the
+   longest line. */
+.ref-sample-image { min-width: 240px; }
 .ref-sample-live-preview {
-  position: absolute; inset: 0;
   display: flex; flex-direction: column; justify-content: center; gap: 4px;
-  padding: var(--space-3);
+  min-height: 180px; padding: var(--space-3);
   background: #fff; border: 1px solid var(--color-neutral-300);
-  overflow: auto;
+  overflow-x: auto;
 }
-.ref-sample-live-line { display: flex; gap: 6px; align-items: baseline; font-size: 13px; line-height: 1.35; }
-/* Tajuk Besar: keep it on ONE line (a wrapped title reads like two separate
-   lines and confuses teachers). If it genuinely can't fit, the preview box
-   scrolls sideways rather than the text spilling out of the cell. */
-.ref-sample-live-line:first-child { font-size: 15px; font-weight: 700; white-space: nowrap; }
+/* Every preview line stays on ONE row — a wrapped Tajuk Besar reads like
+   two separate title lines and confuses teachers. If a line genuinely
+   can't fit even at the 600px cap, the box scrolls sideways rather than
+   the text spilling out of the cell. */
+.ref-sample-live-line { display: flex; gap: 6px; align-items: baseline; font-size: 13px; line-height: 1.35; white-space: nowrap; }
+.ref-sample-live-line:first-child { font-size: 15px; font-weight: 700; }
 .ref-sample-live-num {
   flex: none; width: 14px; height: 14px; border-radius: 50%;
   background: var(--color-accent-700); color: #fff;
