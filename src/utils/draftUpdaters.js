@@ -588,5 +588,17 @@ export function createDraftUpdaters(patch, fields) {
     onAliranRemovePlak: (plakRowsKey, id) => patch((st) => ({
       [plakRows]: { ...st[plakRows], [plakRowsKey]: (st[plakRows][plakRowsKey] || []).filter((pr) => pr.id !== id) },
     })),
+    // A JENIS PLAK footer row's own QTY. Empty ('' / null) means "use the
+    // derived count" (position range crossed with the ranked TAHUNs —
+    // computeBlocks.js); a typed number overrides it, for the mixed
+    // ranked/flat cases the derivation can't express.
+    onAliranPlakQty: (plakRowsKey, id, val) => patch((st) => ({
+      [plakRows]: {
+        ...st[plakRows],
+        [plakRowsKey]: (st[plakRows][plakRowsKey] || []).map((pr) => (
+          pr.id === id ? { ...pr, qty: val === '' || val == null ? null : Math.max(0, Math.floor(Number(val)) || 0) } : pr
+        )),
+      },
+    })),
   };
 }

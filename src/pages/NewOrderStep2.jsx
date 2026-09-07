@@ -95,10 +95,18 @@ export default function NewOrderStep2() {
     if (!importStatus?.warnings?.length) return [];
     return importStatus.warnings.filter((w) => {
       if (w.type !== 'plakMismatch') return true;
-      const rows = state.plakRows[`${w.catKey || 'KLAS_MATRIX'}::${w.blockIdx}`] || [];
+      const key = `${w.catKey || 'KLAS_MATRIX'}::${w.blockIdx}`;
+      // plakPerRow categories (TOKOH, LONJAKAN) carry one Jenis Plak per row
+      // in rowsByBlock — the warning names its exact row via `rowId`, so it
+      // clears only when THAT row gets a real Jenis Plak, not any sibling.
+      if (w.rowId != null) {
+        const row = (state.rowsByBlock[key] || []).find((r) => r.id === w.rowId);
+        return !(row && row.jenisPlak);
+      }
+      const rows = state.plakRows[key] || [];
       return !rows.some((pr) => pr.jenisPlak);
     });
-  }, [importStatus, state.plakRows]);
+  }, [importStatus, state.plakRows, state.rowsByBlock]);
 
   // Clicking a warning switches to the category it's about (KLAS_MATRIX
   // unless the warning names its own — see AppState.jsx's `categorized`

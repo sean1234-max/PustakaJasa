@@ -946,10 +946,14 @@ export function AppStateProvider({ children }) {
           newRowsByBlock[key] = ['TAHUN 1', 'TAHUN 2', 'TAHUN 3', 'TAHUN 4', 'TAHUN 5', 'TAHUN 6'].map((tahun) => {
             const tr = byTahun.get(tahun);
             const matched = tr?.jenisPlak ? matchJenisPlakPath(tr.jenisPlak, next.plakCatalog) : '';
+            const rowId = nextRowId++;
             if (tr?.jenisPlak && !matched) {
-              warnings.push({ type: 'plakMismatch', catKey, blockIdx: 0, text: `${cat.label} (${tahun}): couldn't match Jenis Plak "${tr.jenisPlak}" — please choose it manually.` });
+              // rowId lets NewOrderStep2's liveImportWarnings clear this the
+              // moment THIS row (plakPerRow — one Jenis Plak per row in
+              // rowsByBlock) gets a real Jenis Plak, not when any sibling does.
+              warnings.push({ type: 'plakMismatch', catKey, blockIdx: 0, rowId, text: `${cat.label} (${tahun}): couldn't match Jenis Plak "${tr.jenisPlak}" — please choose it manually.` });
             }
-            return { id: nextRowId++, desc: tahun, qty: tr && tr.qty ? String(tr.qty) : '', jenisPlak: matched };
+            return { id: rowId, desc: tahun, qty: tr && tr.qty ? String(tr.qty) : '', jenisPlak: matched };
           });
         } else if (section.isTokohList) {
           // TOKOH (excelImport.js's parseTokohAnugerahSheet) — one honour
@@ -958,11 +962,13 @@ export function AppStateProvider({ children }) {
           // Plak (plakPerRow).
           newRowsByBlock[key] = section.tokohRows.map((tr) => {
             const matched = tr.jenisPlak ? matchJenisPlakPath(tr.jenisPlak, next.plakCatalog) : '';
+            const rowId = nextRowId++;
             if (tr.jenisPlak && !matched) {
-              warnings.push({ type: 'plakMismatch', catKey, blockIdx: 0, text: `${cat.label} (${tr.desc}): couldn't match Jenis Plak "${tr.jenisPlak}" — please choose it manually.` });
+              // rowId — see the LONJAKAN note above; TOKOH is plakPerRow too.
+              warnings.push({ type: 'plakMismatch', catKey, blockIdx: 0, rowId, text: `${cat.label} (${tr.desc}): couldn't match Jenis Plak "${tr.jenisPlak}" — please choose it manually.` });
             }
             return {
-              id: nextRowId++, desc: tr.desc, qty: tr.qty ? String(tr.qty) : '',
+              id: rowId, desc: tr.desc, qty: tr.qty ? String(tr.qty) : '',
               jenisPlak: matched, namaMurid: tr.namaMurid || '', gambar: tr.gambar || '', design: tr.design || '',
             };
           });
@@ -1046,20 +1052,41 @@ export function AppStateProvider({ children }) {
           newPlakRows = { ...next.plakRows, [key]: [] };
         } else if (section.isAliran) {
           // One plak row per JENIS PLAK footer entry, each carrying its own
-          // position range (posDari/posHingga). QTY per row is derived
-          // later (computeBlocks.js). An un-matched code is left blank and
+          // position range (posDari/posHingga). QTY per row is derived later
+          // (computeBlocks.js) UNLESS the sheet typed its own — then that's
+          // carried as an override. An un-matched code is left blank and
           // flagged, same as everywhere else.
-          newPlakRows = {
-            ...next.plakRows,
-            [key]: (section.plakRanges || []).map((pr) => {
-              const matched = matchJenisPlakPath(pr.jenisPlak, next.plakCatalog);
-              if (pr.jenisPlak && !matched) {
-                warnings.push({ type: 'plakMismatch', catKey, blockIdx: 0, text: `${cat.label}: couldn't match Jenis Plak "${pr.jenisPlak}" — please choose it manually.` });
-              }
-              return { id: nextPlakRowId++, jenisPlak: matched, posDari: pr.dari || null, posHingga: pr.hingga || null };
-            }),
+          // The sheet's own footer QTY is only pinned as an override when it
+          // DIFFERS from what the position-range × ranked-TAHUNs math derives
+          // — a matching number stays null (reactive) so later TAHUN edits
+          // still reflow it. `flatTotal` covers a rangeless (flat) footer row.
+          const flatTotal = (section.tahunRows || []).reduce((s, tr) => s + (tr.hingga ? 0 : (tr.flatQty || 0)), 0);
+          const derivedFor = (dari, hingga) => {
+            if (!dari) return flatTotal;
+            return (section.tahunRows || []).reduce((s, tr) => (
+              s + (tr.hingga ? Math.max(0, Math.min(hingga || dari, tr.hingga) - dari + 1) : 0)
+            ), 0);
           };
-          if (newPlakRows[key].length === 0) newPlakRows[key] = [{ id: nextPlakRowId++, jenisPlak: '', posDari: 1, posHingga: null }];
+          const aliranRows = (section.plakRanges || []).map((pr) => {
+            const matched = matchJenisPlakPath(pr.jenisPlak, next.plakCatalog);
+            if (pr.jenisPlak && !matched) {
+              warnings.push({ type: 'plakMismatch', catKey, blockIdx: 0, text: `${cat.label}: couldn't match Jenis Plak "${pr.jenisPlak}" — please choose it manually.` });
+            }
+            const override = pr.qty && pr.qty !== derivedFor(pr.dari || null, pr.hingga || null) ? pr.qty : null;
+            return { id: nextPlakRowId++, jenisPlak: matched, posDari: pr.dari || null, posHingga: pr.hingga || null, qty: override };
+          });
+          // Any TAHUN with no KEDUDUKAN (a flat "ikut sample" count) needs
+          // its own Jenis Plak row with no position range — seed a blank one
+          // if the sheet didn't already give a rangeless footer entry, so the
+          // teacher just has to pick the plak instead of remembering to add
+          // the row (its qty derives from those flat TAHUNs' totals).
+          const hasFlatTahun = (section.tahunRows || []).some((tr) => !tr.hingga && (tr.flatQty || 0) > 0);
+          const hasRangelessRow = aliranRows.some((r) => !r.posDari);
+          if (hasFlatTahun && !hasRangelessRow) {
+            aliranRows.push({ id: nextPlakRowId++, jenisPlak: '', posDari: null, posHingga: null, qty: null });
+          }
+          if (aliranRows.length === 0) aliranRows.push({ id: nextPlakRowId++, jenisPlak: '', posDari: 1, posHingga: null, qty: null });
+          newPlakRows = { ...next.plakRows, [key]: aliranRows };
         } else {
           const matchedPlak = matchJenisPlakPath(section.jenisPlak, next.plakCatalog);
           if (section.jenisPlak && !matchedPlak) {
@@ -1617,7 +1644,7 @@ export function AppStateProvider({ children }) {
   // downstream, so production knows to double-check it against the catalog.
   // Approving sends the order straight into production — there's no
   // separate "approved but not yet in production" holding stage.
-  // `overrides` lets Sales adjust Due Date / Function Date (in addition to
+  // `overrides` lets Sales adjust Shipment Date (dueDate) / Function Date (in addition to
   // per-item price, already folded into updatedItems) at the same moment
   // they approve — the only point before production where those dates are
   // still editable.

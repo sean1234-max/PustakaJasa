@@ -317,9 +317,12 @@ export const CATEGORIES = [
     // N plaques, one per place). A blank KEDUDUKAN + a typed QTY is a flat
     // "ikut sample, tukar TAHUN" count instead. Its own JENIS PLAK footer
     // maps position sub-ranges to plaque types, each footer row's QTY
-    // derived by crossing its range with the TAHUNs that ordered it. See
-    // excelImport.js's parseAliranSheet, computeBlocks.js's ALIRAN
-    // handling, draftUpdaters.js's onAliran* family.
+    // derived by crossing its range with the TAHUNs that ordered it — but
+    // the teacher can OVERRIDE that QTY (footer row's `qty`, computeBlocks
+    // `qtyOverridden`) for the mixed ranked/flat cases the derivation can't
+    // express, with a red "jumlah tak sama" warning if the footer total then
+    // drifts from the TAHUN total. See excelImport.js's parseAliranSheet,
+    // computeBlocks.js's ALIRAN handling, draftUpdaters.js's onAliran* family.
     key: 'ALIRAN', label: 'ALIRAN TERBAIK', mode: 'list', blocksCount: 1, active: true,
     rows: ALL_TAHUN,
     aliranKedudukan: true,

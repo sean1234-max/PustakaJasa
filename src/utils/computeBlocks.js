@@ -525,18 +525,24 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
       // Add On) never set pr.unitPrice since no price exists yet there, so
       // they keep falling back to the catalog lookup as before.
       const unitPrice = pr.unitPrice != null ? pr.unitPrice : priceFor(pr.jenisPlak);
-      // ALIRAN's footer rows each carry their own derived qty (a position
-      // sub-range crossed with the TAHUNs that ordered it); every other
-      // category's plak row is just the whole block's total.
-      const qty = aliranPlakQty ? aliranPlakQty(pr) : blockTotalQty;
+      // ALIRAN's footer rows each carry a DERIVED qty (a position sub-range
+      // crossed with the ranked TAHUNs that ordered it). The teacher can
+      // OVERRIDE it with a typed `pr.qty` for the mixed ranked/flat cases
+      // the derivation can't express (e.g. one gold medal for the combined
+      // senior stream, not one per TAHUN). Every other category's plak row
+      // is just the whole block's total, no override.
+      const derivedQty = aliranPlakQty ? aliranPlakQty(pr) : blockTotalQty;
+      const qtyOverridden = !!aliranPlakQty && pr.qty != null && pr.qty !== '';
+      const qty = qtyOverridden ? Math.max(0, Number(pr.qty) || 0) : derivedQty;
       const harga = unitPrice != null ? qty * unitPrice : 0;
       return {
-        id: pr.id, jenisPlak: pr.jenisPlak, qty, rawHarga: harga,
+        id: pr.id, jenisPlak: pr.jenisPlak, qty, derivedQty, qtyOverridden, rawHarga: harga,
         unitPrice,
         posDari: pr.posDari, posHingga: pr.posHingga,
         hargaLabel: unitPrice != null ? `RM ${harga.toFixed(2)}` : '—',
         setJenisPlak: (v) => updaters.onPlakSelect(plakRowsKey, pr.id, v),
         setPosField: (field, v) => updaters.onAliranPlakField(plakRowsKey, pr.id, field, v),
+        setPlakQty: (v) => updaters.onAliranPlakQty(plakRowsKey, pr.id, v),
         remove: () => updaters.onAliranRemovePlak(plakRowsKey, pr.id),
       };
     });
@@ -671,7 +677,7 @@ export const noopUpdaters = {
   onAddMatrixRow: () => {}, onMatrixRowRemove: () => {},
   onAddReferenceLine: () => {}, onRemoveReferenceLine: () => {}, onDeleteReferenceLine: () => {}, onRestoreReferenceLine: () => {},
   onLevelKelasField: () => {}, onAddLevelKelasRow: () => {}, onRemoveLevelKelasRow: () => {},
-  onAliranKedudukan: () => {}, onAliranPlakField: () => {}, onAliranAddPlak: () => {}, onAliranRemovePlak: () => {},
+  onAliranKedudukan: () => {}, onAliranPlakField: () => {}, onAliranAddPlak: () => {}, onAliranRemovePlak: () => {}, onAliranPlakQty: () => {},
 };
 
 // Rebuilds read-only `blocks` (the same shape NewOrderStep2 renders live)
@@ -798,7 +804,10 @@ export function reconstructBlocksForCategory(order, catKey, plakCatalog) {
     // desc instead — see mergeItemDetailIntoMaps above.
     blockItems.forEach((it) => {
       mergeItemDetailIntoMaps(it, key, lineValues, matrixValues, rowsByBlock, columnsByBlock);
-      plakRows[key] = [...(plakRows[key] || []), { id: it.id, jenisPlak: it.jenisPlak, unitPrice: it.unitPrice }];
+      // posDari/posHingga/qty carried through for ALIRAN (harmless nulls for
+      // every other category) so the rebuilt footer row shows the same qty
+      // and harga that was actually ordered, not a re-derived guess.
+      plakRows[key] = [...(plakRows[key] || []), { id: it.id, jenisPlak: it.jenisPlak, unitPrice: it.unitPrice, posDari: it.posDari, posHingga: it.posHingga, qty: it.qty }];
     });
     const result = computeBlocks(catKey, lineValues, matrixValues, rowsByBlock, plakRows, columnsByBlock, noopUpdaters, plakCatalog, schoolLanguage);
     isMatrix = result.isMatrix;
@@ -864,7 +873,11 @@ export function buildDraftFromOrder(order) {
       blockItems.forEach((it) => {
         mergeItemDetailIntoMaps(it, key, lineValues, matrixValues, rowsByBlock, columnsByBlock);
       });
-      plakRows[key] = blockItems.map((it) => ({ id: it.id, jenisPlak: it.jenisPlak }));
+      // posDari/posHingga restore the ALIRAN footer's position ranges so the
+      // qty re-derives correctly; a bare `qty` override is deliberately NOT
+      // carried — a reorder/amend draft re-derives fresh, and the teacher
+      // re-enters an override if they still need one.
+      plakRows[key] = blockItems.map((it) => ({ id: it.id, jenisPlak: it.jenisPlak, posDari: it.posDari, posHingga: it.posHingga }));
       trackMaxId(rowsByBlock[key]);
       trackMaxId(columnsByBlock[key]);
     });
@@ -914,7 +927,7 @@ export function reconstructOrderDetailGroups(order, catKey, plakCatalog) {
       if (item.detail.rows) rowsByBlock[key] = item.detail.rows;
       if (item.detail.columns) columnsByBlock[key] = item.detail.columns;
     }
-    plakRows[key] = [{ id: item.id, jenisPlak: item.jenisPlak, unitPrice: item.unitPrice }];
+    plakRows[key] = [{ id: item.id, jenisPlak: item.jenisPlak, unitPrice: item.unitPrice, posDari: item.posDari, posHingga: item.posHingga, qty: item.qty }];
 
     const result = computeBlocks(catKey, lineValues, matrixValues, rowsByBlock, plakRows, columnsByBlock, noopUpdaters, plakCatalog, schoolLanguage);
     return {

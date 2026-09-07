@@ -6,6 +6,17 @@ import {
 
 export const CSV_COLUMNS = ['event_header', 'year', 'position', 'event_line_1', 'event_line_2'];
 
+// TOKOH_SHEET only: a NAMA MURID of "Reserved" (any case — the three forms
+// teachers use are RESERVED / reserved / Reserved) means the teacher has
+// pre-booked that row's Jenis Plak before the student's name is known
+// (results not out yet). The plaque's stock is still deducted at submit
+// like any other row — it's a real reservation — but it has no confirmed
+// engraving text, so it is kept OUT of the production CSV until the real
+// name replaces "Reserved" (via Amend / Add-On).
+export function isReservedName(name) {
+  return typeof name === 'string' && name.trim().toLowerCase() === 'reserved';
+}
+
 // Categories actually present in this order's items, in catalog order —
 // gives Production stable, ordered tabs even for orders with legacy items
 // that never got a categoryKey (those are simply excluded).
@@ -137,19 +148,27 @@ function buildFixedRows(item, header, year, positionPart1) {
 // LONJAKAN, TOKOH (`positionFromRows` categories): the reference sample's
 // last "position" line is only a CONTOH — the real per-plaque position is
 // each quantity-table row's own description (e.g. "TAHUN 3", "TOKOH
-// NILAM"), repeated that row's own qty times. There's no event_line_1 (the
-// quantity table only has one axis, unlike the matrix categories' two).
+// NILAM"), repeated that row's own qty times.
 // LONJAKAN also has a fixed line 3 ("LONJAKAN SAUJANA") that prefixes the
 // engraved position — `positionPart1` carries it in for that category only
-// (TOKOH doesn't set positionPrefixFromLine3, so it stays row-desc-only,
-// same as before).
-function buildRowsFromDescriptionRows(item, header, year, positionPart1) {
+// (LONJAKAN sets positionPrefixFromLine3).
+//
+// `tokohNames` is set only for TOKOH_SHEET (catalog.js's tokohRowFields):
+//   * a filled NAMA MURID engraves as the reference sample's line ③ —
+//     it fills event_line_1 (the CSV's 4th column) for that row's plaques.
+//   * a "Reserved" NAMA MURID (isReservedName) is a stock hold with no
+//     confirmed name — the row is skipped entirely (no engraving row).
+// For LONJAKAN and Main Template, `tokohNames` is falsy: rows have no
+// namaMurid, event_line_1 stays blank, nothing is skipped — same as before.
+function buildRowsFromDescriptionRows(item, header, year, positionPart1, tokohNames) {
   const rows = [];
   (item.detail?.rows || []).forEach((r) => {
     const qty = Number(r.qty) || 0;
     if (qty <= 0) return;
+    if (tokohNames && isReservedName(r.namaMurid)) return;
     const position = positionPart1 ? `${positionPart1}\n${r.desc || ''}` : (r.desc || '');
-    const row = [header, year, position, '', ''];
+    const eventLine1 = tokohNames ? (r.namaMurid || '').trim() : '';
+    const row = [header, year, position, eventLine1, ''];
     for (let i = 0; i < qty; i++) rows.push(row);
   });
   return rows;
@@ -161,10 +180,40 @@ function buildRowsFromDescriptionRows(item, header, year, positionPart1) {
 // a footer row with no range (a flat "ikut sample" plak) engraves ACARA
 // only, `qty` times, per flat TAHUN. `item.detail.rows` are the six TAHUN
 // rows, each with its own KEDUDUKAN "hingga" place (or 0 for a flat row).
+//
+// If the teacher OVERRODE the footer row's qty (item.qty differs from what
+// the range × ranked-TAHUNs math derives), the per-(TAHUN, place) grid no
+// longer applies — emit exactly item.qty rows instead: for a ranged row,
+// the position cycles through its own ordinals (year left blank, since we
+// no longer know which TAHUN); for a flat row, ACARA only.
 function buildAliranRows(item, header, year, acara) {
   const rows = [];
   const tahunRows = item.detail?.rows || [];
   const pos = (p) => (acara ? `${acara}\n${numToOrdinal(p)}` : numToOrdinal(p));
+
+  const derived = tahunRows.reduce((sum, tr) => {
+    const hingga = Number(tr.kedudukanHingga) || 0;
+    if (item.posDari) {
+      if (hingga <= 0) return sum;
+      const lo = Number(item.posDari);
+      const hi = Math.min(Number(item.posHingga) || lo, hingga);
+      return sum + Math.max(0, hi - lo + 1);
+    }
+    return sum + (hingga > 0 ? 0 : (Number(tr.qty) || 0));
+  }, 0);
+  const wantQty = Number(item.qty);
+  const overridden = Number.isFinite(wantQty) && wantQty !== derived;
+
+  if (overridden) {
+    const lo = Number(item.posDari) || 0;
+    const span = lo ? Math.max(1, (Number(item.posHingga) || lo) - lo + 1) : 0;
+    for (let n = 0; n < wantQty; n++) {
+      const position = lo ? pos(lo + (n % span)) : (acara || '');
+      rows.push([header, year, position, '', '']);
+    }
+    return rows;
+  }
+
   tahunRows.forEach((tr) => {
     const hingga = Number(tr.kedudukanHingga) || 0;
     if (hingga > 0) {
@@ -259,6 +308,11 @@ export function buildCsvRows(order, categoryKey, items) {
   const scopedItems = items || (order.items || []).filter((it) => it.categoryKey === categoryKey);
   const rows = [];
   const skippedItemIds = [];
+  // TOKOH_SHEET plaques whose NAMA MURID is "Reserved" — stock is held for
+  // them but they're deliberately left out of the CSV (isReservedName).
+  // Summed as plaque count so validateExport can tell "nothing to engrave
+  // yet" apart from "the data is broken".
+  let reservedCount = 0;
 
   scopedItems.forEach((item) => {
     if (!item.detail || !item.detail.lines || Object.keys(item.detail.lines).length === 0) {
@@ -286,13 +340,22 @@ export function buildCsvRows(order, categoryKey, items) {
     } else if (cat?.hasNamaKelasList) {
       rows.push(...buildOthersRows(item, header, year, getLine(item, 2)));
     } else if (cat?.positionFromRows) {
-      rows.push(...buildRowsFromDescriptionRows(item, header, year, cat.positionPrefixFromLine3 ? getLine(item, 2) : ''));
+      if (cat.tokohRowFields) {
+        (item.detail?.rows || []).forEach((r) => {
+          if (isReservedName(r.namaMurid)) reservedCount += Number(r.qty) || 0;
+        });
+      }
+      rows.push(...buildRowsFromDescriptionRows(
+        item, header, year,
+        cat.positionPrefixFromLine3 ? getLine(item, 2) : '',
+        cat.tokohRowFields,
+      ));
     } else {
       rows.push(...buildFixedRows(item, header, year, getLine(item, 2)));
     }
   });
 
-  return { rows, skippedItemIds };
+  return { rows, skippedItemIds, reservedCount };
 }
 
 // Groups an order's items by Jenis Plak, regardless of which category or
@@ -392,7 +455,7 @@ export function validateExport(order, items, plakCatalog, csvData) {
   const errors = [];
   const warnings = [];
   const scoped = items || (order.items || []);
-  const { rows = [], skippedItemIds = [] } = csvData || {};
+  const { rows = [], skippedItemIds = [], reservedCount = 0 } = csvData || {};
 
   // 1. An item with no reference-sample data at all is silently dropped by
   //    buildCsvRows (skippedItemIds) — those plaques would just be missing
@@ -424,7 +487,12 @@ export function validateExport(order, items, plakCatalog, csvData) {
   }
 
   // 3. Something was selected but it produced nothing to engrave.
-  if (rows.length === 0 && scoped.length > 0 && skippedItemIds.length === 0) {
+  if (rows.length === 0 && reservedCount > 0 && skippedItemIds.length === 0) {
+    // Every TOKOH plaque here is still "Reserved" — the stock is held, but
+    // there is genuinely nothing to engrave yet. A clear message, not the
+    // generic "data is incomplete" one below.
+    errors.push(`All ${reservedCount} plaque(s) in this selection are still "Reserved" (stock is held, names not confirmed). Nothing to engrave yet — export again once the names are filled in.`);
+  } else if (rows.length === 0 && scoped.length > 0 && skippedItemIds.length === 0) {
     errors.push('This selection produces no CSV rows — every quantity is 0, or the reference data is incomplete.');
   }
 
@@ -436,6 +504,13 @@ export function validateExport(order, items, plakCatalog, csvData) {
   const blankPosition = rows.filter((r) => !String(r[2] ?? '').trim()).length;
   if (blankPosition > 0) {
     warnings.push(`${blankPosition} row(s) have a blank "position" field.`);
+  }
+
+  // 5. Non-blocking: some (not all) plaques are still "Reserved" — held for
+  //    stock, left out of this file on purpose. Flag so production knows to
+  //    expect a follow-up export once those names are confirmed.
+  if (reservedCount > 0 && rows.length > 0) {
+    warnings.push(`${reservedCount} "Reserved" plaque(s) are held for stock but left out of this CSV — export again once their names are confirmed.`);
   }
 
   return { ok: errors.length === 0, errors, warnings, rowCount: rows.length };

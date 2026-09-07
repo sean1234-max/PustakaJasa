@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import PlakPicker from './PlakPicker';
 import { getStockStatus, MALAY_ORDINALS } from '../data/catalog';
+import { isReservedName } from '../utils/exportCsv';
 
 const TAHUN_OPTIONS = ['TAHUN 1', 'TAHUN 2', 'TAHUN 3', 'TAHUN 4', 'TAHUN 5', 'TAHUN 6'];
 
@@ -936,7 +937,26 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
                         {MALAY_ORDINALS.map((w, i) => <option key={w} value={i + 1} disabled={pr.posDari && i + 1 < pr.posDari}>{w}</option>)}
                       </select>
                     </td>
-                    <td style={{ textAlign: 'center' }}><strong>{pr.qty}</strong></td>
+                    <td style={{ textAlign: 'center' }}>
+                      {editable.rowQty ? (
+                        <>
+                          <input
+                            className="input"
+                            type="number"
+                            min="0"
+                            style={{ textAlign: 'center' }}
+                            value={pr.qtyOverridden ? pr.qty : ''}
+                            placeholder={String(pr.derivedQty)}
+                            onChange={(e) => pr.setPlakQty(e.target.value)}
+                          />
+                          {pr.qtyOverridden && pr.qty !== pr.derivedQty && (
+                            <div className="typo-hint" style={{ textAlign: 'center' }}>auto: {pr.derivedQty}</div>
+                          )}
+                        </>
+                      ) : (
+                        <strong>{pr.qty}</strong>
+                      )}
+                    </td>
                     <td style={{ textAlign: 'center' }} className="input-price">{pr.hargaLabel}</td>
                     {editable.addRemoveRows && (
                       <td><button type="button" className="btn btn-ghost btn-icon" aria-label="Remove Jenis Plak" onClick={pr.remove}>✕</button></td>
@@ -954,6 +974,17 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
               </tbody>
             </table>
           </div>
+          {(() => {
+            const plakTotal = blk.plakRows.reduce((s, pr) => s + (Number(pr.qty) || 0), 0);
+            if (plakTotal === blk.blockTotalQty) return null;
+            const diff = blk.blockTotalQty - plakTotal;
+            return (
+              <div className="typo-hint" style={{ color: 'var(--color-error)', fontWeight: 600, marginTop: 'var(--space-2)' }}>
+                Jumlah QTY Jenis Plak ({plakTotal}) tak sama dengan jumlah Tahun ({blk.blockTotalQty})
+                {diff > 0 ? ` — ${diff} plak belum ada Jenis Plak.` : ` — ${-diff} plak lebih.`}
+              </div>
+            );
+          })()}
           {editable.addRemoveRows && (
             <div className="row-actions">
               <button type="button" className="btn btn-secondary" onClick={blk.addAliranPlak}>+ Add Jenis Plak</button>
@@ -996,7 +1027,12 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
                     </td>
                   ))}
                   {(row.tokohFields || []).filter((f) => f.place === 'beforeQty').map((f) => (
-                    <td key={f.key}>{renderTokohField(f, editable.rowDesc)}</td>
+                    <td key={f.key}>
+                      {renderTokohField(f, editable.rowDesc)}
+                      {f.key === 'namaMurid' && isReservedName(f.value) && (
+                        <div className="typo-hint">Stock booked. Fill in the name later to engrave it.</div>
+                      )}
+                    </td>
                   ))}
                   <td>
                     <input

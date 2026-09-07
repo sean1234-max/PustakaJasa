@@ -1211,19 +1211,27 @@ function parseAliranSheet(ws) {
   if (tahunRows.length === 0) return null;
 
   // JENIS PLAK footer — each row maps a position sub-range to a plaque.
+  // Its own typed QTY IS read now (unlike the TAHUN table's, still derived):
+  // a teacher may split plaques in a way the position-range × ranked-TAHUN
+  // math can't express (see catalog.js's ALIRAN override), so the sheet's
+  // number wins when present and the website shows the derived one only as
+  // a hint.
   const plakH = findLabelCells(ws, range, ['JENIS PLAK'])[0];
   const plakRanges = [];
   if (plakH) {
     const catatanH = findLabelCells(ws, range, ['CATATAN'])[0];
     const fDariH = catatanH && findLabelCells(ws, { r1: catatanH.row, r2: catatanH.row + 1, c1: range.c1, c2: range.c2 }, ['DARI'])[0];
     const fHinggaH = catatanH && findLabelCells(ws, { r1: catatanH.row, r2: catatanH.row + 1, c1: range.c1, c2: range.c2 }, ['HINGGA KE'])[0];
+    const fQtyH = findLabelCells(ws, { r1: plakH.row, r2: (fHinggaH ? fHinggaH.row : plakH.row) + 1, c1: range.c1, c2: range.c2 }, ['QTY', 'KUANTITI'])[0];
     const plakDataStart = (fDariH ? fDariH.row : plakH.row) + 1;
     for (let r = plakDataStart; r <= range.r2; r++) {
       const jp = cellText(ws, r, plakH.col);
+      if (isTotalLabel(jp)) break;
       if (!jp) continue;
       const dari = fDariH ? ordinalToNum(cellText(ws, r, fDariH.col)) : null;
       const hingga = fHinggaH ? ordinalToNum(cellText(ws, r, fHinggaH.col)) : null;
-      plakRanges.push({ jenisPlak: jp, dari, hingga });
+      const qty = fQtyH ? cellNum(ws, r, fQtyH.col) : 0;
+      plakRanges.push({ jenisPlak: jp, dari, hingga, qty: qty > 0 ? qty : null });
     }
   }
 
@@ -1287,10 +1295,15 @@ function parseTahunPlakRowSheet(ws) {
 //   JENIS PLAK | **DESIGN | HARGA
 // One honour per row; the award name in the TOKOH column is the engraved
 // position (no per-plaque class/year line). Lands in its own TOKOH_SHEET
-// list category (catalog.js) — `isTokohList`. NAMA MURID / GAMBAR / DESIGN
-// are carried through as per-row metadata for the review table; when NAMA
-// MURID is left blank the row behaves exactly like LONJAKAN/KEHADIRAN (its
-// KUANTITI plaques all engrave the one TOKOH name).
+// list category (catalog.js) — `isTokohList`. GAMBAR / DESIGN are per-row
+// metadata for the review table. NAMA MURID (exportCsv.js):
+//   * blank  — the row's KUANTITI plaques all engrave the one TOKOH name
+//     (same as LONJAKAN/KEHADIRAN).
+//   * a name — engraves as the reference sample's line ③ (event_line_1).
+//   * "Reserved" (any case) — the teacher pre-books the Jenis Plak before
+//     the student's name is known: stock is deducted at submit like any
+//     other row, but the row is kept OUT of the production CSV until a real
+//     name replaces "Reserved".
 function parseTokohAnugerahSheet(ws) {
   const range = sheetRange(ws);
   const tokohH = findLabelCells(ws, range, ['TOKOH'])[0];

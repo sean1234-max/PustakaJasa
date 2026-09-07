@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  CSV_COLUMNS, rowsToCsv, buildCsvRows, validateExport, buildCategoryCsvFilename,
+  CSV_COLUMNS, rowsToCsv, buildCsvRows, validateExport, buildCategoryCsvFilename, isReservedName,
 } from './exportCsv';
 
 describe('rowsToCsv', () => {
@@ -59,6 +59,135 @@ describe('buildCsvRows — positionFromRows category (Main Template / TOKOH)', (
     );
     expect(skippedItemIds).toEqual(['old']);
     expect(rows).toHaveLength(3);
+  });
+});
+
+describe('buildCsvRows — TOKOH_SHEET NAMA MURID / Reserved', () => {
+  // One cart item per honour row (plakPerRow), each detail carrying just
+  // that row — the shape AppState.addToCart produces for TOKOH_SHEET.
+  const tokohItem = (id, row) => ({
+    id, jenisPlak: 'CPH / A', qty: Number(row.qty) || 0, categoryKey: 'TOKOH_SHEET', blockIdx: 0,
+    detail: { lines: { 'TOKOH_SHEET::0::0': 'HARI ANUGERAH 2026', 'TOKOH_SHEET::0::2': '' }, rows: [row] },
+  });
+  const order = { id: 'ORD-9', schoolLanguage: 'SK' };
+
+  it('a filled NAMA MURID engraves as event_line_1, position stays the TOKOH name', () => {
+    const item = tokohItem('a', { id: 1, desc: 'TOKOH MURID', qty: 1, namaMurid: 'AHMAD BIN ALI' });
+    const { rows, reservedCount } = buildCsvRows({ ...order, items: [item] }, 'TOKOH_SHEET', [item]);
+    expect(reservedCount).toBe(0);
+    expect(rows).toEqual([['HARI ANUGERAH 2026', '', 'TOKOH MURID', 'AHMAD BIN ALI', '']]);
+  });
+
+  it('a blank NAMA MURID engraves the TOKOH name qty times, event_line_1 blank', () => {
+    const item = tokohItem('b', { id: 2, desc: 'TOKOH NILAM', qty: 3 });
+    const { rows } = buildCsvRows({ ...order, items: [item] }, 'TOKOH_SHEET', [item]);
+    expect(rows).toHaveLength(3);
+    expect(rows.every((r) => r[2] === 'TOKOH NILAM' && r[3] === '')).toBe(true);
+  });
+
+  it('a "Reserved" NAMA MURID is left out of the CSV but counted (stock is held elsewhere)', () => {
+    const named = tokohItem('n', { id: 1, desc: 'TOKOH MURID', qty: 1, namaMurid: 'SITI' });
+    const reserved = tokohItem('r', { id: 2, desc: 'TOKOH AKADEMIK', qty: 2, namaMurid: 'Reserved' });
+    const items = [named, reserved];
+    const csv = buildCsvRows({ ...order, items }, 'TOKOH_SHEET', items);
+    expect(csv.rows).toEqual([['HARI ANUGERAH 2026', '', 'TOKOH MURID', 'SITI', '']]);
+    expect(csv.reservedCount).toBe(2);
+
+    const res = validateExport(order, items, [], csv);
+    expect(res.ok).toBe(true);
+    expect(res.warnings.some((w) => /Reserved.*held for stock/.test(w))).toBe(true);
+  });
+
+  it('every case form of "reserved" is treated as a hold', () => {
+    ['RESERVED', 'reserved', 'Reserved', '  Reserved  '].forEach((v) => expect(isReservedName(v)).toBe(true));
+    ['Reserved for Ali', 'AHMAD', '', undefined].forEach((v) => expect(isReservedName(v)).toBe(false));
+  });
+
+  // Mirrors a real filled TOKOH sheet (test_orders/PPKI_SHEET.xlsx):
+  //   TOKOH MURID       | (blank)  | 5 | H-25
+  //   TOKOH NILAM       | (blank)  | 4 | DECO LIGHT
+  //   TOKOH KURIKULUM   | RESERVED | 3 | H-25
+  //   TOKOH KOKURIKULUM | SEAN     | 5 | SM-13187 (Silver)
+  //   TOKOH AKADEMIK    | CINDY    | 3 | DECO LIGHT
+  it('a real mixed sheet: blanks engrave the award name, named rows engrave the name, reserved held back', () => {
+    const mk = (id, desc, qty, jenisPlak, namaMurid) => ({
+      id, jenisPlak, qty, categoryKey: 'TOKOH_SHEET', blockIdx: 0,
+      detail: { lines: { 'TOKOH_SHEET::0::0': 'HARI ANUGERAH KECEMERLANGAN MURID 2026' }, rows: [{ id, desc, qty, ...(namaMurid ? { namaMurid } : {}) }] },
+    });
+    const items = [
+      mk('m', 'TOKOH MURID', 5, 'H-25'),
+      mk('n', 'TOKOH NILAM', 4, 'DECO LIGHT'),
+      mk('k', 'TOKOH KURIKULUM', 3, 'H-25', 'RESERVED'),
+      mk('ko', 'TOKOH KOKURIKULUM', 5, 'SM-13187 (Silver)', 'SEAN'),
+      mk('a', 'TOKOH AKADEMIK', 3, 'DECO LIGHT', 'CINDY'),
+    ];
+    const { rows, reservedCount } = buildCsvRows({ ...order, items }, 'TOKOH_SHEET', items);
+    expect(reservedCount).toBe(3);
+    expect(rows).toHaveLength(17); // 20 KUANTITI − 3 reserved
+    expect(rows.filter((r) => r[2] === 'TOKOH MURID' && r[3] === '')).toHaveLength(5);
+    expect(rows.filter((r) => r[2] === 'TOKOH NILAM' && r[3] === '')).toHaveLength(4);
+    expect(rows.filter((r) => r[2] === 'TOKOH KURIKULUM')).toHaveLength(0);
+    expect(rows.filter((r) => r[2] === 'TOKOH KOKURIKULUM' && r[3] === 'SEAN')).toHaveLength(5);
+    expect(rows.filter((r) => r[2] === 'TOKOH AKADEMIK' && r[3] === 'CINDY')).toHaveLength(3);
+    expect(rows.every((r) => r[0] === 'HARI ANUGERAH KECEMERLANGAN MURID 2026' && r[1] === '')).toBe(true);
+  });
+
+  it('all-Reserved selection: a clear "nothing to engrave yet" error, not the generic one', () => {
+    const items = [tokohItem('r', { id: 1, desc: 'TOKOH MURID', qty: 4, namaMurid: 'reserved' })];
+    const csv = buildCsvRows({ ...order, items }, 'TOKOH_SHEET', items);
+    expect(csv.rows).toHaveLength(0);
+    const res = validateExport(order, items, [], csv);
+    expect(res.ok).toBe(false);
+    expect(res.errors.some((e) => /still "Reserved"/.test(e))).toBe(true);
+    expect(res.errors.some((e) => /every quantity is 0/.test(e))).toBe(false);
+  });
+});
+
+describe('buildCsvRows — ALIRAN TERBAIK footer qty (derived vs teacher override)', () => {
+  // Scenario: Tahun 1-3 flat 5 each (no kedudukan), Tahun 4-6 ranked 1-10.
+  const tahunRows = [
+    { id: 1, desc: 'TAHUN 1', qty: '5', kedudukanHingga: 0 },
+    { id: 2, desc: 'TAHUN 2', qty: '5', kedudukanHingga: 0 },
+    { id: 3, desc: 'TAHUN 3', qty: '5', kedudukanHingga: 0 },
+    { id: 4, desc: 'TAHUN 4', qty: '10', kedudukanHingga: 10 },
+    { id: 5, desc: 'TAHUN 5', qty: '10', kedudukanHingga: 10 },
+    { id: 6, desc: 'TAHUN 6', qty: '10', kedudukanHingga: 10 },
+  ];
+  const mk = (id, jenisPlak, posDari, posHingga, qty) => ({
+    id, jenisPlak, qty, categoryKey: 'ALIRAN', blockIdx: 0,
+    posDari, posHingga,
+    detail: { lines: { 'ALIRAN::0::0': 'HARI ANUGERAH 2026', 'ALIRAN::0::2': 'ANUGERAH ALIRAN TERBAIK' }, rows: tahunRows },
+  });
+  const order = { id: 'ORD-A', schoolLanguage: 'SK' };
+
+  it('derived qty (not overridden): one row per (ranked Tahun, place)', () => {
+    // h25 covers places 4-10 → 7 per ranked Tahun × 3 = 21
+    const h25 = mk('h', 'h25', 4, 10, 21);
+    const { rows } = buildCsvRows({ ...order, items: [h25] }, 'ALIRAN', [h25]);
+    expect(rows).toHaveLength(21);
+    expect(rows.filter((r) => r[2] === 'ANUGERAH ALIRAN TERBAIK\nKEEMPAT')).toHaveLength(3);
+    expect(rows.filter((r) => r[3] === 'TAHUN 4')).toHaveLength(7);
+  });
+
+  it('overridden qty: emits exactly item.qty rows, ordinals cycle the range, Tahun blank', () => {
+    // gold covers places 1-3 → derived would be 9; teacher typed 3
+    const gold = mk('g', 'sm-13187(gold)', 1, 3, 3);
+    const { rows } = buildCsvRows({ ...order, items: [gold] }, 'ALIRAN', [gold]);
+    expect(rows).toHaveLength(3);
+    expect(rows.map((r) => r[2])).toEqual([
+      'ANUGERAH ALIRAN TERBAIK\nPERTAMA',
+      'ANUGERAH ALIRAN TERBAIK\nKEDUA',
+      'ANUGERAH ALIRAN TERBAIK\nKETIGA',
+    ]);
+    expect(rows.every((r) => r[3] === '')).toBe(true);
+  });
+
+  it('flat plak row (no range): one row per plaque of the flat Tahuns', () => {
+    const flat = mk('f', 'DECO LIGHT', null, null, 15);
+    const { rows } = buildCsvRows({ ...order, items: [flat] }, 'ALIRAN', [flat]);
+    expect(rows).toHaveLength(15);
+    expect(rows.filter((r) => r[3] === 'TAHUN 1')).toHaveLength(5);
+    expect(rows.every((r) => r[2] === 'ANUGERAH ALIRAN TERBAIK')).toBe(true);
   });
 });
 
