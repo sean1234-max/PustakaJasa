@@ -83,31 +83,16 @@ export default function NewOrderStep2() {
   const unansweredChoices = choiceWarnings.filter((w) => !choiceAnswers[w.id]);
 
   // The import's own warning list is a snapshot from the moment the file
-  // was read — a "couldn't match Jenis Plak" entry stays true only until
-  // the teacher actually picks one for that block, at which point still
-  // showing it would read as the site being broken rather than helpful.
-  // Re-checks each `plakMismatch` entry's OWN block against the CURRENT
-  // plakRows on every render, so it disappears the moment that block gets
-  // a real Jenis Plak — however that happened (typed here, or the block
-  // reloaded via Cart's "Edit"). `truncated` (this file had more sections
-  // than fit) describes the upload itself, not any one block, so it has
-  // nothing to live-check against and just stays for the session.
-  const liveImportWarnings = useMemo(() => {
-    if (!importStatus?.warnings?.length) return [];
-    return importStatus.warnings.filter((w) => {
-      if (w.type !== 'plakMismatch') return true;
-      const key = `${w.catKey || 'KLAS_MATRIX'}::${w.blockIdx}`;
-      // plakPerRow categories (TOKOH, LONJAKAN) carry one Jenis Plak per row
-      // in rowsByBlock — the warning names its exact row via `rowId`, so it
-      // clears only when THAT row gets a real Jenis Plak, not any sibling.
-      if (w.rowId != null) {
-        const row = (state.rowsByBlock[key] || []).find((r) => r.id === w.rowId);
-        return !(row && row.jenisPlak);
-      }
-      const rows = state.plakRows[key] || [];
-      return !rows.some((pr) => pr.jenisPlak);
-    });
-  }, [importStatus, state.plakRows, state.rowsByBlock]);
+  // was read. A "couldn't match Jenis Plak" entry is no longer shown here —
+  // it's a "this category still needs a Jenis Plak" problem, and
+  // `incompleteCategories` below already tracks that live for every
+  // category in one place. What's left is `truncated` (this file had more
+  // sections than fit): it describes the upload itself, not any one block,
+  // so it just stays for the session.
+  const liveImportWarnings = useMemo(
+    () => (importStatus?.warnings || []).filter((w) => w.type !== 'plakMismatch' && w.type !== 'choice'),
+    [importStatus],
+  );
 
   // Clicking a warning switches to the category it's about (KLAS_MATRIX
   // unless the warning names its own — see AppState.jsx's `categorized`
@@ -253,41 +238,18 @@ export default function NewOrderStep2() {
               {importStatus.message}
             </p>
           )}
-          {/* Separate from the plain success/failure line above — these
-              flag a SPECIFIC field the import couldn't fill in correctly
-              (an un-matched Jenis Plak, a file too big to fit) even though
-              the import as a whole still succeeded, so they need their own
-              more attention-grabbing treatment or a teacher skimming past
-              the green "Imported" line would never notice one field still
-              needs manual attention before Add to Cart. Live-filtered
-              (see liveImportWarnings above) — fixing the one field a
-              warning is about makes that warning disappear on its own.
-              A plakMismatch entry is also clickable — see jumpToBlock —
-              so the teacher doesn't have to hunt through what can be a
-              dozen+ sections to find the one field a warning is about;
-              `truncated` isn't about any one block, so it's plain text. */}
+          {/* Separate from the plain success/failure line above — flags a
+              file that had more sections than could be imported (`truncated`),
+              which the teacher must follow up on separately. Per-field
+              problems (an un-matched Jenis Plak, an unfilled category) are
+              in the red "can't be added to cart" panel below the tabs. */}
           {liveImportWarnings.length > 0 && (
             <ul style={{ margin: '6px 0 0', paddingLeft: 18, color: '#b45309', fontWeight: 600, fontSize: '0.9em' }}>
               {liveImportWarnings.map((w) => (
-                <li key={w.text}>
-                  {w.type === 'plakMismatch' ? (
-                    <button
-                      type="button"
-                      onClick={() => jumpToBlock(w.blockIdx, w.catKey)}
-                      style={{
-                        background: 'none', border: 'none', padding: 0, margin: 0, font: 'inherit',
-                        color: 'inherit', textAlign: 'left', textDecoration: 'underline', cursor: 'pointer',
-                      }}
-                    >
-                      ⚠ {w.text}
-                    </button>
-                  ) : (
-                    <>⚠ {w.text}</>
-                  )}
-                </li>
+                <li key={w.text}>⚠ {w.text}</li>
               ))}
-              </ul>
-            )}
+            </ul>
+          )}
         </div>
 
         <div className="card-kicker">Jenis Anugerah (Category)</div>

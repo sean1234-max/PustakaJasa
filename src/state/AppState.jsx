@@ -836,17 +836,14 @@ export function AppStateProvider({ children }) {
         if (section.isSimpleTahunList) {
           // LONJAKAN SAUJANA — TAHUN 1-6, each with its own QTY + Jenis Plak.
           const byTahun = new Map(section.tahunRows.map((tr) => [tr.tahun, tr]));
+          // An un-matched Jenis Plak just leaves the row blank — the teacher
+          // picks it here. NewOrderStep2's "can't add to cart" panel
+          // (buildCategoryCartItems) names every such row, so no separate
+          // import warning is raised.
           newRowsByBlock[key] = ['TAHUN 1', 'TAHUN 2', 'TAHUN 3', 'TAHUN 4', 'TAHUN 5', 'TAHUN 6'].map((tahun) => {
             const tr = byTahun.get(tahun);
             const matched = tr?.jenisPlak ? matchJenisPlakPath(tr.jenisPlak, next.plakCatalog) : '';
-            const rowId = nextRowId++;
-            if (tr?.jenisPlak && !matched) {
-              // rowId lets NewOrderStep2's liveImportWarnings clear this the
-              // moment THIS row (plakPerRow — one Jenis Plak per row in
-              // rowsByBlock) gets a real Jenis Plak, not when any sibling does.
-              warnings.push({ type: 'plakMismatch', catKey, blockIdx: 0, rowId, text: `${cat.label} (${tahun}): couldn't match Jenis Plak "${tr.jenisPlak}" — please choose it manually.` });
-            }
-            return { id: rowId, desc: tahun, qty: tr && tr.qty ? String(tr.qty) : '', jenisPlak: matched };
+            return { id: nextRowId++, desc: tahun, qty: tr && tr.qty ? String(tr.qty) : '', jenisPlak: matched };
           });
         } else if (section.isTokohList) {
           // TOKOH (excelImport.js's parseTokohAnugerahSheet) — one honour
@@ -855,13 +852,9 @@ export function AppStateProvider({ children }) {
           // Plak (plakPerRow).
           newRowsByBlock[key] = section.tokohRows.map((tr) => {
             const matched = tr.jenisPlak ? matchJenisPlakPath(tr.jenisPlak, next.plakCatalog) : '';
-            const rowId = nextRowId++;
-            if (tr.jenisPlak && !matched) {
-              // rowId — see the LONJAKAN note above; TOKOH is plakPerRow too.
-              warnings.push({ type: 'plakMismatch', catKey, blockIdx: 0, rowId, text: `${cat.label} (${tr.desc}): couldn't match Jenis Plak "${tr.jenisPlak}" — please choose it manually.` });
-            }
+            // Un-matched → blank, picked here; flagged by buildCategoryCartItems.
             return {
-              id: rowId, desc: tr.desc, qty: tr.qty ? String(tr.qty) : '',
+              id: nextRowId++, desc: tr.desc, qty: tr.qty ? String(tr.qty) : '',
               jenisPlak: matched, namaMurid: tr.namaMurid || '', gambar: tr.gambar || '', design: tr.design || '',
             };
           });
@@ -961,10 +954,8 @@ export function AppStateProvider({ children }) {
             ), 0);
           };
           const aliranRows = (section.plakRanges || []).map((pr) => {
+            // Un-matched → blank, picked here; flagged by buildCategoryCartItems.
             const matched = matchJenisPlakPath(pr.jenisPlak, next.plakCatalog);
-            if (pr.jenisPlak && !matched) {
-              warnings.push({ type: 'plakMismatch', catKey, blockIdx: 0, text: `${cat.label}: couldn't match Jenis Plak "${pr.jenisPlak}" — please choose it manually.` });
-            }
             const override = pr.qty && pr.qty !== derivedFor(pr.dari || null, pr.hingga || null) ? pr.qty : null;
             return { id: nextPlakRowId++, jenisPlak: matched, posDari: pr.dari || null, posHingga: pr.hingga || null, qty: override };
           });
@@ -981,10 +972,8 @@ export function AppStateProvider({ children }) {
           if (aliranRows.length === 0) aliranRows.push({ id: nextPlakRowId++, jenisPlak: '', posDari: 1, posHingga: null, qty: null });
           newPlakRows = { ...next.plakRows, [key]: aliranRows };
         } else {
+          // Un-matched → blank, picked here; flagged by buildCategoryCartItems.
           const matchedPlak = matchJenisPlakPath(section.jenisPlak, next.plakCatalog);
-          if (section.jenisPlak && !matchedPlak) {
-            warnings.push({ type: 'plakMismatch', catKey, blockIdx: 0, text: `${cat.label}: couldn't match Jenis Plak "${section.jenisPlak}" to anything in the catalog — please choose it manually.` });
-          }
           newPlakRows = { ...next.plakRows, [key]: [{ id: nextPlakRowId++, jenisPlak: matchedPlak }] };
         }
         next = {

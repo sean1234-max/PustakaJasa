@@ -58,6 +58,16 @@ export function buildCategoryCartItems(st, catKey) {
     if (!hasJenisPlak) {
       return { engaged, error: `Please choose a Jenis Plak for ${blockLabel} before adding to cart.` };
     }
+    // plakPerRow (TOKOH / LONJAKAN): "some row has a Jenis Plak" isn't
+    // enough — every row with a quantity needs its own. Names the rows
+    // still missing it (an import's "couldn't match Jenis Plak" ends up
+    // here too, once the auto-match failed and left the row blank).
+    if (blk.plakPerRow) {
+      const missing = blk.rows.filter((r) => Number(r.qty) > 0 && !r.jenisPlak).map((r) => r.desc || 'a row');
+      if (missing.length) {
+        return { engaged, error: `Choose a Jenis Plak for ${missing.join(', ')} in ${blockLabel} before adding to cart.` };
+      }
+    }
     // ALIRAN TERBAIK: every plaque the Tahun table asks for must be covered
     // by a Jenis Plak footer row. The footer QTY can be derived or a
     // teacher override (computeBlocks.js) — either way its sum has to equal
