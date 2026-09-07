@@ -31,6 +31,7 @@ const DISABLED = Deno.env.get('GRAMMAR_DISABLED') === '1';
 const MAX_LINES = 40;
 const MAX_TOTAL_CHARS = 8000;
 const MAX_LINE_CHARS = 600;
+const RETENTION_DAYS = 90;
 
 const ALLOWED_ROLES = ['teacher', 'salesman', 'admin'];
 
@@ -136,6 +137,14 @@ Deno.serve(async (req) => {
   const runId = run?.id as string | undefined;
   const finish = (fields: Record<string, unknown>) =>
     runId ? adminClient.from('ai_grammar_checks').update({ ...fields, completed_at: new Date().toISOString() }).eq('id', runId) : Promise.resolve();
+
+  // Fire-and-forget retention sweep — drop this user's own rows older than
+  // the window so the table can't grow forever. Best-effort; a failure here
+  // is swallowed and never affects the response.
+  const cutoff = new Date(Date.now() - RETENTION_DAYS * 86_400_000).toISOString();
+  const sweep = adminClient.from('ai_grammar_checks').delete().eq('created_by', user.id).lt('created_at', cutoff);
+  // @ts-ignore EdgeRuntime is provided by the Supabase Edge runtime
+  if (typeof EdgeRuntime !== 'undefined') EdgeRuntime.waitUntil(Promise.resolve(sweep).catch(() => {}));
 
   const linesById = new Map(lines.map((l) => [l.id, l]));
   const messages: unknown[] = [{ role: 'user', content: buildUserPrompt(lines) }];

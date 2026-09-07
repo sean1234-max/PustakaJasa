@@ -15,9 +15,13 @@ import { supabase } from './supabaseClient';
 // actual upload — a small round trip, but it means this is the only file
 // that needs to know Storage exists at all.
 export async function uploadLogo(dataUrl, fileName) {
+  // Under the uploader's own uid folder — the "logos" bucket's INSERT
+  // policy scopes writes that way (0054), same shape as order-imports, so
+  // one account can't scribble into the bucket at large.
+  const { data: { user } } = await supabase.auth.getUser();
   const blob = await (await fetch(dataUrl)).blob();
   const ext = (fileName || '').includes('.') ? fileName.slice(fileName.lastIndexOf('.')) : '';
-  const path = `${crypto.randomUUID()}${ext}`;
+  const path = `${user?.id || 'shared'}/${crypto.randomUUID()}${ext}`;
   const { error } = await supabase.storage.from('logos').upload(path, blob, {
     contentType: blob.type || 'image/png',
     upsert: false,

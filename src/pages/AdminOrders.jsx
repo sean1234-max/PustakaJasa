@@ -5,6 +5,9 @@ import { useAppState } from '../state/useAppState';
 import { ORDER_STATUSES, statusPillStyle } from '../data/catalog';
 
 const DATE_OPTIONS = ['All Time', 'Today', 'This Week', 'This Month', 'Custom Range'];
+// Stable empty fallback so the useMemos below don't see a fresh [] every
+// render while state.orders is still loading.
+const EMPTY_ORDERS = [];
 
 // order.datePlaced is a display string like "13 Aug 2026" (see formatDate
 // in src/data/catalog.js), not an ISO date — parsed here for range
@@ -49,7 +52,7 @@ export default function AdminOrders() {
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
 
-  const orders = state.orders || [];
+  const orders = state.orders || EMPTY_ORDERS;
   const schoolOptions = useMemo(() => [...new Set(orders.map((o) => o.sekolah).filter(Boolean))].sort(), [orders]);
   const salesmanOptions = useMemo(() => [...new Set(orders.map((o) => o.sales).filter(Boolean))].sort(), [orders]);
   // (orders is a fresh `[]` fallback whenever state.orders is falsy, so this

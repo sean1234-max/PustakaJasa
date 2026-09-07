@@ -84,9 +84,10 @@ const catalogAnnouncements = {
 };
 
 function CatalogRow({
-  node, depth, parentId, canMoveUp, canMoveDown, onAddChild, onRemove, onRename, onPriceChange, onStockChange, onToggleHidden, onMove,
+  node, depth, parentId, path, canMoveUp, canMoveDown, onAddChild, onRemove, onRename, ordersUsingPath, onPriceChange, onStockChange, onToggleHidden, onMove,
   collapsedIds, onToggleCollapsed, dragActive,
 }) {
+  const fullPath = [...path, node.code].join(' / ');
   const [addingChild, setAddingChild] = useState(false);
   const [newCode, setNewCode] = useState('');
   const [newPrice, setNewPrice] = useState('');
@@ -133,7 +134,14 @@ function CatalogRow({
   const commitCode = () => {
     const next = codeDraft.trim();
     if (!next || next === node.code) { setCodeDraft(node.code); return; }
-    if (window.confirm(`Rename "${node.code}" to "${next}"?\n\nOrders already placed keep the old name — only new orders use "${next}".`)) {
+    // Renaming only changes what NEW orders see — an order already placed
+    // stored this code as the joined path text and nothing rewrites it, so
+    // its Jenis Plak stops resolving (CSV export blocks on it).
+    const affected = ordersUsingPath(fullPath);
+    const msg = affected > 0
+      ? `${affected} order(s) already use "${node.code}". Renaming it will break their Jenis Plak — the CSV export won't run for them until you rename it back or fix each order by hand.\n\nRename anyway?`
+      : `Rename "${node.code}" to "${next}"?\n\nOrders placed later use "${next}"; any placed before keep the old name.`;
+    if (window.confirm(msg)) {
       onRename(node.id, next);
     } else {
       setCodeDraft(node.code);
@@ -265,9 +273,11 @@ function CatalogRow({
               parentId={node.id}
               canMoveUp={i > 0}
               canMoveDown={i < node.children.length - 1}
+              path={[...path, node.code]}
               onAddChild={onAddChild}
               onRemove={onRemove}
               onRename={onRename}
+              ordersUsingPath={ordersUsingPath}
               onPriceChange={onPriceChange}
               onStockChange={onStockChange}
               onToggleHidden={onToggleHidden}
@@ -320,6 +330,10 @@ export default function AdminCatalog() {
     renameCatalogNode(id, code);
     logCatalogAction('Admin renamed a catalog code', id, { code });
   };
+  const ordersUsingPath = (fullPath) => (state.orders || []).filter((o) => {
+    const hit = (it) => it && (it.jenisPlak === fullPath || String(it.jenisPlak || '').startsWith(`${fullPath} / `));
+    return (o.items || []).some(hit) || (o.pendingAddonItems || []).some(hit);
+  }).length;
   const handlePriceChange = (id, price) => {
     updateCatalogNodePrice(id, price);
     logCatalogAction('Admin updated a catalog price', id, { price });
@@ -421,9 +435,11 @@ export default function AdminCatalog() {
                   parentId={null}
                   canMoveUp={i > 0}
                   canMoveDown={i < state.plakCatalog.length - 1}
+                  path={[]}
                   onAddChild={(parentId, code, price) => handleAddChild(parentId, code, price, 0)}
                   onRemove={handleRemove}
                   onRename={handleRename}
+                  ordersUsingPath={ordersUsingPath}
                   onPriceChange={handlePriceChange}
                   onStockChange={handleStockChange}
                   onToggleHidden={handleToggleHidden}

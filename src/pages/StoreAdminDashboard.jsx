@@ -15,6 +15,7 @@ import { getOrderChangeStamp } from '../utils/orderStamp';
 // Invoice Number has been assigned yet — the exact responsibility
 // Production used to own (see ProductionOrderDetail.jsx's history before
 // this change) and no longer does.
+const EMPTY_ORDERS = [];
 const TABS = [
   { key: 'pending', label: 'Waiting for Invoice', match: (o) => !o.invoiceId },
   { key: 'invoiced', label: 'Invoiced', match: (o) => !!o.invoiceId },
@@ -29,7 +30,7 @@ export default function StoreAdminDashboard() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
 
-  const orders = state.orders || [];
+  const orders = state.orders || EMPTY_ORDERS;
   const salesmanOptions = useMemo(() => [...new Set(orders.map((o) => o.sales).filter(Boolean))].sort(), [orders]);
   const statusOptions = STATUS_STAGES;
 

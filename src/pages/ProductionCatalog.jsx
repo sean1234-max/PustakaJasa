@@ -81,9 +81,10 @@ function sumDescendantStock(node) {
 // opening the catalog shows only top-level codes, not every nested variant
 // at once.
 function CatalogRow({
-  node, depth, parentId, canReorder, onAddChild, onRemove, onRename, onPriceChange, onStockChange, onToggleHidden,
+  node, depth, parentId, path, canReorder, onAddChild, onRemove, onRename, ordersUsingPath, onPriceChange, onStockChange, onToggleHidden,
   collapsedIds, onToggleCollapsed, dragActive,
 }) {
+  const fullPath = [...path, node.code].join(' / ');
   const [addingChild, setAddingChild] = useState(false);
   const [newCode, setNewCode] = useState('');
   const [newPrice, setNewPrice] = useState('');
@@ -130,8 +131,15 @@ function CatalogRow({
   const commitCode = () => {
     const next = codeDraft.trim();
     if (!next || next === node.code) { setCodeDraft(node.code); return; }
-    // Only new orders pick up the new name — see renameCatalogNode.
-    if (window.confirm(`Rename "${node.code}" to "${next}"?\n\nOrders already placed keep the old name — only new orders use "${next}".`)) {
+    // Renaming only changes what NEW orders see. An order already placed
+    // stored this code as the joined path text and nothing rewrites it —
+    // so its Jenis Plak stops resolving (CSV export blocks on it, stock
+    // won't restore). Warn hard when there are such orders.
+    const affected = ordersUsingPath(fullPath);
+    const msg = affected > 0
+      ? `${affected} order(s) already use "${node.code}". Renaming it will break their Jenis Plak — the CSV export won't run for them until you rename it back or fix each order by hand.\n\nRename anyway?`
+      : `Rename "${node.code}" to "${next}"?\n\nOrders placed later use "${next}"; any placed before keep the old name.`;
+    if (window.confirm(msg)) {
       onRename(node.id, next);
     } else {
       setCodeDraft(node.code);
@@ -252,10 +260,12 @@ function CatalogRow({
               node={child}
               depth={depth + 1}
               parentId={node.id}
+              path={[...path, node.code]}
               canReorder={node.children.length > 1}
               onAddChild={onAddChild}
               onRemove={onRemove}
               onRename={onRename}
+              ordersUsingPath={ordersUsingPath}
               onPriceChange={onPriceChange}
               onStockChange={onStockChange}
               onToggleHidden={onToggleHidden}
@@ -312,6 +322,13 @@ export default function ProductionCatalog() {
   const handleRename = (id, code) => {
     renameCatalogNode(id, code);
   };
+  // How many orders' items still reference this exact Jenis Plak path (or a
+  // path under it) — Production/Admin see every order here, so this count is
+  // complete. Used to warn before a rename that would orphan them.
+  const ordersUsingPath = (fullPath) => (state.orders || []).filter((o) => {
+    const hit = (it) => it && (it.jenisPlak === fullPath || String(it.jenisPlak || '').startsWith(`${fullPath} / `));
+    return (o.items || []).some(hit) || (o.pendingAddonItems || []).some(hit);
+  }).length;
   const handlePriceChange = (id, price) => {
     updateCatalogNodePrice(id, price);
   };
@@ -406,9 +423,11 @@ export default function ProductionCatalog() {
                     depth={0}
                     parentId={null}
                     canReorder={state.plakCatalog.length > 1}
+                    path={[]}
                     onAddChild={(parentId, code, price) => handleAddChild(parentId, code, price, 0)}
                     onRemove={handleRemove}
                     onRename={handleRename}
+                    ordersUsingPath={ordersUsingPath}
                     onPriceChange={handlePriceChange}
                     onStockChange={handleStockChange}
                     onToggleHidden={handleToggleHidden}
