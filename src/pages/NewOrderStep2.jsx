@@ -6,8 +6,9 @@ import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import { useAppState } from '../state/useAppState';
 import { buildCategoryCartItems } from '../state/categoryCartItems';
 import { ACTIVE_CATEGORIES, filterHiddenPlakCatalog } from '../data/catalog';
-import { computeBlocks } from '../utils/computeBlocks';
+import { computeBlocks, noopUpdaters } from '../utils/computeBlocks';
 import { createDraftUpdaters } from '../utils/draftUpdaters';
+import { checkEngravingText } from '../lib/grammarCheckApi';
 
 const DRAFT_FIELDS = {
   lineValues: 'lineValues', matrixValues: 'matrixValues', rowsByBlock: 'rowsByBlock', plakRows: 'plakRows',
@@ -40,6 +41,13 @@ export default function NewOrderStep2() {
   // panel below), keyed by warning id → chosen option key. An unanswered
   // choice question blocks Add to Cart.
   const [choiceAnswers, setChoiceAnswers] = useState({});
+  // AI proofread of the engraving lines, run on Add to Cart. `checking` is
+  // the spinner while it runs; `pendingCheck` = { issues, proceed } holds
+  // the found issues + the add action to run once the teacher is done
+  // reviewing them. Both are purely advisory — see grammarCheckApi.js.
+  const [checking, setChecking] = useState(false);
+  const [pendingCheck, setPendingCheck] = useState(null);
+  const [checkOkToast, setCheckOkToast] = useState(false);
 
   // "Import from Excel" — lets a teacher upload (by click OR drag-and-drop
   // from Explorer) their own past order instead of typing every
@@ -175,6 +183,83 @@ export default function NewOrderStep2() {
   // Codes Production has hidden (e.g. out of stock) never appear in the
   // teacher's picker — see filterHiddenPlakCatalog.
   const visiblePlakCatalog = useMemo(() => filterHiddenPlakCatalog(state.plakCatalog), [state.plakCatalog]);
+
+  // Every filled Reference Sample line across the given categories, tagged
+  // with the lineValues key so an accepted fix is a plain substring replace.
+  const collectEngravingLines = (catKeys) => {
+    const out = [];
+    catKeys.forEach((catKey) => {
+      const { blocks: catBlocks } = computeBlocks(
+        catKey, state.lineValues, state.matrixValues, state.rowsByBlock, state.plakRows, state.columnsByBlock,
+        noopUpdaters, state.plakCatalog, state.schoolLanguage,
+      );
+      catBlocks.forEach((blk) => {
+        (blk.lines || []).forEach((ln) => {
+          [ln, ln.secondLine].filter(Boolean).forEach((l) => {
+            const text = String(l.value || '').trim();
+            if (text) out.push({ id: l.key, label: (l.placeholder || 'Line').replace(/[()]/g, ' ').replace(/\s+/g, ' ').trim(), text });
+          });
+        });
+      });
+    });
+    return out;
+  };
+
+  // Add to cart, but first send the engraving lines through the AI
+  // proofread. If it finds something, show the review panel and hold the
+  // add until the teacher clicks through; on any failure (or nothing
+  // found) just add — the check is never allowed to block.
+  const runAddWithCheck = async (catKeys, proceed) => {
+    const lines = collectEngravingLines(catKeys);
+    if (lines.length === 0) { proceed(); return; }
+    setChecking(true);
+    let issues = [];
+    try {
+      ({ issues } = await checkEngravingText(lines));
+    } catch { issues = []; }
+    setChecking(false);
+    if (issues.length > 0) {
+      setPendingCheck({ issues, proceed });
+    } else {
+      proceed();
+      setCheckOkToast(true);
+      setTimeout(() => setCheckOkToast(false), 2500);
+    }
+  };
+
+  const handleAddCategory = () => {
+    if (checking) return;
+    // A category that isn't ready to add at all — let addToCart surface its
+    // own toast, don't spend a check on it.
+    if (buildCategoryCartItems(draftForCheck, state.category).error) { addToCart(); return; }
+    runAddWithCheck([state.category], addToCart);
+  };
+
+  const handleAddAll = () => {
+    if (checking) return;
+    const engagedKeys = ACTIVE_CATEGORIES
+      .filter((c) => buildCategoryCartItems(draftForCheck, c.key).engaged)
+      .map((c) => c.key);
+    runAddWithCheck(engagedKeys, addAllToCart);
+  };
+
+  // "Use fix" on one issue — replace the first occurrence of `original` in
+  // its line. If the text changed since the check, the occurrence is gone
+  // and this is a no-op (the issue just drops off the list).
+  const applyFix = (issue) => {
+    const cur = state.lineValues[issue.lineId] || '';
+    const idx = cur.indexOf(issue.original);
+    if (idx !== -1) {
+      updaters.onLine(issue.lineId, cur.slice(0, idx) + issue.suggestion + cur.slice(idx + issue.original.length));
+    }
+    setPendingCheck((p) => (p ? { ...p, issues: p.issues.filter((x) => x !== issue) } : p));
+  };
+  const dismissIssue = (issue) => setPendingCheck((p) => (p ? { ...p, issues: p.issues.filter((x) => x !== issue) } : p));
+  const proceedFromPanel = () => {
+    const proceed = pendingCheck?.proceed;
+    setPendingCheck(null);
+    if (proceed) proceed();
+  };
 
   return (
     <div className="screen-wrap">
@@ -339,20 +424,54 @@ export default function NewOrderStep2() {
           </div>
         ))}
 
+        {pendingCheck && (
+          <div className="confirm-panel" style={{ marginTop: 'var(--space-5)' }}>
+            <div className="confirm-panel-title">
+              Semak ejaan — {pendingCheck.issues.length} perkara nak semak
+              <span className="confirm-panel-count">AI</span>
+            </div>
+            <p className="hint-text" style={{ margin: '0 0 var(--space-3)' }}>
+              Teks ini akan diukir pada plak. Semak dulu — atau abaikan dan teruskan.
+            </p>
+            {pendingCheck.issues.map((issue, k) => (
+              <div key={k} className="confirm-item">
+                <p className="confirm-item-q" style={{ margin: 0 }}>
+                  <span style={{ textDecoration: 'line-through', opacity: 0.6 }}>{issue.original}</span>
+                  {' → '}
+                  <strong>{issue.suggestion}</strong>
+                  <span className="hint-text" style={{ marginLeft: 8 }}>({issue.kind})</span>
+                </p>
+                {issue.note && <p className="hint-text" style={{ margin: '2px 0 6px' }}>{issue.note}</p>}
+                <div className="confirm-item-opts">
+                  <button type="button" className="btn btn-ghost" onClick={() => applyFix(issue)}>Guna cadangan</button>
+                  <button type="button" className="btn btn-ghost" onClick={() => dismissIssue(issue)}>Abaikan</button>
+                </div>
+              </div>
+            ))}
+            <div className="row-actions" style={{ marginTop: 'var(--space-3)' }}>
+              <button type="button" className="btn btn-primary" onClick={proceedFromPanel}>
+                {pendingCheck.issues.length === 0 ? 'Tambah ke troli' : 'Tambah ke troli (biar macam ni)'}
+              </button>
+              <button type="button" className="btn btn-ghost" onClick={() => setPendingCheck(null)}>Kembali edit</button>
+            </div>
+          </div>
+        )}
+
         <div className="row-split" style={{ marginTop: 'var(--space-6)' }}>
           <button type="button" className="btn btn-ghost" onClick={() => navigate('/order/step1')}>← Back</button>
           {state.cartToast && <span className="toast-inline">{state.cartToast}</span>}
+          {!state.cartToast && checkOkToast && <span className="toast-inline">✓ Ejaan OK</span>}
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
             <div style={{ display: 'flex', gap: 8 }}>
               {state.category && (
-                <button type="button" className="btn btn-ghost" onClick={addToCart} disabled={unansweredChoices.length > 0}>
-                  Add this category only
+                <button type="button" className="btn btn-ghost" onClick={handleAddCategory} disabled={unansweredChoices.length > 0 || checking}>
+                  {checking ? 'Menyemak…' : 'Add this category only'}
                 </button>
               )}
               {/* One click adds every category that has filled data — the
                   common case after an import fills several at once. */}
-              <button type="button" className="btn btn-primary" onClick={addAllToCart} disabled={unansweredChoices.length > 0 || incompleteCategories.length > 0}>
-                Add All to Cart
+              <button type="button" className="btn btn-primary" onClick={handleAddAll} disabled={unansweredChoices.length > 0 || incompleteCategories.length > 0 || checking}>
+                {checking ? 'Menyemak…' : 'Add All to Cart'}
               </button>
             </div>
             {unansweredChoices.length > 0 && (
