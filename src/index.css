@@ -444,15 +444,20 @@ a:hover { color: var(--color-accent-900); text-decoration: underline; }
 }
 /* Left = the live plaque preview, as wide as its own longest line (the
    Tajuk Besar) so it always sits on ONE row — measured per block. Right =
-   the numbered inputs the teacher fills, a fixed comfortable width. When
-   a long title means the two no longer fit side by side, the inputs wrap
-   onto their own full-width row (stacked) instead of the title getting
-   squeezed or the inputs pushed out of view. */
+   the numbered inputs the teacher fills, growing to fill the rest of the
+   row so a title that fits side by side is shown in full there too. */
 .ref-sample-image { flex: 0 1 auto; min-width: 240px; max-width: 100%; }
 .ref-sample-lines {
-  flex: 1 1 360px; min-width: 300px; max-width: 560px;
+  flex: 1 1 360px; min-width: 300px; max-width: 720px;
   display: flex; flex-direction: column; gap: var(--space-3);
 }
+/* OrderCategoryBlock flips this on when the longest reference line is too
+   wide to show in full beside the inputs — stack the two so each gets a
+   full-width row of its own. (flex-wrap already covers the plain
+   too-narrow-a-screen case; this is the by-content decision.) */
+.ref-sample-grid-stacked { flex-direction: column; flex-wrap: nowrap; }
+.ref-sample-grid-stacked .ref-sample-image,
+.ref-sample-grid-stacked .ref-sample-lines { max-width: none; width: 100%; }
 /* Live text preview — shows whatever the teacher has typed into the
    numbered lines so far, updating live as they type. Its own width drives
    the left side of .ref-sample-grid, so it sizes to its longest line. */

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useLayoutEffect } from 'react';
 import PlakPicker from './PlakPicker';
 import { getStockStatus, MALAY_ORDINALS } from '../data/catalog';
 import { isReservedName } from '../utils/exportCsv';
@@ -48,6 +48,34 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
   // it can be visually dimmed while dragging.
   const [dragSlotId, setDragSlotId] = useState(null);
   const referenceSampleDraggable = !!blk.reorderReferenceSample && editable.lines;
+
+  // Reference Sample layout: preview + numbered inputs sit side by side, but
+  // if the longest line (usually the Tajuk Besar) is wide enough that BOTH
+  // halves would clip it, stack them instead so each gets a full-width row.
+  // Decided by measuring the real rendered text (hidden probe) against the
+  // container — so it's the same call whether the teacher is typing here or
+  // it's a read-only review screen.
+  const refGridRef = useRef(null);
+  const refProbeRef = useRef(null);
+  const [stackRefSample, setStackRefSample] = useState(false);
+  const refLinesSignature = blk.lines
+    .map((ln) => `${ln.value || ln.placeholder || ''}${ln.secondLine?.value || ''}`)
+    .join('');
+  useLayoutEffect(() => {
+    const grid = refGridRef.current;
+    const probe = refProbeRef.current;
+    if (!grid || !probe || typeof ResizeObserver === 'undefined') return undefined;
+    const recompute = () => {
+      const widest = Math.max(0, ...Array.from(probe.children, (c) => c.getBoundingClientRect().width));
+      // Side by side splits the row: if the text needs more than about half
+      // of it (plus the number circle + gap), neither half can show it whole.
+      setStackRefSample(widest + 44 > (grid.clientWidth - 24) / 2);
+    };
+    recompute();
+    const ro = new ResizeObserver(recompute);
+    ro.observe(grid);
+    return () => ro.disconnect();
+  }, [refLinesSignature]);
   const matrixRows = hideEmptyRows ? blk.matrixRows.filter((row) => row.rowTotal > 0) : blk.matrixRows;
   const listRows = hideEmptyRows ? blk.rows.filter((row) => Number(row.qty) > 0) : blk.rows;
   // TOKOH_SHEET's per-row metadata columns (catalog.js's TOKOH_ROW_FIELDS):
@@ -213,7 +241,20 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
             <p className="hint-text">Drag the number beside each row to arrange them in whatever order matches your plaque — Production will follow the order you choose.</p>
           )}
 
-          <div className="ref-sample-grid">
+          {/* Hidden probe: the reference lines at the preview's own font, each
+              free to take its natural width, so the layout effect can measure
+              the widest one without the visible boxes constraining it. */}
+          <div
+            ref={refProbeRef}
+            aria-hidden="true"
+            style={{ position: 'absolute', visibility: 'hidden', height: 0, overflow: 'hidden', pointerEvents: 'none', fontSize: 15, fontWeight: 700 }}
+          >
+            {blk.lines.map((ln) => (
+              <div key={ln.key} style={{ width: 'max-content', whiteSpace: 'nowrap' }}>{ln.value || ln.placeholder || ''}</div>
+            ))}
+          </div>
+
+          <div ref={refGridRef} className={`ref-sample-grid${stackRefSample ? ' ref-sample-grid-stacked' : ''}`}>
             <div className="ref-sample-image">
               {/* Fully replaces the uploaded reference image — whatever
                   the teacher types into the numbered lines shows here
