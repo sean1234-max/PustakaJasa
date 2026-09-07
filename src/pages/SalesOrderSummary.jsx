@@ -22,13 +22,19 @@ export default function SalesOrderSummary() {
   const navigate = useNavigate();
   const order = state.orders.find((o) => o.id === id);
   useEffect(() => { ensureOrderLoaded(id); }, [id, ensureOrderLoaded]);
-  const editable = order?.status === 'Submitted to Sales';
+  // A Sales Manager can open any salesman's order (RLS —
+  // supabase/migrations/0048_sales_manager.sql) but only acts on their own;
+  // for someone else's order every write control is hidden (the server would
+  // reject the write anyway via "salesman updates own orders").
+  const isOwn = !state.isSalesManager || !order || order.salesmanId === state.userAuthId;
+  const editable = order?.status === 'Submitted to Sales' && isOwn;
 
   // Due Date / Function Date stay editable right up to the moment of
   // approval — the same "Sales can still adjust it" window the price
   // fields already had — then get folded into the approval update below.
   const [dueDateDraft, setDueDateDraft] = useState(() => (order?.dueDate ? new Date(order.dueDate) : null));
   const [functionDateDraft, setFunctionDateDraft] = useState(() => (order?.functionDate ? new Date(order.functionDate) : null));
+  const [dateError, setDateError] = useState('');
 
   // Keyed by item.id — pre-filled from the item's current unit price (falls
   // back to the standard catalog rate for items that never had one, e.g.
@@ -116,6 +122,13 @@ export default function SalesOrderSummary() {
   // button takes its place where Approve was.
   const handleApprove = async () => {
     if (busy) return;
+    if (dueDateDraft && functionDateDraft
+      && new Date(dueDateDraft.getFullYear(), dueDateDraft.getMonth(), dueDateDraft.getDate())
+       > new Date(functionDateDraft.getFullYear(), functionDateDraft.getMonth(), functionDateDraft.getDate())) {
+      setDateError('Due Date can’t be after the Function Date. Adjust one of them before approving.');
+      return;
+    }
+    setDateError('');
     const updatedItems = rows.map((r) => ({ ...r, unitPrice: r.unitPrice, harga: r.harga }));
     // Only overrides a date if Sales actually set one — never blanks an
     // existing due/function date just because the draft state happened to
@@ -183,6 +196,11 @@ export default function SalesOrderSummary() {
         </div>
 
         <div className="screen-only">
+          {!isOwn && (
+            <p className="hint-text" style={{ margin: '0 0 var(--space-3)', fontWeight: 600 }}>
+              Viewing {order.sales || 'another salesman'}’s order — read-only. Only {order.sales || 'the assigned salesman'} can approve or edit it.
+            </p>
+          )}
           {page === 'summary' ? (
             <>
               <div className="form-grid-2" style={{ marginTop: 'var(--space-3)' }}>
@@ -193,8 +211,12 @@ export default function SalesOrderSummary() {
                 {order.terms && <div><div className="dim">Terms</div><div>{order.terms}</div></div>}
                 {editable ? (
                   <>
-                    <DatePicker label="Due Date" id="salesDueDate" selected={dueDateDraft} today={today} onSelect={setDueDateDraft} />
-                    <DatePicker label="Function Date" id="salesFunctionDate" selected={functionDateDraft} today={today} onSelect={setFunctionDateDraft} />
+                    {/* Due Date is when the plaques must be delivered — it
+                        can't be after the Function Date (the event itself),
+                        so the picker caps at it and Approve re-checks. */}
+                    <DatePicker label="Due Date" id="salesDueDate" selected={dueDateDraft} today={today} onSelect={setDueDateDraft} maxDate={functionDateDraft} />
+                    <DatePicker label="Function Date" id="salesFunctionDate" selected={functionDateDraft} today={today} onSelect={setFunctionDateDraft} minDate={dueDateDraft} />
+                    {dateError && <div className="login-error" style={{ gridColumn: '1 / -1', margin: 0 }}>{dateError}</div>}
                   </>
                 ) : (
                   <>
@@ -222,7 +244,7 @@ export default function SalesOrderSummary() {
                 hideCategory combineJenisPlak
               />
 
-              {order.pendingAddonStatus === 'pending' && (
+              {order.pendingAddonStatus === 'pending' && isOwn && (
                 <>
                   <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Tambahan — Pending Approval</div>
                   <p className="hint-text" style={{ marginTop: 0 }}>Adjust pricing if needed, then approve to add these into the order, or reject to send it back to the teacher.</p>

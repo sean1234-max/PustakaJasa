@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import { useAppState } from '../state/useAppState';
@@ -23,10 +23,23 @@ export default function SalesDashboard() {
   const { state } = useAppState();
   const navigate = useNavigate();
   const [filter, setFilter] = useState(FILTERS[0].status);
+  // A Sales Manager's `state.orders` already contains every salesman's
+  // orders (RLS — supabase/migrations/0048_sales_manager.sql); this dropdown
+  // just narrows the view to one salesman. A regular salesman only ever has
+  // their own, so it isn't shown for them.
+  const isManager = !!state.isSalesManager;
+  const [salesmanFilter, setSalesmanFilter] = useState('all');
+  const salesmanOptions = useMemo(
+    () => [...new Set((state.orders || []).map((o) => o.sales).filter(Boolean))].sort(),
+    [state.orders],
+  );
 
-  const filteredOrders = filter === ADDON_FILTER
+  const byStage = filter === ADDON_FILTER
     ? state.orders.filter((ord) => ord.pendingAddonStatus === 'pending')
     : state.orders.filter((ord) => ord.status === filter);
+  const filteredOrders = isManager && salesmanFilter !== 'all'
+    ? byStage.filter((ord) => ord.sales === salesmanFilter)
+    : byStage;
 
   return (
     <div className="screen-wrap">
@@ -35,15 +48,32 @@ export default function SalesDashboard() {
       <div className="dashboard-header">
         <div>
           <div className="card-title" style={{ marginBottom: 'var(--space-2)' }}>Sales Orders</div>
-          <p className="hint-text" style={{ margin: 0 }}>Review incoming orders from every school — check Jenis Plak, quantities, and price per unit before approving.</p>
+          <p className="hint-text" style={{ margin: 0 }}>
+            {isManager
+              ? 'As a Sales Manager you see every salesman’s orders. You can review any order, but only approve / edit your own.'
+              : 'Review incoming orders from every school — check Jenis Plak, quantities, and price per unit before approving.'}
+          </p>
         </div>
       </div>
 
+      {isManager && (
+        <div className="field" style={{ maxWidth: 320, marginBottom: 'var(--space-4)' }}>
+          <label htmlFor="salesmanFilter">Salesman</label>
+          <select className="input" id="salesmanFilter" value={salesmanFilter} onChange={(e) => setSalesmanFilter(e.target.value)}>
+            <option value="all">All Salesmen</option>
+            {salesmanOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </div>
+      )}
+
       <div className="tabs" style={{ marginBottom: 'var(--space-4)' }}>
         {FILTERS.map((f) => {
+          const scope = isManager && salesmanFilter !== 'all'
+            ? state.orders.filter((o) => o.sales === salesmanFilter)
+            : state.orders;
           const count = f.status === ADDON_FILTER
-            ? state.orders.filter((o) => o.pendingAddonStatus === 'pending').length
-            : state.orders.filter((o) => o.status === f.status).length;
+            ? scope.filter((o) => o.pendingAddonStatus === 'pending').length
+            : scope.filter((o) => o.status === f.status).length;
           return (
             <button
               key={f.status}

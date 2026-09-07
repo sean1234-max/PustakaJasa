@@ -167,7 +167,10 @@ export default function AdminSalesmen() {
                   const completed = salesmanOrders.filter((o) => o.status === 'Completed').length;
                   return (
                     <tr key={s.id} className="hover:bg-surface-container-low transition-colors">
-                      <td className="py-4 px-6 text-headline-sm text-primary">{s.display_name || '—'}</td>
+                      <td className="py-4 px-6 text-headline-sm text-primary">
+                        {s.display_name || '—'}
+                        {s.is_sales_manager && <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-md bg-primary-container/20 text-primary text-[10px] font-semibold uppercase align-middle">Manager</span>}
+                      </td>
                       <td className="py-4 px-6 text-body-md text-on-surface-variant">{s.email || '—'}</td>
                       <td className="py-4 px-6">
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-label-bold font-semibold bg-primary-container/15 text-primary">{s.status}</span>

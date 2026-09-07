@@ -1,7 +1,13 @@
 import { useState, useRef, useEffect } from 'react';
 import { WEEKDAYS, MONTHS, formatDate } from '../data/catalog';
 
-function buildCells(view, selected, today, minDate, handleSelect) {
+// Normalize to local midnight so time-of-day on min/max never leaks into
+// the day-vs-day comparison.
+function dayOnly(d) {
+  return d ? new Date(d.getFullYear(), d.getMonth(), d.getDate()) : null;
+}
+
+function buildCells(view, selected, today, minDate, maxDate, handleSelect) {
   const { y, m } = view;
   const firstDow = new Date(y, m, 1).getDay();
   const totalDays = new Date(y, m + 1, 0).getDate();
@@ -19,10 +25,12 @@ function buildCells(view, selected, today, minDate, handleSelect) {
     cells.push({ label: nextDay, curMonth: false, date: new Date(y, m + 1, nextDay) });
     nextDay++;
   }
+  const minD = dayOnly(minDate);
+  const maxD = dayOnly(maxDate);
   return cells.map((c, i) => {
     const isSelected = selected && c.date.toDateString() === selected.toDateString();
     const isToday = c.date.toDateString() === today.toDateString();
-    const isDisabled = Boolean(minDate) && c.date < minDate;
+    const isDisabled = (Boolean(minD) && c.date < minD) || (Boolean(maxD) && c.date > maxD);
     let className = 'cal-cell';
     if (!c.curMonth) className += ' cal-cell-dim';
     if (isSelected) className += ' cal-cell-selected';
@@ -38,7 +46,7 @@ function shiftMonth(view, delta) {
   return { y, m };
 }
 
-export default function DatePicker({ label, id, selected, onSelect, today, minDate }) {
+export default function DatePicker({ label, id, selected, onSelect, today, minDate, maxDate }) {
   const [open, setOpen] = useState(false);
   const [view, setView] = useState({ y: today.getFullYear(), m: today.getMonth() });
   const ref = useRef(null);
@@ -50,7 +58,7 @@ export default function DatePicker({ label, id, selected, onSelect, today, minDa
     return () => document.removeEventListener('mousedown', onDocClick);
   }, [open]);
 
-  const cells = buildCells(view, selected, today, minDate, (d) => { onSelect(d); setOpen(false); });
+  const cells = buildCells(view, selected, today, minDate, maxDate, (d) => { onSelect(d); setOpen(false); });
 
   return (
     <div className="field" style={{ position: 'relative' }} ref={ref}>

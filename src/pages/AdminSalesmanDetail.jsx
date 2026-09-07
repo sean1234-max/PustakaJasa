@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import AdminLayout from '../components/AdminLayout';
 import { useAppState } from '../state/useAppState';
 import { fetchAllProfiles, updateProfile, resetPassword, logAdminAction } from '../lib/adminApi';
+import AdminProfileEditor from '../components/AdminProfileEditor';
 
 const secondaryBtnClass = 'w-full sm:w-auto bg-surface-container-lowest border border-outline-variant text-on-surface-variant hover:text-on-surface text-label-bold font-semibold py-2.5 px-4 rounded-lg shadow-sm hover:shadow-md transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed';
 
@@ -67,6 +68,24 @@ export default function AdminSalesmanDetail() {
     }
   };
 
+  const handleToggleManager = async () => {
+    const next = !salesman.is_sales_manager;
+    try {
+      await updateProfile(id, { is_sales_manager: next });
+      await logAdminAction({
+        action: next ? 'Admin made a salesman a Sales Manager' : 'Admin removed Sales Manager from a salesman',
+        targetTable: 'profiles',
+        targetId: id,
+        before: { is_sales_manager: salesman.is_sales_manager },
+        after: { is_sales_manager: next },
+      });
+      setToast(next ? 'Now a Sales Manager — can see every salesman’s orders.' : 'No longer a Sales Manager.');
+      load();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
   const handleResetPassword = async () => {
     if (newPassword.length < 6) {
       setError('New password must be at least 6 characters.');
@@ -110,6 +129,30 @@ export default function AdminSalesmanDetail() {
           <span className="inline-flex items-center justify-center px-3 py-1 rounded-full bg-primary/10 text-primary text-label-bold font-semibold uppercase tracking-wide border border-primary/20">
             {salesman.status}
           </span>
+        </section>
+
+        <hr className="border-outline-variant/50" />
+
+        <div className="relative z-10">
+          <AdminProfileEditor profile={salesman} onSaved={load} setToast={setToast} setError={setError} />
+        </div>
+
+        <hr className="border-outline-variant/50" />
+
+        <section className="flex flex-col gap-3 relative z-10 max-w-xl">
+          <h3 className="text-label-bold text-secondary uppercase tracking-wider">Sales Manager</h3>
+          <p className="text-body-sm text-on-surface-variant">
+            A Sales Manager can see <strong>every</strong> salesman’s orders and their status — not just their own. They still only approve / edit their own orders.
+          </p>
+          <label className="inline-flex items-center gap-3 text-body-md text-on-surface cursor-pointer">
+            <input
+              type="checkbox"
+              className="w-4 h-4"
+              checked={!!salesman.is_sales_manager}
+              onChange={handleToggleManager}
+            />
+            {salesman.is_sales_manager ? 'This salesman is a Sales Manager' : 'Make this salesman a Sales Manager'}
+          </label>
         </section>
 
         <hr className="border-outline-variant/50" />

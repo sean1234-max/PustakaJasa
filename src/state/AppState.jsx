@@ -289,6 +289,7 @@ function initialState() {
     password: '',
     loginError: '',
     role: null,
+    isSalesManager: false,
     sessionChecked: false,
 
     sekolah: '',
@@ -427,7 +428,7 @@ export function AppStateProvider({ children }) {
           if (attempt > 0) await new Promise((r) => setTimeout(r, 800 * attempt));
           ({ data: profile, error: profileError } = await supabase
             .from('profiles')
-            .select('role, sekolah, school_language, display_name, status')
+            .select('role, sekolah, school_language, display_name, status, is_sales_manager')
             .eq('id', session.user.id)
             .single());
           if (profile || !profileError) break;
@@ -437,7 +438,7 @@ export function AppStateProvider({ children }) {
             await supabase.auth.signOut();
             if (!cancelled) patch({ loginError: 'This account has been deactivated. Please contact your administrator.' });
           } else {
-            patch({ role: profile.role, sekolah: profile.sekolah || '', schoolLanguage: profile.school_language || 'SK', userAuthId: session.user.id });
+            patch({ role: profile.role, sekolah: profile.sekolah || '', schoolLanguage: profile.school_language || 'SK', userAuthId: session.user.id, isSalesManager: !!profile.is_sales_manager });
           }
         } else if (!cancelled && profileError) {
           // Still failing after retries — rather than silently bouncing to
@@ -540,7 +541,7 @@ export function AppStateProvider({ children }) {
     }
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
-      .select('role, sekolah, school_language, display_name, status')
+      .select('role, sekolah, school_language, display_name, status, is_sales_manager')
       .eq('id', data.user.id)
       .single();
     if (profileError || !profile) {
@@ -552,7 +553,7 @@ export function AppStateProvider({ children }) {
       patch({ loginError: 'This account has been deactivated. Please contact your administrator.' });
       return null;
     }
-    patch({ role: profile.role, sekolah: profile.sekolah || '', schoolLanguage: profile.school_language || 'SK', userAuthId: data.user.id, loginError: '', userId: '', password: '' });
+    patch({ role: profile.role, sekolah: profile.sekolah || '', schoolLanguage: profile.school_language || 'SK', userAuthId: data.user.id, isSalesManager: !!profile.is_sales_manager, loginError: '', userId: '', password: '' });
     return profile.role;
   }, [patch]);
 
@@ -1696,7 +1697,7 @@ export function AppStateProvider({ children }) {
     return { ok: true };
   }, [patch, flashToast]);
 
-  // Invoicing Department: approves a still-"Submitted to Sales" order and
+  // Store Admin: approves a still-"Submitted to Sales" order and
   // assigns its Invoice Number in the same action — for orders a Salesman
   // hands over as a paper hard copy before ever clicking Approve
   // themselves (receiving the hard copy already means they've agreed to
@@ -1805,7 +1806,7 @@ export function AppStateProvider({ children }) {
     if (!order || order.status !== 'In Production') {
       patch({ productionToast: 'This order is not ready to be marked done.' });
     } else if (!order.invoiceId) {
-      patch({ productionToast: 'Waiting for Invoicing Department to assign an Invoice Number before this can be marked done.' });
+      patch({ productionToast: 'Waiting for Store Admin to assign an Invoice Number before this can be marked done.' });
     } else {
       try {
         await updateOrder(orderId, { status: 'Waiting for Delivery' });
