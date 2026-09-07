@@ -132,7 +132,7 @@ export default function StoreAdminOrderDetail() {
               {order.sales && <div><div className="dim">Salesman</div><div>{order.sales}</div></div>}
               {order.picName && <div><div className="dim">PIC Name</div><div>{order.picName}{order.phone ? ` / ${order.phone}` : ''}</div></div>}
               {order.terms && <div><div className="dim">Terms</div><div>{order.terms}</div></div>}
-              {order.dueDate && <div><div className="dim">Due Date</div><div>{formatDate(new Date(order.dueDate))}</div></div>}
+              {order.dueDate && <div><div className="dim">Shipment Date</div><div>{formatDate(new Date(order.dueDate))}</div></div>}
               {order.functionDate && <div><div className="dim">Function Date</div><div>{formatDate(new Date(order.functionDate))}</div></div>}
               <div><div className="dim">Order Date</div><div>{order.datePlaced}</div></div>
               <div><div className="dim">Total Amount</div><div>RM {order.totalAmount.toFixed(2)}</div></div>

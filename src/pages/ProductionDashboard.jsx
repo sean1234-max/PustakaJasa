@@ -92,7 +92,7 @@ export default function ProductionDashboard() {
 
       <div className="card-kicker">{activeTab.label}</div>
       <div className="field" style={{ maxWidth: 260, margin: 'var(--space-3) 0 var(--space-4)' }}>
-        <label htmlFor="dueDateFilter">Filter by Due Date (delivery)</label>
+        <label htmlFor="dueDateFilter">Filter by Shipment Date</label>
         <select
           className="input"
           id="dueDateFilter"
@@ -128,7 +128,7 @@ export default function ProductionDashboard() {
               <div className="order-card-meta">
                 <div><div className="dim">Date Placed</div><div>{ord.datePlaced}</div></div>
                 <div><div className="dim">Sales</div><div>{ord.sales || '—'}</div></div>
-                <div><div className="dim">Due Date</div><div>{ord.dueDate ? formatDate(new Date(ord.dueDate)) : '—'}</div></div>
+                <div><div className="dim">Shipment Date</div><div>{ord.dueDate ? formatDate(new Date(ord.dueDate)) : '—'}</div></div>
                 <div>
                   <div className="dim">Total QTY</div>
                   <div className="order-card-qty">{(ord.items || []).reduce((sum, it) => sum + (Number(it.qty) || 0), 0)}</div>

@@ -29,7 +29,7 @@ export default function SalesOrderSummary() {
   const isOwn = !state.isSalesManager || !order || order.salesmanId === state.userAuthId;
   const editable = order?.status === 'Submitted to Sales' && isOwn;
 
-  // Due Date / Function Date stay editable right up to the moment of
+  // Shipment Date (dueDate) / Function Date stay editable right up to the moment of
   // approval — the same "Sales can still adjust it" window the price
   // fields already had — then get folded into the approval update below.
   const [dueDateDraft, setDueDateDraft] = useState(() => (order?.dueDate ? new Date(order.dueDate) : null));
@@ -125,7 +125,7 @@ export default function SalesOrderSummary() {
     if (dueDateDraft && functionDateDraft
       && new Date(dueDateDraft.getFullYear(), dueDateDraft.getMonth(), dueDateDraft.getDate())
        > new Date(functionDateDraft.getFullYear(), functionDateDraft.getMonth(), functionDateDraft.getDate())) {
-      setDateError('Due Date can’t be after the Function Date. Adjust one of them before approving.');
+      setDateError('Shipment Date can’t be after the Function Date. Adjust one of them before approving.');
       return;
     }
     setDateError('');
@@ -211,16 +211,17 @@ export default function SalesOrderSummary() {
                 {order.terms && <div><div className="dim">Terms</div><div>{order.terms}</div></div>}
                 {editable ? (
                   <>
-                    {/* Due Date is when the plaques must be delivered — it
-                        can't be after the Function Date (the event itself),
-                        so the picker caps at it and Approve re-checks. */}
-                    <DatePicker label="Due Date" id="salesDueDate" selected={dueDateDraft} today={today} onSelect={setDueDateDraft} maxDate={functionDateDraft} />
+                    {/* "Shipment Date" (stored as dueDate) is when the plaques
+                        ship out — it can't be after the Function Date (the
+                        event itself), so the picker caps at it and Approve
+                        re-checks. */}
+                    <DatePicker label="Shipment Date" id="salesDueDate" selected={dueDateDraft} today={today} onSelect={setDueDateDraft} maxDate={functionDateDraft} />
                     <DatePicker label="Function Date" id="salesFunctionDate" selected={functionDateDraft} today={today} onSelect={setFunctionDateDraft} minDate={dueDateDraft} />
                     {dateError && <div className="login-error" style={{ gridColumn: '1 / -1', margin: 0 }}>{dateError}</div>}
                   </>
                 ) : (
                   <>
-                    {order.dueDate && <div><div className="dim">Due Date</div><div>{formatDate(new Date(order.dueDate))}</div></div>}
+                    {order.dueDate && <div><div className="dim">Shipment Date</div><div>{formatDate(new Date(order.dueDate))}</div></div>}
                     {order.functionDate && <div><div className="dim">Function Date</div><div>{formatDate(new Date(order.functionDate))}</div></div>}
                   </>
                 )}
@@ -350,7 +351,7 @@ export default function SalesOrderSummary() {
             {order.picName && <div><div className="dim">PIC Name</div><div>{order.picName}{order.phone ? ` / ${order.phone}` : ''}</div></div>}
             {order.ketuaPanitia && <div><div className="dim">Ketua Panitia</div><div>{order.ketuaPanitia}</div></div>}
             {order.terms && <div><div className="dim">Terms</div><div>{order.terms}</div></div>}
-            {order.dueDate && <div><div className="dim">Due Date</div><div>{formatDate(new Date(order.dueDate))}</div></div>}
+            {order.dueDate && <div><div className="dim">Shipment Date</div><div>{formatDate(new Date(order.dueDate))}</div></div>}
             {order.functionDate && <div><div className="dim">Function Date</div><div>{formatDate(new Date(order.functionDate))}</div></div>}
           </div>
           {/* Printed too, not just shown on screen — a KIV/pending note (see
