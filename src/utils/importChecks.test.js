@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { getPlakProductionMode, summarizeRowsForManual } from './exportCsv';
 import {
   getManualPlakGroups, buildManualRemarkBlock, checkColumnTotals, checkExpansionTotals,
-  checkLevelBreakdownMatch,
+  checkLevelBreakdownMatch, checkAliranKelasTotals,
 } from './importChecks';
 
 // A minimal order — getPlakProductionMode only reads item.jenisPlak + qty.
@@ -274,5 +274,49 @@ describe('checkLevelBreakdownMatch', () => {
   it('says nothing when the section carries no breakdown at all', () => {
     expect(checkLevelBreakdownMatch({ classes: section.classes })).toEqual([]);
     expect(checkLevelBreakdownMatch(null)).toEqual([]);
+  });
+});
+
+describe('checkAliranKelasTotals', () => {
+  // TAHUN 1: 6 classes × 5 = 30 pupils, ranked PERTAMA–KESEPULUH (hingga 10)
+  //   → derived 300; teacher typed TOTAL 300 → OK.
+  // TAHUN 4: 4 classes × 1 = 4 pupils, ranked PERTAMA–KELIMA (hingga 5)
+  //   → derived 20; teacher typed TOTAL 8 → mismatch.
+  // TAHUN 2: flat (no KEDUDUKAN), 3 pupils, typed TOTAL 3 → OK.
+  const section = {
+    tahunRows: [
+      { tahun: 'TAHUN 1', dari: 1, hingga: 10, statedTotal: 300 },
+      { tahun: 'TAHUN 2', flatQty: 3 },
+      { tahun: 'TAHUN 4', dari: 1, hingga: 5, statedTotal: 8 },
+    ],
+    levelBreakdown: [
+      { label: 'TAHUN 1', mainRows: [{ name: 'S', qty: 5 }, { name: 'A', qty: 5 }, { name: 'V', qty: 5 }, { name: 'C', qty: 5 }, { name: 'D', qty: 5 }, { name: 'X', qty: 5 }] },
+      { label: 'TAHUN 2', mainRows: [{ name: 'A', qty: 1 }, { name: 'B', qty: 1 }, { name: 'C', qty: 1 }] },
+      { label: 'TAHUN 4', mainRows: [{ name: 'A', qty: 1 }, { name: 'B', qty: 1 }, { name: 'C', qty: 1 }, { name: 'D', qty: 1 }] },
+    ],
+  };
+
+  it('flags a Tahun whose typed TOTAL differs from Nama Kelas × KEDUDUKAN', () => {
+    expect(checkAliranKelasTotals(section)).toEqual([
+      { id: 'aliranktot:TAHUN 4', level: 'TAHUN 4', stated: 8, computed: 20, classSum: 4, classCount: 4, rangeSize: 5 },
+    ]);
+  });
+
+  it('says nothing when the typed TOTAL matches (ranged or flat)', () => {
+    const issues = checkAliranKelasTotals(section);
+    expect(issues.some((i) => i.level === 'TAHUN 1' || i.level === 'TAHUN 2')).toBe(false);
+  });
+
+  it('ignores a Tahun with no typed TOTAL and no Nama Kelas list', () => {
+    const s = {
+      tahunRows: [{ tahun: 'TAHUN 3', dari: 1, hingga: 5, statedTotal: null }],
+      levelBreakdown: [{ label: 'TAHUN 3', mainRows: [] }],
+    };
+    expect(checkAliranKelasTotals(s)).toEqual([]);
+  });
+
+  it('says nothing when the section carries no breakdown at all', () => {
+    expect(checkAliranKelasTotals({ tahunRows: section.tahunRows })).toEqual([]);
+    expect(checkAliranKelasTotals(null)).toEqual([]);
   });
 });

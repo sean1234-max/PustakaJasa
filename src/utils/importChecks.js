@@ -144,6 +144,50 @@ export function checkLevelBreakdownMatch(section) {
   return issues;
 }
 
+// ALIRAN TERBAIK (Kalau ada kelas): each Tahun's plaque count is derived —
+// (sum of its Nama Kelas QTY) × (its KEDUDUKAN range size, from PERTAMA;
+// 1 when there's no range). The website always uses that derived figure,
+// but when the sheet's own typed TOTAL is present and disagrees it usually
+// means a wrong class headcount or a wrong KEDUDUKAN pick — returned for
+// the teacher to check on Step 2, never auto-changed.
+//
+// `section` is a freshly-parsed ALIRAN_KELAS section (excelImport.js's
+// parseAliranKelasSheet): `tahunRows` carry `hingga` + `statedTotal` (or
+// `flatQty`), `levelBreakdown` carries each Tahun's `mainRows`.
+export function checkAliranKelasTotals(section) {
+  const breakdown = section?.levelBreakdown || [];
+  if (breakdown.length === 0) return [];
+  const byLabel = new Map();
+  breakdown.forEach((lb) => {
+    const classes = (lb.mainRows || []).filter((r) => String(r.name || '').trim());
+    if (classes.length === 0) return;
+    byLabel.set(lb.label, {
+      classSum: classes.reduce((s, r) => s + (Number(r.qty) || 0), 0),
+      classCount: classes.length,
+    });
+  });
+  const issues = [];
+  (section.tahunRows || []).forEach((tr) => {
+    const cs = byLabel.get(tr.tahun);
+    if (!cs || cs.classSum <= 0) return;
+    const stated = tr.statedTotal != null ? tr.statedTotal : (tr.flatQty ?? null);
+    if (stated == null) return;
+    const rangeSize = tr.hingga && tr.hingga > 0 ? tr.hingga : 1;
+    const computed = cs.classSum * rangeSize;
+    if (stated === computed) return;
+    issues.push({
+      id: `aliranktot:${tr.tahun}`,
+      level: tr.tahun,
+      stated,
+      computed,
+      classSum: cs.classSum,
+      classCount: cs.classCount,
+      rangeSize,
+    });
+  });
+  return issues;
+}
+
 const sumSection = (section) => (section.classes || []).reduce(
   (sum, cls) => sum + (cls.subjects || []).reduce((s, x) => s + (Number(x.qty) || 0), 0),
   0,

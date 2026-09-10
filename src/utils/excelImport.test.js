@@ -4,6 +4,7 @@ import { parseFormAnugerahExcel, matchJenisPlakPath } from './excelImport';
 import { computeBlocks, noopUpdaters } from './computeBlocks';
 import { buildCategoryCartItems } from '../state/categoryCartItems';
 import { buildCsvRows } from './exportCsv';
+import { checkAliranKelasTotals } from './importChecks';
 
 function workbookFromSheets(sheets) {
   const wb = XLSX.utils.book_new();
@@ -112,10 +113,35 @@ describe('parseFormAnugerahExcel — ALIRAN TERBAIK (Kalau ada kelas)', () => {
     const parsed = parseFormAnugerahExcel(workbookFromSheets({ 'ALIRAN TERBAIK Kalau ada kelas': r.map((x) => x || []) }));
     const section = (parsed.categorized?.ALIRAN_KELAS || [])[0];
     expect(section.isAliranKelas).toBe(true);
-    expect(section.tahunRows).toEqual([{ tahun: 'TAHUN 4', dari: 1, hingga: 5 }]);
+    expect(section.tahunRows).toEqual([{ tahun: 'TAHUN 4', dari: 1, hingga: 5, statedTotal: null }]);
     expect(section.levelBreakdown.map((lb) => [lb.label, lb.mainRows.map((m) => m.name)])).toEqual([
       ['TAHUN 1', ['ADIL', 'BESTARI']],
       ['TAHUN 4', ['ADIL', 'BESTARI', 'CEKAL']],
+    ]);
+  });
+
+  it('reads the typed TOTAL and flags it only when it disagrees with the breakdown', () => {
+    const base = [];
+    base[0] = [null, null, null, null, 'TOLONG ISI DI SINI'];
+    base[1] = [null, null, null, null, 'HARI ANUGERAH 2026'];
+    base[2] = [null, null, null, null, 'TERBAIK DALAM ALIRAN'];
+    base[3] = [null, null, null, null, 'TAHUN 4'];
+    base[8] = ['TAHUN', 'KEDUDUKAN', null, 'TOTAL', null, null, 'TAHUN 4', null, null, 'TAHUN 5'];
+    base[9] = [null, 'DARI', 'HINGGA KE', null, null, null, 'NAMA KELAS', 'QTY', null, 'NAMA KELAS', 'QTY'];
+    // TAHUN 4 ranked PERTAMA–KELIMA (5), 3 Nama Kelas × 1 → derived 15.
+    base[10] = ['TAHUN 4', 'PERTAMA', 'KELIMA', null, null, null, 'ADIL', 1, null, 'ADIL', 1];
+    base[11] = ['TAHUN 5', null, null, null, null, null, 'BESTARI', 1, null, 'BESTARI', 1];
+    base[12] = ['TAHUN 6', null, null, null, null, null, 'CEKAL', 1];
+    base[13] = ['TOTAL:'];
+    const parseWithTotal = (total) => {
+      const r = base.map((x) => (x ? [...x] : []));
+      r[10][3] = total; // the TOTAL column (right of HINGGA KE)
+      return (parseFormAnugerahExcel(workbookFromSheets({ 'ALIRAN TERBAIK Kalau ada kelas': r })).categorized?.ALIRAN_KELAS || [])[0];
+    };
+    expect(parseWithTotal(15).tahunRows[0].statedTotal).toBe(15);
+    expect(checkAliranKelasTotals(parseWithTotal(15))).toEqual([]);
+    expect(checkAliranKelasTotals(parseWithTotal(9))).toEqual([
+      { id: 'aliranktot:TAHUN 4', level: 'TAHUN 4', stated: 9, computed: 15, classSum: 3, classCount: 3, rangeSize: 5 },
     ]);
   });
 });

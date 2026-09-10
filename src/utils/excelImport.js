@@ -1229,15 +1229,18 @@ function parseAliranSheet(ws) {
     if (!tahun) continue;
     const dari = ordinalToNum(cellText(ws, r, dariH.col));
     const hingga = ordinalToNum(cellText(ws, r, hinggaH.col));
+    // Column right after HINGGA KE is the TOTAL the teacher typed.
+    const typedTotal = cellNum(ws, r, hinggaH.col + 1);
     if (dari && hingga && hingga >= dari) {
       // KEDUDUKAN range — one plaque per place from `dari` to `hingga`.
-      tahunRows.push({ tahun, dari, hingga });
-    } else {
+      // `statedTotal` is carried only for the "Kalau ada kelas" import
+      // cross-check (importChecks.js's checkAliranKelasTotals) — the qty
+      // itself is always derived, never this figure.
+      tahunRows.push({ tahun, dari, hingga, statedTotal: typedTotal > 0 ? typedTotal : null });
+    } else if (typedTotal > 0) {
       // No KEDUDUKAN range — a flat count (teacher's own TOTAL figure),
-      // "ikut sample, tukar TAHUN sahaja". Column right after HINGGA KE is
-      // the TOTAL.
-      const flatQty = cellNum(ws, r, hinggaH.col + 1);
-      if (flatQty > 0) tahunRows.push({ tahun, flatQty });
+      // "ikut sample, tukar TAHUN sahaja".
+      tahunRows.push({ tahun, flatQty: typedTotal });
     }
   }
   if (tahunRows.length === 0) return null;
