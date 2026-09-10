@@ -269,6 +269,19 @@ export function createDraftUpdaters(patch, fields) {
     //    lineValues by raw index regardless of what's currently shown).
     onDeleteReferenceLine: (catKey, blockIdx, slotId) => patch((st) => {
       const cat = CATEGORIES.find((c) => c.key === catKey);
+      // The optional TAJUK BESAR second line (slot 0b) is never a catalog
+      // line — it's an extra a teacher or an import (splitTwoLineTajuk) added
+      // — so it can always be cleared, on any category, unlike the
+      // deletableReferenceLines-gated rows below.
+      if (slotId === '0b') {
+        const newLineValues = { ...st[lineValues] };
+        delete newLineValues[`${catKey}::${blockIdx}::0b`];
+        if (cat?.hasNamaKelasList) {
+          const visibleCount = (st[visibleBlocksByCategory] && st[visibleBlocksByCategory][catKey]) || 1;
+          for (let b = 0; b < visibleCount; b++) delete newLineValues[`${catKey}::${b}::0b`];
+        }
+        return { [lineValues]: newLineValues };
+      }
       if (!cat?.deletableReferenceLines) return {};
       if (slotId === '0') return {};
       const origLen = getCategoryLinePlaceholders(cat, 'SK').length;

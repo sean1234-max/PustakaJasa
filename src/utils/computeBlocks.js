@@ -10,7 +10,14 @@ import { findPossibleTypo } from './typoCheck';
 export function snapshotDetail(catKey, blockIdx, isMatrix, isDynamicMatrix, lineValues, matrixValues, rowsByBlockMap, columnsByBlockMap) {
   const detail = { lines: {}, matrix: null, rows: null, columns: null };
   const linePrefix = `${catKey}::${blockIdx}::`;
-  Object.keys(lineValues).forEach((k) => { if (k.startsWith(linePrefix)) detail.lines[k] = lineValues[k]; });
+  Object.keys(lineValues).forEach((k) => {
+    if (!k.startsWith(linePrefix)) return;
+    // An empty slot-0b (the teacher clicked "+ Tajuk besar 2 baris" but
+    // typed nothing) must not travel into the submitted order — it would
+    // render as a blank numbered line on every read-only review screen.
+    if (k.endsWith('::0b') && !String(lineValues[k]).trim()) return;
+    detail.lines[k] = lineValues[k];
+  });
   if (isMatrix) {
     detail.matrix = {};
     const matPrefix = `${catKey}::`;
@@ -170,15 +177,20 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
         };
       }
       // TAJUK BESAR can carry a second engraved line (school on line 1,
-      // event title on line 2) — an AI pre-written / roster import splits
-      // them so each is its own single-line field. Only shown when that
-      // block actually has a slot-0b value; joined back into one
-      // event_header column on export (exportCsv.js).
-      if (i === 0 && lineValues[`${catKey}::${b}::0b`]) {
+      // event title on line 2) — an Alt+Enter line break in the source
+      // cell (excelImport.js's splitTwoLineTajuk), an AI pre-write, or a
+      // roster import splits it into its own single-line field; the teacher
+      // can also add one by hand ("+ Tajuk besar 2 baris" — sets slot 0b to
+      // an empty string, so the box shows even before anything is typed).
+      // Rejoined into one event_header column on export (exportCsv.js).
+      if (i === 0 && lineValues[`${catKey}::${b}::0b`] !== undefined) {
         const key0b = `${catKey}::${b}::0b`;
         line.secondLine = {
           key: key0b, slotId: '0b', placeholder: 'Baris kedua tajuk besar',
           value: lineValues[key0b] || '',
+          // Same ★ as TAJUK BESAR itself — it's still locked event wording,
+          // just carried on a second engraved line.
+          starred: starredLineIndices.includes(0),
           onChange: (val) => updaters.onLine(key0b, val),
           typoHint: findPossibleTypo(lineValues[key0b]),
           deletable: true,
@@ -602,6 +614,13 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
       // would be confusing.
       addSubjekPosition: currentCat.deletableReferenceLines && catPositionLine2Placeholder && hiddenLineSlots?.has('2b')
         ? () => updaters.onRestoreReferenceLine(catKey, b, '2b') : null,
+      // "+ Tajuk besar 2 baris" — reveals the optional slot-0b line for a
+      // teacher who wants a two-line TAJUK BESAR (an imported Alt+Enter
+      // already fills it — see excelImport.js's splitTwoLineTajuk). Only
+      // offered for reference-sample categories (not SELEMPANG) that don't
+      // already have it.
+      addTajukLine2: catLinePlaceholders.length > 0 && lineValues[`${catKey}::${b}::0b`] === undefined
+        ? () => updaters.onLine(`${catKey}::${b}::0b`, '') : null,
       plakPerBlock: !!currentCat.plakPerBlock,
       descColumnLabel: currentCat.descColumnLabel,
       extraRefColumns,

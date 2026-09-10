@@ -46,3 +46,45 @@ describe('parseFormAnugerahExcel — SELEMPANG sheet', () => {
     expect(parsed.categorized?.SELEMPANG).toBeUndefined();
   });
 });
+
+describe('parseFormAnugerahExcel — two-line TAJUK BESAR', () => {
+  it('splits an in-cell line break (Alt+Enter) into slot 0 + slot 0b', () => {
+    const buf = workbookFromSheets({
+      'MP THP 2': [
+        [null, 'HARI ANUGERAH KECEMERLANGAN MURID 2026\nSK CONTOH'],
+        [null, 'TERBAIK MATA PELAJARAN'],
+        [null, 'BAHASA MELAYU'],
+        [null, 'TAHUN 1'],
+        ['SUBJEK', 'KUANTITI'],
+        [null, 'TAHUN 4', 'TAHUN 5', 'TAHUN 6'],
+        ['BAHASA MELAYU', 5, 5, 5],
+        ['TOTAL', 5, 5, 5],
+        [null, 'JENIS PLAK', 'QTY', 'HARGA'],
+        [null, 'DECO LIGHT', 15],
+      ],
+    });
+    const section = (parseFormAnugerahExcel(buf).categorized?.MP2 || [])[0];
+    expect(section.lines['0']).toBe('HARI ANUGERAH KECEMERLANGAN MURID 2026');
+    expect(section.lines['0b']).toBe('SK CONTOH');
+  });
+
+  it('leaves a single-line TAJUK BESAR untouched (no slot 0b)', () => {
+    const buf = workbookFromSheets({
+      'MP THP 2': [
+        [null, 'HARI ANUGERAH KECEMERLANGAN MURID 2026'],
+        [null, 'TERBAIK MATA PELAJARAN'],
+        [null, 'BAHASA MELAYU'],
+        [null, 'TAHUN 1'],
+        ['SUBJEK', 'KUANTITI'],
+        [null, 'TAHUN 4', 'TAHUN 5', 'TAHUN 6'],
+        ['BAHASA MELAYU', 5, 5, 5],
+        ['TOTAL', 5, 5, 5],
+        [null, 'JENIS PLAK', 'QTY', 'HARGA'],
+        [null, 'DECO LIGHT', 15],
+      ],
+    });
+    const section = (parseFormAnugerahExcel(buf).categorized?.MP2 || [])[0];
+    expect(section.lines['0']).toBe('HARI ANUGERAH KECEMERLANGAN MURID 2026');
+    expect(section.lines['0b']).toBeUndefined();
+  });
+});

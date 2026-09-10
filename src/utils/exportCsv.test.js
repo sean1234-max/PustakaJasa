@@ -84,6 +84,18 @@ describe('buildCsvRows — positionFromRows category (Main Template / TOKOH)', (
     expect(skippedItemIds).toEqual(['old']);
     expect(rows).toHaveLength(3);
   });
+
+  it('joins a two-line TAJUK BESAR (slot 0 + slot 0b) with a newline in event_header', () => {
+    const twoLine = {
+      ...item,
+      detail: {
+        ...item.detail,
+        lines: { 'TOKOH::0::0': 'HARI ANUGERAH 2024', 'TOKOH::0::0b': 'SK CONTOH', 'TOKOH::0::1': '', 'TOKOH::0::2': '' },
+      },
+    };
+    const { rows } = buildCsvRows({ ...order, items: [twoLine] }, 'TOKOH', [twoLine]);
+    expect(rows.every((r) => r[0] === 'HARI ANUGERAH 2024\nSK CONTOH')).toBe(true);
+  });
 });
 
 describe('buildCsvRows — TOKOH_SHEET NAMA MURID / Reserved', () => {

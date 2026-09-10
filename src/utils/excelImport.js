@@ -182,6 +182,22 @@ function readRefLinesInBand(ws, range, rowStart, rowEnd, slotsByCount = KLAS_MAT
   const lines = {};
   values.slice(0, slots.length).forEach((val, i) => { lines[slots[i]] = val; });
   if (yearLine) lines['1'] = yearLine.trim();
+  return splitTwoLineTajuk(lines);
+}
+
+// A TAJUK BESAR the teacher wrote as two lines — an in-cell line break
+// (Alt+Enter) inside the one cell — is split into slot 0 + slot 0b, the
+// same two-line header shape an AI pre-write / roster import already
+// produces (computeBlocks.js renders 0b as its own numbered line; exportCsv
+// rejoins the two with a newline for the CSV's event_header column). Only
+// the first break splits; any further text stays on the second line.
+function splitTwoLineTajuk(lines) {
+  const raw = lines['0'];
+  if (!raw || lines['0b'] || !/\r?\n/.test(raw)) return lines;
+  const parts = raw.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+  if (parts.length < 2) { lines['0'] = parts[0] || ''; return lines; }
+  lines['0'] = parts[0];
+  lines['0b'] = parts.slice(1).join(' ');
   return lines;
 }
 

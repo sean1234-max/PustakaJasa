@@ -352,10 +352,16 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
               ))}
             </div>
           </div>
-          {blk.addReferenceLine && editable.lines && (
+          {editable.lines && (blk.addReferenceLine || blk.addTajukLine2) && (
             <div className="row-actions" style={{ marginTop: 'var(--space-2)', display: 'flex', gap: 8 }}>
               {blk.canAddReferenceLine && (
                 <button type="button" className="btn btn-secondary" onClick={blk.addReferenceLine}>+ Add Reference Row</button>
+              )}
+              {/* Two-line TAJUK BESAR — an imported Alt+Enter fills this in
+                  automatically (excelImport.js's splitTwoLineTajuk); this
+                  button is the by-hand way to get the same second box. */}
+              {blk.addTajukLine2 && (
+                <button type="button" className="btn btn-secondary" onClick={blk.addTajukLine2}>+ Tajuk besar 2 baris</button>
               )}
               {/* Only appears once SUBJEK/POSITION is actually missing (its
                   own ✕ deleted it, or an import — see excelImport.js's
