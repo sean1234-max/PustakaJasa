@@ -51,6 +51,11 @@ export function snapshotDetail(catKey, blockIdx, isMatrix, isDynamicMatrix, line
     // never write anything into columnsByBlock under their own key.
     const colsForBlock = columnsByBlockMap && columnsByBlockMap[`${catKey}::${blockIdx}`];
     if (colsForBlock) detail.columns = JSON.parse(JSON.stringify(colsForBlock));
+    // ALIRAN TERBAIK (Kalau ada kelas) — its per-Tahun Nama Kelas lists live
+    // under composite keys like the matrix breakdown does; capture them too.
+    const breakdown = {};
+    Object.keys(rowsByBlockMap).forEach((k) => { if (k.startsWith(linePrefix) && k.endsWith('::main')) breakdown[k] = JSON.parse(JSON.stringify(rowsByBlockMap[k])); });
+    if (Object.keys(breakdown).length) detail.namaKelasBreakdown = breakdown;
   }
   return detail;
 }
@@ -530,31 +535,76 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
       // below) is each position sub-range crossed with the TAHUNs that
       // ordered it.
       if (currentCat.aliranKedudukan) {
+        const nk = !!currentCat.aliranNamaKelas;
+        // "Kalau ada kelas": each Tahun's own Nama Kelas list (stored the
+        // PPKI way — `${catKey}::${b}::${tahun}::main`). classQty = sum of
+        // its QTY; when a Tahun has a list, its own TOTAL is
+        // classQty × range size (range = 1 with no KEDUDUKAN), auto-computed
+        // and read-only. A Tahun with no list falls back to plain ALIRAN.
+        const classQtyFor = (row) => {
+          if (!nk) return 0;
+          const list = rowsByBlockMap[`${catKey}::${b}::${row.desc}::main`] || [];
+          return list.reduce((s, r) => s + ((r.desc || '').trim() ? (Number(r.qty) || 0) : 0), 0);
+        };
+        const rangeSizeFor = (row) => {
+          const hingga = Number(row.kedudukanHingga) || 0;
+          return hingga > 0 ? hingga : 1;
+        };
+        const derivedFor = (row) => {
+          const hingga = Number(row.kedudukanHingga) || 0;
+          const cq = classQtyFor(row);
+          if (cq > 0) return cq * rangeSizeFor(row);
+          return hingga > 0 ? hingga : (Number(row.qty) || 0);
+        };
         rows = rawRows.map((row) => {
           const hingga = Number(row.kedudukanHingga) || 0;
-          const derivedQty = hingga > 0 ? hingga : (Number(row.qty) || 0);
+          const cq = classQtyFor(row);
+          const derivedQty = derivedFor(row);
           return {
             id: row.id, desc: row.desc,
             kedudukanHingga: hingga,
             qty: derivedQty ? String(derivedQty) : '',
-            qtyReadOnly: hingga > 0,
+            qtyReadOnly: hingga > 0 || cq > 0,
             setKedudukanHingga: (v) => updaters.onAliranKedudukan(rowsKey, row.id, v),
             setQty: (v) => updaters.onRowField(rowsKey, row.id, 'qty', v),
           };
         });
         blockTotalQty = rows.reduce((sum, r) => sum + (Number(r.qty) || 0), 0);
+
+        if (nk) {
+          // Per-Tahun Nama Kelas breakdown, same UI shape as PPKI/PBD's
+          // (levelBreakdownNoMoral — Nama Kelas only).
+          levelBreakdown = rawRows.map((row) => {
+            const listKey = `${catKey}::${b}::${row.desc}::main`;
+            return {
+              level: row.desc,
+              mainRows: (rowsByBlockMap[listKey] || []).map((r) => ({
+                id: r.id, desc: r.desc || '', qty: r.qty || '',
+                setDesc: (v) => updaters.onLevelKelasField(listKey, r.id, 'desc', v),
+                setQty: (v) => updaters.onLevelKelasField(listKey, r.id, 'qty', v),
+                remove: () => updaters.onRemoveLevelKelasRow(listKey, r.id),
+              })),
+              moralRows: [],
+              addMain: () => updaters.onAddLevelKelasRow(listKey),
+            };
+          }).filter((lb) => lb.mainRows.length > 0);
+        }
+
         // Per-footer-row QTY: for a plak covering places [d..h], count
-        // every (TAHUN, place) it wins — place p counts for a TAHUN whose
-        // own KEDUDUKAN reaches at least p. A footer row with no range
-        // (posDari null) takes the flat-KEDUDUKAN TAHUNs' own totals.
-        const flatTotal = rawRows.reduce((s, r) => s + ((Number(r.kedudukanHingga) || 0) > 0 ? 0 : (Number(r.qty) || 0)), 0);
+        // every (TAHUN, place[, class]) it wins — place p counts for a TAHUN
+        // whose own KEDUDUKAN reaches at least p, multiplied by that TAHUN's
+        // classQty for the "Kalau ada kelas" variant. A footer row with no
+        // range (posDari null) takes the flat-KEDUDUKAN TAHUNs' own totals.
+        const flatTotal = rawRows.reduce((s, r) => s + ((Number(r.kedudukanHingga) || 0) > 0 ? 0 : derivedFor(r)), 0);
         aliranPlakQty = (pr) => {
           if (!pr.posDari) return flatTotal;
           const d = Number(pr.posDari);
           const h = Number(pr.posHingga) || d;
           return rawRows.reduce((sum, r) => {
             const n = Number(r.kedudukanHingga) || 0;
-            return sum + Math.max(0, Math.min(h, n) - d + 1);
+            const places = Math.max(0, Math.min(h, n) - d + 1);
+            const mult = nk ? Math.max(1, classQtyFor(r)) : 1;
+            return sum + places * mult;
           }, 0);
         };
       }
@@ -635,7 +685,8 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
       extraRefColumns,
       canAddRow: !currentCat.capRowsAt5 || rows.length < 5,
       columns, matrixRows, levelBreakdown,
-      levelBreakdownNoMoral: !!currentCat.levelBreakdownNoMoral,
+      levelBreakdownNoMoral: !!currentCat.levelBreakdownNoMoral || !!currentCat.aliranNamaKelas,
+      aliranNamaKelas: !!currentCat.aliranNamaKelas,
       matrixRowLabel: currentCat.matrixRowLabel || 'Subjek',
       colTotals: colTotals.map((v) => ({ value: v })), grandTotal,
       rows,

@@ -370,6 +370,27 @@ export const CATEGORIES = [
     draggableReferenceSample: true,
   },
   {
+    // ALIRAN TERBAIK (Kalau ada kelas) — same left table + JENIS PLAK footer
+    // as ALIRAN above, PLUS a per-Tahun "Nama Kelas / QTY" breakdown (like
+    // PBD's). `aliranNamaKelas` turns each Tahun's TOTAL into an
+    // auto-computed value: (sum of that Tahun's Nama Kelas QTY) × (its
+    // KEDUDUKAN range size, or 1 if no KEDUDUKAN). Each plaque engraves the
+    // ordinal in `position`, ACARA in event_line_1, and "TAHUN N <Nama
+    // Kelas>" in event_line_2. A Tahun with no Nama Kelas list falls back to
+    // plain ALIRAN behaviour. A school fills in ONE of the two ALIRAN sheets.
+    key: 'ALIRAN_KELAS', label: 'ALIRAN TERBAIK (Kalau ada kelas)', mode: 'list', blocksCount: 1, active: true,
+    rows: ALL_TAHUN,
+    aliranKedudukan: true,
+    aliranNamaKelas: true,
+    descColumnLabel: 'Tahun',
+    hideQtyLabelSuffix: true,
+    linePlaceholders: STANDARD_REFERENCE_LINES,
+    positionLine2Placeholder: '( SUBJEK/POSITION )',
+    requiredLineIndices: [0, 2],
+    positionFieldsRedText: true,
+    draggableReferenceSample: true,
+  },
+  {
     // LONJAKAN SAUJANA — six fixed TAHUN rows, each with its OWN KUANTITI
     // and its OWN Jenis Plak (plakPerRow: one cart item per TAHUN row, no
     // single block-level Jenis Plak). Each plaque engraves ACARA + that

@@ -50,6 +50,7 @@ const SOURCE_SHEET_TO_CATEGORY = {
   'MP THP 2 (Kalau ada kelas)': 'MP2_KELAS',
   PBD: 'PBD',
   'ALIRAN TERBAIK': 'ALIRAN',
+  'ALIRAN TERBAIK Kalau ada kelas': 'ALIRAN_KELAS',
   'LONJAKAN SAUJANA': 'LONJAKAN',
   'KEHADIRAN PENUH': 'KEHADIRAN',
   TOKOH: 'TOKOH_SHEET',
@@ -1282,6 +1283,32 @@ function parseAliranSheet(ws) {
   return { lines, tahunRows, plakRanges, isAliran: true, classes: [], jenisPlak: '' };
 }
 
+// ALIRAN TERBAIK (Kalau ada kelas) — the ALIRAN sheet (parseAliranSheet
+// above: left TAHUN/KEDUDUKAN table + JENIS PLAK footer) PLUS a per-Tahun
+// "NAMA KELAS / QTY" breakdown off to the right (the same shape PBD's own
+// "Kalau ada kelas" data has — findPpkiNamaKelasBlocks lines the "TAHUN 1"/
+// "TAHUN 2"/... headers up with each NAMA KELAS/QTY block). Each Tahun's
+// TOTAL is then (sum of its Nama Kelas QTY) x (its KEDUDUKAN range size),
+// computed live on the website — see computeBlocks.js's aliranNamaKelas.
+function parseAliranKelasSheet(ws) {
+  const base = parseAliranSheet(ws);
+  if (!base) return null;
+  const range = sheetRange(ws);
+  const blocks = findPpkiNamaKelasBlocks(ws, range);
+  const hasNamaKelasData = blocks && blocks.some((b) => cellText(ws, b.headerRow + 1, b.nkCol));
+  let levelBreakdown = null;
+  if (hasNamaKelasData) {
+    levelBreakdown = blocks
+      .map((b) => ({
+        label: normalizeTahun(b.label) || b.label,
+        mainRows: readPpkiListRows(ws, range, b.nkCol, b.qtyCol, b.headerRow + 1),
+        moralRows: [],
+      }))
+      .filter((lb) => lb.label && lb.mainRows.length > 0);
+  }
+  return { ...base, levelBreakdown, isAliran: false, isAliranKelas: true };
+}
+
 // LONJAKAN SAUJANA / KEHADIRAN PENUH — identical shape: "TAHUN | KUANTITI |
 // JENIS PLAK | HARGA" down the left, one KUANTITI (and its OWN Jenis Plak)
 // per TAHUN 1-6. Lands in the matching plakPerRow list category (catalog.js).
@@ -1616,7 +1643,8 @@ export function parseFormAnugerahExcel(arrayBuffer) {
   wb.SheetNames.forEach((name) => {
     const upper = name.trim().toUpperCase();
     if (upper === 'KLAS MATRIX' || upper === 'FRONT PG' || upper === 'TOKOH' || upper === 'PPKI' || upper === 'PBD'
-      || upper === 'ALIRAN TERBAIK' || upper === 'LONJAKAN SAUJANA' || upper === 'KEHADIRAN PENUH'
+      || upper === 'ALIRAN TERBAIK' || upper === 'ALIRAN TERBAIK KALAU ADA KELAS'
+      || upper === 'LONJAKAN SAUJANA' || upper === 'KEHADIRAN PENUH'
       || upper === 'MP THP 1' || upper === 'MP THP 2' || upper === 'SELEMPANG'
       || upper === 'MP THP 1 (KALAU ADA KELAS)' || upper === 'MP THP 2 (KALAU ADA KELAS)') return;
     const ws = wb.Sheets[name];
@@ -1666,6 +1694,11 @@ export function parseFormAnugerahExcel(arrayBuffer) {
   if (aliranSheet) {
     const aliranSection = parseAliranSheet(aliranSheet);
     if (aliranSection) { aliranSection.sourceSheet = 'ALIRAN TERBAIK'; allSections.push(aliranSection); }
+  }
+  const aliranKelasSheet = findSheet(wb, 'ALIRAN TERBAIK Kalau ada kelas');
+  if (aliranKelasSheet) {
+    const aliranKelasSection = parseAliranKelasSheet(aliranKelasSheet);
+    if (aliranKelasSection) { aliranKelasSection.sourceSheet = 'ALIRAN TERBAIK Kalau ada kelas'; allSections.push(aliranKelasSection); }
   }
   [['LONJAKAN SAUJANA'], ['KEHADIRAN PENUH']].forEach(([name]) => {
     const sheet = findSheet(wb, name);

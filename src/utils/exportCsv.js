@@ -279,6 +279,35 @@ function buildAliranRows(item, header, year, acara) {
   const el2 = /tahun/i.test(line2b) ? (tr) => (tr && tr.desc ? tr.desc : '') : () => '';
   const pos = (p) => numToOrdinal(p);
 
+  // ALIRAN TERBAIK (Kalau ada kelas) — the per-Tahun Nama Kelas breakdown
+  // (snapshotDetail) is present. One plaque per (Tahun, class, place in this
+  // plak's range); event_line_2 = "TAHUN N <class>", event_line_1 = ACARA,
+  // position = the ordinal. A flat Tahun (no KEDUDUKAN) with a class list
+  // gives one plaque per class (× its QTY), position blank.
+  const breakdown = item.detail?.namaKelasBreakdown || {};
+  if (Object.keys(breakdown).length > 0) {
+    tahunRows.forEach((tr) => {
+      const hingga = Number(tr.kedudukanHingga) || 0;
+      const classes = (breakdown[`${item.categoryKey}::${item.blockIdx}::${tr.desc}::main`] || [])
+        .filter((c) => (c.desc || '').trim());
+      classes.forEach((c) => {
+        const cq = Math.max(0, Number(c.qty) || 0);
+        const classLine = [tr.desc, c.desc.trim()].filter(Boolean).join(' ');
+        if (hingga > 0) {
+          if (!item.posDari) return; // flat plak doesn't take the ranked Tahuns
+          const lo = Number(item.posDari);
+          const hi = Math.min(Number(item.posHingga) || lo, hingga);
+          for (let n = 0; n < cq; n++) {
+            for (let p = lo; p <= hi; p++) rows.push([header, year, pos(p), acara || '', classLine]);
+          }
+        } else if (!item.posDari) {
+          for (let n = 0; n < cq; n++) rows.push([header, year, '', acara || '', classLine]);
+        }
+      });
+    });
+    return rows;
+  }
+
   const derived = tahunRows.reduce((sum, tr) => {
     const hingga = Number(tr.kedudukanHingga) || 0;
     if (item.posDari) {

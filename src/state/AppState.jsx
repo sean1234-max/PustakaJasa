@@ -915,7 +915,7 @@ export function AppStateProvider({ children }) {
               jenisPlak: matched, namaMurid: tr.namaMurid || '', gambar: tr.gambar || '', design: tr.design || '',
             };
           });
-        } else if (section.isAliran) {
+        } else if (section.isAliran || section.isAliranKelas) {
           // ALIRAN TERBAIK (excelImport.js's parseAliranSheet) — six fixed
           // TAHUN rows, each carrying a KEDUDUKAN "hingga" place or a flat
           // qty; plus a multi-row JENIS PLAK footer of position ranges.
@@ -925,6 +925,12 @@ export function AppStateProvider({ children }) {
             if (tr && tr.hingga) return { id: nextRowId++, desc: tahun, qty: String(tr.hingga - (tr.dari || 1) + 1), kedudukanHingga: tr.hingga };
             if (tr && tr.flatQty) return { id: nextRowId++, desc: tahun, qty: String(tr.flatQty), kedudukanHingga: 0 };
             return { id: nextRowId++, desc: tahun, qty: '', kedudukanHingga: 0 };
+          });
+          // "Kalau ada kelas" — each Tahun's own Nama Kelas list, stored the
+          // same way PPKI/PBD's level breakdown is (`${key}::${tahun}::main`),
+          // so computeBlocks / draftUpdaters can show and re-sum it.
+          (section.levelBreakdown || []).forEach(({ label, mainRows }) => {
+            newRowsByBlock[`${key}::${label}::main`] = mainRows.map((r) => ({ id: nextRowId++, desc: r.name, qty: String(r.qty) }));
           });
         } else if (section.isSelempangList) {
           // SELEMPANG (excelImport.js's parseSelempangSheet) — plain
@@ -1039,7 +1045,7 @@ export function AppStateProvider({ children }) {
           // LONJAKAN / TOKOH — Jenis Plak lives per row (plakPerRow); SELEMPANG
           // has one implicit shared code. Either way, no block-level plak row.
           newPlakRows = { ...next.plakRows, [key]: [] };
-        } else if (section.isAliran) {
+        } else if (section.isAliran || section.isAliranKelas) {
           // One plak row per JENIS PLAK footer entry, each carrying its own
           // position range (posDari/posHingga). QTY per row is derived later
           // (computeBlocks.js) UNLESS the sheet typed its own — then that's
@@ -1059,7 +1065,10 @@ export function AppStateProvider({ children }) {
           const aliranRows = (section.plakRanges || []).map((pr) => {
             // Un-matched → blank, picked here; flagged by buildCategoryCartItems.
             const matched = matchJenisPlakPath(pr.jenisPlak, next.plakCatalog);
-            const override = pr.qty && pr.qty !== derivedFor(pr.dari || null, pr.hingga || null) ? pr.qty : null;
+            // "Kalau ada kelas" footer QTY is always derived (Nama Kelas ×
+            // range), never a teacher override — the sheet's own number, if
+            // any, is just the school's arithmetic, not a real override.
+            const override = !section.isAliranKelas && pr.qty && pr.qty !== derivedFor(pr.dari || null, pr.hingga || null) ? pr.qty : null;
             return { id: nextPlakRowId++, jenisPlak: matched, posDari: pr.dari || null, posHingga: pr.hingga || null, qty: override };
           });
           // Any TAHUN with no KEDUDUKAN (a flat "ikut sample" count) needs

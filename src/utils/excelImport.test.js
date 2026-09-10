@@ -86,6 +86,37 @@ describe('parseFormAnugerahExcel — PBD Tahun labels follow the sheet', () => {
   });
 });
 
+describe('parseFormAnugerahExcel — ALIRAN TERBAIK (Kalau ada kelas)', () => {
+  it('reads the KEDUDUKAN table AND the per-Tahun Nama Kelas breakdown', () => {
+    const r = [];
+    r[0] = [null, null, null, null, 'TOLONG ISI DI SINI'];
+    r[1] = [null, null, null, null, 'HARI ANUGERAH KECEMERLANGAN 2026'];
+    r[2] = [null, null, null, null, 'TERBAIK DALAM ALIRAN'];
+    r[3] = [null, null, null, null, 'TAHUN 1'];
+    r[4] = [null, null, null, null, 'PERTAMA'];
+    r[8] = ['TAHUN', 'KEDUDUKAN', null, 'TOTAL', null, null, 'TAHUN 1', null, null, 'TAHUN 4'];
+    r[9] = [null, 'DARI', 'HINGGA KE', null, null, null, 'NAMA KELAS', 'QTY', null, 'NAMA KELAS', 'QTY'];
+    r[10] = ['TAHUN 1', null, null, null, null, null, 'ADIL', 1, null, 'ADIL', 1];
+    r[11] = ['TAHUN 2', null, null, null, null, null, 'BESTARI', 1, null, 'BESTARI', 1];
+    r[12] = ['TAHUN 3', null, null, null, null, null, null, null, null, 'CEKAL', 1];
+    r[13] = ['TAHUN 4', 'PERTAMA', 'KELIMA'];
+    r[14] = ['TAHUN 5'];
+    r[15] = ['TAHUN 6'];
+    r[16] = ['TOTAL:'];
+    r[19] = [null, 'JENIS PLAK', 'CATATAN', null, 'QTY', 'HARGA'];
+    r[20] = [null, null, 'DARI', 'HINGGA KE'];
+    r[21] = [null, 'DECO LIGHT', 'PERTAMA', 'KELIMA'];
+    const parsed = parseFormAnugerahExcel(workbookFromSheets({ 'ALIRAN TERBAIK Kalau ada kelas': r.map((x) => x || []) }));
+    const section = (parsed.categorized?.ALIRAN_KELAS || [])[0];
+    expect(section.isAliranKelas).toBe(true);
+    expect(section.tahunRows).toEqual([{ tahun: 'TAHUN 4', dari: 1, hingga: 5 }]);
+    expect(section.levelBreakdown.map((lb) => [lb.label, lb.mainRows.map((m) => m.name)])).toEqual([
+      ['TAHUN 1', ['ADIL', 'BESTARI']],
+      ['TAHUN 4', ['ADIL', 'BESTARI', 'CEKAL']],
+    ]);
+  });
+});
+
 describe('parseFormAnugerahExcel — two-line TAJUK BESAR', () => {
   it('splits an in-cell line break (Alt+Enter) into slot 0 + slot 0b', () => {
     const buf = workbookFromSheets({

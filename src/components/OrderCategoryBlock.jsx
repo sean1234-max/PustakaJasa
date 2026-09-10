@@ -951,6 +951,56 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
             </table>
           </div>
 
+          {/* ALIRAN TERBAIK (Kalau ada kelas) — per-Tahun Nama Kelas list.
+              Each Tahun's TOTAL above is (Nama Kelas QTY sum) × (its
+              KEDUDUKAN range), auto-computed and read-only. */}
+          {blk.aliranNamaKelas && blk.levelBreakdown && blk.levelBreakdown.length > 0 && (
+            <>
+              <div className="card-kicker" style={{ marginTop: 'var(--space-4)' }}>Nama Kelas ikut Tahun</div>
+              {blk.levelBreakdown.map((lb) => (
+                <div key={lb.level} style={{ marginTop: 'var(--space-3)' }}>
+                  <div className="card-kicker">{lb.level}</div>
+                  <div className="table-wrap">
+                    <table className="table">
+                      <thead>
+                        <tr>
+                          <th>Nama Kelas</th>
+                          <th style={{ width: 90, textAlign: 'center' }}>QTY</th>
+                          {editable.addRemoveRows && <th style={{ width: 44 }} />}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {lb.mainRows.map((m) => (
+                          <tr key={m.id}>
+                            <td>
+                              <input className="input" value={m.desc} readOnly={!editable.rowDesc} onChange={editable.rowDesc ? (e) => m.setDesc(e.target.value) : undefined} />
+                            </td>
+                            <td>
+                              <input className="input" type="number" min="0" style={{ textAlign: 'center' }} value={m.qty} readOnly={!editable.rowQty} onChange={editable.rowQty ? (e) => m.setQty(e.target.value) : undefined} />
+                            </td>
+                            {editable.addRemoveRows && (
+                              <td><button type="button" className="btn btn-ghost btn-icon" aria-label="Remove Nama Kelas" onClick={m.remove}>✕</button></td>
+                            )}
+                          </tr>
+                        ))}
+                        <tr>
+                          <td><strong>BILANGAN KELAS</strong></td>
+                          <td style={{ textAlign: 'center' }}><strong>{lb.mainRows.reduce((s, r) => s + (Number(r.qty) || 0), 0)}</strong></td>
+                          {editable.addRemoveRows && <td />}
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                  {editable.addRemoveRows && (
+                    <div className="row-actions">
+                      <button type="button" className="btn btn-secondary" onClick={lb.addMain}>+ Add Nama Kelas</button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </>
+          )}
+
           <div className="card-kicker" style={{ marginTop: 'var(--space-4)' }}>Jenis Plak</div>
           <div className="table-wrap">
             <table className="table">

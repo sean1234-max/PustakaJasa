@@ -336,6 +336,42 @@ describe('buildCsvRows — ALIRAN TERBAIK footer qty (derived vs teacher overrid
   });
 });
 
+describe('buildCsvRows — ALIRAN TERBAIK (Kalau ada kelas)', () => {
+  const rowsByBlockLikeDetail = {
+    lines: { 'ALIRAN_KELAS::0::0': 'HARI ANUGERAH', 'ALIRAN_KELAS::0::2': 'TERBAIK DALAM ALIRAN' },
+    rows: [
+      { id: 1, desc: 'TAHUN 1', qty: '2', kedudukanHingga: 0 },
+      { id: 4, desc: 'TAHUN 4', qty: '15', kedudukanHingga: 5 },
+    ],
+    namaKelasBreakdown: {
+      'ALIRAN_KELAS::0::TAHUN 1::main': [{ id: 10, desc: 'ADIL', qty: '1' }, { id: 11, desc: 'BESTARI', qty: '1' }],
+      'ALIRAN_KELAS::0::TAHUN 4::main': [{ id: 12, desc: 'ADIL', qty: '1' }, { id: 13, desc: 'BESTARI', qty: '1' }, { id: 14, desc: 'CEKAL', qty: '1' }],
+    },
+  };
+  const mk = (jenisPlak, posDari, posHingga) => ({
+    id: `${jenisPlak}`, jenisPlak, qty: 0, categoryKey: 'ALIRAN_KELAS', blockIdx: 0,
+    posDari, posHingga, detail: rowsByBlockLikeDetail,
+  });
+
+  it('ranged plak: one row per (Tahun, class, place); event_line_2 = "TAHUN N <class>"', () => {
+    const { rows } = buildCsvRows({ schoolLanguage: 'SK', items: [mk('GOLD', 1, 3)] }, 'ALIRAN_KELAS', [mk('GOLD', 1, 3)]);
+    // TAHUN 4: 3 classes × places PERTAMA/KEDUA/KETIGA = 9
+    expect(rows).toHaveLength(9);
+    expect(rows.filter((r) => r[2] === 'PERTAMA' && r[4] === 'TAHUN 4 ADIL')).toHaveLength(1);
+    expect(rows.filter((r) => r[4] === 'TAHUN 4 CEKAL')).toHaveLength(3);
+    expect(rows.every((r) => r[1] === '' && r[3] === 'TERBAIK DALAM ALIRAN')).toBe(true);
+  });
+
+  it('flat plak (no range): one row per (flat Tahun, class), blank position', () => {
+    const { rows } = buildCsvRows({ schoolLanguage: 'SK', items: [mk('FLAT', null, null)] }, 'ALIRAN_KELAS', [mk('FLAT', null, null)]);
+    // TAHUN 1 (flat): 2 classes → 2 rows
+    expect(rows).toEqual([
+      ['HARI ANUGERAH', '', '', 'TERBAIK DALAM ALIRAN', 'TAHUN 1 ADIL'],
+      ['HARI ANUGERAH', '', '', 'TERBAIK DALAM ALIRAN', 'TAHUN 1 BESTARI'],
+    ]);
+  });
+});
+
 describe('buildCsvRows — dynamicMatrix with a pre-written roster column (event_line_2)', () => {
   // A KLAS_MATRIX item as aiImportMap builds it for a "prebuilt" roster:
   // one column per recipient, carrying eline2, and one blank subject row.

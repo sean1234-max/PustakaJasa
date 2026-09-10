@@ -29,7 +29,11 @@ function recomputeLevelBreakdown(st, listKey, updatedRowsByBlock, matrixValuesFi
   if (!m) return {};
   const [, catKey, level] = m;
   const cat = CATEGORIES.find((c) => c.key === catKey);
-  if (!cat) return {};
+  // ALIRAN TERBAIK (Kalau ada kelas) also keeps per-Tahun Nama Kelas lists
+  // under these composite keys, but its TOTAL is derived live in
+  // computeBlocks (classQty × range) — there is no matrix cell to write, so
+  // the edit is just stored and nothing more.
+  if (!cat || !cat.hasLevelBreakdown) return {};
   const base = listKey.replace(/::(main|moral)$/, '');
   const sumQty = (rows) => (rows || []).reduce((sum, r) => sum + (Number(r.qty) || 0), 0);
   const mainTotal = sumQty(updatedRowsByBlock[`${base}::main`]);
