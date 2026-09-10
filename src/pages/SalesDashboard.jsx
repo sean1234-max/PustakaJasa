@@ -16,6 +16,7 @@ const FILTERS = [
   { status: ADDON_FILTER, label: 'Add-On Pending Approval' },
   { status: 'In Production', label: 'In Production' },
   { status: 'Waiting for Delivery', label: 'Waiting for Delivery' },
+  { status: 'Shipped', label: 'Shipped' },
   { status: 'Completed', label: 'Completed' },
 ];
 

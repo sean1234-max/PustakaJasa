@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import { useAppState } from '../state/useAppState';
-import { statusPillStyle, formatDate } from '../data/catalog';
+import { statusPillStyle, formatDate, deliveryStageForShipmentDate } from '../data/catalog';
 import { getOrderChangeStamp } from '../utils/orderStamp';
 
 // Production only ever works orders that are already 'In Production' — one
@@ -10,10 +10,13 @@ import { getOrderChangeStamp } from '../utils/orderStamp';
 // yet (that's now Store Admin's job, not a gate on Production
 // starting work — see supabase/migrations/0036_add_invoicing_role.sql and
 // StoreAdminDashboard.jsx). Order History is everything Production has
-// already marked Done (see markProductionDone in src/state/AppState.jsx).
+// already marked Done (see markProductionDone in src/state/AppState.jsx) —
+// which, depending on the Shipment Date, lands as 'Waiting for Delivery',
+// 'Shipped', or 'Completed'.
+const HISTORY_STATUSES = ['Waiting for Delivery', 'Shipped', 'Completed'];
 const TABS = [
   { key: 'active', label: 'In Production', match: (o) => o.status === 'In Production' },
-  { key: 'history', label: 'Order History', match: (o) => o.status === 'Waiting for Delivery' || o.status === 'Completed' },
+  { key: 'history', label: 'Order History', match: (o) => HISTORY_STATUSES.includes(o.status) },
 ];
 
 // order.dueDate is stored as free-form text (see supabase/migrations/0001,
@@ -30,7 +33,7 @@ function dueDateKey(dueDate) {
 }
 
 export default function ProductionDashboard() {
-  const { state, markProductionDone } = useAppState();
+  const { state, today, markProductionDone } = useAppState();
   const navigate = useNavigate();
   const [tab, setTab] = useState(TABS[0].key);
   // Lets Production see, at a glance, everything due out on one delivery
@@ -39,7 +42,8 @@ export default function ProductionDashboard() {
   const [dueDateFilter, setDueDateFilter] = useState('');
 
   const handleMarkDone = (ord) => {
-    if (!window.confirm(`Mark order ${ord.id} as done? Its status will change to "Waiting for Delivery".`)) return;
+    const nextStatus = deliveryStageForShipmentDate(ord.dueDate, today);
+    if (!window.confirm(`Mark order ${ord.id} as done? Its status will change to "${nextStatus}".`)) return;
     markProductionDone(ord.id);
   };
 

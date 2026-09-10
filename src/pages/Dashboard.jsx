@@ -8,6 +8,7 @@ const FILTERS = [
   { key: 'Submitted to Sales', label: 'Submitted to Sales', match: (o) => o.status === 'Submitted to Sales' },
   { key: 'In Production', label: 'In Production', match: (o) => o.status === 'In Production' },
   { key: 'Waiting for Delivery', label: 'Waiting for Delivery', match: (o) => o.status === 'Waiting for Delivery' },
+  { key: 'Shipped', label: 'Shipped', match: (o) => o.status === 'Shipped' },
   { key: 'Delivered', label: 'Delivered', match: (o) => o.status === 'Completed' },
 ];
 

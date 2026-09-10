@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import {
   CATEGORIES, ACTIVE_CATEGORIES, formatDate, standardUnitPrice, getCategorySubjects, matrixCellKey, customMatrixLabelKey,
+  deliveryStageForShipmentDate,
 } from '../data/catalog';
 import { buildInitialRowsByBlock, buildInitialColumnsByBlock, buildInitialPlakRows } from '../data/formDefaults';
 import {
@@ -1786,11 +1787,21 @@ export function AppStateProvider({ children }) {
     } else if (!order.invoiceId) {
       patch({ productionToast: 'Waiting for Store Admin to assign an Invoice Number before this can be marked done.' });
     } else {
+      // Status isn't always 'Waiting for Delivery': if this order's Shipment
+      // Date has already arrived (or passed) by the time Production finishes,
+      // the calendar rule sends it straight to 'Shipped' / 'Completed', the
+      // same as the daily sweep_shipped_orders job would on its next run.
+      const nextStatus = deliveryStageForShipmentDate(order.dueDate, TODAY);
+      const toastForStatus = {
+        'Waiting for Delivery': 'Production completed. Order is now waiting for delivery.',
+        Shipped: 'Production completed. Shipment Date has arrived — order is now Shipped.',
+        Completed: 'Production completed. Shipment Date has passed — order is now Completed.',
+      };
       try {
-        await updateOrder(orderId, { status: 'Waiting for Delivery' });
+        await updateOrder(orderId, { status: nextStatus });
         patch((st) => ({
-          orders: st.orders.map((o) => (o.id === orderId ? { ...o, status: 'Waiting for Delivery' } : o)),
-          productionToast: 'Production completed. Order is now waiting for delivery.',
+          orders: st.orders.map((o) => (o.id === orderId ? { ...o, status: nextStatus } : o)),
+          productionToast: toastForStatus[nextStatus],
         }));
       } catch (err) {
         console.error('Failed to mark order done in Supabase:', err);

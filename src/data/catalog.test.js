@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   flattenPlakCatalog, standardUnitPrice, tahunRangeYears,
   stockZoneFor, getStockStatus, statusPillStyle, STATUS_STAGES, ORDER_STATUSES,
+  deliveryStageForShipmentDate,
 } from './catalog';
 
 const CATALOG = [
@@ -98,7 +99,29 @@ describe('statusPillStyle', () => {
   it('falls back gracefully for an unknown status', () => {
     expect(statusPillStyle('Nonsense')).toEqual({ background: '#e4ecf2', color: '#1d1f20' });
   });
-  it('ORDER_STATUSES includes the 4 stages plus Cancelled', () => {
+  it('ORDER_STATUSES is every pipeline stage plus Cancelled', () => {
     expect(ORDER_STATUSES).toEqual([...STATUS_STAGES, 'Cancelled']);
+  });
+});
+
+describe('deliveryStageForShipmentDate', () => {
+  const today = new Date(2026, 8, 10); // 10 Sep 2026, local midnight
+  // dueDate reaches this function as the ISO string supabase-js produced
+  // from a JS Date; build the fixtures the same way so the test doesn't
+  // depend on the runner's timezone.
+  const shipISO = (y, m, d) => new Date(y, m, d, 12).toISOString();
+
+  it('is Waiting for Delivery when the Shipment Date is still ahead', () => {
+    expect(deliveryStageForShipmentDate(shipISO(2026, 8, 12), today)).toBe('Waiting for Delivery');
+  });
+  it('is Shipped on the Shipment Date itself', () => {
+    expect(deliveryStageForShipmentDate(shipISO(2026, 8, 10), today)).toBe('Shipped');
+  });
+  it('is Completed once the Shipment Date has passed', () => {
+    expect(deliveryStageForShipmentDate(shipISO(2026, 8, 9), today)).toBe('Completed');
+  });
+  it('falls back to Waiting for Delivery for a missing or unparseable date', () => {
+    expect(deliveryStageForShipmentDate(null, today)).toBe('Waiting for Delivery');
+    expect(deliveryStageForShipmentDate('TBD', today)).toBe('Waiting for Delivery');
   });
 });
