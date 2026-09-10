@@ -140,6 +140,13 @@ function resetCategoryFields(catKey, st, visibleField) {
   const matrixValues = { ...st.matrixValues };
   Object.keys(matrixValues).forEach((k) => { if (k.startsWith(`${catKey}::`)) delete matrixValues[k]; });
   const rowsByBlock = { ...st.rowsByBlock };
+  // Per-level Nama Kelas lists (PPKI/PBD/ALIRAN_KELAS — `${catKey}::${b}::
+  // ${level}::main`/`::moral`) aren't the plain `${catKey}::${b}` key the
+  // per-mode reset below rewrites, so clear them here too — otherwise the
+  // next round inherits the previous one's classes.
+  Object.keys(rowsByBlock).forEach((k) => {
+    if (k.startsWith(`${catKey}::`) && (k.endsWith('::main') || k.endsWith('::moral'))) delete rowsByBlock[k];
+  });
   const columnsByBlock = { ...st.columnsByBlock };
   const plakRows = { ...st.plakRows };
   let nextColumnId = st.nextColumnId;
@@ -1156,11 +1163,18 @@ export function AppStateProvider({ children }) {
       const newMatrixValues = { ...st.matrixValues };
       Object.keys(newMatrixValues).forEach((k) => { if (k.startsWith(`${categoryKey}::`)) delete newMatrixValues[k]; });
       Object.assign(newMatrixValues, restored.matrixValues);
+      // Drop this category's stale per-level Nama Kelas lists before merging
+      // the restored ones back (same reason lineValues/matrixValues clear).
+      const newRowsByBlock = { ...st.rowsByBlock };
+      Object.keys(newRowsByBlock).forEach((k) => {
+        if (k.startsWith(`${categoryKey}::`) && (k.endsWith('::main') || k.endsWith('::moral'))) delete newRowsByBlock[k];
+      });
+      Object.assign(newRowsByBlock, restored.rowsByBlock);
       return {
         category: categoryKey,
         lineValues: newLineValues,
         matrixValues: newMatrixValues,
-        rowsByBlock: { ...st.rowsByBlock, ...restored.rowsByBlock },
+        rowsByBlock: newRowsByBlock,
         columnsByBlock: { ...st.columnsByBlock, ...restored.columnsByBlock },
         plakRows: { ...st.plakRows, ...restored.plakRows },
         nextRowId: Math.max(st.nextRowId, restored.nextId),

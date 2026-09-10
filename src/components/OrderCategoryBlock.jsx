@@ -953,11 +953,19 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
 
           {/* ALIRAN TERBAIK (Kalau ada kelas) — per-Tahun Nama Kelas list.
               Each Tahun's TOTAL above is (Nama Kelas QTY sum) × (its
-              KEDUDUKAN range), auto-computed and read-only. */}
-          {blk.aliranNamaKelas && blk.levelBreakdown && blk.levelBreakdown.length > 0 && (
+              KEDUDUKAN range), auto-computed and read-only. While editing,
+              every Tahun gets a (possibly empty) table so the teacher can
+              add classes anywhere; a read-only review shows only the Tahuns
+              that actually have a list. */}
+          {(() => {
+            const editing = editable.rowDesc || editable.rowQty || editable.addRemoveRows;
+            const shown = (blk.aliranNamaKelas && blk.levelBreakdown ? blk.levelBreakdown : [])
+              .filter((lb) => editing || lb.mainRows.some((m) => (m.desc || '').trim() || Number(m.qty) > 0));
+            if (shown.length === 0) return null;
+            return (
             <>
               <div className="card-kicker" style={{ marginTop: 'var(--space-4)' }}>Nama Kelas ikut Tahun</div>
-              {blk.levelBreakdown.map((lb) => (
+              {shown.map((lb) => (
                 <div key={lb.level} style={{ marginTop: 'var(--space-3)' }}>
                   <div className="card-kicker">{lb.level}</div>
                   <div className="table-wrap">
@@ -999,7 +1007,8 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
                 </div>
               ))}
             </>
-          )}
+            );
+          })()}
 
           <div className="card-kicker" style={{ marginTop: 'var(--space-4)' }}>Jenis Plak</div>
           <div className="table-wrap">

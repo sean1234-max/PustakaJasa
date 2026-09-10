@@ -573,7 +573,10 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
 
         if (nk) {
           // Per-Tahun Nama Kelas breakdown, same UI shape as PPKI/PBD's
-          // (levelBreakdownNoMoral — Nama Kelas only).
+          // (levelBreakdownNoMoral — Nama Kelas only). Every Tahun row gets
+          // one (even empty) so the teacher can add classes to a Tahun the
+          // import didn't fill — unlike PPKI/PBD (matrix), this list IS the
+          // only way to enter a "Kalau ada kelas" quantity.
           levelBreakdown = rawRows.map((row) => {
             const listKey = `${catKey}::${b}::${row.desc}::main`;
             return {
@@ -587,7 +590,7 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
               moralRows: [],
               addMain: () => updaters.onAddLevelKelasRow(listKey),
             };
-          }).filter((lb) => lb.mainRows.length > 0);
+          });
         }
 
         // Per-footer-row QTY: for a plak covering places [d..h], count
