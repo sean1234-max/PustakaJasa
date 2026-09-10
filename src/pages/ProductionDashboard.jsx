@@ -5,18 +5,52 @@ import { useAppState } from '../state/useAppState';
 import { statusPillStyle, formatDate, deliveryStageForShipmentDate } from '../data/catalog';
 import { getOrderChangeStamp } from '../utils/orderStamp';
 
-// Production only ever works orders that are already 'In Production' — one
-// active tab, regardless of whether an invoice number has been assigned
-// yet (that's now Store Admin's job, not a gate on Production
-// starting work — see supabase/migrations/0036_add_invoicing_role.sql and
-// StoreAdminDashboard.jsx). Order History is everything Production has
-// already marked Done (see markProductionDone in src/state/AppState.jsx) —
-// which, depending on the Shipment Date, lands as 'Waiting for Delivery',
-// 'Shipped', or 'Completed'.
-const HISTORY_STATUSES = ['Waiting for Delivery', 'Shipped', 'Completed'];
+// Production works 'In Production' orders (invoice number or not — that's
+// Store Admin's job now, see supabase/migrations/0036_add_invoicing_role.sql
+// and StoreAdminDashboard.jsx), then follows each order down the
+// Shipment-Date-driven tail (see markProductionDone / deliveryStageForShipmentDate).
+//
+// The Shipped/Completed/Order History split is by the calendar, not a stored
+// timestamp. For an order whose Shipment Date is S:
+//   on S            -> 'Shipped'          (Shipped tab)
+//   S+1 .. S+3      -> 'Completed'        (Completed tab — 3 days)
+//   S+4 onwards     -> 'Completed'        (Order History)
+// An order marked Done before its Shipment Date sits in 'Waiting for
+// Delivery' until the daily sweep flips it; those live in Order History too.
+
+// Whole days from an order's Shipment Date to `today` (0 = due today,
+// positive = in the past). null when there's no parseable Shipment Date.
+function daysSinceShipmentDate(dueDate, today) {
+  if (!dueDate) return null;
+  const d = new Date(dueDate);
+  if (Number.isNaN(d.getTime())) return null;
+  const ship = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const now = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  return Math.round((now - ship) / 86400000);
+}
+
 const TABS = [
   { key: 'active', label: 'In Production', match: (o) => o.status === 'In Production' },
-  { key: 'history', label: 'Order History', match: (o) => HISTORY_STATUSES.includes(o.status) },
+  { key: 'shipped', label: 'Shipped', match: (o) => o.status === 'Shipped' },
+  {
+    key: 'completed',
+    label: 'Completed',
+    match: (o, today) => {
+      if (o.status !== 'Completed') return false;
+      const days = daysSinceShipmentDate(o.dueDate, today);
+      return days !== null && days <= 3;
+    },
+  },
+  {
+    key: 'history',
+    label: 'Order History',
+    match: (o, today) => {
+      if (o.status === 'Waiting for Delivery') return true;
+      if (o.status !== 'Completed') return false;
+      const days = daysSinceShipmentDate(o.dueDate, today);
+      return days === null || days >= 4;
+    },
+  },
 ];
 
 // order.dueDate is stored as free-form text (see supabase/migrations/0001,
@@ -48,7 +82,7 @@ export default function ProductionDashboard() {
   };
 
   const activeTab = TABS.find((t) => t.key === tab);
-  const ordersInTab = state.orders.filter(activeTab.match);
+  const ordersInTab = state.orders.filter((o) => activeTab.match(o, today));
   const filteredOrders = ordersInTab
     .filter((o) => !dueDateFilter || dueDateKey(o.dueDate) === dueDateFilter);
 
@@ -80,7 +114,7 @@ export default function ProductionDashboard() {
 
       <div className="tabs" style={{ marginBottom: 'var(--space-4)' }}>
         {TABS.map((t) => {
-          const count = state.orders.filter(t.match).length;
+          const count = state.orders.filter((o) => t.match(o, today)).length;
           return (
             <button
               key={t.key}
@@ -161,7 +195,7 @@ export default function ProductionDashboard() {
                     </button>
                   </>
                 )}
-                {tab === 'history' && (
+                {tab !== 'active' && (
                   <button type="button" className="btn btn-ghost btn-block" onClick={() => navigate(`/production/orders/${ord.id}`)}>
                     View Order
                   </button>
