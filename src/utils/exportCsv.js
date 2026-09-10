@@ -77,7 +77,11 @@ function buildMatrixRows(item, cat, header, year, positionPart1, schoolLanguage)
   const emitRow = (subject, column, qty) => {
     if (qty <= 0) return;
     const position = positionPart1 ? `${positionPart1}\n${subject}` : subject;
-    const row = [header, year, position, column, ''];
+    // A synthetic single "KUANTITI"/"KEDUDUKAN" column (PBD — the row IS the
+    // Tahun, there is no real class-level axis) is a stand-in, never an
+    // engraved line — same filter buildPbdMatrixRows applies to the subject.
+    const col = ['KUANTITI', 'KEDUDUKAN'].includes(String(column).trim().toUpperCase()) ? '' : column;
+    const row = [header, year, position, col, ''];
     for (let i = 0; i < qty; i++) rows.push(row);
   };
 

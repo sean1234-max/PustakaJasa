@@ -937,11 +937,21 @@ export function AppStateProvider({ children }) {
         } else if (section.isTahunList) {
           // PBD (excelImport.js's parsePbdSheet) — no subject axis, one
           // KUANTITI total per Tahun. The category is a 1-column matrix
-          // whose "subject" rows ARE the Tahuns (catalog.js), so the cell
-          // key is (tahun, 'KUANTITI').
+          // whose "subject" rows ARE the Tahuns, kept as editable
+          // `custom-<id>` rows built from the sheet's own labels (which can
+          // carry a qualifier like "PKB", or be an added row) — same as
+          // PPKI/MP THP's subjects. The single column is "KUANTITI".
+          importedRowIdByName = new Map();
+          (section.subjectOrder || section.tahunRows.map((tr) => tr.tahun)).forEach((label) => {
+            if (!label || importedRowIdByName.has(label)) return;
+            const rowId = nextRowId++;
+            importedRowIdByName.set(label, rowId);
+            newMatrixValues[customMatrixLabelKey(catKey, rowId)] = label;
+          });
           section.tahunRows.forEach(({ tahun, qty }) => {
-            if (!qty) return;
-            newMatrixValues[matrixCellKey(catKey, tahun, 'KUANTITI')] = String(qty);
+            const rowId = importedRowIdByName.get(tahun);
+            if (rowId == null || !qty) return;
+            newMatrixValues[matrixCellKey(catKey, `custom-${rowId}`, 'KUANTITI')] = String(qty);
           });
         } else if (cat.subjectsFromImport && section.subjectOrder) {
           // PPKI / MP THP 1 / MP THP 2 (+ variants): the subject list is

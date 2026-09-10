@@ -36,10 +36,15 @@ function recomputeLevelBreakdown(st, listKey, updatedRowsByBlock, matrixValuesFi
   const moralTotal = sumQty(updatedRowsByBlock[`${base}::moral`]);
   const newMatrixValues = { ...st[matrixValuesField] };
   if (cat.levelBreakdownAxis === 'subject') {
-    // PBD — the level IS the subject row (TAHUN 1-6); its total goes into
-    // the single KUANTITI column. No Moral list on this shape.
+    // PBD — the level IS the subject row (the school's own Tahun list); its
+    // total goes into the single KUANTITI column. No Moral list here. Once
+    // imported the rows are editable `custom-<id>` rows, so map the level
+    // label back to its row id before writing the cell.
     const col = getCategoryColumns(cat, st.schoolLanguage)[0];
-    newMatrixValues[matrixCellKey(catKey, level, col)] = String(mainTotal);
+    const rowId = getCustomMatrixRowIds(catKey, st[matrixValuesField])
+      .find((id) => (st[matrixValuesField][customMatrixLabelKey(catKey, id)] || '') === level);
+    const rowKey = rowId != null ? `custom-${rowId}` : level;
+    newMatrixValues[matrixCellKey(catKey, rowKey, col)] = String(mainTotal);
   } else {
     const moralSubject = MORAL_SUBJECT_BY_LANGUAGE[st.schoolLanguage] || MORAL_SUBJECT_BY_LANGUAGE.SK;
     const isMoral = (label) => label.trim().toUpperCase() === moralSubject.toUpperCase()

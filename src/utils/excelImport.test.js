@@ -47,6 +47,45 @@ describe('parseFormAnugerahExcel — SELEMPANG sheet', () => {
   });
 });
 
+describe('parseFormAnugerahExcel — PBD Tahun labels follow the sheet', () => {
+  const pbdSheet = (labels) => {
+    const rows = [];
+    rows[1] = [null, 'TOLONG ISI DI SINI'];
+    rows[2] = [null, 'HARI ANUGERAH KECEMERLANGAN MURID'];
+    rows[3] = [null, 'ANUGERAH KECEMERLANGAN PBD'];
+    rows[4] = [null, 'TAHUN 1 ADIL'];
+    rows[6] = ['TAHUN', 'KUANTITI', null, null, 'TAHUN 1', null, null, null, 'TAHUN 2'];
+    rows[7] = [null, null, null, null, 'NAMA KELAS', 'QTY', null, null, 'NAMA KELAS', 'QTY'];
+    rows[8] = [labels[0], 12, null, null, 'GAGI', 5, null, null, 'GAGI', 8];
+    rows[9] = [labels[1], 11, null, null, 'HAZIQ', 7, null, null, 'HAZIQ', 3];
+    rows[10] = [labels[2], 5];
+    rows[11] = ['TOTAL', 28];
+    rows[13] = [null, 'JENIS PLAK', 'QTY', 'HARGA'];
+    rows[14] = [null, 'DECO LIGHT', 28];
+    return workbookFromSheets({ PBD: rows.map((r) => r || []) });
+  };
+
+  it('keeps a qualifier the teacher added ("TAHUN 1 PKB") as the row label', () => {
+    const section = (parseFormAnugerahExcel(pbdSheet(['TAHUN 1 PKB', 'TAHUN 2 PKB', 'TAHUN 3 PKB'])).categorized?.PBD || [])[0];
+    expect(section.subjectOrder).toEqual(['TAHUN 1 PKB', 'TAHUN 2 PKB', 'TAHUN 3 PKB']);
+    expect(section.tahunRows.map((t) => [t.tahun, t.qty])).toEqual([
+      ['TAHUN 1 PKB', 12], // overridden by the GAGI+HAZIQ breakdown sum
+      ['TAHUN 2 PKB', 11],
+      ['TAHUN 3 PKB', 5],
+    ]);
+  });
+
+  it('lines a bare "TAHUN 1" breakdown header up with the "TAHUN 1 PKB" row', () => {
+    const section = (parseFormAnugerahExcel(pbdSheet(['TAHUN 1 PKB', 'TAHUN 2 PKB', 'TAHUN 3 PKB'])).categorized?.PBD || [])[0];
+    expect(section.levelBreakdown.map((lb) => lb.label)).toEqual(['TAHUN 1 PKB', 'TAHUN 2 PKB']);
+  });
+
+  it('still works with the plain TAHUN 1-6 labels', () => {
+    const section = (parseFormAnugerahExcel(pbdSheet(['TAHUN 1', 'TAHUN 2', 'TAHUN 3'])).categorized?.PBD || [])[0];
+    expect(section.subjectOrder).toEqual(['TAHUN 1', 'TAHUN 2', 'TAHUN 3']);
+  });
+});
+
 describe('parseFormAnugerahExcel — two-line TAJUK BESAR', () => {
   it('splits an in-cell line break (Alt+Enter) into slot 0 + slot 0b', () => {
     const buf = workbookFromSheets({

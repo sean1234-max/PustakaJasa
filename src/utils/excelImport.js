@@ -1137,13 +1137,17 @@ function parsePbdSheet(ws) {
   const qtyCol = kuantitiH ? kuantitiH.col : tahunH.col + 1;
 
   // Direct per-Tahun KUANTITI (Case 2A) — the rows under the "TAHUN" header.
+  // The row label is kept EXACTLY as typed (e.g. "TAHUN 1 PKB", not just
+  // "TAHUN 1") so the website's PBD tab shows the school's own list rather
+  // than a fixed TAHUN 1-6 — `subjectsFromImport` in catalog.js. `norm` is
+  // only used to line a Nama Kelas breakdown block (whose header is usually
+  // the bare "TAHUN 1") up with its row.
   const tahunRows = [];
   for (let r = tahunH.row + 1; r <= range.r2; r++) {
     const label = cellText(ws, r, tahunH.col);
     if (isTotalLabel(label)) break;
-    const tahun = normalizeTahun(label);
-    if (!tahun) continue;
-    tahunRows.push({ tahun, qty: cellNum(ws, r, qtyCol) });
+    if (!label) continue;
+    tahunRows.push({ tahun: label, norm: normalizeTahun(label), qty: cellNum(ws, r, qtyCol) });
   }
 
   const blocks = findPpkiNamaKelasBlocks(ws, range);
@@ -1151,23 +1155,33 @@ function parsePbdSheet(ws) {
   let levelBreakdown = null;
   if (hasNamaKelasData) {
     levelBreakdown = blocks
-      .map((b) => ({
-        label: normalizeTahun(b.label) || b.label,
-        mainRows: readPpkiListRows(ws, range, b.nkCol, b.qtyCol, b.headerRow + 1),
-        moralRows: [],
-      }))
+      .map((b) => {
+        const blkNorm = normalizeTahun(b.label);
+        // Attach the breakdown to the main table's OWN row label (which may
+        // carry an extra qualifier like "PKB") — matched via normalizeTahun
+        // — so computeBlocks/draftUpdaters key it the same way.
+        const rowLabel = tahunRows.find((tr) => tr.norm && tr.norm === blkNorm)?.tahun;
+        return {
+          label: rowLabel || blkNorm || b.label,
+          mainRows: readPpkiListRows(ws, range, b.nkCol, b.qtyCol, b.headerRow + 1),
+          moralRows: [],
+        };
+      })
       .filter((lb) => lb.mainRows.length > 0);
     // A level with a Nama Kelas list — its KUANTITI is that list's sum,
     // overriding whatever was (or wasn't) typed directly in the main table.
     levelBreakdown.forEach((lb) => {
+      if (!lb.label) return;
       const total = sumPpkiRows(lb.mainRows);
       const existing = tahunRows.find((tr) => tr.tahun === lb.label);
       if (existing) existing.qty = total;
-      else tahunRows.push({ tahun: lb.label, qty: total });
+      else tahunRows.push({ tahun: lb.label, norm: normalizeTahun(lb.label), qty: total });
     });
+    levelBreakdown = levelBreakdown.filter((lb) => lb.label);
   }
 
   if (tahunRows.every((tr) => !tr.qty)) return null;
+  const subjectOrder = tahunRows.map((tr) => tr.tahun);
 
   const linesStart = (findLabelCells(
     ws, { r1: range.r1, r2: tahunH.row, c1: range.c1, c2: range.c2 }, ['TOLONG ISI DI SINI'],
@@ -1185,7 +1199,7 @@ function parsePbdSheet(ws) {
     }
   }
 
-  return { lines, jenisPlak, levelBreakdown, tahunRows, isTahunList: true, classes: [] };
+  return { lines, jenisPlak, levelBreakdown, tahunRows, subjectOrder, isTahunList: true, classes: [] };
 }
 
 // ALIRAN TERBAIK's sheet: "TAHUN | KEDUDUKAN (DARI | HINGGA KE) | TOTAL"

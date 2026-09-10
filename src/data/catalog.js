@@ -340,6 +340,11 @@ export const CATEGORIES = [
     hasLevelBreakdown: true,
     levelBreakdownAxis: 'subject',
     levelBreakdownNoMoral: true,
+    // The Tahun rows follow the school's own sheet (e.g. "TAHUN 1 PKB",
+    // an added row) rather than a locked TAHUN 1-6 — same mechanism as
+    // PPKI/MP THP's subject rows. ALL_TAHUN above stays the pre-import
+    // default so the tab is usable before a file is dropped.
+    subjectsFromImport: SUBJECTS_FROM_IMPORT,
   },
   {
     // ALIRAN TERBAIK — six fixed TAHUN rows, each carrying a KEDUDUKAN

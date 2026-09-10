@@ -3,6 +3,31 @@ import {
   CSV_COLUMNS, rowsToCsv, buildCsvRows, validateExport, buildCategoryCsvFilename, isReservedName,
   getOrderJenisPlakGroups, getExportableCategories, splitOrderCategories,
 } from './exportCsv';
+import { customMatrixLabelKey, matrixCellKey } from '../data/catalog';
+
+describe('buildCsvRows — PBD (matrix, synthetic KUANTITI column)', () => {
+  // A PBD order whose Tahun rows follow the school's sheet ("TAHUN 1 PKB").
+  const item = {
+    id: 'p1', jenisPlak: 'DECO LIGHT', qty: 3, categoryKey: 'PBD', blockIdx: 0,
+    detail: {
+      lines: { 'PBD::0::0': 'HARI ANUGERAH 2026', 'PBD::0::2': 'ANUGERAH PBD' },
+      matrix: {
+        [customMatrixLabelKey('PBD', 100)]: 'TAHUN 1 PKB',
+        [matrixCellKey('PBD', 'custom-100', 'KUANTITI')]: '2',
+        [customMatrixLabelKey('PBD', 101)]: 'TAHUN 2 PKB',
+        [matrixCellKey('PBD', 'custom-101', 'KUANTITI')]: '1',
+      },
+    },
+  };
+
+  it('engraves the sheet Tahun label in the position and never the literal "KUANTITI"', () => {
+    const { rows } = buildCsvRows({ schoolLanguage: 'SK', items: [item] }, 'PBD', [item]);
+    expect(rows).toHaveLength(3);
+    expect(rows.filter((r) => r[2] === 'ANUGERAH PBD\nTAHUN 1 PKB')).toHaveLength(2);
+    expect(rows.filter((r) => r[2] === 'ANUGERAH PBD\nTAHUN 2 PKB')).toHaveLength(1);
+    expect(rows.every((r) => r[3] === '')).toBe(true); // no "KUANTITI" in event_line_1
+  });
+});
 
 describe('SELEMPANG stays out of every Production export path', () => {
   const order = {
