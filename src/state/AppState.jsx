@@ -9,7 +9,7 @@ import {
 } from '../utils/computeBlocks';
 import { parseFormAnugerahExcel, matchJenisPlakPath } from '../utils/excelImport';
 import { parseWordingDocx } from '../utils/docxImport';
-import { checkColumnTotals, checkExpansionTotals } from '../utils/importChecks';
+import { checkColumnTotals, checkExpansionTotals, checkLevelBreakdownMatch } from '../utils/importChecks';
 import { buildCategoryCartItems } from './categoryCartItems';
 import { AppStateContext } from './AppStateContext';
 import {
@@ -881,6 +881,10 @@ export function AppStateProvider({ children }) {
         const newMatrixValues = { ...next.matrixValues };
         const newRowsByBlock = { ...next.rowsByBlock };
         let nextRowId = next.nextRowId;
+        // Subject name -> the `custom-<id>` row it became (subjectsFromImport
+        // branch below) — used to resolve a level-breakdown mismatch
+        // question's "betulkan" fix to the exact matrix cell.
+        let importedRowIdByName = null;
         // A fresh import fully replaces whatever was there before, same as
         // KLAS_MATRIX's own per-block clear above.
         Object.keys(newLineValues).forEach((k) => { if (k.startsWith(`${key}::`)) delete newLineValues[k]; });
@@ -946,9 +950,11 @@ export function AppStateProvider({ children }) {
             cls.subjects.forEach(({ name, qty }) => { if (name) byName.set(name, qty); });
             qtyByColThenName.set(column, byName);
           });
+          importedRowIdByName = new Map();
           section.subjectOrder.forEach((name) => {
             if (!name) return;
             const rowId = nextRowId++;
+            if (!importedRowIdByName.has(name)) importedRowIdByName.set(name, rowId);
             newMatrixValues[customMatrixLabelKey(catKey, rowId)] = name;
             qtyByColThenName.forEach((byName, column) => {
               const qty = byName.get(name);
@@ -978,6 +984,32 @@ export function AppStateProvider({ children }) {
           section.levelBreakdown.forEach(({ label, mainRows, moralRows }) => {
             newRowsByBlock[`${key}::${label}::main`] = mainRows.map((r) => ({ id: nextRowId++, desc: r.name, qty: String(r.qty) }));
             newRowsByBlock[`${key}::${label}::moral`] = moralRows.map((r) => ({ id: nextRowId++, desc: r.name, qty: String(r.qty) }));
+          });
+
+          // A subject whose imported KUANTITI for a level doesn't match that
+          // level's own Nama Kelas breakdown total (every subject offered at
+          // a level takes that same total — see importChecks.js) becomes a
+          // `type:'choice'` question on Step 2. "Betulkan" writes the level
+          // total straight into that one cell; "Betul" just acknowledges.
+          checkLevelBreakdownMatch(section).forEach((iss) => {
+            const rowId = importedRowIdByName ? importedRowIdByName.get(iss.subject) : null;
+            const fixPatches = rowId != null
+              ? [{ mkey: matrixCellKey(catKey, `custom-${rowId}`, iss.level), value: String(iss.expected) }]
+              : [];
+            const options = [];
+            if (fixPatches.length > 0) {
+              options.push({ key: 'fix', label: `Salah taip — betulkan jadi ${iss.expected}` });
+            }
+            options.push({ key: 'keep', label: 'Betul — memang lain, biar macam ni' });
+            warnings.push({
+              type: 'choice',
+              id: `${catKey}::${iss.id}`,
+              blockIdx: 0,
+              catKey,
+              text: `${cat.label} · ${iss.subject} — ${iss.level}: awak isi ${iss.qty}, tapi ikut senarai Nama Kelas ${iss.level} (${iss.classCount} kelas) sepatutnya ${iss.expected}.`,
+              options,
+              addPatches: fixPatches,
+            });
           });
         }
         const sectionLines = section.skipLineDerivation ? section.lines : deriveKlasMatrixSectionLines(section);

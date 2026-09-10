@@ -132,13 +132,13 @@ export default function NewOrderStep2() {
   }, [pendingScrollBlockIdx, state.category]);
 
   const answerChoice = (w, optionKey) => {
-    if (optionKey === 'add' && w.addPatches?.length) {
+    if ((optionKey === 'add' || optionKey === 'fix') && w.addPatches?.length) {
       const mv = { ...state.matrixValues };
       w.addPatches.forEach((p) => { mv[p.mkey] = p.value; });
       patch({ matrixValues: mv });
     }
     setChoiceAnswers((a) => ({ ...a, [w.id]: optionKey }));
-    if (optionKey === 'keep') jumpToBlock(w.blockIdx);
+    if (optionKey === 'keep') jumpToBlock(w.blockIdx, w.catKey || 'KLAS_MATRIX');
   };
 
   const updaters = useMemo(() => createDraftUpdaters(patch, DRAFT_FIELDS), [patch]);

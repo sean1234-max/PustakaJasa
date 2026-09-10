@@ -96,6 +96,54 @@ export function checkColumnTotals(sections) {
   return issues;
 }
 
+// PPKI / MP THP 1 / MP THP 2 "Kalau ada kelas": each class-level (PRA PPKI/
+// PPKI/PRASEKOLAH, or TAHUN 1/2/3) can carry its own "Nama Kelas / QTY"
+// breakdown listing that level's classes. Every subject OFFERED at a level
+// takes the same plaque count — that level's own breakdown total (its Moral
+// Kelas total for Pendidikan Moral) — mirroring the SUM() the source sheet
+// runs behind those cells. So a subject whose imported KUANTITI for a level
+// is neither 0 (not offered there) nor that level's breakdown total is
+// almost always a typo in the sheet (a real sample: MATEMATIK typed 6 in a
+// TAHUN 1 that totals 5, and 77 in a TAHUN 2 that totals 88). Returned for
+// the teacher to confirm on Step 2 — never auto-corrected here.
+//
+// `section` is one freshly-parsed `categorized` section (excelImport.js's
+// parseSubjectLevelSheet) carrying `levelBreakdown` + `classes`.
+export function checkLevelBreakdownMatch(section) {
+  const breakdown = section?.levelBreakdown || [];
+  if (breakdown.length === 0) return [];
+  const totalByLevel = new Map();
+  breakdown.forEach((lb) => {
+    const sum = (rows) => (rows || []).reduce((s, r) => s + (Number(r.qty) || 0), 0);
+    const classCount = (lb.mainRows || []).filter((r) => String(r.name || '').trim()).length;
+    if (classCount > 0) {
+      totalByLevel.set(lb.label, { main: sum(lb.mainRows), moral: sum(lb.moralRows), classCount });
+    }
+  });
+  const isMoral = (name) => /^PENDIDIKAN MORAL$/i.test(String(name || '').trim());
+  const issues = [];
+  (section.classes || []).forEach((cls) => {
+    const level = cls.tahunFrom || cls.tahunTo || cls.namaKelas || '';
+    const t = totalByLevel.get(level);
+    if (!t) return;
+    (cls.subjects || []).forEach((s) => {
+      const qty = Number(s.qty) || 0;
+      if (qty <= 0) return; // blank / 0 = subject not offered at this level
+      const expected = isMoral(s.name) ? t.moral : t.main;
+      if (qty === expected) return;
+      issues.push({
+        id: `lvlbrk:${level}:${s.name}`,
+        level,
+        subject: s.name,
+        qty,
+        expected,
+        classCount: t.classCount,
+      });
+    });
+  });
+  return issues;
+}
+
 const sumSection = (section) => (section.classes || []).reduce(
   (sum, cls) => sum + (cls.subjects || []).reduce((s, x) => s + (Number(x.qty) || 0), 0),
   0,

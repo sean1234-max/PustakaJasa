@@ -180,9 +180,12 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
   // later block goes straight to its own Kuantiti part.
   const showSharedSections = !blk.hasNamaKelasList || blk.idx === 0;
   // Which of an isMatrix block's own columns (levels) has a Nama Kelas
-  // breakdown feeding it (catalog.js's hasLevelBreakdown) — that level's own
-  // KUANTITI cells render read-only below, since editing them directly
-  // would just get overwritten by the next Nama Kelas edit.
+  // breakdown feeding it (catalog.js's hasLevelBreakdown). Those KUANTITI
+  // cells stay directly editable — a teacher can type over an imported
+  // figure that's wrong (e.g. a sheet typo the Step-2 checks flagged) — the
+  // breakdown table below is a second way in, not a lock. Editing a Nama
+  // Kelas row still re-sums into this level's cells (draftUpdaters.js), so a
+  // manual figure only holds until the breakdown itself is next touched.
   const levelHasBreakdown = Object.fromEntries((blk.levelBreakdown || []).map((lb) => [lb.level, true]));
 
   return (
@@ -385,12 +388,12 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
                     </td>
                     {row.cells.map((cell, ci) => {
                       // A level fed by its own Nama Kelas breakdown below
-                      // (blk.levelBreakdown) is auto-summed from it, same as
-                      // the source Excel's own SUM() formula — editing the
-                      // KUANTITI cell directly would just get overwritten by
-                      // the next Nama Kelas edit, so it's read-only here;
-                      // edit the breakdown instead. A level with no
-                      // breakdown at all (hand-filled) stays freely editable.
+                      // (blk.levelBreakdown) is normally kept in step with it
+                      // — same as the source Excel's own SUM() — but the cell
+                      // stays editable so a teacher can correct an imported
+                      // figure that's wrong. Editing a Nama Kelas row still
+                      // re-sums over it (draftUpdaters.js), so the hint tells
+                      // them where the number otherwise comes from.
                       const hasBreakdown = levelHasBreakdown[blk.columns[ci]?.colKey] || levelHasBreakdown[row.subject];
                       return (
                         <td key={cell.key}>
@@ -400,9 +403,9 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
                             min="0"
                             placeholder="0"
                             value={cell.value}
-                            readOnly={!editable.matrix || hasBreakdown}
-                            title={hasBreakdown ? 'Dikira automatik daripada Nama Kelas di bawah' : undefined}
-                            onChange={editable.matrix && !hasBreakdown ? (e) => cell.onChange(e.target.value) : undefined}
+                            readOnly={!editable.matrix}
+                            title={hasBreakdown ? 'Boleh ubah terus di sini, atau isi ikut senarai Nama Kelas di bawah' : undefined}
+                            onChange={editable.matrix ? (e) => cell.onChange(e.target.value) : undefined}
                           />
                         </td>
                       );

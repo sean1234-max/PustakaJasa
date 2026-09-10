@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { getPlakProductionMode, summarizeRowsForManual } from './exportCsv';
-import { getManualPlakGroups, buildManualRemarkBlock, checkColumnTotals, checkExpansionTotals } from './importChecks';
+import {
+  getManualPlakGroups, buildManualRemarkBlock, checkColumnTotals, checkExpansionTotals,
+  checkLevelBreakdownMatch,
+} from './importChecks';
 
 // A minimal order — getPlakProductionMode only reads item.jenisPlak + qty.
 const order = (items) => ({ id: 'ORD-1', items });
@@ -201,5 +204,75 @@ describe('checkExpansionTotals', () => {
   it('skips a code already covered by a column-total question', () => {
     const sections = [{ jenisPlak: 'PKC 253', frontPgQty: 210, classes: [cls(120)] }];
     expect(checkExpansionTotals(sections, [0])).toEqual([]);
+  });
+});
+
+describe('checkLevelBreakdownMatch', () => {
+  // A real MP THP 1 (Kalau ada kelas) sample: TAHUN 1's 5 Nama Kelas rows
+  // total 5, TAHUN 2's total 88 — every subject offered there should match
+  // that, but MATEMATIK came in as 6 / 77. TAHUN 3 has no breakdown at all.
+  const section = {
+    levelBreakdown: [
+      {
+        label: 'TAHUN 1',
+        mainRows: [{ name: 'ARIF', qty: 1 }, { name: 'BOY', qty: 1 }, { name: 'CAT', qty: 1 }, { name: 'DONGKY', qty: 1 }, { name: 'ELEPHANT', qty: 1 }],
+        moralRows: [{ name: 'CAT', qty: 1 }, { name: 'DONGKY', qty: 1 }],
+      },
+      {
+        label: 'TAHUN 2',
+        mainRows: [{ name: 'ARIF', qty: 11 }, { name: 'BOY', qty: 11 }, { name: 'DONGKY', qty: 11 }, { name: 'ELEPHANT', qty: 22 }, { name: 'FABER', qty: 33 }],
+        moralRows: [{ name: 'ELEPHANT', qty: 2 }, { name: 'FABER', qty: 2 }],
+      },
+      { label: 'TAHUN 3', mainRows: [], moralRows: [] },
+    ],
+    classes: [
+      {
+        tahunFrom: 'TAHUN 1',
+        subjects: [
+          { name: 'BAHASA MELAYU', qty: 5 }, { name: 'MATEMATIK', qty: 6 },
+          { name: 'PENDIDIKAN MORAL', qty: 2 }, { name: 'BAHASA TAMIL', qty: 0 },
+        ],
+      },
+      {
+        tahunFrom: 'TAHUN 2',
+        subjects: [
+          { name: 'BAHASA MELAYU', qty: 88 }, { name: 'MATEMATIK', qty: 77 },
+          { name: 'PENDIDIKAN MORAL', qty: 4 },
+        ],
+      },
+      {
+        tahunFrom: 'TAHUN 3',
+        subjects: [{ name: 'BAHASA MELAYU', qty: 0 }, { name: 'MATEMATIK', qty: 0 }],
+      },
+    ],
+  };
+
+  it('flags a subject whose qty differs from its level breakdown total', () => {
+    const issues = checkLevelBreakdownMatch(section);
+    expect(issues).toEqual([
+      { id: 'lvlbrk:TAHUN 1:MATEMATIK', level: 'TAHUN 1', subject: 'MATEMATIK', qty: 6, expected: 5, classCount: 5 },
+      { id: 'lvlbrk:TAHUN 2:MATEMATIK', level: 'TAHUN 2', subject: 'MATEMATIK', qty: 77, expected: 88, classCount: 5 },
+    ]);
+  });
+
+  it('compares Pendidikan Moral against the Moral Kelas total, not the main one', () => {
+    const issues = checkLevelBreakdownMatch(section);
+    // PENDIDIKAN MORAL is 2 / 4, matching each level's Moral total (2 / 4).
+    expect(issues.some((i) => i.subject === 'PENDIDIKAN MORAL')).toBe(false);
+  });
+
+  it('ignores a 0 / blank cell (subject not offered at that level)', () => {
+    const issues = checkLevelBreakdownMatch(section);
+    expect(issues.some((i) => i.subject === 'BAHASA TAMIL')).toBe(false);
+  });
+
+  it('says nothing for a level with no Nama Kelas breakdown', () => {
+    const issues = checkLevelBreakdownMatch(section);
+    expect(issues.some((i) => i.level === 'TAHUN 3')).toBe(false);
+  });
+
+  it('says nothing when the section carries no breakdown at all', () => {
+    expect(checkLevelBreakdownMatch({ classes: section.classes })).toEqual([]);
+    expect(checkLevelBreakdownMatch(null)).toEqual([]);
   });
 });
