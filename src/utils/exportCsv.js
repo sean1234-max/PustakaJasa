@@ -111,6 +111,52 @@ function buildMatrixRows(item, cat, header, year, positionPart1, schoolLanguage)
   return rows;
 }
 
+// PBD TERBAIK (matrix, levelBreakdownAxis: 'subject') — unlike a plain
+// per-subject award, a PBD plaque is per RECIPIENT: the Nama Kelas
+// breakdown behind each Tahun's KUANTITI (excelImport.js's parsePbdSheet,
+// snapshotDetail's `namaKelasBreakdown`) says how many plaques each class
+// takes, and each one engraves "<Tahun> <Nama Kelas>" on event_line_1
+// (matching the sample's own "TAHUN 1 ADIL" line 3). "PKB"-style qualifiers
+// on the row label are dropped from the engraved Tahun — the plaque shows
+// "TAHUN 1 GAGI", not the school's internal grouping. A Tahun with no
+// breakdown (typed straight in), or a shortfall the breakdown doesn't
+// cover, falls back to a plain Tahun-only line, that many times.
+function buildPbdRows(item, cat, header, year, positionPart1, schoolLanguage) {
+  const rows = [];
+  const matrix = item.detail?.matrix;
+  if (!matrix) return rows;
+  const breakdown = item.detail?.namaKelasBreakdown || {};
+  const col = getCategoryColumns(cat, schoolLanguage)[0];
+  const emit = (eventLine1, qty) => {
+    for (let i = 0; i < qty; i++) rows.push([header, year, positionPart1, eventLine1, '']);
+  };
+
+  const emitForLevel = (label, rowKey) => {
+    if (!label) return;
+    const total = Number(matrix[matrixCellKey(cat.key, rowKey, col)]) || 0;
+    if (total <= 0) return;
+    const m = label.match(/TAHUN\s*([1-6])/i);
+    const tahunPrefix = m ? `TAHUN ${m[1]}` : label;
+    const list = (breakdown[`${item.categoryKey}::${item.blockIdx}::${label}::main`] || [])
+      .filter((r) => (r.desc || '').trim());
+    let covered = 0;
+    list.forEach((r) => {
+      const q = Math.max(0, Number(r.qty) || 0);
+      emit([tahunPrefix, r.desc.trim()].filter(Boolean).join(' '), q);
+      covered += q;
+    });
+    if (covered < total) emit(tahunPrefix, total - covered);
+  };
+
+  const importedIds = getCustomMatrixRowIds(cat.key, matrix);
+  if (importedIds.length > 0) {
+    importedIds.forEach((rowId) => emitForLevel(matrix[customMatrixLabelKey(cat.key, rowId)] || '', `custom-${rowId}`));
+  } else {
+    getCategorySubjects(cat, schoolLanguage).forEach((subject) => emitForLevel(subject, subject));
+  }
+  return rows;
+}
+
 // OTHERS' Kuantiti (`hasNamaKelasList`/`hasTahunField` — see catalog.js):
 // one TAHUN value for the whole block + a Description/QTY list + a separate
 // Nama Kelas name list. Each Description row's QTY is meant to equal the
@@ -349,7 +395,14 @@ export function buildCsvRows(order, categoryKey, items) {
     const year = getLine(item, 1);
 
     if (cat?.mode === 'matrix') {
-      rows.push(...buildMatrixRows(item, cat, header, year, getLine(item, 2), schoolLanguage));
+      // PBD splits each Tahun's KUANTITI across its Nama Kelas breakdown —
+      // one plaque per (Tahun, class). Every other matrix category engraves
+      // the subject itself.
+      if (cat.levelBreakdownAxis === 'subject') {
+        rows.push(...buildPbdRows(item, cat, header, year, getLine(item, 2), schoolLanguage));
+      } else {
+        rows.push(...buildMatrixRows(item, cat, header, year, getLine(item, 2), schoolLanguage));
+      }
     } else if (cat?.mode === 'dynamicMatrix') {
       // A combined TOKOH section marks slot '2' as a sample-only example
       // (posFromKelas) — its real positions are the honour names carried

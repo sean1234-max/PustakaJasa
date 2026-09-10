@@ -5,27 +5,51 @@ import {
 } from './exportCsv';
 import { customMatrixLabelKey, matrixCellKey } from '../data/catalog';
 
-describe('buildCsvRows — PBD (matrix, synthetic KUANTITI column)', () => {
-  // A PBD order whose Tahun rows follow the school's sheet ("TAHUN 1 PKB").
-  const item = {
+describe('buildCsvRows — PBD (per-recipient, Nama Kelas split)', () => {
+  const lines = { 'PBD::0::0': 'HARI ANUGERAH 2026', 'PBD::0::2': 'ANUGERAH PBD' };
+  const item = (matrix, namaKelasBreakdown) => ({
     id: 'p1', jenisPlak: 'DECO LIGHT', qty: 3, categoryKey: 'PBD', blockIdx: 0,
-    detail: {
-      lines: { 'PBD::0::0': 'HARI ANUGERAH 2026', 'PBD::0::2': 'ANUGERAH PBD' },
-      matrix: {
-        [customMatrixLabelKey('PBD', 100)]: 'TAHUN 1 PKB',
-        [matrixCellKey('PBD', 'custom-100', 'KUANTITI')]: '2',
-        [customMatrixLabelKey('PBD', 101)]: 'TAHUN 2 PKB',
-        [matrixCellKey('PBD', 'custom-101', 'KUANTITI')]: '1',
-      },
-    },
-  };
+    detail: { lines, matrix, namaKelasBreakdown },
+  });
 
-  it('engraves the sheet Tahun label in the position and never the literal "KUANTITI"', () => {
-    const { rows } = buildCsvRows({ schoolLanguage: 'SK', items: [item] }, 'PBD', [item]);
+  it('one row per (Tahun, Nama Kelas); "PKB" qualifier dropped from the engraved Tahun', () => {
+    const it = item(
+      {
+        [customMatrixLabelKey('PBD', 100)]: 'TAHUN 1 PKB',
+        [matrixCellKey('PBD', 'custom-100', 'KUANTITI')]: '3',
+      },
+      { 'PBD::0::TAHUN 1 PKB::main': [{ id: 1, desc: 'GAGI', qty: '2' }, { id: 2, desc: 'HAZIQ', qty: '1' }] },
+    );
+    const { rows } = buildCsvRows({ schoolLanguage: 'SK', items: [it] }, 'PBD', [it]);
     expect(rows).toHaveLength(3);
-    expect(rows.filter((r) => r[2] === 'ANUGERAH PBD\nTAHUN 1 PKB')).toHaveLength(2);
-    expect(rows.filter((r) => r[2] === 'ANUGERAH PBD\nTAHUN 2 PKB')).toHaveLength(1);
-    expect(rows.every((r) => r[3] === '')).toBe(true); // no "KUANTITI" in event_line_1
+    expect(rows.filter((r) => r[3] === 'TAHUN 1 GAGI')).toHaveLength(2);
+    expect(rows.filter((r) => r[3] === 'TAHUN 1 HAZIQ')).toHaveLength(1);
+    expect(rows.every((r) => r[2] === 'ANUGERAH PBD')).toBe(true); // Tahun is NOT in position
+  });
+
+  it('a Tahun with no breakdown falls back to a plain Tahun line, KUANTITI times', () => {
+    const it = item({
+      [customMatrixLabelKey('PBD', 100)]: 'TAHUN 4',
+      [matrixCellKey('PBD', 'custom-100', 'KUANTITI')]: '2',
+    }, {});
+    const { rows } = buildCsvRows({ schoolLanguage: 'SK', items: [it] }, 'PBD', [it]);
+    expect(rows).toEqual([
+      ['HARI ANUGERAH 2026', '', 'ANUGERAH PBD', 'TAHUN 4', ''],
+      ['HARI ANUGERAH 2026', '', 'ANUGERAH PBD', 'TAHUN 4', ''],
+    ]);
+  });
+
+  it('pads with a plain Tahun line when the breakdown covers less than the KUANTITI', () => {
+    const it = item(
+      {
+        [customMatrixLabelKey('PBD', 100)]: 'TAHUN 2',
+        [matrixCellKey('PBD', 'custom-100', 'KUANTITI')]: '5',
+      },
+      { 'PBD::0::TAHUN 2::main': [{ id: 1, desc: 'BESTARI', qty: '3' }] },
+    );
+    const { rows } = buildCsvRows({ schoolLanguage: 'SK', items: [it] }, 'PBD', [it]);
+    expect(rows.filter((r) => r[3] === 'TAHUN 2 BESTARI')).toHaveLength(3);
+    expect(rows.filter((r) => r[3] === 'TAHUN 2')).toHaveLength(2); // 5 − 3
   });
 });
 
