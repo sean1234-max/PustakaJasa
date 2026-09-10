@@ -127,8 +127,11 @@ function buildPbdRows(item, cat, header, year, positionPart1, schoolLanguage) {
   if (!matrix) return rows;
   const breakdown = item.detail?.namaKelasBreakdown || {};
   const col = getCategoryColumns(cat, schoolLanguage)[0];
+  // Reference-sample mapping for PBD: line 2 (subjek/position, "ANUGERAH
+  // KECEMERLANGAN PBD") + the line between 2 and 3 (slot 2b) -> position.
+  const position = [positionPart1, getPositionLine2(item)].filter(Boolean).join('\n');
   const emit = (eventLine1, qty) => {
-    for (let i = 0; i < qty; i++) rows.push([header, year, positionPart1, eventLine1, '']);
+    for (let i = 0; i < qty; i++) rows.push([header, year, position, eventLine1, '']);
   };
 
   const emitForLevel = (label, rowKey) => {
@@ -233,8 +236,19 @@ function buildRowsFromDescriptionRows(item, header, year, positionPart1, tokohNa
     const qty = Number(r.qty) || 0;
     if (qty <= 0) return;
     if (tokohNames && isReservedName(r.namaMurid)) return;
-    const position = positionPart1 ? `${positionPart1}\n${r.desc || ''}` : (r.desc || '');
-    const eventLine1 = tokohNames ? (r.namaMurid || '').trim() : '';
+    // Reference-sample mapping:
+    //   TOKOH_SHEET — each row's own honour name -> position; NAMA MURID
+    //     -> event_line_1.
+    //   LONJAKAN / KEHADIRAN (positionPrefixFromLine3 -> positionPart1 is
+    //     line 2, "subjek/position") -> position; each row's own TAHUN
+    //     -> event_line_1.
+    //   Main Template (retired, no positionPart1) -> row desc is the
+    //     position, event_line_1 blank — unchanged.
+    const lonjakanStyle = !tokohNames && !!positionPart1;
+    const position = lonjakanStyle ? positionPart1 : (r.desc || '');
+    const eventLine1 = tokohNames
+      ? (r.namaMurid || '').trim()
+      : (lonjakanStyle ? (r.desc || '') : '');
     const row = [header, year, position, eventLine1, ''];
     for (let i = 0; i < qty; i++) rows.push(row);
   });
@@ -256,7 +270,14 @@ function buildRowsFromDescriptionRows(item, header, year, positionPart1, tokohNa
 function buildAliranRows(item, header, year, acara) {
   const rows = [];
   const tahunRows = item.detail?.rows || [];
-  const pos = (p) => (acara ? `${acara}\n${numToOrdinal(p)}` : numToOrdinal(p));
+  // Reference-sample mapping for ALIRAN: line 2 (ACARA, "TERBAIK DALAM
+  // ALIRAN") -> event_line_1; the line between 2 and 3 (slot 2b) -> per-Tahun
+  // event_line_2, but ONLY when the teacher wrote the word "TAHUN" there
+  // (that's the CONTOH's "TAHUN 1" line); line 3 (the ordinal, "PERTAMA") ->
+  // position, generated per plaque from the KEDUDUKAN range.
+  const line2b = getPositionLine2(item);
+  const el2 = /tahun/i.test(line2b) ? (tr) => (tr && tr.desc ? tr.desc : '') : () => '';
+  const pos = (p) => numToOrdinal(p);
 
   const derived = tahunRows.reduce((sum, tr) => {
     const hingga = Number(tr.kedudukanHingga) || 0;
@@ -275,8 +296,10 @@ function buildAliranRows(item, header, year, acara) {
     const lo = Number(item.posDari) || 0;
     const span = lo ? Math.max(1, (Number(item.posHingga) || lo) - lo + 1) : 0;
     for (let n = 0; n < wantQty; n++) {
-      const position = lo ? pos(lo + (n % span)) : (acara || '');
-      rows.push([header, year, position, '', '']);
+      const position = lo ? pos(lo + (n % span)) : '';
+      // Overridden qty no longer maps to a specific Tahun, so event_line_2
+      // (the per-Tahun line) can't be filled.
+      rows.push([header, year, position, acara || '', '']);
     }
     return rows;
   }
@@ -287,11 +310,11 @@ function buildAliranRows(item, header, year, acara) {
       if (!item.posDari) return; // a flat plak doesn't take the KEDUDUKAN TAHUNs
       const lo = Number(item.posDari);
       const hi = Math.min(Number(item.posHingga) || lo, hingga);
-      for (let p = lo; p <= hi; p++) rows.push([header, year, pos(p), tr.desc || '', '']);
+      for (let p = lo; p <= hi; p++) rows.push([header, year, pos(p), acara || '', el2(tr)]);
     } else if (!item.posDari) {
-      // flat TAHUN + flat plak — ACARA only, one row per plaque
+      // flat TAHUN + flat plak — no ordinal, one row per plaque
       const qty = Number(tr.qty) || 0;
-      for (let n = 0; n < qty; n++) rows.push([header, year, acara || '', tr.desc || '', '']);
+      for (let n = 0; n < qty; n++) rows.push([header, year, '', acara || '', el2(tr)]);
     }
   });
   return rows;
@@ -392,7 +415,11 @@ export function buildCsvRows(order, categoryKey, items) {
     // teacher edits each as its own single-line field. Joined back here for
     // the CSV's one event_header column. No slot 0b => header unchanged.
     const header = [getLine(item, 0), getLine(item, '0b')].filter(Boolean).join('\n');
-    const year = getLine(item, 1);
+    // The YEAR reference-sample row is retired — a two-line title (slot 0 +
+    // 0b, an Alt+Enter break in the source cell) carries the year now. The
+    // slot itself is left parked (not renumbered), and the CSV keeps its
+    // `year` column header, but the value is always blank.
+    const year = '';
 
     if (cat?.mode === 'matrix') {
       // PBD splits each Tahun's KUANTITI across its Nama Kelas breakdown —

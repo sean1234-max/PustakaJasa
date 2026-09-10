@@ -200,6 +200,15 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
       return line;
     });
     let flatLines = rawLines.flatMap((ln) => (ln.secondLine ? [ln, ln.secondLine] : [ln]));
+    // The YEAR row (slot 1) is retired — the year rides on a two-line TAJUK
+    // BESAR now (slot 0 + 0b, an Alt+Enter break). The slot index stays in
+    // the data model (parked, not renumbered — old orders' `::2`/`::3` keys
+    // are untouched) and the CSV keeps its `year` column, but the row is
+    // never shown to the teacher and exportCsv.js never reads it. Dropped
+    // here before numbering so the visible list stays gapless (1, 2, 3…).
+    if (/^YEAR\b/i.test(catLinePlaceholders[1] || '')) {
+      flatLines = flatLines.filter((ln) => ln.slotId !== '1');
+    }
     // Each line's displayed number is assigned from its ORIGINAL
     // (catalog-defined) order, BEFORE any drag-reorder below — a dragged
     // row keeps its own number wherever it's moved to, rather than

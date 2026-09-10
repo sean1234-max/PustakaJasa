@@ -53,6 +53,51 @@ describe('buildCsvRows — PBD (per-recipient, Nama Kelas split)', () => {
   });
 });
 
+describe('CSV column remap — reference-sample lines -> CSV columns', () => {
+  it('MP THP (matrix): position = ACARA + subject, event_line_1 = level, year blank', () => {
+    const item = {
+      id: 'm', jenisPlak: 'DECO LIGHT', qty: 1, categoryKey: 'MP1', blockIdx: 0,
+      detail: {
+        lines: { 'MP1::0::0': 'HARI ANUGERAH', 'MP1::0::1': '2026', 'MP1::0::2': 'TERBAIK MATA PELAJARAN' },
+        matrix: { [customMatrixLabelKey('MP1', 9)]: 'BAHASA MELAYU', [matrixCellKey('MP1', 'custom-9', 'TAHUN 1')]: '2' },
+      },
+    };
+    const { rows } = buildCsvRows({ schoolLanguage: 'SK', items: [item] }, 'MP1', [item]);
+    expect(rows).toEqual([
+      ['HARI ANUGERAH', '', 'TERBAIK MATA PELAJARAN\nBAHASA MELAYU', 'TAHUN 1', ''],
+      ['HARI ANUGERAH', '', 'TERBAIK MATA PELAJARAN\nBAHASA MELAYU', 'TAHUN 1', ''],
+    ]);
+  });
+
+  it('PBD: the line between 2 and 3 (slot 2b) is appended to position', () => {
+    const item = {
+      id: 'p', jenisPlak: 'DECO LIGHT', qty: 1, categoryKey: 'PBD', blockIdx: 0,
+      detail: {
+        lines: { 'PBD::0::0': 'HARI ANUGERAH', 'PBD::0::2': 'ANUGERAH PBD', 'PBD::0::2b': 'TERBAIK KESELURUHAN' },
+        matrix: { [customMatrixLabelKey('PBD', 3)]: 'TAHUN 5', [matrixCellKey('PBD', 'custom-3', 'KUANTITI')]: '1' },
+      },
+    };
+    const { rows } = buildCsvRows({ schoolLanguage: 'SK', items: [item] }, 'PBD', [item]);
+    expect(rows).toEqual([['HARI ANUGERAH', '', 'ANUGERAH PBD\nTERBAIK KESELURUHAN', 'TAHUN 5', '']]);
+  });
+
+  it('LONJAKAN: line 2 -> position, each row TAHUN -> event_line_1', () => {
+    const item = {
+      id: 'l', jenisPlak: 'DECO LIGHT', qty: 3, categoryKey: 'LONJAKAN', blockIdx: 0,
+      detail: {
+        lines: { 'LONJAKAN::0::0': 'HARI ANUGERAH', 'LONJAKAN::0::2': 'LONJAKAN SAUJANA' },
+        rows: [{ id: 1, desc: 'TAHUN 3', qty: '2' }, { id: 2, desc: 'TAHUN 4', qty: '1' }],
+      },
+    };
+    const { rows } = buildCsvRows({ schoolLanguage: 'SK', items: [item] }, 'LONJAKAN', [item]);
+    expect(rows).toEqual([
+      ['HARI ANUGERAH', '', 'LONJAKAN SAUJANA', 'TAHUN 3', ''],
+      ['HARI ANUGERAH', '', 'LONJAKAN SAUJANA', 'TAHUN 3', ''],
+      ['HARI ANUGERAH', '', 'LONJAKAN SAUJANA', 'TAHUN 4', ''],
+    ]);
+  });
+});
+
 describe('SELEMPANG stays out of every Production export path', () => {
   const order = {
     schoolLanguage: 'SK',
@@ -238,41 +283,56 @@ describe('buildCsvRows — ALIRAN TERBAIK footer qty (derived vs teacher overrid
     { id: 5, desc: 'TAHUN 5', qty: '10', kedudukanHingga: 10 },
     { id: 6, desc: 'TAHUN 6', qty: '10', kedudukanHingga: 10 },
   ];
-  const mk = (id, jenisPlak, posDari, posHingga, qty) => ({
+  // Reference-sample mapping for ALIRAN: line 2 (ACARA) -> event_line_1;
+  // the line between 2 and 3 (slot 2b), when it has the word "TAHUN" ->
+  // per-Tahun event_line_2; line 3 (the ordinal) -> position.
+  const mk = (id, jenisPlak, posDari, posHingga, qty, extraLines = {}) => ({
     id, jenisPlak, qty, categoryKey: 'ALIRAN', blockIdx: 0,
     posDari, posHingga,
-    detail: { lines: { 'ALIRAN::0::0': 'HARI ANUGERAH 2026', 'ALIRAN::0::2': 'ANUGERAH ALIRAN TERBAIK' }, rows: tahunRows },
+    detail: {
+      lines: { 'ALIRAN::0::0': 'HARI ANUGERAH 2026', 'ALIRAN::0::2': 'ANUGERAH ALIRAN TERBAIK', ...extraLines },
+      rows: tahunRows,
+    },
   });
   const order = { id: 'ORD-A', schoolLanguage: 'SK' };
 
-  it('derived qty (not overridden): one row per (ranked Tahun, place)', () => {
+  it('derived qty: position = ordinal, event_line_1 = ACARA, event_line_2 = per-Tahun', () => {
     // h25 covers places 4-10 → 7 per ranked Tahun × 3 = 21
-    const h25 = mk('h', 'h25', 4, 10, 21);
+    const h25 = mk('h', 'h25', 4, 10, 21, { 'ALIRAN::0::2b': 'TAHUN 1' });
     const { rows } = buildCsvRows({ ...order, items: [h25] }, 'ALIRAN', [h25]);
     expect(rows).toHaveLength(21);
-    expect(rows.filter((r) => r[2] === 'ANUGERAH ALIRAN TERBAIK\nKEEMPAT')).toHaveLength(3);
-    expect(rows.filter((r) => r[3] === 'TAHUN 4')).toHaveLength(7);
+    expect(rows.filter((r) => r[2] === 'KEEMPAT')).toHaveLength(3);
+    expect(rows.every((r) => r[3] === 'ANUGERAH ALIRAN TERBAIK')).toBe(true);
+    expect(rows.filter((r) => r[4] === 'TAHUN 4')).toHaveLength(7);
   });
 
-  it('overridden qty: emits exactly item.qty rows, ordinals cycle the range, Tahun blank', () => {
+  it('event_line_2 stays blank when the line-2b CONTOH has no "TAHUN" word', () => {
+    const h25 = mk('h', 'h25', 4, 10, 21); // no slot 2b
+    const { rows } = buildCsvRows({ ...order, items: [h25] }, 'ALIRAN', [h25]);
+    expect(rows.every((r) => r[4] === '')).toBe(true);
+  });
+
+  it('overridden qty: exactly item.qty rows, ordinals cycle the range, event_line_2 blank', () => {
     // gold covers places 1-3 → derived would be 9; teacher typed 3
-    const gold = mk('g', 'sm-13187(gold)', 1, 3, 3);
+    const gold = mk('g', 'sm-13187(gold)', 1, 3, 3, { 'ALIRAN::0::2b': 'TAHUN 1' });
     const { rows } = buildCsvRows({ ...order, items: [gold] }, 'ALIRAN', [gold]);
     expect(rows).toHaveLength(3);
-    expect(rows.map((r) => r[2])).toEqual([
-      'ANUGERAH ALIRAN TERBAIK\nPERTAMA',
-      'ANUGERAH ALIRAN TERBAIK\nKEDUA',
-      'ANUGERAH ALIRAN TERBAIK\nKETIGA',
-    ]);
-    expect(rows.every((r) => r[3] === '')).toBe(true);
+    expect(rows.map((r) => r[2])).toEqual(['PERTAMA', 'KEDUA', 'KETIGA']);
+    expect(rows.every((r) => r[3] === 'ANUGERAH ALIRAN TERBAIK' && r[4] === '')).toBe(true);
   });
 
-  it('flat plak row (no range): one row per plaque of the flat Tahuns', () => {
-    const flat = mk('f', 'DECO LIGHT', null, null, 15);
+  it('flat plak row (no range): blank position, one row per plaque of the flat Tahuns', () => {
+    const flat = mk('f', 'DECO LIGHT', null, null, 15, { 'ALIRAN::0::2b': 'TAHUN 1' });
     const { rows } = buildCsvRows({ ...order, items: [flat] }, 'ALIRAN', [flat]);
     expect(rows).toHaveLength(15);
-    expect(rows.filter((r) => r[3] === 'TAHUN 1')).toHaveLength(5);
-    expect(rows.every((r) => r[2] === 'ANUGERAH ALIRAN TERBAIK')).toBe(true);
+    expect(rows.filter((r) => r[4] === 'TAHUN 1')).toHaveLength(5);
+    expect(rows.every((r) => r[2] === '' && r[3] === 'ANUGERAH ALIRAN TERBAIK')).toBe(true);
+  });
+
+  it('the retired `year` column is always blank', () => {
+    const flat = mk('f', 'DECO LIGHT', null, null, 15);
+    const { rows } = buildCsvRows({ ...order, items: [flat] }, 'ALIRAN', [flat]);
+    expect(rows.every((r) => r[1] === '')).toBe(true);
   });
 });
 
@@ -299,9 +359,11 @@ describe('buildCsvRows — dynamicMatrix with a pre-written roster column (event
 
   it('emits the recipient in event_line_1 and jawatan+unit in event_line_2', () => {
     const { rows } = buildCsvRows(order, 'KLAS_MATRIX', [item]);
+    // The `year` column is retired — always blank (the year rides on the
+    // two-line TAJUK BESAR now).
     expect(rows).toEqual([
-      ['SMK X\nHEM 2024', 'SESI 2024/2025', 'ANUGERAH KEPIMPINAN MURID CEMERLANG', 'KESHVINI A/P MUGAN', 'KETUA PENGAWAS\nLEMBAGA PENGAWAS SEKOLAH'],
-      ['SMK X\nHEM 2024', 'SESI 2024/2025', 'ANUGERAH KEPIMPINAN MURID CEMERLANG', 'LIEW YONG SHIN', 'SETIAUSAHA\nLEMBAGA PENGAWAS SEKOLAH'],
+      ['SMK X\nHEM 2024', '', 'ANUGERAH KEPIMPINAN MURID CEMERLANG', 'KESHVINI A/P MUGAN', 'KETUA PENGAWAS\nLEMBAGA PENGAWAS SEKOLAH'],
+      ['SMK X\nHEM 2024', '', 'ANUGERAH KEPIMPINAN MURID CEMERLANG', 'LIEW YONG SHIN', 'SETIAUSAHA\nLEMBAGA PENGAWAS SEKOLAH'],
     ]);
   });
 

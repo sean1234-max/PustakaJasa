@@ -166,13 +166,13 @@ function readRefLinesInBand(ws, range, rowStart, rowEnd, slotsByCount = KLAS_MAT
     // its last real slot.
     if (values.length >= maxSlots + 1) break;
   }
-  // When the slot table has no YEAR slot of its own (KLAS_MATRIX — a
-  // KLAS_MATRIX sample box is title / award / subject / tahun, never
-  // title / YEAR / award), a standalone year line the school wrote right
-  // under the title is still OUR slot '1'. Pull it out before the
+  // A standalone year line the school wrote right under the title. The
+  // YEAR reference-sample row is retired (computeBlocks.js / exportCsv.js),
+  // so instead of parking it in slot 1 it's folded onto the TAJUK BESAR as
+  // a second engraved line (slot 0b, via splitTwoLineTajuk) — it still
+  // reaches the plaque, in event_header. Pulled out here before the
   // by-count mapping so it isn't counted as ACARA and doesn't push every
-  // following line down a slot. TOKOH's table already carries '1'
-  // positionally, so it's left alone.
+  // following line down a slot.
   const tableHasYearSlot = Object.values(slotsByCount).some((arr) => arr.includes('1'));
   let yearLine = '';
   if (!tableHasYearSlot && values.length >= 2 && STANDALONE_YEAR_RE.test(values[1].trim())) {
@@ -181,7 +181,7 @@ function readRefLinesInBand(ws, range, rowStart, rowEnd, slotsByCount = KLAS_MAT
   const slots = slotsByCount[Math.min(values.length, maxSlots)] || slotsByCount[maxSlots];
   const lines = {};
   values.slice(0, slots.length).forEach((val, i) => { lines[slots[i]] = val; });
-  if (yearLine) lines['1'] = yearLine.trim();
+  if (yearLine) lines['0'] = [lines['0'], yearLine.trim()].filter(Boolean).join('\n');
   return splitTwoLineTajuk(lines);
 }
 
@@ -746,22 +746,22 @@ function buildRosterSectionLines(sheetTitle, subTitle, firstClass, groupSample, 
   const card = matchSampleCard(subTitle, cards);
   const lines = {};
   if (card) {
-    lines[0] = card.tajukBesar;
-    lines[1] = card.year;
+    // YEAR row is retired — fold a card's year onto TAJUK BESAR as its
+    // second engraved line (slot 0b), same as readRefLinesInBand.
+    lines[0] = [card.tajukBesar, card.year].filter(Boolean).join('\n');
     lines[2] = card.acara;
   } else {
     lines[0] = sheetTitle;
     lines[2] = subTitle;
   }
-  const hidden = ['2b', '3'];
-  if (!lines[1]) hidden.push('1');
+  const hidden = ['1', '2b', '3'];
   lines.hiddenLines = hidden.join(',');
   const extras = [firstClass?.namaKelas, firstClass?.jawatan, firstClass?.kelasName, groupSample].filter(Boolean);
   if (extras.length > 0) {
     lines.extraRefLines = String(extras.length);
     extras.forEach((val, i) => { lines[4 + i] = val; });
   }
-  return lines;
+  return splitTwoLineTajuk(lines);
 }
 
 // Some rosters have one more column with no header label at all — a
