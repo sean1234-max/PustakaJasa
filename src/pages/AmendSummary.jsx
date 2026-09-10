@@ -30,6 +30,13 @@ export default function AmendSummary() {
       );
       const visibleCount = state.amendVisibleBlocksByCategory[cat.key] || 1;
       blocks.slice(0, visibleCount).forEach((blk) => {
+        if (blk.selempang) {
+          const rows = (blk.rows || []).filter((r) => Number(r.qty) > 0);
+          if (rows.length === 0) return;
+          const qty = rows.reduce((s, r) => s + Number(r.qty), 0);
+          items.push({ jenisPlak: 'SELEMPANG', qty, harga: qty * (blk.selempangUnitPrice || 0), categoryLabel: cat.label });
+          return;
+        }
         blk.plakRows.forEach((pr) => {
           if (pr.jenisPlak) items.push({ jenisPlak: pr.jenisPlak, qty: pr.qty, harga: pr.rawHarga, categoryLabel: blk.qtyLabel });
         });

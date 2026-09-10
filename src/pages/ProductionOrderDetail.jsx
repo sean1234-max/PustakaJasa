@@ -5,8 +5,8 @@ import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import { useAppState } from '../state/useAppState';
 import { statusPillStyle, formatDate, MANUAL_MAX_QTY } from '../data/catalog';
-import { reconstructOrderDetailGroups } from '../utils/computeBlocks';
-import { getOrderCategories, getOrderJenisPlakGroups, getPlakProductionMode, summarizeRowsForManual, buildCsvRows, rowsToCsv, buildCategoryCsvFilename, validateExport } from '../utils/exportCsv';
+import { reconstructOrderDetailGroups, reconstructBlocksForCategory } from '../utils/computeBlocks';
+import { getExportableCategories, splitOrderCategories, getOrderJenisPlakGroups, getPlakProductionMode, summarizeRowsForManual, buildCsvRows, rowsToCsv, buildCategoryCsvFilename, validateExport } from '../utils/exportCsv';
 import { downloadTextFile } from '../utils/downloadBlob';
 import { getOrderImportUrl } from '../lib/storageApi';
 import { groupItemsByBatch } from '../utils/orderBatches';
@@ -40,9 +40,16 @@ export default function ProductionOrderDetail() {
   const exportNoteTimer = useRef(null);
   const [page, setPage] = useState('summary');
 
-  const categories = useMemo(() => (order ? getOrderCategories(order) : []), [order]);
+  const categories = useMemo(() => (order ? getExportableCategories(order) : []), [order]);
   const [activeCat, setActiveCat] = useState(() => categories[0]?.key || '');
   const currentCat = categories.find((c) => c.key === activeCat) || categories[0];
+  // SELEMPANG — Production makes nothing for it, so it's kept out of every
+  // export tab/CSV and shown read-only just so they can see it was ordered.
+  const selempangBlocks = useMemo(() => {
+    if (!order) return [];
+    return splitOrderCategories(order).selempang
+      .flatMap((cat) => reconstructBlocksForCategory(order, cat.key, state.plakCatalog).blocks);
+  }, [order, state.plakCatalog]);
 
   // One entry per (block, batch) — a category can carry more than one
   // distinct "order detail" (e.g. PBD's Kuantiti and Kedudukan variants, or
@@ -233,6 +240,14 @@ export default function ProductionOrderDetail() {
                   <span className="dim">Grand Total:</span> <strong>RM {order.totalAmount.toFixed(2)}</strong>
                 </div>
               </>
+            )}
+
+            {selempangBlocks.length > 0 && (
+              <div style={{ marginTop: 'var(--space-6)' }}>
+                {selempangBlocks.map((blk) => (
+                  <OrderCategoryBlock key={`sel-${blk.idx}`} blk={blk} editable={READONLY} />
+                ))}
+              </div>
             )}
 
             <>

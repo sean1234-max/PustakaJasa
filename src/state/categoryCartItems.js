@@ -1,4 +1,4 @@
-import { CATEGORIES } from '../data/catalog';
+import { CATEGORIES, SELEMPANG_CODE } from '../data/catalog';
 import { computeBlocks, snapshotDetail, noopUpdaters } from '../utils/computeBlocks';
 
 // Turns one category's live draft (lineValues / matrixValues / rowsByBlock
@@ -29,6 +29,41 @@ export function buildCategoryCartItems(st, catKey) {
   // actually been touched (any line typed, any qty entered, or a Jenis Plak
   // chosen); an untouched block (every category but OTHERS only ever has
   // one) is just skipped.
+  // SELEMPANG — its own tiny shape (ACARA/WARNA/KUANTITI rows, one shared
+  // Jenis Plak). Handled here up front so the generic Reference Sample /
+  // Jenis Plak checks below don't apply to it.
+  if (cat?.selempang) {
+    const blk = blocks[0];
+    const filled = (blk.rows || []).filter((r) => (r.acara || '').trim() || (r.warna || '').trim() || Number(r.qty) > 0);
+    if (filled.length === 0) return { engaged: false };
+    for (const r of filled) {
+      if (!(r.acara || '').trim()) return { engaged: true, error: 'Isi ACARA untuk setiap baris selempang sebelum masuk troli.' };
+      if (!r.warnaResolved) return { engaged: true, error: `Warna selempang "${r.warna || '(kosong)'}" tak dikenali — guna BIRU / HIJAU / KUNING / MERAH atau kod 0050–0053.` };
+      if (!(Number(r.qty) > 0)) return { engaged: true, error: `Isi kuantiti untuk selempang "${r.acara}" sebelum masuk troli.` };
+    }
+    const totalQty = filled.reduce((s, r) => s + Number(r.qty), 0);
+    const unitPrice = blk.selempangUnitPrice;
+    return {
+      engaged: true,
+      items: [{
+        id: crypto.randomUUID(),
+        jenisPlak: SELEMPANG_CODE,
+        qty: totalQty,
+        unitPrice,
+        harga: unitPrice * totalQty,
+        categoryLabel: cat.label,
+        categoryKey: cat.key,
+        blockIdx: blk.idx,
+        detail: {
+          rows: filled.map((r) => ({
+            id: r.id, acara: r.acara.trim(), warna: r.warnaResolved.warna,
+            warnaCode: r.warnaResolved.code, qty: String(r.qty),
+          })),
+        },
+      }],
+    };
+  }
+
   for (const blk of blocks) {
     const lineHasValue = (line) => Boolean(String(line.value).trim());
     // Line 1 (the event name) is always required; a category can mark

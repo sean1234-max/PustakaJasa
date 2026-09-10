@@ -208,6 +208,36 @@ export const TOKOH_ROW_FIELDS = [
 // default so the tab is usable before any file is dropped.
 const SUBJECTS_FROM_IMPORT = true;
 
+// SELEMPANG (sash) — its own small category. The source sheet only has
+// ACARA / WARNA / KUANTITI: no engraving/Reference Sample, no per-colour
+// Jenis Plak. All four colours draw from ONE shared stock pool and cost the
+// same, so every selempang line is one catalog code — `SELEMPANG_CODE` (a
+// real plak_catalog_nodes leaf seeded by migration 0057) — priced at
+// `SELEMPANG_UNIT_PRICE`. The colour a teacher types (name in Malay or
+// English, or the numeric code) is recorded on the order line for the
+// office/Production to see, but never affects stock or price.
+export const SELEMPANG_CODE = 'SELEMPANG';
+export const SELEMPANG_UNIT_PRICE = 40;
+export const SELEMPANG_WARNA = [
+  { warna: 'BIRU', code: '0053', aliases: ['BLUE'] },
+  { warna: 'HIJAU', code: '0052', aliases: ['GREEN'] },
+  { warna: 'KUNING', code: '0051', aliases: ['YELLOW'] },
+  { warna: 'MERAH', code: '0050', aliases: ['RED'] },
+];
+// Normalises whatever the teacher typed into a WARNA cell — "blue", "Biru",
+// "BIRU", or the numeric "0053" all resolve to the same entry. Returns null
+// for anything unrecognised (caller surfaces it as a fix-it error, never a
+// silent drop).
+export function resolveSelempangWarna(input) {
+  const s = String(input || '').trim().toUpperCase();
+  if (!s) return null;
+  const digits = s.replace(/\D/g, '');
+  return SELEMPANG_WARNA.find((w) => (
+    w.warna === s || w.aliases.includes(s)
+    || w.code === s || (digits && w.code === digits.padStart(4, '0'))
+  )) || null;
+}
+
 export const CATEGORIES = [
   {
     key: 'PPKI', label: 'PPKI', mode: 'matrix', blocksCount: 1, active: true,
@@ -392,6 +422,21 @@ export const CATEGORIES = [
     positionFieldsRedText: true,
     draggableReferenceSample: true,
     positionFromRows: true,
+  },
+  {
+    // SELEMPANG (sash) — ACARA / WARNA / KUANTITI rows, no engraving. Its
+    // own `section: 'selempang'` puts it in the lower half of every order
+    // view (anugerah on top). `noCsv` keeps it out of Production's CSV
+    // export and manual-make lists — Production only needs to SEE that a
+    // selempang order exists. Still priced (RM40 each) and stock-tracked
+    // (one shared SELEMPANG pool), so it rides the normal cart / submit /
+    // amount-guard / stock-deduct flow like any other line.
+    key: 'SELEMPANG', label: 'Selempang', mode: 'list', blocksCount: 1, active: true,
+    selempang: true,
+    section: 'selempang',
+    noCsv: true,
+    hideQtyLabelSuffix: true,
+    linePlaceholders: [],
   },
   {
     // Retired from new-order selection (active: false) — every FORM ANUGERAH

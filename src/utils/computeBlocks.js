@@ -3,6 +3,7 @@ import {
   getCustomMatrixRowIds, customMatrixLabelKey, matrixCellKey, CUSTOM_MATRIX_LABEL_SUFFIX, TOKOH_ROW_FIELDS,
   getCategoryLinePlaceholders, getCategoryPositionLine2Placeholder,
   getCategoryTahunPlaceholder, getCategoryNamaKelasPlaceholder,
+  resolveSelempangWarna, SELEMPANG_CODE, SELEMPANG_UNIT_PRICE, getStockStatus,
 } from '../data/catalog';
 import { findPossibleTypo } from './typoCheck';
 
@@ -457,6 +458,30 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
             onChange: (v) => updaters.onRowField(rowsKey, row.id, f.key, v),
           }))
           : null;
+        // SELEMPANG (catalog.js's `selempang`) — each row is ACARA + WARNA +
+        // KUANTITI, no Jenis Plak picker. The colour is free text resolved
+        // to a canonical WARNA/code (resolveSelempangWarna); price is the
+        // flat SELEMPANG_UNIT_PRICE (fall back if the catalog node isn't
+        // seeded yet). One shared stock pool, so every row's jenisPlak is
+        // the single SELEMPANG_CODE — set on the cart item, not shown here.
+        let selempangFields = null;
+        if (currentCat.selempang) {
+          const resolved = resolveSelempangWarna(row.warna);
+          const unitPrice = priceFor(SELEMPANG_CODE) ?? SELEMPANG_UNIT_PRICE;
+          const qtyN = Number(row.qty) || 0;
+          const rowHarga = unitPrice * qtyN;
+          selempangFields = {
+            acara: row.acara || '',
+            warna: row.warna || '',
+            warnaResolved: resolved,
+            warnaValid: !row.warna || !!resolved,
+            unitPrice,
+            rawHarga: rowHarga,
+            hargaLabel: `RM ${rowHarga.toFixed(2)}`,
+            setAcara: (v) => updaters.onRowField(rowsKey, row.id, 'acara', v),
+            setWarna: (v) => updaters.onRowField(rowsKey, row.id, 'warna', v),
+          };
+        }
         return {
           id: row.id, desc: row.desc, qty: row.qty,
           qtyMismatch: namaKelasCount > 0 && Number(row.qty) > 0 && Number(row.qty) !== namaKelasCount,
@@ -472,6 +497,7 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
           })),
           tokohFields,
           ...plakFields,
+          ...(selempangFields || {}),
         };
       });
       blockTotalQty = rawRows.reduce((sum, r) => sum + (Number(r.qty) || 0), 0);
@@ -622,6 +648,18 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
         ? (newSlotIdOrder) => updaters.onLine(refOrderKey, newSlotIdOrder.join(','))
         : null,
       blockTotalQty, plakRows,
+      // SELEMPANG (catalog.js): which half of an order view this block
+      // belongs in ('anugerah' default / 'selempang'), and whether to
+      // render the plain ACARA/WARNA/KUANTITI table instead of the normal
+      // Reference Sample + Jenis Plak + Kuantiti layout.
+      section: currentCat.section || 'anugerah',
+      selempang: !!currentCat.selempang,
+      selempangUnitPrice: priceFor(SELEMPANG_CODE) ?? SELEMPANG_UNIT_PRICE,
+      // Looked up from the FULL catalog (not the teacher-picker's
+      // hidden-filtered copy) — the SELEMPANG node is hidden so it never
+      // shows in the anugerah Jenis Plak picker, but its stock still counts.
+      selempangStock: currentCat.selempang ? getStockStatus(SELEMPANG_CODE, plakCatalog) : null,
+      addSelempangRow: () => updaters.onAddRow(`${catKey}::${b}`),
       // A named-recipient roster import (excelImport.js's
       // scanSheetForRosters) has no Tahun axis at all — an always-blank
       // Tahun Dari/Hingga column on every one of its rows would just be
@@ -732,9 +770,13 @@ function mergeItemDetailIntoMaps(it, key, lineValues, matrixValues, rowsByBlock,
     });
   }
   if (it.detail.rows) {
+    // SELEMPANG rows carry no `desc` (they're ACARA/WARNA/KUANTITI), so the
+    // sum-by-desc path below would collapse every row onto the first
+    // (undefined === undefined). Upsert by id instead, like the matrix case.
+    const selempangCat = CATEGORIES.find((c) => c.key === it.categoryKey)?.selempang;
     if (!rowsByBlock[key]) {
       rowsByBlock[key] = it.detail.rows.map((r) => ({ ...r }));
-    } else if (it.detail.matrix) {
+    } else if (it.detail.matrix || selempangCat) {
       it.detail.rows.forEach((r) => {
         const existing = rowsByBlock[key].find((er) => er.id === r.id);
         if (existing) Object.assign(existing, r);

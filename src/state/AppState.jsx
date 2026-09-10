@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import {
   CATEGORIES, ACTIVE_CATEGORIES, formatDate, standardUnitPrice, getCategorySubjects, matrixCellKey, customMatrixLabelKey,
-  deliveryStageForShipmentDate,
+  deliveryStageForShipmentDate, SELEMPANG_CODE,
 } from '../data/catalog';
 import { buildInitialRowsByBlock, buildInitialColumnsByBlock, buildInitialPlakRows } from '../data/formDefaults';
 import {
@@ -926,6 +926,14 @@ export function AppStateProvider({ children }) {
             if (tr && tr.flatQty) return { id: nextRowId++, desc: tahun, qty: String(tr.flatQty), kedudukanHingga: 0 };
             return { id: nextRowId++, desc: tahun, qty: '', kedudukanHingga: 0 };
           });
+        } else if (section.isSelempangList) {
+          // SELEMPANG (excelImport.js's parseSelempangSheet) — plain
+          // ACARA / WARNA / KUANTITI rows. computeBlocks re-resolves the
+          // colour text, so only the raw values are stored here.
+          newRowsByBlock[key] = (section.selempangRows || []).map((sr) => ({
+            id: nextRowId++, acara: sr.acara || '', warna: sr.warna || '', qty: sr.qty ? String(sr.qty) : '',
+          }));
+          if (newRowsByBlock[key].length === 0) newRowsByBlock[key] = [{ id: nextRowId++, acara: '', warna: '', qty: '' }];
         } else if (section.isTahunList) {
           // PBD (excelImport.js's parsePbdSheet) — no subject axis, one
           // KUANTITI total per Tahun. The category is a 1-column matrix
@@ -1017,9 +1025,9 @@ export function AppStateProvider({ children }) {
 
         let nextPlakRowId = next.nextPlakRowId;
         let newPlakRows;
-        if (section.isSimpleTahunList || section.isTokohList) {
-          // LONJAKAN / TOKOH — Jenis Plak lives per row (plakPerRow), no
-          // block-level plak row.
+        if (section.isSimpleTahunList || section.isTokohList || section.isSelempangList) {
+          // LONJAKAN / TOKOH — Jenis Plak lives per row (plakPerRow); SELEMPANG
+          // has one implicit shared code. Either way, no block-level plak row.
           newPlakRows = { ...next.plakRows, [key]: [] };
         } else if (section.isAliran) {
           // One plak row per JENIS PLAK footer entry, each carrying its own
@@ -1321,6 +1329,24 @@ export function AppStateProvider({ children }) {
       );
       const visibleCount = st.amendVisibleBlocksByCategory[cat.key] || 1;
       blocks.slice(0, visibleCount).forEach((blk) => {
+        // SELEMPANG has no plak rows — one combined item, its acara/warna
+        // rows carried in `detail.rows`. Amend only lets the teacher change
+        // KUANTITI (EDITABLE.rowDesc is false), so warna stays valid.
+        if (cat.selempang) {
+          const prior = (order.items || []).find((it) => it.categoryKey === cat.key);
+          const rows = (blk.rows || []).filter((r) => Number(r.qty) > 0 && r.warnaResolved && (r.acara || '').trim());
+          if (rows.length === 0) return;
+          const totalQty = rows.reduce((s, r) => s + Number(r.qty), 0);
+          const unitPrice = blk.selempangUnitPrice;
+          newItems.push({
+            id: prior?.id || crypto.randomUUID(),
+            jenisPlak: SELEMPANG_CODE, qty: totalQty, unitPrice, harga: unitPrice * totalQty,
+            categoryLabel: cat.label, categoryKey: cat.key, blockIdx: blk.idx,
+            detail: { rows: rows.map((r) => ({ id: r.id, acara: r.acara.trim(), warna: r.warnaResolved.warna, warnaCode: r.warnaResolved.code, qty: String(r.qty) })) },
+            ...(prior?.batch ? { batch: prior.batch } : {}),
+          });
+          return;
+        }
         blk.plakRows.forEach((pr) => {
           if (!pr.jenisPlak || !pr.qty) return;
           const prior = originalById.get(pr.id);
@@ -1382,6 +1408,17 @@ export function AppStateProvider({ children }) {
     // in the draft regardless of which category tab the teacher currently
     // has open — no per-variant block-index bookkeeping needed here.
     CATEGORIES.forEach((cat) => {
+      // SELEMPANG builds one combined item (acara/warna rows in detail.rows)
+      // — buildCategoryCartItems already knows its shape and validation.
+      if (cat.selempang) {
+        const res = buildCategoryCartItems({
+          lineValues: st.addOnLineValues, matrixValues: st.addOnMatrixValues, rowsByBlock: st.addOnRowsByBlock,
+          plakRows: st.addOnPlakRows, columnsByBlock: st.addOnColumnsByBlock,
+          plakCatalog: st.plakCatalog, schoolLanguage: st.schoolLanguage,
+        }, cat.key);
+        if (res.items) newItems.push(...res.items);
+        return;
+      }
       const { blocks: catBlocks, isMatrix: catIsMatrix, isDynamicMatrix: catIsDynamicMatrix } = computeBlocks(
         cat.key, st.addOnLineValues, st.addOnMatrixValues, st.addOnRowsByBlock, st.addOnPlakRows, st.addOnColumnsByBlock, noopUpdaters, st.plakCatalog, st.schoolLanguage,
       );

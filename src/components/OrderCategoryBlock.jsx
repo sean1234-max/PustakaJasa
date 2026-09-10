@@ -1,5 +1,6 @@
 import { useState, useRef, useLayoutEffect } from 'react';
 import PlakPicker from './PlakPicker';
+import SelempangBlock from './SelempangBlock';
 import { getStockStatus, MALAY_ORDINALS } from '../data/catalog';
 import { isReservedName } from '../utils/exportCsv';
 
@@ -76,6 +77,14 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
     ro.observe(grid);
     return () => ro.disconnect();
   }, [refLinesSignature]);
+  // SELEMPANG has its own compact layout (Acara / Warna / Kuantiti) — no
+  // Reference Sample or Jenis Plak — so it's rendered by its own component.
+  // Kept behind OrderCategoryBlock so every screen that already maps over
+  // category blocks picks it up without a per-page branch.
+  if (blk.selempang) {
+    return <SelempangBlock blk={blk} editable={editable} hideEmptyRows={hideEmptyRows} />;
+  }
+
   const matrixRows = hideEmptyRows ? blk.matrixRows.filter((row) => row.rowTotal > 0) : blk.matrixRows;
   const listRows = hideEmptyRows ? blk.rows.filter((row) => Number(row.qty) > 0) : blk.rows;
   // TOKOH_SHEET's per-row metadata columns (catalog.js's TOKOH_ROW_FIELDS):

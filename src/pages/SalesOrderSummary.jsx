@@ -9,7 +9,7 @@ import { useAppState } from '../state/useAppState';
 import { statusPillStyle, standardUnitPrice, formatDate, formatDateTime } from '../data/catalog';
 import CancelOrderControl from '../components/CancelOrderControl';
 import { reconstructBlocksForCategory } from '../utils/computeBlocks';
-import { getOrderCategories } from '../utils/exportCsv';
+import { splitOrderCategories } from '../utils/exportCsv';
 import { getOrderChangeStamp } from '../utils/orderStamp';
 
 // Read-only everywhere — this page only ever displays what the teacher
@@ -73,13 +73,20 @@ export default function SalesOrderSummary() {
     return { ...it, unitPrice, harga };
   }), [order, addOnPriceDrafts]);
 
-  const categories = useMemo(() => (order ? getOrderCategories(order) : []), [order]);
+  const { anugerah: categories, selempang: selempangCats } = useMemo(
+    () => (order ? splitOrderCategories(order) : { anugerah: [], selempang: [] }),
+    [order],
+  );
   const [activeCat, setActiveCat] = useState(() => categories[0]?.key || '');
   const currentCat = categories.find((c) => c.key === activeCat) || categories[0];
   const catBlocks = useMemo(() => {
     if (!order || !currentCat) return [];
     return reconstructBlocksForCategory(order, currentCat.key, state.plakCatalog).blocks;
   }, [order, currentCat, state.plakCatalog]);
+  const selempangBlocks = useMemo(() => {
+    if (!order) return [];
+    return selempangCats.flatMap((cat) => reconstructBlocksForCategory(order, cat.key, state.plakCatalog).blocks);
+  }, [order, selempangCats, state.plakCatalog]);
 
   // Printing needs every category's details at once, not just whichever
   // tab happens to be open on screen — the tab UI is for browsing, the
@@ -88,11 +95,11 @@ export default function SalesOrderSummary() {
   // categories without losing track of which blocks belong together.
   const catBlockGroups = useMemo(() => {
     if (!order) return [];
-    return categories.map((cat) => ({
+    return [...categories, ...selempangCats].map((cat) => ({
       cat,
       blocks: reconstructBlocksForCategory(order, cat.key, state.plakCatalog).blocks,
     }));
-  }, [order, categories, state.plakCatalog]);
+  }, [order, categories, selempangCats, state.plakCatalog]);
 
   if (!order) return null;
 
@@ -316,16 +323,28 @@ export default function SalesOrderSummary() {
             </>
           ) : (
             <>
-              {categories.length === 0 ? (
+              {categories.length === 0 && selempangBlocks.length === 0 ? (
                 <p className="hint-text" style={{ marginTop: 'var(--space-3)' }}>No category details found for this order.</p>
               ) : (
                 <>
-                  <div style={{ margin: 'var(--space-3) 0' }}>
-                    <CategoryTabs categories={categories} active={currentCat?.key} onSelect={setActiveCat} />
-                  </div>
-                  {catBlocks.map((blk) => (
-                    <OrderCategoryBlock key={blk.idx} blk={blk} editable={READONLY} />
-                  ))}
+                  {categories.length > 0 && (
+                    <>
+                      <div className="card-kicker" style={{ marginBottom: 'var(--space-2)' }}>Anugerah</div>
+                      <div style={{ margin: 'var(--space-1) 0 var(--space-3)' }}>
+                        <CategoryTabs categories={categories} active={currentCat?.key} onSelect={setActiveCat} />
+                      </div>
+                      {catBlocks.map((blk) => (
+                        <OrderCategoryBlock key={blk.idx} blk={blk} editable={READONLY} />
+                      ))}
+                    </>
+                  )}
+                  {selempangBlocks.length > 0 && (
+                    <div style={{ marginTop: categories.length > 0 ? 'var(--space-8)' : 0 }}>
+                      {selempangBlocks.map((blk) => (
+                        <OrderCategoryBlock key={`sel-${blk.idx}`} blk={blk} editable={READONLY} />
+                      ))}
+                    </div>
+                  )}
                 </>
               )}
 
@@ -371,7 +390,7 @@ export default function SalesOrderSummary() {
             hideCategory combineJenisPlak
           />
 
-          {categories.length > 0 && (
+          {catBlockGroups.length > 0 && (
             <div className="print-details-section">
               <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Order Details</div>
               {catBlockGroups.map(({ cat, blocks }, catIdx) => (

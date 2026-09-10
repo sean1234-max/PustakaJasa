@@ -7,7 +7,7 @@ import PriceTable from '../components/PriceTable';
 import { useAppState } from '../state/useAppState';
 import { statusPillStyle, formatDate, standardUnitPrice } from '../data/catalog';
 import { reconstructBlocksForCategory } from '../utils/computeBlocks';
-import { getOrderCategories } from '../utils/exportCsv';
+import { splitOrderCategories } from '../utils/exportCsv';
 import { getOrderImportUrl } from '../lib/storageApi';
 import { groupItemsByBatch } from '../utils/orderBatches';
 import { getOrderChangeStamp } from '../utils/orderStamp';
@@ -76,13 +76,20 @@ export default function StoreAdminOrderDetail() {
     return next;
   });
 
-  const categories = useMemo(() => (order ? getOrderCategories(order) : []), [order]);
+  const { anugerah: categories, selempang: selempangCats } = useMemo(
+    () => (order ? splitOrderCategories(order) : { anugerah: [], selempang: [] }),
+    [order],
+  );
   const [activeCat, setActiveCat] = useState(() => categories[0]?.key || '');
   const currentCat = categories.find((c) => c.key === activeCat) || categories[0];
   const catBlocks = useMemo(() => {
     if (!order || !currentCat) return [];
     return reconstructBlocksForCategory(order, currentCat.key, state.plakCatalog).blocks;
   }, [order, currentCat, state.plakCatalog]);
+  const selempangBlocks = useMemo(() => {
+    if (!order) return [];
+    return selempangCats.flatMap((cat) => reconstructBlocksForCategory(order, cat.key, state.plakCatalog).blocks);
+  }, [order, selempangCats, state.plakCatalog]);
 
   if (!order) return null;
 
@@ -269,16 +276,28 @@ export default function StoreAdminOrderDetail() {
           </>
         ) : (
           <>
-            {categories.length === 0 ? (
+            {categories.length === 0 && selempangBlocks.length === 0 ? (
               <p className="hint-text" style={{ marginTop: 'var(--space-3)' }}>No category details found for this order.</p>
             ) : (
               <>
-                <div style={{ margin: 'var(--space-3) 0' }}>
-                  <CategoryTabs categories={categories} active={currentCat?.key} onSelect={setActiveCat} />
-                </div>
-                {catBlocks.map((blk) => (
-                  <OrderCategoryBlock key={blk.idx} blk={blk} editable={READONLY} />
-                ))}
+                {categories.length > 0 && (
+                  <>
+                    <div className="card-kicker" style={{ marginBottom: 'var(--space-2)' }}>Anugerah</div>
+                    <div style={{ margin: 'var(--space-1) 0 var(--space-3)' }}>
+                      <CategoryTabs categories={categories} active={currentCat?.key} onSelect={setActiveCat} />
+                    </div>
+                    {catBlocks.map((blk) => (
+                      <OrderCategoryBlock key={blk.idx} blk={blk} editable={READONLY} />
+                    ))}
+                  </>
+                )}
+                {selempangBlocks.length > 0 && (
+                  <div style={{ marginTop: categories.length > 0 ? 'var(--space-8)' : 0 }}>
+                    {selempangBlocks.map((blk) => (
+                      <OrderCategoryBlock key={`sel-${blk.idx}`} blk={blk} editable={READONLY} />
+                    ))}
+                  </div>
+                )}
               </>
             )}
 

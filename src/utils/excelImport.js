@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import { ordinalToNum } from '../data/catalog';
+import { ordinalToNum, resolveSelempangWarna } from '../data/catalog';
 
 // Reads a teacher's own filled-in copy of the FORM ANUGERAH Excel template —
 // not just the new "KLAS MATRIX" sheet, but the ORIGINAL sheets teachers
@@ -53,6 +53,7 @@ const SOURCE_SHEET_TO_CATEGORY = {
   'LONJAKAN SAUJANA': 'LONJAKAN',
   'KEHADIRAN PENUH': 'KEHADIRAN',
   TOKOH: 'TOKOH_SHEET',
+  SELEMPANG: 'SELEMPANG',
 };
 
 function normalizeTahun(raw) {
@@ -1353,6 +1354,34 @@ function parseTokohAnugerahSheet(ws) {
   return { lines, tokohRows, isTokohList: true, classes: [] };
 }
 
+// SELEMPANG sheet — a plain ACARA / WARNA / KUANTITI table (the CONTOH
+// WARNA legend off to the right is just a colour key, never read). Each
+// filled row becomes one selempang line; the colour text is normalised the
+// same way the website does (resolveSelempangWarna) but an unrecognised one
+// is still kept as raw text so the teacher can fix it on Step 2 rather than
+// have the row silently vanish.
+function parseSelempangSheet(ws) {
+  const range = sheetRange(ws);
+  const acaraH = findLabelCells(ws, range, ['ACARA'])[0];
+  if (!acaraH) return null;
+  const onRow = findLabelCells(ws, { r1: acaraH.row, r2: acaraH.row, c1: range.c1, c2: range.c2 }, ['WARNA', 'KUANTITI']);
+  const warnaH = onRow.find((h) => h.label === 'WARNA');
+  const kuantitiH = onRow.find((h) => h.label === 'KUANTITI');
+  if (!warnaH) return null;
+  const rows = [];
+  for (let r = acaraH.row + 1; r <= range.r2; r++) {
+    const acara = cellText(ws, r, acaraH.col);
+    const warnaRaw = cellText(ws, r, warnaH.col);
+    const qty = kuantitiH ? cellNum(ws, r, kuantitiH.col) : 0;
+    if (isTotalLabel(acara)) break;
+    if (!acara && !warnaRaw && qty <= 0) continue;
+    const resolved = resolveSelempangWarna(warnaRaw);
+    rows.push({ acara, warna: resolved ? resolved.warna : warnaRaw, warnaCode: resolved ? resolved.code : '', qty });
+  }
+  if (rows.length === 0) return null;
+  return { lines: {}, selempangRows: rows, isSelempangList: true, skipLineDerivation: true, classes: [] };
+}
+
 // A pending/placeholder line item — the school already knows they need it
 // (a rough description, a count) but doesn't have real recipient data yet
 // (a name, a class) to build an actual KLAS_MATRIX section from, so
@@ -1558,7 +1587,7 @@ export function parseFormAnugerahExcel(arrayBuffer) {
     const upper = name.trim().toUpperCase();
     if (upper === 'KLAS MATRIX' || upper === 'FRONT PG' || upper === 'TOKOH' || upper === 'PPKI' || upper === 'PBD'
       || upper === 'ALIRAN TERBAIK' || upper === 'LONJAKAN SAUJANA' || upper === 'KEHADIRAN PENUH'
-      || upper === 'MP THP 1' || upper === 'MP THP 2'
+      || upper === 'MP THP 1' || upper === 'MP THP 2' || upper === 'SELEMPANG'
       || upper === 'MP THP 1 (KALAU ADA KELAS)' || upper === 'MP THP 2 (KALAU ADA KELAS)') return;
     const ws = wb.Sheets[name];
     // Mutually exclusive in practice — a "JENIS PLAK" footer sheet never
@@ -1652,6 +1681,12 @@ export function parseFormAnugerahExcel(arrayBuffer) {
   if (tokohSheet) {
     const tokohSection = parseTokohAnugerahSheet(tokohSheet);
     if (tokohSection) { tokohSection.sourceSheet = 'TOKOH'; allSections.push(tokohSection); }
+  }
+
+  const selempangSheet = findSheet(wb, 'SELEMPANG');
+  if (selempangSheet) {
+    const selempangSection = parseSelempangSheet(selempangSheet);
+    if (selempangSection) { selempangSection.sourceSheet = 'SELEMPANG'; allSections.push(selempangSection); }
   }
 
   allSections.push(...findPerasmiSections(wb));

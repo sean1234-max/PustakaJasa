@@ -1,7 +1,31 @@
 import { describe, it, expect } from 'vitest';
 import {
   CSV_COLUMNS, rowsToCsv, buildCsvRows, validateExport, buildCategoryCsvFilename, isReservedName,
+  getOrderJenisPlakGroups, getExportableCategories, splitOrderCategories,
 } from './exportCsv';
+
+describe('SELEMPANG stays out of every Production export path', () => {
+  const order = {
+    schoolLanguage: 'SK',
+    items: [
+      { id: 'a', categoryKey: 'PPKI', jenisPlak: 'DECO LIGHT', qty: 20, harga: 400 },
+      { id: 'b', categoryKey: 'SELEMPANG', jenisPlak: 'SELEMPANG', qty: 30, harga: 1200,
+        detail: { rows: [{ id: 1, acara: 'HARI SUKAN', warna: 'BIRU', warnaCode: '0053', qty: '30' }] } },
+    ],
+  };
+
+  it('getOrderJenisPlakGroups skips the SELEMPANG item', () => {
+    const groups = getOrderJenisPlakGroups(order);
+    expect(groups.map((g) => g.jenisPlak)).toEqual(['DECO LIGHT']);
+  });
+
+  it('getExportableCategories drops SELEMPANG but splitOrderCategories keeps it', () => {
+    expect(getExportableCategories(order).map((c) => c.key)).toEqual(['PPKI']);
+    const split = splitOrderCategories(order);
+    expect(split.anugerah.map((c) => c.key)).toEqual(['PPKI']);
+    expect(split.selempang.map((c) => c.key)).toEqual(['SELEMPANG']);
+  });
+});
 
 describe('rowsToCsv', () => {
   it('prepends the fixed header row and joins with CRLF', () => {

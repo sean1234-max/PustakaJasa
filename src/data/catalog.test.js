@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   flattenPlakCatalog, standardUnitPrice, tahunRangeYears,
   stockZoneFor, getStockStatus, statusPillStyle, STATUS_STAGES, ORDER_STATUSES,
-  deliveryStageForShipmentDate,
+  deliveryStageForShipmentDate, resolveSelempangWarna,
 } from './catalog';
 
 const CATALOG = [
@@ -123,5 +123,27 @@ describe('deliveryStageForShipmentDate', () => {
   it('falls back to Waiting for Delivery for a missing or unparseable date', () => {
     expect(deliveryStageForShipmentDate(null, today)).toBe('Waiting for Delivery');
     expect(deliveryStageForShipmentDate('TBD', today)).toBe('Waiting for Delivery');
+  });
+});
+
+describe('resolveSelempangWarna', () => {
+  it('matches the canonical Malay name, case-insensitively', () => {
+    expect(resolveSelempangWarna('BIRU')).toMatchObject({ warna: 'BIRU', code: '0053' });
+    expect(resolveSelempangWarna('biru')).toMatchObject({ warna: 'BIRU', code: '0053' });
+    expect(resolveSelempangWarna(' Merah ')).toMatchObject({ warna: 'MERAH', code: '0050' });
+  });
+  it('matches the English alias', () => {
+    expect(resolveSelempangWarna('blue')).toMatchObject({ warna: 'BIRU', code: '0053' });
+    expect(resolveSelempangWarna('YELLOW')).toMatchObject({ warna: 'KUNING', code: '0051' });
+  });
+  it('matches the numeric code, with or without leading zeros', () => {
+    expect(resolveSelempangWarna('0052')).toMatchObject({ warna: 'HIJAU', code: '0052' });
+    expect(resolveSelempangWarna('52')).toMatchObject({ warna: 'HIJAU', code: '0052' });
+  });
+  it('returns null for anything unrecognised or blank', () => {
+    expect(resolveSelempangWarna('ungu')).toBeNull();
+    expect(resolveSelempangWarna('')).toBeNull();
+    expect(resolveSelempangWarna(null)).toBeNull();
+    expect(resolveSelempangWarna('9999')).toBeNull();
   });
 });

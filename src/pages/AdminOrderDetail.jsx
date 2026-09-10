@@ -6,8 +6,8 @@ import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import { useAppState } from '../state/useAppState';
 import { statusPillStyle, formatDate } from '../data/catalog';
 import CancelOrderControl from '../components/CancelOrderControl';
-import { reconstructOrderDetailGroups } from '../utils/computeBlocks';
-import { getOrderCategories, getOrderJenisPlakGroups, buildCsvRows, rowsToCsv, buildCategoryCsvFilename, validateExport } from '../utils/exportCsv';
+import { reconstructOrderDetailGroups, reconstructBlocksForCategory } from '../utils/computeBlocks';
+import { getExportableCategories, splitOrderCategories, getOrderJenisPlakGroups, buildCsvRows, rowsToCsv, buildCategoryCsvFilename, validateExport } from '../utils/exportCsv';
 import { downloadTextFile } from '../utils/downloadBlob';
 import { getOrderImportUrl } from '../lib/storageApi';
 
@@ -47,9 +47,16 @@ export default function AdminOrderDetail() {
   const exportNoteTimer = useRef(null);
   const [page, setPage] = useState('summary');
 
-  const categories = useMemo(() => (order ? getOrderCategories(order) : []), [order]);
+  const categories = useMemo(() => (order ? getExportableCategories(order) : []), [order]);
   const [activeCat, setActiveCat] = useState(() => categories[0]?.key || '');
   const currentCat = categories.find((c) => c.key === activeCat) || categories[0];
+  // SELEMPANG (and any `noCsv` category) — shown read-only so Admin can see
+  // it, but never in the CSV-export tabs above.
+  const selempangBlocks = useMemo(() => {
+    if (!order) return [];
+    return splitOrderCategories(order).selempang
+      .flatMap((cat) => reconstructBlocksForCategory(order, cat.key, state.plakCatalog).blocks);
+  }, [order, state.plakCatalog]);
 
   // One entry per (block, batch) — see the matching comment in
   // ProductionOrderDetail.jsx / reconstructOrderDetailGroups.
@@ -241,6 +248,14 @@ export default function AdminOrderDetail() {
               <div className="flex justify-between items-center mt-4 pt-4 border-t border-outline-variant">
                 <span className="text-body-sm text-on-surface-variant">QTY total: {totalQty}</span>
                 <span className="text-headline-sm text-on-surface">Grand Total: RM {order.totalAmount.toFixed(2)}</span>
+              </div>
+            )}
+
+            {selempangBlocks.length > 0 && (
+              <div className="mt-8">
+                {selempangBlocks.map((blk) => (
+                  <OrderCategoryBlock key={`sel-${blk.idx}`} blk={blk} editable={READONLY} />
+                ))}
               </div>
             )}
 

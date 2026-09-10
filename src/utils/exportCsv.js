@@ -24,6 +24,23 @@ export function getOrderCategories(order) {
   return CATEGORIES.filter((cat) => (order.items || []).some((it) => it.categoryKey === cat.key));
 }
 
+// Splits getOrderCategories into the two halves every order view shows —
+// anugerah on top, selempang below (catalog.js's `section`).
+export function splitOrderCategories(order) {
+  const cats = getOrderCategories(order);
+  return {
+    anugerah: cats.filter((c) => (c.section || 'anugerah') !== 'selempang'),
+    selempang: cats.filter((c) => c.section === 'selempang'),
+  };
+}
+
+// The exportable (CSV / hand-made) categories only — drops SELEMPANG and
+// anything else marked `noCsv`. Production still SEES those (splitOrder
+// categories above), it just never makes or exports them.
+export function getExportableCategories(order) {
+  return getOrderCategories(order).filter((c) => !c.noCsv);
+}
+
 // Reads one reference-sample line (index 0-3) straight by key — the
 // Reference Sample section is a CONTOH (layout/sizing sample), so most of
 // these are literal fixed text as typed, except where noted in
@@ -370,6 +387,10 @@ export function getOrderJenisPlakGroups(order) {
   const byPlak = new Map();
   (order.items || []).forEach((item) => {
     if (!item.jenisPlak) return;
+    // SELEMPANG (and any `noCsv` category) is recorded and stock-tracked but
+    // Production never makes it — keep it out of every export / manual-make
+    // grouping so it can't turn into a bogus CSV or "buat manual" line.
+    if (CATEGORIES.find((c) => c.key === item.categoryKey)?.noCsv) return;
     if (!byPlak.has(item.jenisPlak)) byPlak.set(item.jenisPlak, []);
     byPlak.get(item.jenisPlak).push(item);
   });
