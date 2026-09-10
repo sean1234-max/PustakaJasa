@@ -1082,8 +1082,12 @@ export function AppStateProvider({ children }) {
           // its own Jenis Plak row with no position range — seed a blank one
           // if the sheet didn't already give a rangeless footer entry, so the
           // teacher just has to pick the plak instead of remembering to add
-          // the row (its qty derives from those flat TAHUNs' totals).
-          const hasFlatTahun = (section.tahunRows || []).some((tr) => !tr.hingga && (tr.flatQty || 0) > 0);
+          // the row (its qty derives from those flat TAHUNs' totals). For
+          // "Kalau ada kelas" a flat TAHUN is one with a Nama Kelas list but
+          // no KEDUDUKAN range.
+          const rangedTahuns = new Set((section.tahunRows || []).filter((tr) => tr.hingga).map((tr) => tr.tahun));
+          const hasFlatTahun = (section.tahunRows || []).some((tr) => !tr.hingga && (tr.flatQty || 0) > 0)
+            || (section.isAliranKelas && (section.levelBreakdown || []).some((lb) => lb.mainRows.length > 0 && !rangedTahuns.has(lb.label)));
           const hasRangelessRow = aliranRows.some((r) => !r.posDari);
           if (hasFlatTahun && !hasRangelessRow) {
             aliranRows.push({ id: nextPlakRowId++, jenisPlak: '', posDari: null, posHingga: null, qty: null });
