@@ -271,4 +271,70 @@ describe('parseFormAnugerahExcel — two-line TAJUK BESAR', () => {
     expect(section.lines['0']).toBe('HARI ANUGERAH KECEMERLANGAN MURID 2026');
     expect(section.lines['0b']).toBeUndefined();
   });
+
+  // A real sample (SK HULU BERNAM.xlsx) had the "kalau tajuk besar 2 baris,
+  // pakai ALT+ENTER" instruction note sitting a few columns to the right of
+  // the title, ON THE SAME ROW as the title's own second line — the
+  // reference-sample reader used to scan that whole row width and glued the
+  // note onto slot 0b (e.g. "SK HULU BERNAM JIKA TAJUK BESAR MEMPUNYAI DUA
+  // BARIS: Untuk baris kedua, sila tekan butang ALT + ENTER..."). Every
+  // sheet whose title-band read isn't already narrowed to one column
+  // (parseSubjectLevelSheet — MP THP/PPKI, parsePbdSheet, TOKOH) must ignore
+  // a note cell placed off to the side like this.
+  const altEnterNote = 'JIKA TAJUK BESAR MEMPUNYAI DUA BARIS:\nUntuk baris kedua, sila tekan butang ALT + ENTER pada masa yang sama';
+
+  it('ignores the ALT+ENTER instruction note next to the title (MP THP)', () => {
+    const buf = workbookFromSheets({
+      'MP THP 2': [
+        [null, 'TOLONG ISI DI SINI'],
+        [null, 'HARI ANUGERAH KECEMERLANGAN MURID 2026\nSK CONTOH', null, null, null, altEnterNote],
+        [null, 'TERBAIK MATA PELAJARAN'],
+        [null, 'BAHASA MELAYU'],
+        [null, 'TAHUN 1'],
+        ['SUBJEK', 'KUANTITI'],
+        [null, 'TAHUN 4', 'TAHUN 5', 'TAHUN 6'],
+        ['BAHASA MELAYU', 5, 5, 5],
+        ['TOTAL', 5, 5, 5],
+        [null, 'JENIS PLAK', 'QTY', 'HARGA'],
+        [null, 'DECO LIGHT', 15],
+      ],
+    });
+    const section = (parseFormAnugerahExcel(buf).categorized?.MP2 || [])[0];
+    expect(section.lines['0']).toBe('HARI ANUGERAH KECEMERLANGAN MURID 2026');
+    expect(section.lines['0b']).toBe('SK CONTOH');
+  });
+
+  it('ignores the ALT+ENTER instruction note next to the title (PBD)', () => {
+    const rows = [];
+    rows[1] = [null, 'TOLONG ISI DI SINI'];
+    rows[2] = [null, 'HARI ANUGERAH KECEMERLANGAN MURID\nSK CONTOH', null, null, null, altEnterNote];
+    rows[3] = [null, 'ANUGERAH KECEMERLANGAN PBD'];
+    rows[6] = ['TAHUN', 'KUANTITI', null, null, 'TAHUN 1'];
+    rows[7] = [null, null, null, null, 'NAMA KELAS', 'QTY'];
+    rows[8] = ['TAHUN 1', 12, null, null, 'GAGI', 12];
+    rows[9] = ['TOTAL', 12];
+    rows[11] = [null, 'JENIS PLAK', 'QTY', 'HARGA'];
+    rows[12] = [null, 'DECO LIGHT', 12];
+    const buf = workbookFromSheets({ PBD: rows.map((r) => r || []) });
+    const section = (parseFormAnugerahExcel(buf).categorized?.PBD || [])[0];
+    expect(section.lines['0']).toBe('HARI ANUGERAH KECEMERLANGAN MURID');
+    expect(section.lines['0b']).toBe('SK CONTOH');
+  });
+
+  it('ignores the ALT+ENTER instruction note next to the title (TOKOH)', () => {
+    const buf = workbookFromSheets({
+      TOKOH: [
+        [null, null, null, 'TOLONG ISI DI SINI'],
+        [null, null, null, 'HARI ANUGERAH KECEMERLANGAN MURID\nSK CONTOH', null, null, null, altEnterNote],
+        [null, null, null, 'TOKOH MURID'],
+        [],
+        [],
+        ['TOKOH', 'NAMA MURID', 'GAMBAR (YES/NO)', 'KUANTITI', 'JENIS PLAK'],
+        ['TOKOH MURID', 'Ali', 'YES', 1, 'DECO LIGHT'],
+      ],
+    });
+    const section = (parseFormAnugerahExcel(buf).categorized?.TOKOH_SHEET || [])[0];
+    expect(section.lines['0']).toBe('HARI ANUGERAH KECEMERLANGAN MURID');
+    expect(section.lines['0b']).toBe('SK CONTOH');
+  });
 });

@@ -1095,18 +1095,28 @@ function parseSubjectLevelSheet(ws) {
 
   // Reference Sample: the sheet's own "TOLONG ISI DI SINI" instruction sits
   // directly above the real TAJUK BESAR/ACARA lines and must never be read
-  // as content. Both those lines and the instruction live in whichever
-  // column sits left of the "CONTOH" example box, so the read is narrowed
-  // to that column range — otherwise a plain row-wide scan would run
-  // straight into the CONTOH box's own header text sharing the same row.
+  // as content. Title lines sit in that SAME column — read only that one
+  // column (same fix as parseAliranSheet/parseTahunPlakRowSheet below), not
+  // the whole width up to the "CONTOH" example box: a wider scan sweeps in
+  // both the CONTOH box's own header text AND the "pakai ALT+ENTER" two-line
+  // instruction note (its own cell, off to the right on the TAJUK BESAR's
+  // row) as if they were more of the title.
   const contohH = findLabelCells(ws, range, ['CONTOH'])[0];
   const titleColEnd = contohH ? contohH.col - 1 : range.c2;
   const instructionRow = findLabelCells(
     ws, { r1: range.r1, r2: classHeaderRow, c1: range.c1, c2: titleColEnd }, ['TOLONG ISI DI SINI'],
   )[0];
+  // Narrow to the instruction cell's own column once it's found (the real,
+  // normal case) — a wider scan sweeps in both the CONTOH box's own header
+  // text AND the "pakai ALT+ENTER" two-line instruction note (its own cell,
+  // off to the right on the TAJUK BESAR's row) as if they were more of the
+  // title. Falls back to the old full-width scan only when no instruction
+  // cell was found at all.
+  const titleC1 = instructionRow ? instructionRow.col : range.c1;
+  const titleC2 = instructionRow ? instructionRow.col : titleColEnd;
   const linesStart = instructionRow ? instructionRow.row + 1 : range.r1;
   const lines = readRefLinesInBand(
-    ws, { r1: linesStart, r2: subjekH.row - 1, c1: range.c1, c2: titleColEnd }, linesStart, subjekH.row - 1,
+    ws, { r1: linesStart, r2: subjekH.row - 1, c1: titleC1, c2: titleC2 }, linesStart, subjekH.row - 1,
   );
 
   let jenisPlak = '';
@@ -1184,11 +1194,19 @@ function parsePbdSheet(ws) {
   if (tahunRows.every((tr) => !tr.qty)) return null;
   const subjectOrder = tahunRows.map((tr) => tr.tahun);
 
-  const linesStart = (findLabelCells(
+  // Narrow to "TOLONG ISI DI SINI"'s own column once it's found (the real,
+  // normal case) — a wider scan sweeps in the "pakai ALT+ENTER" two-line
+  // instruction note (its own cell, off to the right on the TAJUK BESAR's
+  // row) as if it were more of the title. Falls back to the old full-width
+  // scan only when no instruction cell was found at all.
+  const pbdInstr = findLabelCells(
     ws, { r1: range.r1, r2: tahunH.row, c1: range.c1, c2: range.c2 }, ['TOLONG ISI DI SINI'],
-  )[0]?.row || 0) + 1;
+  )[0];
+  const pbdTitleC1 = pbdInstr ? pbdInstr.col : range.c1;
+  const pbdTitleC2 = pbdInstr ? pbdInstr.col : range.c2;
+  const linesStart = (pbdInstr?.row || 0) + 1;
   const lines = readRefLinesInBand(
-    ws, { r1: linesStart, r2: tahunH.row - 1, c1: range.c1, c2: range.c2 }, linesStart, tahunH.row - 1,
+    ws, { r1: linesStart, r2: tahunH.row - 1, c1: pbdTitleC1, c2: pbdTitleC2 }, linesStart, tahunH.row - 1,
   );
 
   let jenisPlak = '';
@@ -1402,13 +1420,19 @@ function parseTokohAnugerahSheet(ws) {
 
   // The reference box (① majlis title, ② one example TOKOH name) sits to
   // the RIGHT of the honour table, under its own "TOLONG ISI DI SINI".
+  // Narrow to that column once found (the real, normal case) — a wider scan
+  // sweeps in the "pakai ALT+ENTER" two-line instruction note (its own
+  // cell, further right on the TAJUK BESAR's row) as if it were more of the
+  // title. Falls back to the old full-width scan only when no instruction
+  // cell was found at all.
   const instr = findLabelCells(
     ws, { r1: range.r1, r2: tokohH.row, c1: range.c1, c2: range.c2 }, ['TOLONG ISI DI SINI'],
   )[0];
   const titleCol = instr ? instr.col : range.c1;
+  const titleColRead = instr ? instr.col : range.c2;
   const linesStart = instr ? instr.row + 1 : range.r1;
   const lines = readRefLinesInBand(
-    ws, { r1: linesStart, r2: tokohH.row - 1, c1: titleCol, c2: range.c2 }, linesStart, tokohH.row - 1,
+    ws, { r1: linesStart, r2: tokohH.row - 1, c1: titleCol, c2: titleColRead }, linesStart, tokohH.row - 1,
   );
 
   return { lines, tokohRows, isTokohList: true, classes: [] };
