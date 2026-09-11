@@ -727,23 +727,21 @@ input.catalog-admin-code { padding: 6px 8px; }
    Pagination: Order Summary is always page 1; Order Details always starts
    on a fresh page 2 (.print-details-section); each category then forces
    its own page via .print-category-break, so categories never share a
-   printed page.
-   .print-category-page now also gets break-inside: avoid, so a category
-   whose content fits on one page never gets split mid-way (e.g. the
-   quantity matrix's own TOTAL row landing on a different page than its
-   subject rows, or the trailing "Jenis Plak / QTY / Harga" table —
-   rendered as part of the same OrderCategoryBlock, see
-   src/components/OrderCategoryBlock.jsx — getting separated from the
-   matrix above it). This was deliberately left off before: a category CAN
-   legitimately be taller than one printed page (e.g. a 13-subject
-   quantity matrix), and avoid-break just pushes the whole block onto a
-   fresh page — if it's still too tall there, most browsers simply let it
-   overflow/split on that fresh page rather than cascading indefinitely,
-   but this does mean a genuinely oversized category can now leave a
-   larger gap at the bottom of the previous page than before. Individual
-   table rows still never split mid-row, and headings still stay glued to
-   what follows them, as a fallback for whatever a category-level
-   avoid-break doesn't fully solve. */
+   printed page. Compact print-only typography (below) makes a
+   normal-sized category's whole content fit that one page on its own —
+   no break-inside: avoid needed to hold it together.
+   .print-category-page deliberately does NOT get break-inside: avoid: a
+   category CAN still legitimately be taller than one printed page (a
+   13-subject quantity matrix, say), and that rule — tried once — pushed
+   the whole oversized block as a unit to a fresh page, leaving a big
+   blank gap at the bottom of the PREVIOUS page for however much of it
+   didn't already fit there. Without it, an oversized category just flows
+   past the page boundary and continues normally on the next page — no
+   gap, at the cost of its own quantity matrix occasionally splitting
+   mid-table for that one case. Individual table rows still never split
+   mid-row, and headings still stay glued to what follows them
+   (.card-kicker's own break-after: avoid), so even a split lands at a
+   clean row boundary. */
 .print-only { display: none; position: relative; }
 @media print {
   .nav, .step-header, .no-print, .screen-only { display: none !important; }
@@ -755,21 +753,19 @@ input.catalog-admin-code { padding: 6px 8px; }
 
   .print-details-section { break-before: page; page-break-before: always; }
   .print-category-break { break-before: page; page-break-before: always; }
-  .print-category-page { break-inside: avoid; page-break-inside: avoid; }
   .print-only .card-kicker { break-after: avoid; page-break-after: avoid; }
   .print-only .ref-sample-grid { break-inside: avoid; page-break-inside: avoid; }
   .print-only .table tr { break-inside: avoid; page-break-inside: avoid; }
 
   /* Compact print typography — a category with the Reference Sample box
      AND a full subject-by-Tahun matrix (MP THP's own biggest shape) ran
-     past one printed page at normal on-screen sizing, so
-     .print-category-page's break-inside: avoid just pushed the matrix onto
-     its own fresh page instead of keeping the whole category together.
-     Shrinking every dimension that scales with row count (table cell
-     padding/font-size, the numbered-input fields, the reference-sample
-     preview box) buys back enough height that a normal-sized category
-     fits on one printed page again. Screen sizing (outside .print-only)
-     is untouched. */
+     past one printed page at normal on-screen sizing. Shrinking every
+     dimension that scales with row count (table cell padding/font-size,
+     the numbered-input fields, the reference-sample preview box) buys
+     back enough height that a normal-sized category fits back on one
+     printed page — with no break-inside: avoid on the category wrapper
+     (see the comment above) needed to force it. Screen sizing (outside
+     .print-only) is untouched. */
   .print-only { font-size: 11px; }
   .print-only .card-kicker { font-size: 10px; margin-top: 12px; }
   .print-only .table { margin: 6px 0 12px; }
