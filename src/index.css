@@ -759,6 +759,31 @@ input.catalog-admin-code { padding: 6px 8px; }
   .print-only .card-kicker { break-after: avoid; page-break-after: avoid; }
   .print-only .ref-sample-grid { break-inside: avoid; page-break-inside: avoid; }
   .print-only .table tr { break-inside: avoid; page-break-inside: avoid; }
+
+  /* Compact print typography — a category with the Reference Sample box
+     AND a full subject-by-Tahun matrix (MP THP's own biggest shape) ran
+     past one printed page at normal on-screen sizing, so
+     .print-category-page's break-inside: avoid just pushed the matrix onto
+     its own fresh page instead of keeping the whole category together.
+     Shrinking every dimension that scales with row count (table cell
+     padding/font-size, the numbered-input fields, the reference-sample
+     preview box) buys back enough height that a normal-sized category
+     fits on one printed page again. Screen sizing (outside .print-only)
+     is untouched. */
+  .print-only { font-size: 11px; }
+  .print-only .card-kicker { font-size: 10px; margin-top: 12px; }
+  .print-only .table { margin: 6px 0 12px; }
+  .print-only .table th, .print-only .table td { padding: 3px 6px; font-size: 10px; }
+  .print-only .field { margin-bottom: 6px; }
+  .print-only .field label { font-size: 10px; margin-bottom: 2px; }
+  .print-only .input, .print-only input, .print-only select {
+    padding: 3px 6px; font-size: 10px; min-height: 0;
+  }
+  .print-only .form-grid-2 { gap: 6px; margin-bottom: 6px; }
+  .print-only .ref-sample-grid { gap: 12px; margin-bottom: 12px; }
+  .print-only .ref-sample-lines { gap: 6px; min-width: 0; }
+  .print-only .ref-sample-live-preview { min-height: 90px; padding: 8px; gap: 2px; }
+  .print-only .hint-text { font-size: 9px; margin: 2px 0 6px; }
 }
 
 /* Red "ADD ON" stamp marking an order that carries an approved Add-On
