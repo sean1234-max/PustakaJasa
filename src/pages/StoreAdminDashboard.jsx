@@ -1,9 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import { useAppState } from '../state/useAppState';
 import { STATUS_STAGES, statusPillStyle } from '../data/catalog';
 import { getOrderChangeStamp } from '../utils/orderStamp';
+import { fetchMyAssignedSalesmen } from '../lib/ordersApi';
 
 // Store Admin (formerly "Invoicing Department" — role renamed 0047) can see
 // and act on every order, including ones still 'Submitted to Sales' — a
@@ -31,7 +32,22 @@ export default function StoreAdminDashboard() {
   const [typeFilter, setTypeFilter] = useState('all');
 
   const orders = state.orders || EMPTY_ORDERS;
-  const salesmanOptions = useMemo(() => [...new Set(orders.map((o) => o.sales).filter(Boolean))].sort(), [orders]);
+
+  // Every salesman assigned to this Store Admin — so the filter lists them
+  // all, including ones with no order currently in view. Falls back to the
+  // salesmen seen on orders if the assignment fetch fails or returns none.
+  const [assignedSalesmen, setAssignedSalesmen] = useState([]);
+  useEffect(() => {
+    let live = true;
+    fetchMyAssignedSalesmen()
+      .then((names) => { if (live) setAssignedSalesmen(names); })
+      .catch(() => { if (live) setAssignedSalesmen([]); });
+    return () => { live = false; };
+  }, []);
+  const salesmanOptions = useMemo(() => {
+    const fromOrders = orders.map((o) => o.sales).filter(Boolean);
+    return [...new Set([...assignedSalesmen, ...fromOrders])].sort((a, b) => a.localeCompare(b));
+  }, [assignedSalesmen, orders]);
   const statusOptions = STATUS_STAGES;
 
   const activeTab = TABS.find((t) => t.key === tab);

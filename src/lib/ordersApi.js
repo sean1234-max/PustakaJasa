@@ -161,3 +161,27 @@ export async function fetchAllSalesmen() {
   if (salesmenError) throw salesmenError;
   return salesmen.map((s) => ({ id: s.id, name: s.display_name }));
 }
+
+// The salesmen a Store Admin has been assigned (invoicing_salesman_assignments
+// — table name kept from the old "Invoicing" role, see migration 0047). RLS
+// scopes the assignment read to the caller's own rows ("invoicing reads own
+// assignments", 0039). Used to populate the Store Admin dashboard's Salesman
+// filter with EVERY assigned salesman, not only the ones who happen to have
+// an order in view. Returns display names, sorted.
+export async function fetchMyAssignedSalesmen() {
+  const { data: rows, error } = await supabase
+    .from('invoicing_salesman_assignments')
+    .select('salesman_id');
+  if (error) throw error;
+  const ids = [...new Set((rows || []).map((r) => r.salesman_id))];
+  if (ids.length === 0) return [];
+  const { data: salesmen, error: pErr } = await supabase
+    .from('profiles')
+    .select('display_name')
+    .in('id', ids);
+  if (pErr) throw pErr;
+  return salesmen
+    .map((s) => s.display_name)
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b));
+}
