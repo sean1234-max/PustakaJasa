@@ -4,6 +4,7 @@ import Nav from '../components/Nav';
 import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import PriceTable from '../components/PriceTable';
+import DatePicker from '../components/DatePicker';
 import { useAppState } from '../state/useAppState';
 import { statusPillStyle, formatDate, standardUnitPrice } from '../data/catalog';
 import { reconstructBlocksForCategory } from '../utils/computeBlocks';
@@ -36,14 +37,15 @@ const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: f
 // A Salesman sometimes hands Store Admin a paper hard copy of an order
 // before ever clicking Approve in the system — receiving that hard copy
 // already means they've agreed to it. So while an order is still
-// "Submitted to Sales", this page lets Store Admin adjust pricing (same
-// capability Sales would have had) and Approve + save the Invoice Number
-// in one action (approveAndSetInvoiceId, src/state/AppState.jsx) — no
-// separate Sales click needed. Once an order is already "In Production"
-// (approved via either path), pricing is frozen and this page falls back
-// to the simple invoice-only entry (setInvoiceId), same as before.
+// "Submitted to Sales", this page lets Store Admin adjust pricing and the
+// Shipment / Function dates (same capability Sales would have had) and
+// Approve + save the Invoice Number in one action (approveAndSetInvoiceId,
+// src/state/AppState.jsx) — no separate Sales click needed, the order goes
+// straight into Production. Once an order is already "In Production"
+// (approved via either path), pricing and dates are frozen and this page
+// falls back to the simple invoice-only entry (setInvoiceId), same as before.
 export default function StoreAdminOrderDetail() {
-  const { state, setInvoiceId, approveAndSetInvoiceId, ensureOrderLoaded } = useAppState();
+  const { state, today, setInvoiceId, approveAndSetInvoiceId, ensureOrderLoaded } = useAppState();
   const { id } = useParams();
   const navigate = useNavigate();
   const order = state.orders.find((o) => o.id === id);
@@ -54,6 +56,16 @@ export default function StoreAdminOrderDetail() {
   const [page, setPage] = useState('summary');
   const [busy, setBusy] = useState(false);
   const [importErr, setImportErr] = useState('');
+
+  // Shipment Date (dueDate) / Function Date — editable only while the order
+  // is still awaiting approval, the same window Sales has (guard 0038 lets
+  // Store Admin change due_date/function_date only before 'In Production').
+  // A Salesman who's out of office can hand Store Admin the paper hard copy
+  // to key the Shipment Date + Invoice Number here, force-approving it
+  // straight into Production.
+  const [dueDateDraft, setDueDateDraft] = useState(() => (order?.dueDate ? new Date(order.dueDate) : null));
+  const [functionDateDraft, setFunctionDateDraft] = useState(() => (order?.functionDate ? new Date(order.functionDate) : null));
+  const [dateError, setDateError] = useState('');
 
   // Same pattern as SalesOrderSummary's own priceDrafts — only meaningful
   // while awaitingApproval; a not-yet-approved order never has a Tambahan
@@ -109,9 +121,21 @@ export default function StoreAdminOrderDetail() {
 
   const handleApproveAndInvoice = async () => {
     if (busy) return;
+    if (dueDateDraft && functionDateDraft
+      && new Date(dueDateDraft.getFullYear(), dueDateDraft.getMonth(), dueDateDraft.getDate())
+       > new Date(functionDateDraft.getFullYear(), functionDateDraft.getMonth(), functionDateDraft.getDate())) {
+      setDateError('Shipment Date can’t be after the Function Date. Adjust one of them before approving.');
+      return;
+    }
+    setDateError('');
     const updatedItems = rows.map((r) => ({ ...r, unitPrice: r.unitPrice, harga: r.harga }));
+    // Only sends a date when Store Admin actually has one — never blanks an
+    // existing due/function date because the draft started empty.
+    const overrides = {};
+    if (dueDateDraft) overrides.dueDate = dueDateDraft;
+    if (functionDateDraft) overrides.functionDate = functionDateDraft;
     setBusy(true);
-    const res = await approveAndSetInvoiceId(order.id, updatedItems, invoiceDraft);
+    const res = await approveAndSetInvoiceId(order.id, updatedItems, invoiceDraft, overrides);
     setBusy(false);
     if (res?.ok) setInvoiceDraft('');
   };
@@ -155,8 +179,20 @@ export default function StoreAdminOrderDetail() {
               {order.sales && <div><div className="dim">Salesman</div><div>{order.sales}</div></div>}
               {order.picName && <div><div className="dim">PIC Name</div><div>{order.picName}{order.phone ? ` / ${order.phone}` : ''}</div></div>}
               {order.terms && <div><div className="dim">Terms</div><div>{order.terms}</div></div>}
-              {order.dueDate && <div><div className="dim">Shipment Date</div><div>{formatDate(new Date(order.dueDate))}</div></div>}
-              {order.functionDate && <div><div className="dim">Function Date</div><div>{formatDate(new Date(order.functionDate))}</div></div>}
+              {awaitingApproval ? (
+                <>
+                  {/* Shipment Date can't be after the Function Date (the event
+                      itself) — picker caps at it and Approve re-checks. */}
+                  <DatePicker label="Shipment Date" id="storeAdminDueDate" selected={dueDateDraft} today={today} onSelect={setDueDateDraft} maxDate={functionDateDraft} />
+                  <DatePicker label="Function Date" id="storeAdminFunctionDate" selected={functionDateDraft} today={today} onSelect={setFunctionDateDraft} minDate={dueDateDraft} />
+                  {dateError && <div className="login-error" style={{ gridColumn: '1 / -1', margin: 0 }}>{dateError}</div>}
+                </>
+              ) : (
+                <>
+                  {order.dueDate && <div><div className="dim">Shipment Date</div><div>{formatDate(new Date(order.dueDate))}</div></div>}
+                  {order.functionDate && <div><div className="dim">Function Date</div><div>{formatDate(new Date(order.functionDate))}</div></div>}
+                </>
+              )}
               <div><div className="dim">Order Date</div><div>{order.datePlaced}</div></div>
               <div><div className="dim">Total Amount</div><div>RM {order.totalAmount.toFixed(2)}</div></div>
             </div>
@@ -186,7 +222,7 @@ export default function StoreAdminOrderDetail() {
               <>
                 <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Jenis Plak / Price per Unit / QTY / Harga</div>
                 <p className="hint-text" style={{ marginTop: 0 }}>
-                  This order hasn't been approved in the system yet. Adjust pricing if needed, then Approve + save the Invoice Number below — this approves the order the same way a Salesman's own Approve would.
+                  This order hasn't been approved in the system yet. Set the Shipment Date above, adjust pricing if needed, then Approve + save the Invoice Number below — this approves the order the same way a Salesman's own Approve would and sends it straight to Production.
                 </p>
                 <PriceTable
                   rows={rows} editable priceDrafts={priceDrafts} setPrice={setPrice}
@@ -209,7 +245,7 @@ export default function StoreAdminOrderDetail() {
 
                 <div className="row-split" style={{ marginTop: 'var(--space-4)' }}>
                   <span />
-                  <button type="button" className="btn btn-primary" onClick={handleApproveAndInvoice} disabled={busy || !invoiceDraft.trim()}>
+                  <button type="button" className="btn btn-primary" onClick={handleApproveAndInvoice} disabled={busy || !invoiceDraft.trim() || !dueDateDraft}>
                     {busy ? 'Working…' : 'Approve & Save Invoice'}
                   </button>
                 </div>
