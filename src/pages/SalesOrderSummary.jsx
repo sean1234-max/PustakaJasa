@@ -211,6 +211,10 @@ export default function SalesOrderSummary() {
           {page === 'summary' ? (
             <>
               <div className="form-grid-2" style={{ marginTop: 'var(--space-3)' }}>
+                {/* Every other order-viewing screen (teacher, Store Admin,
+                    Production) already shows this on screen — it used to be
+                    printed-only here. */}
+                <div><div className="dim">Invoice Number</div><div>{order.invoiceId || '—'}</div></div>
                 {order.sekolah && <div><div className="dim">Sekolah</div><div>{order.sekolah}</div></div>}
                 {order.sales && <div><div className="dim">Sales</div><div>{order.sales}</div></div>}
                 {order.picName && <div><div className="dim">PIC Name</div><div>{order.picName}{order.phone ? ` / ${order.phone}` : ''}</div></div>}
