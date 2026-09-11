@@ -158,7 +158,18 @@ export function buildCategoryCartItems(st, catKey) {
           newItems.push({
             id: crypto.randomUUID(), jenisPlak: row.jenisPlak, qty: row.qty, harga: row.rawHarga, unitPrice: row.unitPrice,
             categoryLabel: b.qtyLabel, categoryKey: catKey, blockIdx: b.idx,
-            detail: { ...baseDetail, rows: [{ id: row.id, desc: row.desc, qty: row.qty, ...tokoh }] },
+            // jenisPlak + unitPrice must travel with the row snapshot too,
+            // not just the item's own top-level fields above — every
+            // read-only view (Order Details, print, Store Admin, Production)
+            // rebuilds its rows from `detail.rows` (reconstructBlocksForCategory
+            // -> mergeItemDetailIntoMaps), not from the item fields directly.
+            // Without them a row reconstructed this way shows "—" for Jenis
+            // Plak and RM 0.00 for Harga even though the order's own
+            // total/CSV were always correct (those read the item fields).
+            // unitPrice (not just jenisPlak) is snapshotted so a later
+            // catalog price change can't make a past order's printout show
+            // a different price than what was actually charged.
+            detail: { ...baseDetail, rows: [{ id: row.id, desc: row.desc, qty: row.qty, jenisPlak: row.jenisPlak, unitPrice: row.unitPrice, ...tokoh }] },
           });
         }
       });

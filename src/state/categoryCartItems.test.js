@@ -67,3 +67,47 @@ describe('buildCategoryCartItems — SELEMPANG', () => {
     ]);
   });
 });
+
+// TOKOH_SHEET (and LONJAKAN/KEHADIRAN — same plakPerRow shape): each row is
+// its own cart item, priced on its own. The item's own top-level jenisPlak/
+// unitPrice were always right (that's what order totals/CSV read), but the
+// row snapshot fed back into every read-only view (Order Details, print,
+// Store Admin, Production) used to omit them — see categoryCartItems.js.
+describe('buildCategoryCartItems — TOKOH_SHEET (plakPerRow)', () => {
+  const draftTokoh = (rows) => ({
+    // requiredLineIndices [0, 2] (catalog.js's TOKOH_SHEET) — TAJUK BESAR +
+    // ACARA must be filled before any row is checked.
+    lineValues: { 'TOKOH_SHEET::0::0': 'Majlis Anugerah', 'TOKOH_SHEET::0::2': 'TOKOH MURID' },
+    matrixValues: {},
+    rowsByBlock: { 'TOKOH_SHEET::0': rows },
+    plakRows: {},
+    columnsByBlock: {},
+    plakCatalog: [{ code: 'MP399', price: 12 }],
+    schoolLanguage: 'SK',
+  });
+
+  it('snapshots jenisPlak + unitPrice onto the row detail, not just the item', () => {
+    const res = buildCategoryCartItems(draftTokoh([
+      { id: 1, desc: 'TOKOH MURID', qty: '1', jenisPlak: 'MP399', namaMurid: 'Ali' },
+    ]), 'TOKOH_SHEET');
+    expect(res.error).toBeUndefined();
+    expect(res.items).toHaveLength(1);
+    const [it] = res.items;
+    expect(it).toMatchObject({ jenisPlak: 'MP399', unitPrice: 12, harga: 12 });
+    expect(it.detail.rows[0]).toMatchObject({ desc: 'TOKOH MURID', jenisPlak: 'MP399', unitPrice: 12, namaMurid: 'Ali' });
+  });
+
+  it('round-trips through an order and back into a read-only block with Jenis Plak + Harga intact', () => {
+    const { items } = buildCategoryCartItems(draftTokoh([
+      { id: 1, desc: 'TOKOH MURID', qty: '1', jenisPlak: 'MP399', namaMurid: 'Ali' },
+      { id: 2, desc: 'TOKOH NILAM', qty: '1', jenisPlak: 'MP399', namaMurid: 'Siti' },
+    ]), 'TOKOH_SHEET');
+    const order = { schoolLanguage: 'SK', items };
+    const { blocks } = reconstructBlocksForCategory(order, 'TOKOH_SHEET', [{ code: 'MP399', price: 12 }]);
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].rows.map((r) => [r.desc, r.jenisPlak, r.hargaLabel])).toEqual([
+      ['TOKOH MURID', 'MP399', 'RM 12.00'],
+      ['TOKOH NILAM', 'MP399', 'RM 12.00'],
+    ]);
+  });
+});
