@@ -115,6 +115,7 @@ export default function SalesDashboard() {
                 <div><div className="dim">Sales</div><div>{ord.sales || '—'}</div></div>
               </div>
 
+              <div className="order-card-invoice"><span className="dim">Invoice Number:</span> {ord.invoiceId || '—'}</div>
               <div className="dim" style={{ fontSize: 11 }}>Total Amount</div>
               <div className={`order-card-total${ord.priceAdjusted ? ' amount-adjusted' : ''}`}>
                 RM {ord.totalAmount.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
