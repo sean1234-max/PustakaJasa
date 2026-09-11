@@ -15,6 +15,16 @@ const STATUS_OPTIONS = ['active', 'inactive', 'suspended'];
 const EMPTY_FORM = { role: 'teacher', sekolah: '', displayName: '', email: '', password: '', assignedSalesmanIds: [] };
 const inputClass = 'w-full px-3 py-2 border border-outline-variant rounded-lg bg-surface-bright focus:ring-2 focus:ring-primary focus:border-primary text-body-md text-on-surface outline-none transition-all';
 
+// School Name -> login email, matching the convention already used for the
+// school accounts created before this (SK PUCHONG -> skpuchong@pjsb.com,
+// SMK Jalan Reko -> smkjalanreko@pjsb.com): lowercase, strip everything but
+// letters/digits. Used by the Bulk Add Schools form below so a whole list
+// of school names needs no per-row email typed by hand.
+function schoolEmailFromName(name) {
+  const slug = name.toLowerCase().replace(/[^a-z0-9]/g, '');
+  return `${slug}@pjsb.com`;
+}
+
 function Field({ label, htmlFor, children }) {
   return (
     <div className="mb-4">
@@ -40,6 +50,18 @@ export default function AdminUsers() {
   const [expandedId, setExpandedId] = useState(null);
   const [editDraft, setEditDraft] = useState({});
   const [newPassword, setNewPassword] = useState('');
+
+  // Bulk Add Schools — one School (teacher) account per line, same
+  // createAccount() the single Add User form uses, just looped. Sequential
+  // (not Promise.all) so a duplicate-email failure on one row can't race
+  // another row's insert, and so "Creating X of Y" can track real progress.
+  const [showBulkForm, setShowBulkForm] = useState(false);
+  const [bulkNames, setBulkNames] = useState('');
+  const [bulkPassword, setBulkPassword] = useState('');
+  const [bulkError, setBulkError] = useState('');
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState(null);
+  const [bulkResults, setBulkResults] = useState(null);
 
   const load = () => {
     setLoadError('');
@@ -116,6 +138,47 @@ export default function AdminUsers() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleBulkCreate = async (e) => {
+    e.preventDefault();
+    setBulkError('');
+    setBulkResults(null);
+    const names = [...new Set(
+      bulkNames.split('\n').map((s) => s.trim()).filter(Boolean),
+    )];
+    if (names.length === 0) {
+      setBulkError('Enter at least one school name, one per line.');
+      return;
+    }
+    if (bulkPassword.length < 6) {
+      setBulkError('Password must be at least 6 characters.');
+      return;
+    }
+    setBulkBusy(true);
+    const results = [];
+    for (let i = 0; i < names.length; i += 1) {
+      const name = names[i];
+      const email = schoolEmailFromName(name);
+      setBulkProgress({ done: i, total: names.length });
+      try {
+        const result = await createAccount({
+          role: 'teacher', sekolah: name, displayName: `Cikgu ${name}`, email, password: bulkPassword,
+        });
+        await logAdminAction({
+          action: 'Admin bulk-created a school account', targetTable: 'profiles', targetId: result.id, after: { sekolah: name, email },
+        });
+        results.push({ name, email, ok: true });
+      } catch (err) {
+        results.push({ name, email, ok: false, error: err.message });
+      }
+    }
+    setBulkProgress(null);
+    setBulkResults(results);
+    setBulkBusy(false);
+    const okCount = results.filter((r) => r.ok).length;
+    setToast(`Created ${okCount} of ${results.length} school account(s).${okCount < results.length ? ' See the list below for what failed.' : ''}`);
+    load();
   };
 
   const startEdit = (p) => {
@@ -200,14 +263,24 @@ export default function AdminUsers() {
       title="Users"
       subtitle="Manage every account in the system."
       headerActions={(
-        <button
-          type="button"
-          onClick={() => { setShowAddForm((v) => !v); setFormError(''); }}
-          className="bg-primary text-on-primary text-label-bold font-semibold px-5 py-2.5 rounded-lg flex items-center gap-2 hover:opacity-90 transition-opacity whitespace-nowrap w-full sm:w-auto shadow-sm justify-center"
-        >
-          <span className="material-symbols-outlined text-[18px]">add</span>
-          Add User
-        </button>
+        <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+          <button
+            type="button"
+            onClick={() => { setShowBulkForm((v) => !v); setBulkError(''); setBulkResults(null); }}
+            className="bg-surface-container text-on-surface text-label-bold font-semibold px-5 py-2.5 rounded-lg flex items-center gap-2 hover:opacity-90 transition-opacity whitespace-nowrap w-full sm:w-auto shadow-sm justify-center border border-outline-variant"
+          >
+            <span className="material-symbols-outlined text-[18px]">upload_file</span>
+            Bulk Add Schools
+          </button>
+          <button
+            type="button"
+            onClick={() => { setShowAddForm((v) => !v); setFormError(''); }}
+            className="bg-primary text-on-primary text-label-bold font-semibold px-5 py-2.5 rounded-lg flex items-center gap-2 hover:opacity-90 transition-opacity whitespace-nowrap w-full sm:w-auto shadow-sm justify-center"
+          >
+            <span className="material-symbols-outlined text-[18px]">add</span>
+            Add User
+          </button>
+        </div>
       )}
     >
       {toast && (
@@ -217,6 +290,61 @@ export default function AdminUsers() {
         </div>
       )}
       {loadError && <div className="mb-6 bg-error-container text-on-error-container px-4 py-3 rounded-lg text-body-md">{loadError}</div>}
+
+      {showBulkForm && (
+        <form onSubmit={handleBulkCreate} className="bg-surface-container-lowest border border-outline-variant rounded-xl shadow-sm p-6 mb-8">
+          <h3 className="text-headline-sm text-on-surface mb-1">Bulk Add Schools</h3>
+          <p className="text-body-sm text-on-surface-variant mb-4">
+            One school per line. Each becomes a School (teacher) account with the same login password below — email is generated as the school name lowercased with spaces/symbols removed, e.g. &quot;SK PUCHONG&quot; → skpuchong@pjsb.com.
+          </p>
+
+          <Field label={`School Names * (${bulkNames.split('\n').map((s) => s.trim()).filter(Boolean).length} lines)`} htmlFor="bulk-names">
+            <textarea
+              className={inputClass}
+              id="bulk-names"
+              rows={8}
+              placeholder={'SK PUCHONG\nSK BUKIT LANJAN\n...'}
+              value={bulkNames}
+              onChange={(e) => setBulkNames(e.target.value)}
+            />
+          </Field>
+
+          <Field label="Password for all *" htmlFor="bulk-password">
+            <input className={inputClass} id="bulk-password" type="text" placeholder="At least 6 characters" value={bulkPassword} onChange={(e) => setBulkPassword(e.target.value)} />
+          </Field>
+
+          {bulkError && <div className="bg-error-container text-on-error-container px-4 py-3 rounded-lg text-body-md mb-4">{bulkError}</div>}
+          {bulkProgress && (
+            <p className="text-body-sm text-on-surface-variant mb-4">Creating {bulkProgress.done + 1} of {bulkProgress.total}…</p>
+          )}
+
+          {bulkResults && (
+            <div className="mb-4 border border-outline-variant rounded-lg overflow-hidden">
+              <table className="w-full text-body-sm">
+                <thead className="bg-surface-container text-on-surface-variant">
+                  <tr><th className="text-left px-3 py-2">School</th><th className="text-left px-3 py-2">Email</th><th className="text-left px-3 py-2">Result</th></tr>
+                </thead>
+                <tbody>
+                  {bulkResults.map((r) => (
+                    <tr key={r.email} className="border-t border-outline-variant">
+                      <td className="px-3 py-2">{r.name}</td>
+                      <td className="px-3 py-2">{r.email}</td>
+                      <td className={`px-3 py-2 ${r.ok ? 'text-on-surface-variant' : 'text-error'}`}>{r.ok ? '✓ Created' : `✗ ${r.error}`}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          <div className="flex justify-end gap-3">
+            <button type="button" onClick={() => setShowBulkForm(false)} className="text-label-bold font-semibold text-on-surface hover:text-primary px-4 py-2.5 rounded-lg">Close</button>
+            <button type="submit" disabled={bulkBusy} className="bg-primary text-on-primary text-label-bold font-semibold px-6 py-2.5 rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-60">
+              {bulkBusy ? 'Creating…' : 'Create All'}
+            </button>
+          </div>
+        </form>
+      )}
 
       {showAddForm && (
         <form onSubmit={handleCreate} className="bg-surface-container-lowest border border-outline-variant rounded-xl shadow-sm p-6 mb-8">
