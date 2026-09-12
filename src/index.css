@@ -728,20 +728,20 @@ input.catalog-admin-code { padding: 6px 8px; }
    on a fresh page 2 (.print-details-section); each category then forces
    its own page via .print-category-break, so categories never share a
    printed page. Compact print-only typography (below) makes a
-   normal-sized category's whole content fit that one page on its own —
-   no break-inside: avoid needed to hold it together.
-   .print-category-page deliberately does NOT get break-inside: avoid: a
-   category CAN still legitimately be taller than one printed page (a
-   13-subject quantity matrix, say), and that rule — tried once — pushed
-   the whole oversized block as a unit to a fresh page, leaving a big
-   blank gap at the bottom of the PREVIOUS page for however much of it
-   didn't already fit there. Without it, an oversized category just flows
-   past the page boundary and continues normally on the next page — no
-   gap, at the cost of its own quantity matrix occasionally splitting
-   mid-table for that one case. Individual table rows still never split
-   mid-row, and headings still stay glued to what follows them
-   (.card-kicker's own break-after: avoid), so even a split lands at a
-   clean row boundary. */
+   normal-sized category's whole content fit that one page on its own.
+   Deliberately NOT using break-inside/break-after: avoid ANYWHERE in
+   here except .table tr (below) — every one of those was tried at some
+   point (the category wrapper, the Reference Sample box, the section
+   heading) and each pushed its whole element as a unit to a fresh page
+   the moment it didn't fit the remaining space on the current one,
+   leaving a big blank gap at the bottom of THAT page — a category, a
+   Reference Sample box, or a heading is routinely too tall to guarantee
+   it always fits what's left of a page, so "avoid" just relocates the
+   problem from an ugly split to an ugly gap, and a gap is worse (it
+   looks like content went missing). table tr is the one exception: a
+   split ROW would visibly slice a cell's own content in half, a real
+   defect rather than an aesthetic one, and a single row is never taller
+   than a page so it can't create this same gap. */
 .print-only { display: none; position: relative; }
 @media print {
   .nav, .step-header, .no-print, .screen-only { display: none !important; }
@@ -753,8 +753,6 @@ input.catalog-admin-code { padding: 6px 8px; }
 
   .print-details-section { break-before: page; page-break-before: always; }
   .print-category-break { break-before: page; page-break-before: always; }
-  .print-only .card-kicker { break-after: avoid; page-break-after: avoid; }
-  .print-only .ref-sample-grid { break-inside: avoid; page-break-inside: avoid; }
   .print-only .table tr { break-inside: avoid; page-break-inside: avoid; }
 
   /* Compact print typography — a category with the Reference Sample box
