@@ -763,22 +763,47 @@ input.catalog-admin-code { padding: 6px 8px; }
      back enough height that a normal-sized category fits back on one
      printed page — with no break-inside: avoid on the category wrapper
      (see the comment above) needed to force it. Screen sizing (outside
-     .print-only) is untouched. */
-  .print-only { font-size: 11px; }
-  .print-only .card-kicker { font-size: 10px; margin-top: 12px; }
-  .print-only .table { margin: 6px 0 12px; }
-  .print-only .table th, .print-only .table td { padding: 3px 6px; font-size: 10px; }
-  .print-only .field { margin-bottom: 6px; }
-  .print-only .field label { font-size: 10px; margin-bottom: 2px; }
+     .print-only) is untouched. A category with an unusually large amount
+     of real data (PPKI's per-level Nama Kelas/Moral Kelas breakdown times
+     3 levels, ALIRAN's per-Tahun class lists times 6) can still run past
+     one page even at this size — there's a real floor below which the
+     text stops being legible on paper. */
+  .print-only { font-size: 10px; }
+  .print-only .card-kicker { font-size: 9px; margin-top: 8px; }
+  .print-only .table { margin: 4px 0 8px; }
+  .print-only .table th, .print-only .table td { padding: 2px 5px; font-size: 9px; }
+  .print-only .field { margin-bottom: 4px; }
+  .print-only .field label { font-size: 9px; margin-bottom: 1px; }
   .print-only .input, .print-only input, .print-only select {
-    padding: 3px 6px; font-size: 10px; min-height: 0;
+    padding: 2px 5px; font-size: 9px; min-height: 0;
   }
-  .print-only .form-grid-2 { gap: 6px; margin-bottom: 6px; }
-  .print-only .ref-sample-grid { gap: 12px; margin-bottom: 12px; }
-  .print-only .ref-sample-lines { gap: 6px; min-width: 0; }
-  .print-only .ref-sample-live-preview { min-height: 90px; padding: 8px; gap: 2px; }
-  .print-only .hint-text { font-size: 9px; margin: 2px 0 6px; }
+  .print-only .form-grid-2 { gap: 4px; margin-bottom: 4px; }
+  .print-only .ref-sample-grid { gap: 8px; margin-bottom: 8px; }
+  .print-only .ref-sample-lines { gap: 4px; min-width: 0; }
+  .print-only .ref-sample-live-preview { min-height: 60px; padding: 6px; gap: 1px; }
+  .print-only .hint-text { font-size: 8px; margin: 1px 0 4px; }
+
+  /* Every reviewed matrix/list cell is a <input type="number"> even when
+     read-only (shared with the editable screen view) — its up/down spinner
+     is dead weight on paper and its border makes it read as a form field
+     rather than a printed figure. Flatten it to plain text: no border/
+     background, spinner hidden, number right-aligned like the rest of the
+     printed tables' figures. */
+  .print-only input[type="number"] {
+    border: none; background: transparent; padding: 2px 0; text-align: right;
+    -moz-appearance: textfield;
+  }
+  .print-only input[type="number"]::-webkit-inner-spin-button,
+  .print-only input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none; margin: 0;
+  }
 }
+
+/* Reclaim the browser/printer's own default page margins (often 0.5in-1in
+   a side) — the compact print typography above earns back row-count
+   height, this earns back the fixed per-page overhead so more of it goes
+   to content instead. */
+@page { margin: 10mm; }
 
 /* Red "ADD ON" stamp marking an order that carries an approved Add-On
    round — see getOrderChangeStamp in src/utils/orderStamp.js.
