@@ -795,16 +795,29 @@ input.catalog-admin-code { padding: 6px 8px; }
      read-only (shared with the editable screen view) — its up/down spinner
      is dead weight on paper and its border makes it read as a form field
      rather than a printed figure. Flatten it to plain text: no border/
-     background, spinner hidden, number right-aligned like the rest of the
-     printed tables' figures. */
+     background, spinner hidden, number centered like the column header
+     above it. */
   .print-only input[type="number"] {
-    border: none; background: transparent; padding: 2px 0; text-align: right;
+    border: none; background: transparent; padding: 2px 0; text-align: center;
     -moz-appearance: textfield;
   }
   .print-only input[type="number"]::-webkit-inner-spin-button,
   .print-only input[type="number"]::-webkit-outer-spin-button {
     -webkit-appearance: none; margin: 0;
   }
+  /* The Jenis Plak / QTY / Harga table's own QTY and Harga cells (plain
+     read-only divs, not inputs) — same centering as the KUANTITI matrix's
+     numbers above. */
+  .print-only .input-readonly, .print-only .input-price { text-align: center; }
+
+  /* Last-resort safety net: nothing in a printed, read-only order needs a
+     minimum height reservation — any min-height left on any element here
+     (a component's own inline style, a class this file's own overrides
+     above didn't happen to reach) only risks reserving blank space nobody
+     asked for, the exact shape of bug .app-shell's min-height:100vh (above)
+     turned out to be. Zeroing it can only shrink a box down to its real
+     content, never cut content off. */
+  .print-only, .print-only * { min-height: 0; }
 }
 
 /* Reclaim the browser/printer's own default page margins (often 0.5in-1in
