@@ -746,7 +746,15 @@ input.catalog-admin-code { padding: 6px 8px; }
 @media print {
   .nav, .step-header, .no-print, .screen-only { display: none !important; }
   .print-only { display: block; }
-  body, .app-shell { background: #fff; padding: 0; }
+  /* .app-shell's own min-height: 100vh (screen layout — keeps a short page
+     filling the viewport) is never a page's actual usable height once
+     printing: some print engines resolve vh against the last on-screen
+     viewport rather than the physical page, so this box got forced tall
+     regardless of how much real content it held — leaving a big blank gap
+     between whatever content fit and wherever that phantom height ended,
+     independent of any break-inside rule (none are left in this file; see
+     the comment further down). Zero it out for print. */
+  body, .app-shell { background: #fff; padding: 0; min-height: 0; }
   .screen-wrap { max-width: none; }
   .card { box-shadow: none; border: none; padding: 0; }
   .btn { display: none !important; }
