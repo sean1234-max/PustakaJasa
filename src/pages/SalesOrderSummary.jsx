@@ -223,11 +223,12 @@ export default function SalesOrderSummary() {
                 {editable ? (
                   <>
                     {/* "Shipment Date" (stored as dueDate) is when the plaques
-                        ship out — it can't be after the Function Date (the
-                        event itself), so the picker caps at it and Approve
-                        re-checks. */}
-                    <DatePicker label="Shipment Date" id="salesDueDate" selected={dueDateDraft} today={today} onSelect={setDueDateDraft} maxDate={functionDateDraft} />
-                    <DatePicker label="Function Date" id="salesFunctionDate" selected={functionDateDraft} today={today} onSelect={setFunctionDateDraft} minDate={dueDateDraft} />
+                        ship out — it can't be before today (already-past
+                        dates aren't a real shipment option) or after the
+                        Function Date (the event itself), so the picker caps
+                        at both and Approve re-checks. */}
+                    <DatePicker label="Shipment Date" id="salesDueDate" selected={dueDateDraft} today={today} onSelect={setDueDateDraft} minDate={today} maxDate={functionDateDraft} />
+                    <DatePicker label="Function Date" id="salesFunctionDate" selected={functionDateDraft} today={today} onSelect={setFunctionDateDraft} minDate={dueDateDraft || today} />
                     {dateError && <div className="login-error" style={{ gridColumn: '1 / -1', margin: 0 }}>{dateError}</div>}
                   </>
                 ) : (

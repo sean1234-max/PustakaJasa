@@ -1,10 +1,11 @@
 import {
-  CATEGORIES, getCategorySubjects, getCategoryColumns, tahunRangeYears,
+  getCategorySubjects, getCategoryColumns, tahunRangeYears,
   getCustomMatrixRowIds, customMatrixLabelKey, matrixCellKey,
   flattenPlakCatalog, isCustomPlakCode, MANUAL_MAX_QTY, numToOrdinal,
+  resolveCategory, categoriesUsedByItems, distributeQtyOverPositions,
 } from '../data/catalog';
 
-export const CSV_COLUMNS = ['event_header', 'year', 'position', 'event_line_1', 'event_line_2'];
+export const CSV_COLUMNS = ['event_header', 'year', 'position', 'event_line_1', 'event_line_2', 'jenis_plak'];
 
 // TOKOH_SHEET only: a NAMA MURID of "Reserved" (any case — the three forms
 // teachers use are RESERVED / reserved / Reserved) means the teacher has
@@ -17,11 +18,13 @@ export function isReservedName(name) {
   return typeof name === 'string' && name.trim().toLowerCase() === 'reserved';
 }
 
-// Categories actually present in this order's items, in catalog order —
-// gives Production stable, ordered tabs even for orders with legacy items
-// that never got a categoryKey (those are simply excluded).
+// Categories actually present in this order's items, in catalog order (any
+// sheet-derived dynamic category appended after — see
+// catalog.js's categoriesUsedByItems) — gives Production stable, ordered
+// tabs even for orders with legacy items that never got a categoryKey
+// (those are simply excluded).
 export function getOrderCategories(order) {
-  return CATEGORIES.filter((cat) => (order.items || []).some((it) => it.categoryKey === cat.key));
+  return categoriesUsedByItems(order.items);
 }
 
 // Splits getOrderCategories into the two halves every order view shows —
@@ -274,16 +277,32 @@ function buildAliranRows(item, header, year, acara) {
   // ALIRAN") -> event_line_1; the line between 2 and 3 (slot 2b) -> per-Tahun
   // event_line_2, but ONLY when the teacher wrote the word "TAHUN" there
   // (that's the CONTOH's "TAHUN 1" line); line 3 (the ordinal, "PERTAMA") ->
-  // position, generated per plaque from the KEDUDUKAN range.
+  // position, generated per plaque from the KEDUDUKAN range — prefixed with
+  // "TEMPAT " too, but ONLY when the teacher's own CONTOH there is "TEMPAT
+  // PERTAMA" rather than plain "PERTAMA" (same word-presence toggle as
+  // event_line_2's "TAHUN" above, not a fixed per-school choice).
   const line2b = getPositionLine2(item);
   const el2 = /tahun/i.test(line2b) ? (tr) => (tr && tr.desc ? tr.desc : '') : () => '';
-  const pos = (p) => numToOrdinal(p);
+  const tempatPrefix = /tempat/i.test(getLine(item, 3)) ? 'TEMPAT ' : '';
+  const pos = (p) => tempatPrefix + numToOrdinal(p);
 
   // ALIRAN TERBAIK (Kalau ada kelas) — the per-Tahun Nama Kelas breakdown
-  // (snapshotDetail) is present. One plaque per (Tahun, class, place in this
-  // plak's range); event_line_2 = "TAHUN N <class>", event_line_1 = ACARA,
-  // position = the ordinal. A flat Tahun (no KEDUDUKAN) with a class list
-  // gives one plaque per class (× its QTY), position blank.
+  // (snapshotDetail) is present. Each class's own QTY there is its TOTAL
+  // for that Tahun directly (confirmed against a real order — NOT a
+  // per-place count); event_line_2 = "TAHUN N <class>", event_line_1 =
+  // ACARA, position = the ordinal. A flat Tahun (no KEDUDUKAN) with a
+  // class list gives one plaque per class, straight off its own QTY,
+  // position blank. A ranked Tahun's own Jenis Plak footer must match that
+  // Tahun's KEDUDUKAN EXACTLY (DARI 1 and the same HINGGA KE) to claim its
+  // classes at all (confirmed against a real order) — the footer's own
+  // DARI/HINGGA KE there identifies WHICH Tahun it's for, not a position
+  // sub-range to split one Tahun's classes across several plaques (unlike
+  // plain ALIRAN's own footer, which still does exactly that — see below).
+  // Once matched, a class's own QTY is spread across ITS Tahun's own
+  // places via distributeQtyOverPositions (e.g. 180 across 1st-20th places
+  // = 9 each) purely to give every plaque its own distinct-ish position
+  // text — every one of those plaques still belongs to this one matched
+  // Jenis Plak.
   const breakdown = item.detail?.namaKelasBreakdown || {};
   if (Object.keys(breakdown).length > 0) {
     tahunRows.forEach((tr) => {
@@ -295,10 +314,11 @@ function buildAliranRows(item, header, year, acara) {
         const classLine = [tr.desc, c.desc.trim()].filter(Boolean).join(' ');
         if (hingga > 0) {
           if (!item.posDari) return; // flat plak doesn't take the ranked Tahuns
-          const lo = Number(item.posDari);
-          const hi = Math.min(Number(item.posHingga) || lo, hingga);
-          for (let n = 0; n < cq; n++) {
-            for (let p = lo; p <= hi; p++) rows.push([header, year, pos(p), acara || '', classLine]);
+          if (Number(item.posDari) !== 1 || (Number(item.posHingga) || 1) !== hingga) return;
+          const buckets = distributeQtyOverPositions(cq, hingga);
+          for (let p = 1; p <= hingga; p++) {
+            const n = buckets[p - 1] || 0;
+            for (let i = 0; i < n; i++) rows.push([header, year, pos(p), acara || '', classLine]);
           }
         } else if (!item.posDari) {
           for (let n = 0; n < cq; n++) rows.push([header, year, '', acara || '', classLine]);
@@ -438,7 +458,7 @@ export function buildCsvRows(order, categoryKey, items) {
       skippedItemIds.push(item.id);
       return;
     }
-    const cat = CATEGORIES.find((c) => c.key === item.categoryKey);
+    const cat = resolveCategory(item.categoryKey);
     // TAJUK BESAR can be two engraved lines (school + event) — a
     // pre-written / roster import splits them into slot 0 + slot 0b so the
     // teacher edits each as its own single-line field. Joined back here for
@@ -450,78 +470,97 @@ export function buildCsvRows(order, categoryKey, items) {
     // `year` column header, but the value is always blank.
     const year = '';
 
+    let itemRows;
     if (cat?.mode === 'matrix') {
       // PBD splits each Tahun's KUANTITI across its Nama Kelas breakdown —
       // one plaque per (Tahun, class). Every other matrix category engraves
       // the subject itself.
-      if (cat.levelBreakdownAxis === 'subject') {
-        rows.push(...buildPbdRows(item, cat, header, year, getLine(item, 2), schoolLanguage));
-      } else {
-        rows.push(...buildMatrixRows(item, cat, header, year, getLine(item, 2), schoolLanguage));
-      }
+      itemRows = cat.levelBreakdownAxis === 'subject'
+        ? buildPbdRows(item, cat, header, year, getLine(item, 2), schoolLanguage)
+        : buildMatrixRows(item, cat, header, year, getLine(item, 2), schoolLanguage);
     } else if (cat?.mode === 'dynamicMatrix') {
       // A combined TOKOH section marks slot '2' as a sample-only example
       // (posFromKelas) — its real positions are the honour names carried
       // as each row's Nama Kelas.
       const posFromKelas = !!getLine(item, 'posFromKelas');
-      rows.push(...buildPbdMatrixRows(item, header, year, posFromKelas ? '' : getLine(item, 2), posFromKelas));
+      itemRows = buildPbdMatrixRows(item, header, year, posFromKelas ? '' : getLine(item, 2), posFromKelas);
     } else if (cat?.aliranKedudukan) {
-      rows.push(...buildAliranRows(item, header, year, getLine(item, 2)));
+      itemRows = buildAliranRows(item, header, year, getLine(item, 2));
     } else if (cat?.hasNamaKelasList) {
-      rows.push(...buildOthersRows(item, header, year, getLine(item, 2)));
+      itemRows = buildOthersRows(item, header, year, getLine(item, 2));
     } else if (cat?.positionFromRows) {
       if (cat.tokohRowFields) {
         (item.detail?.rows || []).forEach((r) => {
           if (isReservedName(r.namaMurid)) reservedCount += Number(r.qty) || 0;
         });
       }
-      rows.push(...buildRowsFromDescriptionRows(
+      itemRows = buildRowsFromDescriptionRows(
         item, header, year,
         cat.positionPrefixFromLine3 ? getLine(item, 2) : '',
         cat.tokohRowFields,
-      ));
+      );
     } else {
-      rows.push(...buildFixedRows(item, header, year, getLine(item, 2)));
+      itemRows = buildFixedRows(item, header, year, getLine(item, 2));
     }
+    // The CSV's own 6th column: every row from this item engraves for the
+    // same Jenis Plak the item itself was assigned (a CSV export is always
+    // pre-scoped to one Jenis Plak per file — getOrderJenisPlakGroups), so
+    // it's stamped on here rather than threaded through every builder above.
+    itemRows.forEach((r) => rows.push([...r, item.jenisPlak || '']));
   });
 
   return { rows, skippedItemIds, reservedCount };
 }
 
-// Groups an order's items by Jenis Plak, regardless of which category or
-// batch each came from — the CSV's own columns (event_header, year,
-// position, event_line_1, event_line_2) carry no Jenis Plak info at all,
-// so two items sharing the same Jenis Plak are, for export purposes,
-// interchangeable rows bound for the exact same physical AI file. Lets
-// Production export one combined CSV per Jenis Plak instead of one per
-// category/order-detail, when the same Jenis Plak was ordered in more than
-// one place.
+// Groups an order's items by (category, Jenis Plak) — items sharing both
+// (e.g. the original order round and a later Add-On reusing the same
+// category with the same Jenis Plak) are, for export purposes,
+// interchangeable rows bound for the exact same physical AI file, and are
+// combined into one CSV. Items are never combined ACROSS categories even
+// when they share a Jenis Plak — two categories can be printed on the same
+// physical size/AI file (same Jenis Plak) while still needing different
+// reference-sample layouts (which line each field engraves on), and the
+// CSV's own columns carry no category info to tell those rows apart once
+// merged. A category whose items use more than one Jenis Plak (LONJAKAN
+// SAUJANA, TOKOH, KEHADIRAN PENUH routinely do — the teacher picks a Jenis
+// Plak per row/block within the same sheet) simply produces more than one
+// group, one per Jenis Plak used.
 export function getOrderJenisPlakGroups(order) {
-  const byPlak = new Map();
+  const byGroup = new Map();
   (order.items || []).forEach((item) => {
     if (!item.jenisPlak) return;
+    const cat = resolveCategory(item.categoryKey);
     // SELEMPANG (and any `noCsv` category) is recorded and stock-tracked but
     // Production never makes it — keep it out of every export / manual-make
     // grouping so it can't turn into a bogus CSV or "buat manual" line.
-    if (CATEGORIES.find((c) => c.key === item.categoryKey)?.noCsv) return;
-    if (!byPlak.has(item.jenisPlak)) byPlak.set(item.jenisPlak, []);
-    byPlak.get(item.jenisPlak).push(item);
+    if (cat?.noCsv) return;
+    const groupKey = `${item.categoryKey}::${item.jenisPlak}`;
+    if (!byGroup.has(groupKey)) {
+      byGroup.set(groupKey, {
+        groupKey,
+        categoryKey: item.categoryKey,
+        categoryLabel: cat?.label || item.categoryKey,
+        jenisPlak: item.jenisPlak,
+        items: [],
+      });
+    }
+    byGroup.get(groupKey).items.push(item);
   });
-  return [...byPlak.entries()].map(([jenisPlak, items]) => ({ jenisPlak, items }));
+  return [...byGroup.values()];
 }
 
-// For each Jenis Plak group (getOrderJenisPlakGroups), whether Production
-// should export a CSV or type the plaques by hand. Keyed by the exact
-// jenisPlak string. `totalQty` is the sum of every item's qty for that
-// Jenis Plak across the whole order — the same number the school's FRONT
-// PG page totals — so a Jenis Plak ordered in several places is judged on
-// its combined size, not each line. Computed live (never stored) so it
-// stays correct after an amend. See catalog.js's MANUAL_MAX_QTY.
+// For each (category, Jenis Plak) group (getOrderJenisPlakGroups), whether
+// Production should export a CSV or type the plaques by hand. Keyed by the
+// same `groupKey` ("categoryKey::jenisPlak"). `totalQty` is the sum of
+// every item's qty in that group across the whole order — so a Jenis Plak
+// reused across batches within one category is judged on its combined
+// size, not each batch. Computed live (never stored) so it stays correct
+// after an amend. See catalog.js's MANUAL_MAX_QTY.
 export function getPlakProductionMode(order) {
   const modes = new Map();
-  getOrderJenisPlakGroups(order).forEach(({ jenisPlak, items }) => {
+  getOrderJenisPlakGroups(order).forEach(({ groupKey, items }) => {
     const totalQty = items.reduce((sum, it) => sum + (Number(it.qty) || 0), 0);
-    modes.set(jenisPlak, {
+    modes.set(groupKey, {
       mode: totalQty <= MANUAL_MAX_QTY ? 'manual' : 'csv',
       totalQty,
     });

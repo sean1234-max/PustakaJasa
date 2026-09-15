@@ -65,14 +65,14 @@ export default function AdminOrderDetail() {
     return reconstructOrderDetailGroups(order, currentCat.key, state.plakCatalog);
   }, [order, currentCat, state.plakCatalog]);
 
-  // Order-wide, not scoped to the selected category tab — see the matching
-  // comment in ProductionOrderDetail.jsx.
+  // Scoped to (category, Jenis Plak) — see the matching comment in
+  // ProductionOrderDetail.jsx / getOrderJenisPlakGroups.
   const jenisPlakGroups = useMemo(() => (order ? getOrderJenisPlakGroups(order) : []), [order]);
   const jenisPlakExport = useMemo(() => {
     if (!order) return [];
-    return jenisPlakGroups.map(({ jenisPlak, items }) => {
-      const csvData = buildCsvRows(order, null, items);
-      return { jenisPlak, items, csvData, check: validateExport(order, items, state.plakCatalog, csvData) };
+    return jenisPlakGroups.map((group) => {
+      const csvData = buildCsvRows(order, null, group.items);
+      return { ...group, csvData, check: validateExport(order, group.items, state.plakCatalog, csvData) };
     });
   }, [order, jenisPlakGroups, state.plakCatalog]);
 
@@ -101,10 +101,10 @@ export default function AdminOrderDetail() {
     exportNoteTimer.current = setTimeout(() => setExportNote(''), 4000);
   };
 
-  const handleExportJenisPlak = (jenisPlak, csvData, check) => {
+  const handleExportJenisPlak = (group, csvData, check) => {
     if (!check.ok || csvData.rows.length === 0) return;
     const csv = rowsToCsv(csvData.rows);
-    const filename = buildCategoryCsvFilename(order, jenisPlak);
+    const filename = buildCategoryCsvFilename(order, `${group.categoryLabel} - ${group.jenisPlak}`);
     downloadTextFile(filename, csv);
     setExportNote(`Exported ${csvData.rows.length} row(s) to ${filename}.`);
     clearTimeout(exportNoteTimer.current);
@@ -263,7 +263,7 @@ export default function AdminOrderDetail() {
               <>
                 <h3 className="text-label-bold text-on-surface-variant uppercase tracking-widest mt-8 mb-2">Export by Jenis Plak</h3>
                 <p className="text-body-sm text-on-surface-variant mb-2">
-                  Same Jenis Plak used in more than one place in this order? Export one combined CSV for it here instead of a separate file per order detail.
+                  Same category + Jenis Plak used in more than one place in this order? Export one combined CSV for it here instead of a separate file per order detail. Never combined across different categories, even when they share a Jenis Plak — each category's reference-sample layout can differ.
                 </p>
                 {jenisPlakGroups.length === 0 ? (
                   <p className="text-body-md text-on-surface-variant">No Jenis Plak found for this order.</p>
@@ -272,6 +272,7 @@ export default function AdminOrderDetail() {
                     <table className="w-full text-left border-collapse">
                       <thead>
                         <tr className="border-b border-outline-variant">
+                          <th className="py-2 pr-4 text-label-bold text-on-surface-variant uppercase">Category</th>
                           <th className="py-2 pr-4 text-label-bold text-on-surface-variant uppercase">Jenis Plak</th>
                           <th className="py-2 pr-4 text-label-bold text-on-surface-variant uppercase w-32">Order Details</th>
                           <th className="py-2 pr-4 text-label-bold text-on-surface-variant uppercase w-24">Rows</th>
@@ -279,27 +280,31 @@ export default function AdminOrderDetail() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-outline-variant text-body-md text-on-surface">
-                        {jenisPlakExport.map(({ jenisPlak, items, csvData, check }) => (
-                          <tr key={jenisPlak}>
+                        {jenisPlakExport.map((group) => {
+                          const { groupKey, categoryLabel, jenisPlak, items, csvData, check } = group;
+                          return (
+                          <tr key={groupKey}>
+                            <td className="py-2 pr-4">{categoryLabel}</td>
                             <td className="py-2 pr-4">{jenisPlak}</td>
                             <td className="py-2 pr-4">{items.length}</td>
                             <td className="py-2 pr-4">{check.ok ? csvData.rows.length : <span className="text-error font-semibold">blocked</span>}</td>
                             <td className="py-2">
-                              <button type="button" disabled={!check.ok || csvData.rows.length === 0} onClick={() => handleExportJenisPlak(jenisPlak, csvData, check)} className="bg-primary text-on-primary text-label-bold font-semibold px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50">
+                              <button type="button" disabled={!check.ok || csvData.rows.length === 0} onClick={() => handleExportJenisPlak(group, csvData, check)} className="bg-primary text-on-primary text-label-bold font-semibold px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50">
                                 Export CSV
                               </button>
                             </td>
                           </tr>
-                        ))}
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
                 )}
                 {jenisPlakExport.filter((g) => !g.check.ok).map((g) => (
-                  <p key={g.jenisPlak} className="text-body-sm text-error font-semibold mt-1">⚠ {g.jenisPlak}: {g.check.errors.join(' ')}</p>
+                  <p key={g.groupKey} className="text-body-sm text-error font-semibold mt-1">⚠ {g.categoryLabel} — {g.jenisPlak}: {g.check.errors.join(' ')}</p>
                 ))}
                 {jenisPlakExport.flatMap((g) => g.check.warnings.map((w) => (
-                  <p key={`${g.jenisPlak}-${w}`} className="text-body-sm mt-1" style={{ color: '#b45309' }}>{g.jenisPlak}: {w}</p>
+                  <p key={`${g.groupKey}-${w}`} className="text-body-sm mt-1" style={{ color: '#b45309' }}>{g.categoryLabel} — {g.jenisPlak}: {w}</p>
                 )))}
                 {exportNote && <p className="text-body-md text-on-surface-variant mt-2">{exportNote}</p>}
 

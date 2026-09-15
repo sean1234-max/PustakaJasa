@@ -1,7 +1,7 @@
 import {
-  CATEGORIES, customMatrixLabelKey, getCustomMatrixRowIds, getCategoryLinePlaceholders,
+  customMatrixLabelKey, getCustomMatrixRowIds, getCategoryLinePlaceholders,
   getCategoryPositionLine2Placeholder, getCategorySubjects, getCategoryColumns, matrixCellKey,
-  MORAL_SUBJECT_BY_LANGUAGE,
+  MORAL_SUBJECT_BY_LANGUAGE, resolveCategory,
 } from '../data/catalog';
 
 // Reference Sample's base line count (catalog lines + optional second box),
@@ -28,7 +28,7 @@ function recomputeLevelBreakdown(st, listKey, updatedRowsByBlock, matrixValuesFi
   const m = /^(.+)::\d+::(.+)::(?:main|moral)$/.exec(listKey);
   if (!m) return {};
   const [, catKey, level] = m;
-  const cat = CATEGORIES.find((c) => c.key === catKey);
+  const cat = resolveCategory(catKey);
   // ALIRAN TERBAIK (Kalau ada kelas) also keeps per-Tahun Nama Kelas lists
   // under these composite keys, but its TOTAL is derived live in
   // computeBlocks (classQty × range) — there is no matrix cell to write, so
@@ -106,7 +106,7 @@ export function createDraftUpdaters(patch, fields) {
       const match = /^(.+)::0::(.+)$/.exec(key);
       if (match) {
         const [, catKey, fieldKey] = match;
-        const cat = CATEGORIES.find((c) => c.key === catKey);
+        const cat = resolveCategory(catKey);
         if (cat?.hasNamaKelasList && fieldKey !== 'tahun') {
           const visibleCount = (st[visibleBlocksByCategory] && st[visibleBlocksByCategory][catKey]) || 1;
           for (let b = 1; b < visibleCount; b++) {
@@ -142,7 +142,7 @@ export function createDraftUpdaters(patch, fields) {
     onAddRow: (rowsKey) => patch((st) => {
       const existing = st[rowsByBlock][rowsKey] || [];
       const catKey = (/^(.+)::\d+$/.exec(rowsKey) || [])[1];
-      const cat = CATEGORIES.find((c) => c.key === catKey);
+      const cat = resolveCategory(catKey);
       if (cat?.capRowsAt5 && existing.length >= 5) return {};
       const desc = cat?.defaultRowDescFromPosition ? `Row ${existing.length + 1}` : '';
       return {
@@ -183,7 +183,7 @@ export function createDraftUpdaters(patch, fields) {
     // hidden ones don't count against the cap — enforced here rather than
     // only by hiding the button.
     onAddReferenceLine: (catKey, blockIdx) => patch((st) => {
-      const cat = CATEGORIES.find((c) => c.key === catKey);
+      const cat = resolveCategory(catKey);
       if (!cat?.extendableReferenceSample) return {};
       const baseLen = baseReferenceLineCount(cat);
       const key = `${catKey}::${blockIdx}::extraRefLines`;
@@ -213,7 +213,7 @@ export function createDraftUpdaters(patch, fields) {
     // Kuantiti row in this block, so a later re-add doesn't resurrect
     // stale column data under a reused number.
     onRemoveReferenceLine: (catKey, blockIdx) => patch((st) => {
-      const cat = CATEGORIES.find((c) => c.key === catKey);
+      const cat = resolveCategory(catKey);
       if (!cat?.extendableReferenceSample) return {};
       const origLen = getCategoryLinePlaceholders(cat, 'SK').length;
       const baseLen = baseReferenceLineCount(cat);
@@ -277,7 +277,7 @@ export function createDraftUpdaters(patch, fields) {
     //    too, so stale text can't leak into exportCsv.js (which reads
     //    lineValues by raw index regardless of what's currently shown).
     onDeleteReferenceLine: (catKey, blockIdx, slotId) => patch((st) => {
-      const cat = CATEGORIES.find((c) => c.key === catKey);
+      const cat = resolveCategory(catKey);
       // The optional TAJUK BESAR second line (slot 0b) is never a catalog
       // line — it's an extra a teacher or an import (splitTwoLineTajuk) added
       // — so it can always be cleared, on any category, unlike the
@@ -358,7 +358,7 @@ export function createDraftUpdaters(patch, fields) {
     // buildRosterSectionLines) isn't stuck without a way to bring it back
     // short of starting the whole block over.
     onRestoreReferenceLine: (catKey, blockIdx, slotId) => patch((st) => {
-      const cat = CATEGORIES.find((c) => c.key === catKey);
+      const cat = resolveCategory(catKey);
       if (!cat?.deletableReferenceLines) return {};
       const hiddenKey = `${catKey}::${blockIdx}::hiddenLines`;
       const hidden = new Set((st[lineValues][hiddenKey] || '').split(',').filter(Boolean));
@@ -471,7 +471,7 @@ export function createDraftUpdaters(patch, fields) {
     // own independently-keyed array, so ids only ever need to be unique
     // within one block's own array, never across blocks.
     onDuplicateBlock: (catKey, fromBlockIdx) => patch((st) => {
-      const cat = CATEGORIES.find((c) => c.key === catKey);
+      const cat = resolveCategory(catKey);
       const toBlockIdx = fromBlockIdx + 1;
       if (!cat || toBlockIdx >= (cat.blocksCount || 1)) return {};
       const fromLinePrefix = `${catKey}::${fromBlockIdx}::`;

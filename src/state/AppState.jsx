@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import {
   CATEGORIES, ACTIVE_CATEGORIES, formatDate, standardUnitPrice, getCategorySubjects, matrixCellKey, customMatrixLabelKey,
   deliveryStageForShipmentDate, SELEMPANG_CODE,
+  resolveCategory, categoriesUsedByItems, isDynamicCategoryKey,
 } from '../data/catalog';
 import { buildInitialRowsByBlock, buildInitialColumnsByBlock, buildInitialPlakRows } from '../data/formDefaults';
 import {
@@ -112,6 +113,54 @@ function deriveKlasMatrixSectionLines(section) {
   return lines;
 }
 
+// Turns one KLAS_MATRIX-shaped section (excelImport.js's { classes, lines,
+// jenisPlak, sourceSheet, skipLineDerivation, positionFromNamaKelas,
+// namaKelasLabel, remarkNote }) into ONE block's own rowsByBlock/
+// columnsByBlock/matrixValues/lineValues/plakRows entries — mutates the
+// maps passed in `dest`, and `ids` (nextRowId/nextColumnId/nextPlakRowId)
+// in place so the caller's own counters stay in sync. Shared by the
+// KLAS_MATRIX multi-section import below (many independent sections
+// stacked into many blocks of the ONE 'KLAS_MATRIX' category) and the
+// dynamicMatrix branch of the `parsed.categorized` handling further down
+// (a renamed/duplicated PPKI/MP-THP-shaped sheet — excelImport.js's
+// dynamicCategoryKey — always exactly one section landing in that
+// category's own block 0) — same per-section shape either way, just
+// written under a different key. Returns the matched Jenis Plak (or '' if
+// none/unmatched) so each caller can craft its own "couldn't match" warning
+// in whatever phrasing fits its context.
+function populateMatrixSectionBlock(section, key, defaultNames, ids, dest, plakCatalog) {
+  const { newLineValues, newMatrixValues, newRowsByBlock, newColumnsByBlock, newPlakRows } = dest;
+  const presentNames = new Set();
+  section.classes.forEach((cls) => cls.subjects.forEach(({ name }) => presentNames.add(name)));
+  const subjectNameOrder = [
+    ...defaultNames.filter((name) => presentNames.has(name)),
+    ...[...presentNames].filter((name) => !defaultNames.includes(name)),
+  ];
+  const subjectRows = subjectNameOrder.map((name) => ({ id: ids.nextRowId++, desc: name, custom: true }));
+  const rowIdByName = new Map(subjectRows.map((r) => [r.desc, r.id]));
+  const classColumns = section.classes.map((cls) => ({
+    id: ids.nextColumnId++, tahunFrom: cls.tahunFrom, tahunTo: cls.tahunTo, namaKelas: cls.namaKelas,
+    tingkatan: cls.tingkatan || '', tingkatanMode: !!cls.tingkatanMode,
+    jawatan: cls.jawatan || '', kelasName: cls.kelasName || '', eline2: cls.eline2 || '',
+  }));
+  section.classes.forEach((cls, classIdx) => {
+    const colId = classColumns[classIdx].id;
+    cls.subjects.forEach(({ name, qty }) => {
+      newMatrixValues[`${key}::${rowIdByName.get(name)}::${colId}`] = String(qty);
+    });
+  });
+  const sectionLines = section.skipLineDerivation ? section.lines : deriveKlasMatrixSectionLines(section);
+  Object.entries(sectionLines).forEach(([slot, val]) => { newLineValues[`${key}::${slot}`] = val; });
+  if (section.positionFromNamaKelas) newLineValues[`${key}::posFromKelas`] = '1';
+  if (section.namaKelasLabel) newLineValues[`${key}::namaKelasLabel`] = section.namaKelasLabel;
+  if (section.sourceSheet) newLineValues[`${key}::sourceSheet`] = section.sourceSheet;
+  newRowsByBlock[key] = subjectRows;
+  newColumnsByBlock[key] = classColumns;
+  const matchedPlak = matchJenisPlakPath(section.jenisPlak, plakCatalog);
+  newPlakRows[key] = [{ id: ids.nextPlakRowId++, jenisPlak: matchedPlak }];
+  return matchedPlak;
+}
+
 // Finds a catalog node by id anywhere in the tree, along with the sibling
 // array it lives in (its parent's `children`, or the root array for a
 // top-level code) — used to reorder a node relative to its siblings.
@@ -134,7 +183,7 @@ function findNodeAndSiblings(nodes, id, siblings) {
 // (visibleBlocksByCategory for New Order, addOnVisibleBlocksByCategory for
 // Add On) — passed in so this helper works for both draft namespaces.
 function resetCategoryFields(catKey, st, visibleField) {
-  const cat = CATEGORIES.find((c) => c.key === catKey);
+  const cat = resolveCategory(catKey);
   const lineValues = { ...st.lineValues };
   Object.keys(lineValues).forEach((k) => { if (k.startsWith(`${catKey}::`)) delete lineValues[k]; });
   const matrixValues = { ...st.matrixValues };
@@ -554,8 +603,15 @@ export function AppStateProvider({ children }) {
       // Only clears this category's fields once something was actually
       // added — bailing out above (validation error or nothing filled)
       // must never wipe out what the teacher already typed.
+      //
+      // Replaces (not appends to) this category's existing cart entries —
+      // matters for the Edit flow (editCartCategory leaves the original
+      // items in place rather than removing them upfront), so re-adding
+      // after edits supersedes the old version instead of duplicating it.
       return {
-        ...st, cart: [...st.cart, ...items], cartToast: `Added ${items.length} item(s) to cart.`,
+        ...st,
+        cart: [...st.cart.filter((ci) => ci.categoryKey !== st.category), ...items],
+        cartToast: `Added ${items.length} item(s) to cart.`,
         ...resetCategoryFields(st.category, st, 'visibleBlocksByCategory'),
       };
     });
@@ -575,7 +631,15 @@ export function AppStateProvider({ children }) {
       let working = st;
       const allItems = [];
       const doneLabels = [];
-      for (const cat of ACTIVE_CATEGORIES) {
+      // Any sheet-derived dynamic category the current import left in the
+      // draft (see AppState.jsx's `parsed.categorized` handling above) —
+      // it has no standing ACTIVE_CATEGORIES tab of its own, so it's only
+      // ever discoverable via visibleBlocksByCategory.
+      const dynamicCats = Object.keys(st.visibleBlocksByCategory || {})
+        .filter(isDynamicCategoryKey)
+        .map(resolveCategory)
+        .filter(Boolean);
+      for (const cat of [...ACTIVE_CATEGORIES, ...dynamicCats]) {
         const { engaged, error, items } = buildCategoryCartItems(working, cat.key);
         if (!engaged) continue;
         if (error) return { ...st, category: cat.key, cartToast: `${cat.label}: ${error}` };
@@ -586,8 +650,12 @@ export function AppStateProvider({ children }) {
       if (allItems.length === 0) {
         return { ...st, cartToast: 'No filled categories to add to cart.' };
       }
+      // Replaces each touched category's existing cart entries rather than
+      // appending duplicates — same reasoning as addToCart's own note.
+      const touchedKeys = new Set(allItems.map((it) => it.categoryKey));
       return {
-        ...working, cart: [...working.cart, ...allItems],
+        ...working,
+        cart: [...working.cart.filter((ci) => !touchedKeys.has(ci.categoryKey)), ...allItems],
         cartToast: `Added ${allItems.length} item(s) from ${doneLabels.length} categor${doneLabels.length === 1 ? 'y' : 'ies'} to cart.`,
       };
     });
@@ -699,72 +767,9 @@ export function AppStateProvider({ children }) {
         // manually delete. Subjects actually present are ordered to match
         // the familiar default-13 order first, with any name outside that
         // list (MP THP 2's own SEJARAH/REKA BENTUK & TEKNOLOGI, or the
-        // synthetic stand-ins above) appended after.
-        const presentNames = new Set();
-        section.classes.forEach((cls) => cls.subjects.forEach(({ name }) => presentNames.add(name)));
-        const subjectNameOrder = [
-          ...defaultNames.filter((name) => presentNames.has(name)),
-          ...[...presentNames].filter((name) => !defaultNames.includes(name)),
-        ];
-        const subjectRows = subjectNameOrder.map((name) => ({ id: nextRowId++, desc: name, custom: true }));
-        const rowIdByName = new Map(subjectRows.map((r) => [r.desc, r.id]));
-        const classColumns = section.classes.map((cls) => ({
-          id: nextColumnId++, tahunFrom: cls.tahunFrom, tahunTo: cls.tahunTo, namaKelas: cls.namaKelas,
-          // Secondary-school (SMK) class codes — see excelImport.js's
-          // splitTingkatanCode — have no Tahun-dropdown equivalent to
-          // begin with, so OrderCategoryBlock.jsx swaps in a plain
-          // Tingkatan text box for this ONE class row instead, rather
-          // than forcing "TINGKATAN 5" into a Tahun 1-6 dropdown it was
-          // never meant to hold.
-          tingkatan: cls.tingkatan || '', tingkatanMode: !!cls.tingkatanMode,
-          // A named-recipient roster's own role/position per person — see
-          // excelImport.js's scanSheetForRosters — kept as its own column
-          // rather than folded into Nama Kelas/Nama Murid's own text.
-          jawatan: cls.jawatan || '',
-          // A recipient's OWN class, when the source had a real "NAMA
-          // KELAS" column alongside its person-name column (rather than
-          // Nama Kelas/Nama Murid itself BEING the class — see
-          // excelImport.js's groupRosterHeaders).
-          kelasName: cls.kelasName || '',
-          // A fixed engraved line below the per-plaque line — a "TAHAP 1" /
-          // "TAHAP 2" from a parallel-class-list sheet (excelImport.js's
-          // readParallelClassLists). Reaches the CSV's 5th column via
-          // buildPbdMatrixRows; blank for every other shape.
-          eline2: cls.eline2 || '',
-        }));
-        section.classes.forEach((cls, classIdx) => {
-          const colId = classColumns[classIdx].id;
-          cls.subjects.forEach(({ name, qty }) => {
-            newMatrixValues[`${key}::${rowIdByName.get(name)}::${colId}`] = String(qty);
-          });
-        });
-        // A PERASMI-style section (excelImport.js's findPerasmiSections)
-        // already IS its own real Reference Sample content, in the right
-        // order — there's no class/subject breakdown to derive a TAHUN/
-        // SUBJEK-POSITION example from, or a "TAJUK BESAR / TAHUN /
-        // SUBJEK-POSITION" order to reorder it into, so it opts out and
-        // rides through with its own lines exactly as read.
-        const sectionLines = section.skipLineDerivation ? section.lines : deriveKlasMatrixSectionLines(section);
-        Object.entries(sectionLines).forEach(([slot, val]) => { newLineValues[`${key}::${slot}`] = val; });
-        // A combined TOKOH section (excelImport.js's parseTokohSheet): the
-        // honour names ARE the per-plaque positions, rendered as Nama Kelas
-        // rows (with a "Subjek / Position" header). Slot '2' is only the
-        // sample-box example — the CSV must take position from the row's
-        // namaKelas, not slot '2', and leave event_line_1 blank (TOKOH
-        // plaques have no event_line_1). exportCsv.js reads this back.
-        if (section.positionFromNamaKelas) newLineValues[`${key}::posFromKelas`] = '1';
-        // A roster import's own column header text (NAMA MURID/NAMA GURU/
-        // NAMA PELAJAR — see excelImport.js's scanSheetForRosters) rides
-        // along the same way hiddenLines/refOrder do, read back by
-        // computeBlocks.js to override the generic "Nama Kelas" header.
-        if (section.namaKelasLabel) newLineValues[`${key}::namaKelasLabel`] = section.namaKelasLabel;
-        // Which sheet this section came from (excelImport.js's
-        // `sourceSheet` — "PPKI", "MP THP 1", ...), read back by
-        // computeBlocks.js so a multi-section import can label each block
-        // by its real origin instead of a bare "Section N of M".
-        if (section.sourceSheet) newLineValues[`${key}::sourceSheet`] = section.sourceSheet;
-        newRowsByBlock[key] = subjectRows;
-        newColumnsByBlock[key] = classColumns;
+        // synthetic stand-ins above) appended after — see
+        // populateMatrixSectionBlock.
+        //
         // "SM - 13187 (GOLD)" etc isn't itself a valid Jenis Plak value —
         // PlakPicker/pricing need the exact ' / '-joined catalog path
         // (e.g. "SM-13187 / GOLD / NORMAL") — matchJenisPlakPath walks the
@@ -784,11 +789,16 @@ export function AppStateProvider({ children }) {
         // moment the teacher actually picks something — a warning that
         // still said "please choose manually" after they just did would
         // read as broken, not helpful.
-        const matchedPlak = matchJenisPlakPath(section.jenisPlak, next.plakCatalog);
+        const ids = { nextRowId, nextColumnId, nextPlakRowId };
+        const matchedPlak = populateMatrixSectionBlock(
+          section, key, defaultNames, ids,
+          { newLineValues, newMatrixValues, newRowsByBlock, newColumnsByBlock, newPlakRows },
+          next.plakCatalog,
+        );
+        ({ nextRowId, nextColumnId, nextPlakRowId } = ids);
         if (section.jenisPlak && !matchedPlak) {
           warnings.push({ type: 'plakMismatch', blockIdx: b, text: `Section ${b + 1}: couldn't match Jenis Plak "${section.jenisPlak}" to anything in the catalog — please choose it manually.` });
         }
-        newPlakRows[key] = [{ id: nextPlakRowId++, jenisPlak: matchedPlak }];
         // A PERASMI section's own wording (findPerasmiSections) also goes
         // into the order's Remark, not just its own Reference Sample —
         // Sales/Invoicing/Production reading the order later never open
@@ -873,7 +883,11 @@ export function AppStateProvider({ children }) {
     // used for a hand-filled block.
     if (parsed.categorized) {
       Object.entries(parsed.categorized).forEach(([catKey, sections]) => {
-        const cat = CATEGORIES.find((c) => c.key === catKey);
+        // resolveCategory (not a raw CATEGORIES.find) also resolves a
+        // renamed/duplicated template sheet's synthetic key — see
+        // excelImport.js's dynamicCategoryKey / catalog.js's
+        // makeDynamicCategoryKey.
+        const cat = resolveCategory(catKey);
         if (!cat || sections.length === 0) return;
         // blocksCount is always 1 for these categories today — a file with
         // more than one independent section for the same sheet has nowhere
@@ -897,6 +911,44 @@ export function AppStateProvider({ children }) {
         Object.keys(newLineValues).forEach((k) => { if (k.startsWith(`${key}::`)) delete newLineValues[k]; });
         Object.keys(newMatrixValues).forEach((k) => { if (k.startsWith(`${catKey}::`)) delete newMatrixValues[k]; });
         Object.keys(newRowsByBlock).forEach((k) => { if (k.startsWith(`${key}::`)) delete newRowsByBlock[k]; });
+
+        // A renamed/duplicated PPKI/MP-THP-shaped sheet (excelImport.js's
+        // dynamicCategoryKey, templateKind 'KLAS_MATRIX') needs the SAME
+        // rows-as-subjects + columns-as-classes storage the KLAS_MATRIX
+        // multi-section import above uses (mode: 'dynamicMatrix') — quite
+        // unlike every branch below, which all populate either a FIXED
+        // matrix (mode: 'matrix') or a plain row list (mode: 'list'), and
+        // none of which ever touch columnsByBlock. Handled as its own
+        // self-contained branch (via the shared populateMatrixSectionBlock
+        // the KLAS_MATRIX loop above also uses) and returned early, rather
+        // than threaded through the generic chain below.
+        if (cat.mode === 'dynamicMatrix') {
+          const newColumnsByBlockDyn = { ...next.columnsByBlock };
+          Object.keys(newColumnsByBlockDyn).forEach((k) => { if (k.startsWith(`${key}::`)) delete newColumnsByBlockDyn[k]; });
+          const newPlakRowsDyn = { ...next.plakRows };
+          const defaultNamesDyn = getCategorySubjects(cat, next.schoolLanguage);
+          const ids = { nextRowId, nextColumnId: next.nextColumnId, nextPlakRowId: next.nextPlakRowId };
+          const matchedPlak = populateMatrixSectionBlock(
+            section, key, defaultNamesDyn, ids,
+            { newLineValues, newMatrixValues, newRowsByBlock, newColumnsByBlock: newColumnsByBlockDyn, newPlakRows: newPlakRowsDyn },
+            next.plakCatalog,
+          );
+          if (section.jenisPlak && !matchedPlak) {
+            warnings.push({ type: 'plakMismatch', blockIdx: 0, catKey, text: `${cat.label}: couldn't match Jenis Plak "${section.jenisPlak}" to anything in the catalog — please choose it manually.` });
+          }
+          if (section.remarkNote) remarkNotes.push(section.remarkNote);
+          next = {
+            ...next,
+            lineValues: newLineValues, matrixValues: newMatrixValues, rowsByBlock: newRowsByBlock,
+            columnsByBlock: newColumnsByBlockDyn, plakRows: newPlakRowsDyn,
+            nextRowId: ids.nextRowId, nextColumnId: ids.nextColumnId, nextPlakRowId: ids.nextPlakRowId,
+            visibleBlocksByCategory: { ...next.visibleBlocksByCategory, [catKey]: 1 },
+          };
+          if (!landOn) landOn = catKey;
+          messages.push(`${cat.label}: imported`);
+          return;
+        }
+
         if (section.isSimpleTahunList) {
           // LONJAKAN SAUJANA — TAHUN 1-6, each with its own QTY + Jenis Plak.
           const byTahun = new Map(section.tahunRows.map((tr) => [tr.tahun, tr]));
@@ -939,21 +991,18 @@ export function AppStateProvider({ children }) {
           (section.levelBreakdown || []).forEach(({ label, mainRows }) => {
             newRowsByBlock[`${key}::${label}::main`] = mainRows.map((r) => ({ id: nextRowId++, desc: r.name, qty: String(r.qty) }));
           });
-          // A Tahun whose typed TOTAL disagrees with (Nama Kelas total ×
-          // KEDUDUKAN size) — almost always a wrong headcount or a wrong
-          // KEDUDUKAN pick. Surfaced as a Step-2 question; the website
-          // always uses the derived figure regardless of the answer.
+          // A Tahun whose typed TOTAL disagrees with its own Nama Kelas sum
+          // — almost always a wrong headcount. Surfaced as a Step-2
+          // question; the website always uses the class-sum figure
+          // regardless of the answer.
           if (section.isAliranKelas) {
             checkAliranKelasTotals(section).forEach((iss) => {
-              const basis = iss.rangeSize > 1
-                ? `${iss.classSum} murid × ${iss.rangeSize} kedudukan`
-                : `${iss.classSum} murid`;
               warnings.push({
                 type: 'choice',
                 id: `${catKey}::${iss.id}`,
                 blockIdx: 0,
                 catKey,
-                text: `${cat.label} · ${iss.level}: TOTAL dalam fail ialah ${iss.stated}, tapi ikut senarai Nama Kelas (${basis}) sepatutnya ${iss.computed}. Sila semak bilangan murid atau julat KEDUDUKAN.`,
+                text: `${cat.label} · ${iss.level}: TOTAL dalam fail ialah ${iss.stated}, tapi ikut senarai Nama Kelas (${iss.classSum} murid) sepatutnya ${iss.computed}. Sila semak bilangan murid.`,
                 options: [{ key: 'keep', label: 'OK, saya semak' }],
                 addPatches: [],
               });
@@ -1123,9 +1172,26 @@ export function AppStateProvider({ children }) {
           ...next,
           lineValues: newLineValues, matrixValues: newMatrixValues, rowsByBlock: newRowsByBlock, plakRows: newPlakRows,
           nextPlakRowId, nextRowId,
+          // Every category here is single-block, so nothing else ever needs
+          // to read visibleBlocksByCategory for a FIXED key (a static
+          // ACTIVE_CATEGORIES tab is always shown regardless). A dynamic
+          // key has no such standing tab — this is the only signal
+          // NewOrderStep2.jsx/AddOn.jsx have that it now exists in the
+          // draft, so it's set only for those.
+          ...(isDynamicCategoryKey(catKey) ? { visibleBlocksByCategory: { ...next.visibleBlocksByCategory, [catKey]: 1 } } : {}),
         };
         if (!landOn) landOn = catKey;
         messages.push(`${cat.label}: imported`);
+      });
+    }
+
+    // A sheet that had something typed into it but matched no recognized
+    // format at all (excelImport.js's unrecognizedSheets) — surfaced so the
+    // teacher/production knows to check it by hand, instead of that data
+    // silently not appearing anywhere.
+    if (parsed.unrecognizedSheets?.length) {
+      parsed.unrecognizedSheets.forEach((name) => {
+        warnings.push({ type: 'truncated', text: `Couldn't recognize the format of sheet "${name}" — please check it and add its data by hand if needed.` });
       });
     }
 
@@ -1169,13 +1235,21 @@ export function AppStateProvider({ children }) {
   // ONE category back into the New Order draft for that category (every
   // block/section, not just whichever item the row itself represents,
   // since a category can be grouped across several — see Cart.jsx's own
-  // groupedCartRows), switches Step 2 to that category tab, and pulls those
-  // items back OUT of the cart so re-adding after edits doesn't duplicate
-  // them. Reuses buildDraftFromOrder — same reconstruction reorderOrder
-  // already relies on for a full order — just scoped to one category's own
-  // cart items instead of a whole submitted order, and merged into the
-  // EXISTING draft/cart rather than replacing it, so any other category
-  // already in the cart is left untouched.
+  // groupedCartRowsByPlak), and switches Step 2 to that category tab.
+  // Reuses buildDraftFromOrder — same reconstruction reorderOrder already
+  // relies on for a full order — just scoped to one category's own cart
+  // items instead of a whole submitted order, and merged into the EXISTING
+  // draft rather than replacing it, so any other category already in the
+  // cart is left untouched.
+  //
+  // Deliberately does NOT remove the original items from `cart` here —
+  // clicking Edit and then navigating back to Cart without ever clicking
+  // "Add to Cart" again (a misclick, or just changing your mind) used to
+  // silently drop the whole category from the order, since the only copy
+  // was sitting in the draft. addToCart/addAllToCart now REPLACE a
+  // category's existing cart entries when it's (re-)added, instead of
+  // appending — so the stale copy left here is safely superseded on a real
+  // re-add, and just as safely still there if the teacher never re-adds.
   const editCartCategory = useCallback((categoryKey) => {
     patch((st) => {
       const itemsForCat = st.cart.filter((ci) => ci.categoryKey === categoryKey);
@@ -1204,7 +1278,6 @@ export function AppStateProvider({ children }) {
         nextRowId: Math.max(st.nextRowId, restored.nextId),
         nextColumnId: Math.max(st.nextColumnId, restored.nextId),
         visibleBlocksByCategory: { ...st.visibleBlocksByCategory, [categoryKey]: restored.visibleBlocksByCategory[categoryKey] },
-        cart: st.cart.filter((ci) => ci.categoryKey !== categoryKey),
       };
     });
   }, [patch]);
@@ -1378,7 +1451,7 @@ export function AppStateProvider({ children }) {
     const order = st.orders.find((o) => o.id === st.amendOrderId);
     if (!order) return { ok: false, message: 'Order not found.' };
     const originalById = new Map((order.items || []).map((it) => [it.id, it]));
-    const categoriesUsed = CATEGORIES.filter((cat) => (order.items || []).some((it) => it.categoryKey === cat.key));
+    const categoriesUsed = categoriesUsedByItems(order.items);
     const newItems = [];
     categoriesUsed.forEach((cat) => {
       const { blocks, isMatrix, isDynamicMatrix } = computeBlocks(
@@ -1459,12 +1532,18 @@ export function AppStateProvider({ children }) {
   const submitPendingAddOn = useCallback(async () => {
     const st = stateRef.current;
     const newItems = [];
+    const addOnOrder = st.orders.find((o) => o.id === st.addOnOrderId);
+    // A renamed/duplicated template sheet from the original order's own
+    // import has no entry in the static CATEGORIES list at all — without
+    // this, anything the teacher typed into that tab (AddOn.jsx's own
+    // allCategories) would be silently dropped here instead of submitted.
+    const dynamicCats = addOnOrder ? categoriesUsedByItems(addOnOrder.items).filter((c) => isDynamicCategoryKey(c.key)) : [];
     // Every category (including PBD/ALIRAN, split into their own
     // top-level entries — see catalog.js) has exactly one block, so this
     // naturally picks up whichever categories/blocks actually have data
     // in the draft regardless of which category tab the teacher currently
     // has open — no per-variant block-index bookkeeping needed here.
-    CATEGORIES.forEach((cat) => {
+    [...CATEGORIES, ...dynamicCats].forEach((cat) => {
       // SELEMPANG builds one combined item (acara/warna rows in detail.rows)
       // — buildCategoryCartItems already knows its shape and validation.
       if (cat.selempang) {
@@ -1494,7 +1573,7 @@ export function AppStateProvider({ children }) {
       return false;
     }
 
-    const order = st.orders.find((o) => o.id === st.addOnOrderId);
+    const order = addOnOrder;
     // A still-'pending' add-on being overwritten by this fresh submission
     // already had its own stock deducted once (below, on its own earlier
     // call) — restore that first so resubmitting can never leave the

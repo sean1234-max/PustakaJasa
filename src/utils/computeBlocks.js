@@ -4,6 +4,7 @@ import {
   getCategoryLinePlaceholders, getCategoryPositionLine2Placeholder,
   getCategoryTahunPlaceholder, getCategoryNamaKelasPlaceholder,
   resolveSelempangWarna, SELEMPANG_CODE, SELEMPANG_UNIT_PRICE, getStockStatus,
+  resolveCategory, categoriesUsedByItems,
 } from '../data/catalog';
 import { findPossibleTypo } from './typoCheck';
 
@@ -73,7 +74,7 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
     const entry = flatPrices.find((p) => p.code === code);
     return entry ? entry.price : null;
   };
-  const currentCat = CATEGORIES.find((c) => c.key === catKey) || CATEGORIES[0];
+  const currentCat = resolveCategory(catKey) || CATEGORIES[0];
   const isMatrix = currentCat.mode === 'matrix';
   const isDynamicMatrix = currentCat.mode === 'dynamicMatrix';
   const blocksCount = currentCat.blocksCount || 1;
@@ -538,22 +539,20 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
         const nk = !!currentCat.aliranNamaKelas;
         // "Kalau ada kelas": each Tahun's own Nama Kelas list (stored the
         // PPKI way — `${catKey}::${b}::${tahun}::main`). classQty = sum of
-        // its QTY; when a Tahun has a list, its own TOTAL is
-        // classQty × range size (range = 1 with no KEDUDUKAN), auto-computed
-        // and read-only. A Tahun with no list falls back to plain ALIRAN.
+        // its QTY — that sum IS the Tahun's own TOTAL directly (confirmed
+        // against a real order: the teacher already types the class's
+        // final total there, not a per-position count — NOT multiplied by
+        // the KEDUDUKAN range size), auto-computed and read-only. A Tahun
+        // with no list falls back to plain ALIRAN.
         const classQtyFor = (row) => {
           if (!nk) return 0;
           const list = rowsByBlockMap[`${catKey}::${b}::${row.desc}::main`] || [];
           return list.reduce((s, r) => s + ((r.desc || '').trim() ? (Number(r.qty) || 0) : 0), 0);
         };
-        const rangeSizeFor = (row) => {
-          const hingga = Number(row.kedudukanHingga) || 0;
-          return hingga > 0 ? hingga : 1;
-        };
         const derivedFor = (row) => {
           const hingga = Number(row.kedudukanHingga) || 0;
           const cq = classQtyFor(row);
-          if (cq > 0) return cq * rangeSizeFor(row);
+          if (cq > 0) return cq;
           return hingga > 0 ? hingga : (Number(row.qty) || 0);
         };
         rows = rawRows.map((row) => {
@@ -593,11 +592,20 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
           });
         }
 
-        // Per-footer-row QTY: for a plak covering places [d..h], count
-        // every (TAHUN, place[, class]) it wins — place p counts for a TAHUN
-        // whose own KEDUDUKAN reaches at least p, multiplied by that TAHUN's
-        // classQty for the "Kalau ada kelas" variant. A footer row with no
-        // range (posDari null) takes the flat-KEDUDUKAN TAHUNs' own totals.
+        // Per-footer-row QTY: for a plak covering places [d..h], count every
+        // (TAHUN, place) it wins — place p counts for a TAHUN whose own
+        // KEDUDUKAN reaches at least p. Plain ALIRAN: 1 plaque per place, so
+        // this is just how many places [d..h] fall inside — the SAME Tahun's
+        // own range can be split across several Jenis Plak footers this way
+        // (e.g. 1st-3rd = one plak, 4th-10th = another). "Kalau ada kelas"
+        // is different (confirmed against a real order): the footer's own
+        // DARI/HINGGA KE there identifies WHICH TAHUN it's for by matching
+        // that Tahun's own KEDUDUKAN exactly — not a position sub-range to
+        // split one Tahun's classQty across several plaques. A Tahun whose
+        // range doesn't exactly match any footer contributes nothing (the
+        // Jenis Plak total vs Tahun total check below then flags it). A
+        // footer row with no range (posDari null) takes the flat-KEDUDUKAN
+        // TAHUNs' own totals.
         const flatTotal = rawRows.reduce((s, r) => s + ((Number(r.kedudukanHingga) || 0) > 0 ? 0 : derivedFor(r)), 0);
         aliranPlakQty = (pr) => {
           if (!pr.posDari) return flatTotal;
@@ -605,9 +613,13 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
           const h = Number(pr.posHingga) || d;
           return rawRows.reduce((sum, r) => {
             const n = Number(r.kedudukanHingga) || 0;
+            if (n <= 0) return sum;
+            if (nk) {
+              const cq = classQtyFor(r);
+              return d === 1 && h === n ? sum + cq : sum;
+            }
             const places = Math.max(0, Math.min(h, n) - d + 1);
-            const mult = nk ? Math.max(1, classQtyFor(r)) : 1;
-            return sum + places * mult;
+            return sum + places;
           }, 0);
         };
       }
@@ -855,7 +867,7 @@ function mergeItemDetailIntoMaps(it, key, lineValues, matrixValues, rowsByBlock,
     // SELEMPANG rows carry no `desc` (they're ACARA/WARNA/KUANTITI), so the
     // sum-by-desc path below would collapse every row onto the first
     // (undefined === undefined). Upsert by id instead, like the matrix case.
-    const selempangCat = CATEGORIES.find((c) => c.key === it.categoryKey)?.selempang;
+    const selempangCat = resolveCategory(it.categoryKey)?.selempang;
     if (!rowsByBlock[key]) {
       rowsByBlock[key] = it.detail.rows.map((r) => ({ ...r }));
     } else if (it.detail.matrix || selempangCat) {
@@ -970,7 +982,7 @@ export function reconstructBlocksForCategory(order, catKey, plakCatalog) {
 // freshly-added row in the new draft can never collide with a restored
 // one's id.
 export function buildDraftFromOrder(order) {
-  const categories = CATEGORIES.filter((cat) => (order.items || []).some((it) => it.categoryKey === cat.key));
+  const categories = categoriesUsedByItems(order.items);
   const lineValues = {};
   const matrixValues = {};
   const rowsByBlock = {};

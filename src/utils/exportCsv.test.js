@@ -34,8 +34,8 @@ describe('buildCsvRows — PBD (per-recipient, Nama Kelas split)', () => {
     }, {});
     const { rows } = buildCsvRows({ schoolLanguage: 'SK', items: [it] }, 'PBD', [it]);
     expect(rows).toEqual([
-      ['HARI ANUGERAH 2026', '', 'ANUGERAH PBD', 'TAHUN 4', ''],
-      ['HARI ANUGERAH 2026', '', 'ANUGERAH PBD', 'TAHUN 4', ''],
+      ['HARI ANUGERAH 2026', '', 'ANUGERAH PBD', 'TAHUN 4', '', 'DECO LIGHT'],
+      ['HARI ANUGERAH 2026', '', 'ANUGERAH PBD', 'TAHUN 4', '', 'DECO LIGHT'],
     ]);
   });
 
@@ -64,8 +64,8 @@ describe('CSV column remap — reference-sample lines -> CSV columns', () => {
     };
     const { rows } = buildCsvRows({ schoolLanguage: 'SK', items: [item] }, 'MP1', [item]);
     expect(rows).toEqual([
-      ['HARI ANUGERAH', '', 'TERBAIK MATA PELAJARAN\nBAHASA MELAYU', 'TAHUN 1', ''],
-      ['HARI ANUGERAH', '', 'TERBAIK MATA PELAJARAN\nBAHASA MELAYU', 'TAHUN 1', ''],
+      ['HARI ANUGERAH', '', 'TERBAIK MATA PELAJARAN\nBAHASA MELAYU', 'TAHUN 1', '', 'DECO LIGHT'],
+      ['HARI ANUGERAH', '', 'TERBAIK MATA PELAJARAN\nBAHASA MELAYU', 'TAHUN 1', '', 'DECO LIGHT'],
     ]);
   });
 
@@ -78,7 +78,7 @@ describe('CSV column remap — reference-sample lines -> CSV columns', () => {
       },
     };
     const { rows } = buildCsvRows({ schoolLanguage: 'SK', items: [item] }, 'PBD', [item]);
-    expect(rows).toEqual([['HARI ANUGERAH', '', 'ANUGERAH PBD\nTERBAIK KESELURUHAN', 'TAHUN 5', '']]);
+    expect(rows).toEqual([['HARI ANUGERAH', '', 'ANUGERAH PBD\nTERBAIK KESELURUHAN', 'TAHUN 5', '', 'DECO LIGHT']]);
   });
 
   it('LONJAKAN: line 2 -> position, each row TAHUN -> event_line_1', () => {
@@ -91,9 +91,9 @@ describe('CSV column remap — reference-sample lines -> CSV columns', () => {
     };
     const { rows } = buildCsvRows({ schoolLanguage: 'SK', items: [item] }, 'LONJAKAN', [item]);
     expect(rows).toEqual([
-      ['HARI ANUGERAH', '', 'LONJAKAN SAUJANA', 'TAHUN 3', ''],
-      ['HARI ANUGERAH', '', 'LONJAKAN SAUJANA', 'TAHUN 3', ''],
-      ['HARI ANUGERAH', '', 'LONJAKAN SAUJANA', 'TAHUN 4', ''],
+      ['HARI ANUGERAH', '', 'LONJAKAN SAUJANA', 'TAHUN 3', '', 'DECO LIGHT'],
+      ['HARI ANUGERAH', '', 'LONJAKAN SAUJANA', 'TAHUN 3', '', 'DECO LIGHT'],
+      ['HARI ANUGERAH', '', 'LONJAKAN SAUJANA', 'TAHUN 4', '', 'DECO LIGHT'],
     ]);
   });
 });
@@ -118,6 +118,51 @@ describe('SELEMPANG stays out of every Production export path', () => {
     const split = splitOrderCategories(order);
     expect(split.anugerah.map((c) => c.key)).toEqual(['PPKI']);
     expect(split.selempang.map((c) => c.key)).toEqual(['SELEMPANG']);
+  });
+});
+
+describe('getOrderJenisPlakGroups — never combines different categories sharing a Jenis Plak', () => {
+  it('MP THP 1 and TOKOH both using DECO LIGHT stay as two groups, not one', () => {
+    const order = {
+      schoolLanguage: 'SK',
+      items: [
+        { id: 'a', categoryKey: 'MP1', jenisPlak: 'DECO LIGHT', qty: 20 },
+        { id: 'b', categoryKey: 'TOKOH_SHEET', jenisPlak: 'DECO LIGHT', qty: 5 },
+      ],
+    };
+    const groups = getOrderJenisPlakGroups(order);
+    expect(groups).toHaveLength(2);
+    expect(groups.map((g) => [g.categoryKey, g.jenisPlak, g.items.length])).toEqual([
+      ['MP1', 'DECO LIGHT', 1],
+      ['TOKOH_SHEET', 'DECO LIGHT', 1],
+    ]);
+  });
+
+  it('a category using several Jenis Plak within itself (LONJAKAN/TOKOH/KEHADIRAN) splits into one group per Jenis Plak', () => {
+    const order = {
+      schoolLanguage: 'SK',
+      items: [
+        { id: 'a', categoryKey: 'LONJAKAN', jenisPlak: 'DECO LIGHT', qty: 5 },
+        { id: 'b', categoryKey: 'LONJAKAN', jenisPlak: 'SM-13187 (GOLD/BASE A)', qty: 3 },
+        { id: 'c', categoryKey: 'LONJAKAN', jenisPlak: 'H25-1', qty: 4 },
+      ],
+    };
+    const groups = getOrderJenisPlakGroups(order);
+    expect(groups.map((g) => g.jenisPlak)).toEqual(['DECO LIGHT', 'SM-13187 (GOLD/BASE A)', 'H25-1']);
+    expect(groups.every((g) => g.categoryKey === 'LONJAKAN')).toBe(true);
+  });
+
+  it('combines items across batches within the same category + Jenis Plak', () => {
+    const order = {
+      schoolLanguage: 'SK',
+      items: [
+        { id: 'a', categoryKey: 'MP1', jenisPlak: 'DECO LIGHT', qty: 20, batch: 0 },
+        { id: 'b', categoryKey: 'MP1', jenisPlak: 'DECO LIGHT', qty: 4, batch: 1 },
+      ],
+    };
+    const groups = getOrderJenisPlakGroups(order);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].items.map((it) => it.id)).toEqual(['a', 'b']);
   });
 });
 
@@ -205,7 +250,7 @@ describe('buildCsvRows — TOKOH_SHEET NAMA MURID / Reserved', () => {
     const item = tokohItem('a', { id: 1, desc: 'TOKOH MURID', qty: 1, namaMurid: 'AHMAD BIN ALI' });
     const { rows, reservedCount } = buildCsvRows({ ...order, items: [item] }, 'TOKOH_SHEET', [item]);
     expect(reservedCount).toBe(0);
-    expect(rows).toEqual([['HARI ANUGERAH 2026', '', 'TOKOH MURID', 'AHMAD BIN ALI', '']]);
+    expect(rows).toEqual([['HARI ANUGERAH 2026', '', 'TOKOH MURID', 'AHMAD BIN ALI', '', 'CPH / A']]);
   });
 
   it('a blank NAMA MURID engraves the TOKOH name qty times, event_line_1 blank', () => {
@@ -220,7 +265,7 @@ describe('buildCsvRows — TOKOH_SHEET NAMA MURID / Reserved', () => {
     const reserved = tokohItem('r', { id: 2, desc: 'TOKOH AKADEMIK', qty: 2, namaMurid: 'Reserved' });
     const items = [named, reserved];
     const csv = buildCsvRows({ ...order, items }, 'TOKOH_SHEET', items);
-    expect(csv.rows).toEqual([['HARI ANUGERAH 2026', '', 'TOKOH MURID', 'SITI', '']]);
+    expect(csv.rows).toEqual([['HARI ANUGERAH 2026', '', 'TOKOH MURID', 'SITI', '', 'CPH / A']]);
     expect(csv.reservedCount).toBe(2);
 
     const res = validateExport(order, items, [], csv);
@@ -321,6 +366,19 @@ describe('buildCsvRows — ALIRAN TERBAIK footer qty (derived vs teacher overrid
     expect(rows.every((r) => r[3] === 'ANUGERAH ALIRAN TERBAIK' && r[4] === '')).toBe(true);
   });
 
+  it('position gets a "TEMPAT " prefix when the line-3 CONTOH is "TEMPAT PERTAMA" instead of plain "PERTAMA"', () => {
+    const h25 = mk('h', 'h25', 4, 10, 21, { 'ALIRAN::0::3': 'TEMPAT PERTAMA' });
+    const { rows } = buildCsvRows({ ...order, items: [h25] }, 'ALIRAN', [h25]);
+    expect(rows.filter((r) => r[2] === 'TEMPAT KEEMPAT')).toHaveLength(3);
+    expect(rows.some((r) => r[2] === 'KEEMPAT')).toBe(false);
+  });
+
+  it('overridden qty also gets the "TEMPAT " prefix when the CONTOH calls for it', () => {
+    const gold = mk('g', 'sm-13187(gold)', 1, 3, 3, { 'ALIRAN::0::3': 'TEMPAT PERTAMA' });
+    const { rows } = buildCsvRows({ ...order, items: [gold] }, 'ALIRAN', [gold]);
+    expect(rows.map((r) => r[2])).toEqual(['TEMPAT PERTAMA', 'TEMPAT KEDUA', 'TEMPAT KETIGA']);
+  });
+
   it('flat plak row (no range): blank position, one row per plaque of the flat Tahuns', () => {
     const flat = mk('f', 'DECO LIGHT', null, null, 15, { 'ALIRAN::0::2b': 'TAHUN 1' });
     const { rows } = buildCsvRows({ ...order, items: [flat] }, 'ALIRAN', [flat]);
@@ -353,22 +411,71 @@ describe('buildCsvRows — ALIRAN TERBAIK (Kalau ada kelas)', () => {
     posDari, posHingga, detail: rowsByBlockLikeDetail,
   });
 
-  it('ranged plak: one row per (Tahun, class, place); event_line_2 = "TAHUN N <class>"', () => {
-    const { rows } = buildCsvRows({ schoolLanguage: 'SK', items: [mk('GOLD', 1, 3)] }, 'ALIRAN_KELAS', [mk('GOLD', 1, 3)]);
-    // TAHUN 4: 3 classes × places PERTAMA/KEDUA/KETIGA = 9
-    expect(rows).toHaveLength(9);
+  it('ranged plak: a footer matching the Tahun\'s own KEDUDUKAN exactly claims every class\'s full QTY', () => {
+    const { rows } = buildCsvRows({ schoolLanguage: 'SK', items: [mk('GOLD', 1, 5)] }, 'ALIRAN_KELAS', [mk('GOLD', 1, 5)]);
+    // TAHUN 4 (KEDUDUKAN 1-5) exactly matches GOLD's own 1-5 -> all 3
+    // classes' QTY 1 each = 3 rows, every one landing at PERTAMA (see
+    // distributeQtyOverPositions(1, 5)'s remainder-to-earliest rule).
+    expect(rows).toHaveLength(3);
     expect(rows.filter((r) => r[2] === 'PERTAMA' && r[4] === 'TAHUN 4 ADIL')).toHaveLength(1);
-    expect(rows.filter((r) => r[4] === 'TAHUN 4 CEKAL')).toHaveLength(3);
+    expect(rows.filter((r) => r[4] === 'TAHUN 4 CEKAL')).toHaveLength(1);
     expect(rows.every((r) => r[1] === '' && r[3] === 'TERBAIK DALAM ALIRAN')).toBe(true);
+  });
+
+  it('a footer whose range does NOT exactly match the Tahun\'s own KEDUDUKAN claims nothing from it, even if the ranges numerically overlap', () => {
+    // GOLD's 1-3 overlaps TAHUN 4's own 1-5 in raw position numbers, but
+    // isn't an exact match — confirmed against a real order that this must
+    // NOT be treated as "the first 3 places of TAHUN 4" (that would
+    // double-count once a second, exactly-matching footer also claims
+    // TAHUN 4's classes in full).
+    const { rows } = buildCsvRows({ schoolLanguage: 'SK', items: [mk('GOLD', 1, 3)] }, 'ALIRAN_KELAS', [mk('GOLD', 1, 3)]);
+    expect(rows).toHaveLength(0);
+  });
+
+  it('two Tahuns with different KEDUDUKAN ranges, each claimed by its own exactly-matching footer, never double-count each other', () => {
+    // Mirrors a real order: TAHUN 4 (1st-5th) uses one Jenis Plak, TAHUN 5
+    // (1st-3rd) uses a different one — NOT a split of one shared range.
+    const detail = {
+      ...rowsByBlockLikeDetail,
+      rows: [...rowsByBlockLikeDetail.rows, { id: 5, desc: 'TAHUN 5', qty: '3', kedudukanHingga: 3 }],
+      namaKelasBreakdown: {
+        ...rowsByBlockLikeDetail.namaKelasBreakdown,
+        'ALIRAN_KELAS::0::TAHUN 5::main': [{ id: 15, desc: 'DINAMIK', qty: '2' }],
+      },
+    };
+    const item = (jenisPlak, posDari, posHingga) => ({
+      id: jenisPlak, jenisPlak, qty: 0, categoryKey: 'ALIRAN_KELAS', blockIdx: 0, posDari, posHingga, detail,
+    });
+    const { rows: goldRows } = buildCsvRows({ schoolLanguage: 'SK', items: [item('GOLD', 1, 5)] }, 'ALIRAN_KELAS', [item('GOLD', 1, 5)]);
+    const { rows: silverRows } = buildCsvRows({ schoolLanguage: 'SK', items: [item('SILVER', 1, 3)] }, 'ALIRAN_KELAS', [item('SILVER', 1, 3)]);
+    // GOLD (1-5) matches TAHUN 4 only -> its 3 classes (QTY 1 each) = 3,
+    // NOT also picking up TAHUN 5's DINAMIK even though 1-3 ⊂ 1-5.
+    expect(goldRows.filter((r) => r[4]?.startsWith('TAHUN 4 '))).toHaveLength(3);
+    expect(goldRows.filter((r) => r[4]?.startsWith('TAHUN 5 '))).toHaveLength(0);
+    // SILVER (1-3) matches TAHUN 5 only -> DINAMIK's QTY 2, none of TAHUN 4's.
+    expect(silverRows.filter((r) => r[4] === 'TAHUN 5 DINAMIK')).toHaveLength(2);
+    expect(silverRows.filter((r) => r[4]?.startsWith('TAHUN 4 '))).toHaveLength(0);
   });
 
   it('flat plak (no range): one row per (flat Tahun, class), blank position', () => {
     const { rows } = buildCsvRows({ schoolLanguage: 'SK', items: [mk('FLAT', null, null)] }, 'ALIRAN_KELAS', [mk('FLAT', null, null)]);
     // TAHUN 1 (flat): 2 classes → 2 rows
     expect(rows).toEqual([
-      ['HARI ANUGERAH', '', '', 'TERBAIK DALAM ALIRAN', 'TAHUN 1 ADIL'],
-      ['HARI ANUGERAH', '', '', 'TERBAIK DALAM ALIRAN', 'TAHUN 1 BESTARI'],
+      ['HARI ANUGERAH', '', '', 'TERBAIK DALAM ALIRAN', 'TAHUN 1 ADIL', 'FLAT'],
+      ['HARI ANUGERAH', '', '', 'TERBAIK DALAM ALIRAN', 'TAHUN 1 BESTARI', 'FLAT'],
     ]);
+  });
+
+  it('the "TEMPAT " prefix applies here too, when line 3 CONTOH calls for it', () => {
+    const withTempat = (jenisPlak, posDari, posHingga) => ({
+      id: jenisPlak, jenisPlak, qty: 0, categoryKey: 'ALIRAN_KELAS', blockIdx: 0,
+      posDari, posHingga,
+      detail: { ...rowsByBlockLikeDetail, lines: { ...rowsByBlockLikeDetail.lines, 'ALIRAN_KELAS::0::3': 'TEMPAT PERTAMA' } },
+    });
+    const item = withTempat('GOLD', 1, 5);
+    const { rows } = buildCsvRows({ schoolLanguage: 'SK', items: [item] }, 'ALIRAN_KELAS', [item]);
+    expect(rows.filter((r) => r[2] === 'TEMPAT PERTAMA' && r[4] === 'TAHUN 4 ADIL')).toHaveLength(1);
+    expect(rows.some((r) => r[2] === 'PERTAMA')).toBe(false);
   });
 });
 
@@ -398,8 +505,8 @@ describe('buildCsvRows — dynamicMatrix with a pre-written roster column (event
     // The `year` column is retired — always blank (the year rides on the
     // two-line TAJUK BESAR now).
     expect(rows).toEqual([
-      ['SMK X\nHEM 2024', '', 'ANUGERAH KEPIMPINAN MURID CEMERLANG', 'KESHVINI A/P MUGAN', 'KETUA PENGAWAS\nLEMBAGA PENGAWAS SEKOLAH'],
-      ['SMK X\nHEM 2024', '', 'ANUGERAH KEPIMPINAN MURID CEMERLANG', 'LIEW YONG SHIN', 'SETIAUSAHA\nLEMBAGA PENGAWAS SEKOLAH'],
+      ['SMK X\nHEM 2024', '', 'ANUGERAH KEPIMPINAN MURID CEMERLANG', 'KESHVINI A/P MUGAN', 'KETUA PENGAWAS\nLEMBAGA PENGAWAS SEKOLAH', 'OTHER - roster plak'],
+      ['SMK X\nHEM 2024', '', 'ANUGERAH KEPIMPINAN MURID CEMERLANG', 'LIEW YONG SHIN', 'SETIAUSAHA\nLEMBAGA PENGAWAS SEKOLAH', 'OTHER - roster plak'],
     ]);
   });
 
@@ -424,9 +531,9 @@ describe('buildCsvRows — dynamicMatrix with a pre-written roster column (event
     };
     const { rows } = buildCsvRows({ id: 'O', items: [tokoh], schoolLanguage: 'SK' }, 'KLAS_MATRIX', [tokoh]);
     expect(rows).toEqual([
-      ['MAJLIS X', '', 'TOKOH MURID', '', ''],
-      ['MAJLIS X', '', 'TOKOH NILAM', '', ''],
-      ['MAJLIS X', '', 'TOKOH NILAM', '', ''],
+      ['MAJLIS X', '', 'TOKOH MURID', '', '', 'M1902B'],
+      ['MAJLIS X', '', 'TOKOH NILAM', '', '', 'M1902B'],
+      ['MAJLIS X', '', 'TOKOH NILAM', '', '', 'M1902B'],
     ]);
   });
 });

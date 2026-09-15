@@ -4,7 +4,7 @@ import Nav from '../components/Nav';
 import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import { useAppState } from '../state/useAppState';
-import { ACTIVE_CATEGORIES, filterHiddenPlakCatalog } from '../data/catalog';
+import { ACTIVE_CATEGORIES, filterHiddenPlakCatalog, categoriesUsedByItems } from '../data/catalog';
 import { computeBlocks } from '../utils/computeBlocks';
 import { createDraftUpdaters } from '../utils/draftUpdaters';
 
@@ -33,6 +33,17 @@ export default function AddOn() {
 
   const visiblePlakCatalog = useMemo(() => filterHiddenPlakCatalog(state.plakCatalog), [state.plakCatalog]);
 
+  // A renamed/duplicated template sheet from the original order's own
+  // import (excelImport.js) has no standing ACTIVE_CATEGORIES tab — appear
+  // it here too so a later Add-On can add more to that SAME category
+  // instead of only ever being able to target the fixed ones.
+  const allCategories = useMemo(() => {
+    if (!order) return ACTIVE_CATEGORIES;
+    const dynamicCats = categoriesUsedByItems(order.items)
+      .filter((c) => !ACTIVE_CATEGORIES.some((ac) => ac.key === c.key));
+    return [...ACTIVE_CATEGORIES, ...dynamicCats];
+  }, [order]);
+
   if (!order) return null;
 
   return (
@@ -44,7 +55,7 @@ export default function AddOn() {
 
         <div className="card-kicker">Jenis Anugerah (Category)</div>
         <div style={{ margin: 'var(--space-3) 0 var(--space-8)' }}>
-          <CategoryTabs categories={ACTIVE_CATEGORIES} active={state.addOnCategory} onSelect={(key) => patch({ addOnCategory: key })} />
+          <CategoryTabs categories={allCategories} active={state.addOnCategory} onSelect={(key) => patch({ addOnCategory: key })} />
         </div>
 
         {!state.addOnCategory && (

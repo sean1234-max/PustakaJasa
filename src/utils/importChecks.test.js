@@ -5,49 +5,63 @@ import {
   checkLevelBreakdownMatch, checkAliranKelasTotals,
 } from './importChecks';
 
-// A minimal order — getPlakProductionMode only reads item.jenisPlak + qty.
+// A minimal order — getPlakProductionMode groups by (categoryKey, jenisPlak).
 const order = (items) => ({ id: 'ORD-1', items });
+// Every fixture below shares one category — modes.get() keys on that pair.
+const CAT = 'TOKOH_SHEET';
+const key = (jenisPlak) => `${CAT}::${jenisPlak}`;
 
 describe('getPlakProductionMode', () => {
   it('marks a Jenis Plak with qty <= 10 as manual, >= 11 as csv', () => {
     const modes = getPlakProductionMode(order([
-      { id: 'a', jenisPlak: 'AK-7', qty: 2 },
-      { id: 'b', jenisPlak: 'PK 020 A', qty: 30 },
+      { id: 'a', categoryKey: CAT, jenisPlak: 'AK-7', qty: 2 },
+      { id: 'b', categoryKey: CAT, jenisPlak: 'PK 020 A', qty: 30 },
     ]));
-    expect(modes.get('AK-7')).toEqual({ mode: 'manual', totalQty: 2 });
-    expect(modes.get('PK 020 A')).toEqual({ mode: 'csv', totalQty: 30 });
+    expect(modes.get(key('AK-7'))).toEqual({ mode: 'manual', totalQty: 2 });
+    expect(modes.get(key('PK 020 A'))).toEqual({ mode: 'csv', totalQty: 30 });
   });
 
-  it('aggregates qty across every line sharing a Jenis Plak', () => {
+  it('aggregates qty across every line sharing a category + Jenis Plak', () => {
     // KOSAS: PK 020 A used in two sections — 30 + 46 = 76, well over the line.
     const modes = getPlakProductionMode(order([
-      { id: 'a', jenisPlak: 'PK 020 A', qty: 30 },
-      { id: 'b', jenisPlak: 'PK 020 A', qty: 46 },
+      { id: 'a', categoryKey: CAT, jenisPlak: 'PK 020 A', qty: 30 },
+      { id: 'b', categoryKey: CAT, jenisPlak: 'PK 020 A', qty: 46 },
     ]));
-    expect(modes.get('PK 020 A')).toEqual({ mode: 'csv', totalQty: 76 });
+    expect(modes.get(key('PK 020 A'))).toEqual({ mode: 'csv', totalQty: 76 });
   });
 
   it('two lines of 1 each stay manual (2 total), not promoted to csv', () => {
     // KOSAS TOKOH: AK-7 PUTERI 1 + AK-7 PUTERA 1.
     const modes = getPlakProductionMode(order([
-      { id: 'a', jenisPlak: 'AK-7', qty: 1 },
-      { id: 'b', jenisPlak: 'AK-7', qty: 1 },
+      { id: 'a', categoryKey: CAT, jenisPlak: 'AK-7', qty: 1 },
+      { id: 'b', categoryKey: CAT, jenisPlak: 'AK-7', qty: 1 },
     ]));
-    expect(modes.get('AK-7')).toEqual({ mode: 'manual', totalQty: 2 });
+    expect(modes.get(key('AK-7'))).toEqual({ mode: 'manual', totalQty: 2 });
   });
 
   it('exactly 10 is manual, exactly 11 is csv (boundary)', () => {
     const modes = getPlakProductionMode(order([
-      { id: 'a', jenisPlak: 'TEN', qty: 10 },
-      { id: 'b', jenisPlak: 'ELEVEN', qty: 11 },
+      { id: 'a', categoryKey: CAT, jenisPlak: 'TEN', qty: 10 },
+      { id: 'b', categoryKey: CAT, jenisPlak: 'ELEVEN', qty: 11 },
     ]));
-    expect(modes.get('TEN').mode).toBe('manual');
-    expect(modes.get('ELEVEN').mode).toBe('csv');
+    expect(modes.get(key('TEN')).mode).toBe('manual');
+    expect(modes.get(key('ELEVEN')).mode).toBe('csv');
   });
 
   it('ignores items with no Jenis Plak', () => {
-    const modes = getPlakProductionMode(order([{ id: 'a', jenisPlak: '', qty: 5 }]));
+    const modes = getPlakProductionMode(order([{ id: 'a', categoryKey: CAT, jenisPlak: '', qty: 5 }]));
     expect(modes.size).toBe(0);
+  });
+
+  it('keeps the same Jenis Plak in different categories as separate groups', () => {
+    // MP THP 1 and TOKOH sharing a physical Jenis Plak (e.g. DECO LIGHT) still
+    // need separate reference-sample layouts, so they must not merge.
+    const modes = getPlakProductionMode(order([
+      { id: 'a', categoryKey: 'MP1', jenisPlak: 'DECO LIGHT', qty: 20 },
+      { id: 'b', categoryKey: 'TOKOH_SHEET', jenisPlak: 'DECO LIGHT', qty: 3 },
+    ]));
+    expect(modes.get('MP1::DECO LIGHT')).toEqual({ mode: 'csv', totalQty: 20 });
+    expect(modes.get('TOKOH_SHEET::DECO LIGHT')).toEqual({ mode: 'manual', totalQty: 3 });
   });
 });
 
@@ -278,14 +292,17 @@ describe('checkLevelBreakdownMatch', () => {
 });
 
 describe('checkAliranKelasTotals', () => {
-  // TAHUN 1: 6 classes × 5 = 30 pupils, ranked PERTAMA–KESEPULUH (hingga 10)
-  //   → derived 300; teacher typed TOTAL 300 → OK.
-  // TAHUN 4: 4 classes × 1 = 4 pupils, ranked PERTAMA–KELIMA (hingga 5)
-  //   → derived 20; teacher typed TOTAL 8 → mismatch.
+  // Each class's own Nama Kelas QTY is its TOTAL directly — NOT multiplied
+  // by the KEDUDUKAN range size (confirmed against a real order — see
+  // computeBlocks.js's derivedFor / exportCsv.js's buildAliranRows).
+  // TAHUN 1: 6 classes × 5 = 30 pupils total, ranked PERTAMA–KESEPULUH
+  //   (hingga 10, irrelevant to the total) → teacher typed TOTAL 30 → OK.
+  // TAHUN 4: 4 classes × 1 = 4 pupils total, ranked PERTAMA–KELIMA
+  //   (hingga 5, irrelevant to the total) → teacher typed TOTAL 8 → mismatch.
   // TAHUN 2: flat (no KEDUDUKAN), 3 pupils, typed TOTAL 3 → OK.
   const section = {
     tahunRows: [
-      { tahun: 'TAHUN 1', dari: 1, hingga: 10, statedTotal: 300 },
+      { tahun: 'TAHUN 1', dari: 1, hingga: 10, statedTotal: 30 },
       { tahun: 'TAHUN 2', flatQty: 3 },
       { tahun: 'TAHUN 4', dari: 1, hingga: 5, statedTotal: 8 },
     ],
@@ -296,9 +313,9 @@ describe('checkAliranKelasTotals', () => {
     ],
   };
 
-  it('flags a Tahun whose typed TOTAL differs from Nama Kelas × KEDUDUKAN', () => {
+  it('flags a Tahun whose typed TOTAL differs from its own Nama Kelas sum', () => {
     expect(checkAliranKelasTotals(section)).toEqual([
-      { id: 'aliranktot:TAHUN 4', level: 'TAHUN 4', stated: 8, computed: 20, classSum: 4, classCount: 4, rangeSize: 5 },
+      { id: 'aliranktot:TAHUN 4', level: 'TAHUN 4', stated: 8, computed: 4, classSum: 4, classCount: 4 },
     ]);
   });
 

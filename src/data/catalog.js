@@ -42,8 +42,8 @@ const SUBJECTS_MP2_CN = [
 // parsePpkiSheet and draftUpdaters.js's recomputeLevelBreakdown).
 export const MORAL_SUBJECT_BY_LANGUAGE = { SK: 'PENDIDIKAN MORAL', SJKC: '道德教育' };
 
-// ALIRAN TERBAIK's KEDUDUKAN — Malay ordinals PERTAMA (1st) .. KESEPULUH
-// (10th). The sheet's KEDUDUKAN column is a "DARI → HINGGA KE" range
+// ALIRAN TERBAIK's KEDUDUKAN — Malay ordinals PERTAMA (1st) .. KEDUA PULUH
+// (20th). The sheet's KEDUDUKAN column is a "DARI → HINGGA KE" range
 // (excelImport.js's parseAliranSheet); a range PERTAMA→KESEPULUH means
 // every place from 1st to 10th gets its own plaque. Its own JENIS PLAK
 // footer maps position sub-ranges to plaque types (1st-3rd = one plak,
@@ -51,6 +51,8 @@ export const MORAL_SUBJECT_BY_LANGUAGE = { SK: 'PENDIDIKAN MORAL', SJKC: '道德
 export const MALAY_ORDINALS = [
   'PERTAMA', 'KEDUA', 'KETIGA', 'KEEMPAT', 'KELIMA',
   'KEENAM', 'KETUJUH', 'KELAPAN', 'KESEMBILAN', 'KESEPULUH',
+  'KESEBELAS', 'KEDUA BELAS', 'KETIGA BELAS', 'KEEMPAT BELAS', 'KELIMA BELAS',
+  'KEENAM BELAS', 'KETUJUH BELAS', 'KELAPAN BELAS', 'KESEMBILAN BELAS', 'KEDUA PULUH',
 ];
 // Word (or "KE-8" / "KE 8" / a bare "8") -> 1-based position, or null.
 export function ordinalToNum(text) {
@@ -66,6 +68,30 @@ export function ordinalToNum(text) {
 }
 export function numToOrdinal(n) {
   return MALAY_ORDINALS[n - 1] || '';
+}
+
+// Splits `qty` as evenly as possible across `positions` 1-indexed slots,
+// any remainder going to the EARLIEST slots — e.g.
+// distributeQtyOverPositions(7, 3) => [3, 2, 2] (index 0 = position 1).
+// ALIRAN TERBAIK (Kalau ada kelas): a class's own Nama Kelas QTY is its
+// TOTAL for that Tahun (confirmed against a real order — NOT multiplied by
+// the KEDUDUKAN range size), but the JENIS PLAK footer can still split
+// that Tahun's own position range across more than one Jenis Plak (same
+// feature plain ALIRAN's footer already has) — this prorates the class's
+// total across the Tahun's positions so each footer's own sub-range gets
+// its fair, whole-number share, and every footer's shares always sum back
+// to the class's exact total (no double-count, no rounding drift). Shared
+// by computeBlocks.js's aliranPlakQty (the live cart-quantity preview) and
+// exportCsv.js's buildAliranRows (the actual CSV row count) — both MUST
+// stay in agreement, or the cart total and the exported plaque count would
+// silently disagree.
+export function distributeQtyOverPositions(qty, positions) {
+  const n = Math.max(0, Number(positions) || 0);
+  if (n === 0) return [];
+  const total = Math.max(0, Number(qty) || 0);
+  const base = Math.floor(total / n);
+  const remainder = total % n;
+  return Array.from({ length: n }, (_, i) => base + (i < remainder ? 1 : 0));
 }
 
 // Same TODO applies: class-level labels for the MP THP 1/2 matrix columns,
@@ -685,6 +711,64 @@ export const CATEGORIES = [
 // print/production/admin pages) — those all read the full CATEGORIES list,
 // unfiltered.
 export const ACTIVE_CATEGORIES = CATEGORIES.filter((c) => c.active !== false);
+
+// A category minted at import time for a renamed/duplicated copy of a
+// FORM ANUGERAH template sheet (e.g. a teacher copies "ALIRAN TERBAIK",
+// renames it "PENCAPAIAN" for a second event) — see excelImport.js's
+// unified per-sheet shape detection. Rather than persisting a separate
+// per-order "dynamic categories" list, the key ITSELF carries everything
+// needed to reconstruct the category: which existing CATEGORIES entry to
+// clone its behaviour (mode, aliranKedudukan, positionFromRows, ...) from
+// (`templateKind` — just another CATEGORIES key, e.g. 'ALIRAN'), and the
+// sheet's own typed name to show as the label. `encodeURIComponent` keeps
+// the label lossless (spaces, punctuation) while guaranteeing it can never
+// itself contain the "::" separator.
+const DYNAMIC_KEY_PREFIX = 'DYN::';
+
+export function makeDynamicCategoryKey(templateKind, sheetName) {
+  return `${DYNAMIC_KEY_PREFIX}${templateKind}::${encodeURIComponent(sheetName)}`;
+}
+
+export function isDynamicCategoryKey(key) {
+  return typeof key === 'string' && key.startsWith(DYNAMIC_KEY_PREFIX);
+}
+
+// Looks up a category by key — the static CATEGORIES list first (every
+// existing order/behaviour, unchanged); for a key this session doesn't
+// recognize but that makeDynamicCategoryKey minted, synthesizes one by
+// cloning its template kind's behaviour flags and swapping in the sheet's
+// own label. Pure function of the key string alone — no per-order lookup
+// table to keep in sync. Returns undefined for a key that's neither.
+export function resolveCategory(key) {
+  const found = CATEGORIES.find((c) => c.key === key);
+  if (found) return found;
+  if (!isDynamicCategoryKey(key)) return undefined;
+  const rest = key.slice(DYNAMIC_KEY_PREFIX.length);
+  const sep = rest.indexOf('::');
+  if (sep < 0) return undefined;
+  const templateKind = rest.slice(0, sep);
+  const base = CATEGORIES.find((c) => c.key === templateKind);
+  if (!base) return undefined;
+  let label;
+  try { label = decodeURIComponent(rest.slice(sep + 2)); } catch { return undefined; }
+  return { ...base, key, label };
+}
+
+// Every category actually represented in an order/draft's items, including
+// any sheet-derived dynamic one (resolveCategory) — known categories keep
+// their catalog order, a dynamic one is appended after in first-appearance
+// order. Shared by exportCsv.js's getOrderCategories, computeBlocks.js's
+// buildDraftFromOrder, and AppState.jsx's updateAmend — previously three
+// separate `CATEGORIES.filter(...)` copies that could drift.
+export function categoriesUsedByItems(items) {
+  const keys = [...new Set((items || []).map((it) => it.categoryKey).filter(Boolean))];
+  const known = CATEGORIES.filter((cat) => keys.includes(cat.key));
+  const dynamic = keys
+    .filter((k) => !CATEGORIES.some((c) => c.key === k))
+    .map((k) => resolveCategory(k))
+    .filter(Boolean);
+  return [...known, ...dynamic];
+}
 
 // Production splits each order by Jenis Plak — one physical Adobe
 // Illustrator file per Jenis Plak. When a Jenis Plak's TOTAL quantity

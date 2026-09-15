@@ -3,7 +3,129 @@ import {
   flattenPlakCatalog, standardUnitPrice, tahunRangeYears,
   stockZoneFor, getStockStatus, statusPillStyle, STATUS_STAGES, ORDER_STATUSES,
   deliveryStageForShipmentDate, resolveSelempangWarna,
+  MALAY_ORDINALS, ordinalToNum, numToOrdinal, distributeQtyOverPositions,
+  CATEGORIES, makeDynamicCategoryKey, isDynamicCategoryKey, resolveCategory, categoriesUsedByItems,
 } from './catalog';
+
+describe('distributeQtyOverPositions', () => {
+  it('splits evenly when it divides exactly', () => {
+    expect(distributeQtyOverPositions(6, 3)).toEqual([2, 2, 2]);
+  });
+
+  it('puts the remainder on the earliest positions', () => {
+    expect(distributeQtyOverPositions(7, 3)).toEqual([3, 2, 2]);
+  });
+
+  it('a qty smaller than the position count puts 1 on each of the earliest positions, 0 elsewhere', () => {
+    expect(distributeQtyOverPositions(1, 5)).toEqual([1, 0, 0, 0, 0]);
+    expect(distributeQtyOverPositions(3, 5)).toEqual([1, 1, 1, 0, 0]);
+  });
+
+  it('always sums back to the exact original qty', () => {
+    for (const [qty, positions] of [[180, 20], [4, 5], [9, 4], [0, 5], [23, 1]]) {
+      expect(distributeQtyOverPositions(qty, positions).reduce((a, b) => a + b, 0)).toBe(qty);
+    }
+  });
+
+  it('handles 0 positions / negative or missing input without throwing', () => {
+    expect(distributeQtyOverPositions(5, 0)).toEqual([]);
+    expect(distributeQtyOverPositions(-3, 4)).toEqual([0, 0, 0, 0]);
+    expect(distributeQtyOverPositions(undefined, 3)).toEqual([0, 0, 0]);
+  });
+});
+
+describe('makeDynamicCategoryKey / isDynamicCategoryKey / resolveCategory', () => {
+  it('resolves a standard key exactly as before (no dynamic prefix)', () => {
+    expect(resolveCategory('ALIRAN')).toBe(CATEGORIES.find((c) => c.key === 'ALIRAN'));
+    expect(isDynamicCategoryKey('ALIRAN')).toBe(false);
+  });
+
+  it('resolves a sheet-derived key by cloning its template kind and swapping in the label', () => {
+    const key = makeDynamicCategoryKey('ALIRAN', 'PENCAPAIAN');
+    expect(isDynamicCategoryKey(key)).toBe(true);
+    const cat = resolveCategory(key);
+    expect(cat.key).toBe(key);
+    expect(cat.label).toBe('PENCAPAIAN');
+    // Every other behaviour flag is cloned straight from ALIRAN.
+    expect(cat.mode).toBe('list');
+    expect(cat.aliranKedudukan).toBe(true);
+  });
+
+  it('round-trips a label with spaces/punctuation losslessly', () => {
+    const key = makeDynamicCategoryKey('TOKOH_SHEET', 'Hari Anugerah 2.0 (Sukan)');
+    expect(resolveCategory(key).label).toBe('Hari Anugerah 2.0 (Sukan)');
+  });
+
+  it('returns undefined for a dynamic-shaped key whose template kind is not a real category', () => {
+    expect(resolveCategory('DYN::NOT_A_REAL_KIND::Something')).toBeUndefined();
+  });
+
+  it('returns undefined for a key that is neither a static key nor dynamically-shaped', () => {
+    expect(resolveCategory('TOTALLY_UNKNOWN')).toBeUndefined();
+    expect(resolveCategory('')).toBeUndefined();
+    expect(resolveCategory(undefined)).toBeUndefined();
+  });
+});
+
+describe('categoriesUsedByItems', () => {
+  it('keeps catalog order for standard categories and appends dynamic ones after', () => {
+    const dynKey = makeDynamicCategoryKey('ALIRAN', 'PENCAPAIAN');
+    // Items listed out of catalog order (MP1 after PPKI in items, but
+    // catalog order is PPKI, MP1, ... — result should follow catalog order).
+    const items = [
+      { categoryKey: 'MP1' },
+      { categoryKey: dynKey },
+      { categoryKey: 'PPKI' },
+    ];
+    const cats = categoriesUsedByItems(items);
+    expect(cats.map((c) => c.key)).toEqual(['PPKI', 'MP1', dynKey]);
+    expect(cats[2].label).toBe('PENCAPAIAN');
+  });
+
+  it('ignores items with no categoryKey and de-duplicates repeats', () => {
+    const items = [{ categoryKey: 'PPKI' }, { categoryKey: 'PPKI' }, { categoryKey: '' }, {}];
+    expect(categoriesUsedByItems(items).map((c) => c.key)).toEqual(['PPKI']);
+  });
+
+  it('returns an empty array for no items', () => {
+    expect(categoriesUsedByItems([])).toEqual([]);
+    expect(categoriesUsedByItems(undefined)).toEqual([]);
+  });
+});
+
+describe('MALAY_ORDINALS / ordinalToNum / numToOrdinal', () => {
+  it('covers 1st (PERTAMA) through 20th (KEDUA PULUH)', () => {
+    expect(MALAY_ORDINALS).toHaveLength(20);
+    expect(MALAY_ORDINALS[0]).toBe('PERTAMA');
+    expect(MALAY_ORDINALS[19]).toBe('KEDUA PULUH');
+  });
+
+  it('numToOrdinal round-trips through ordinalToNum for every position 1-20', () => {
+    for (let n = 1; n <= 20; n++) {
+      const word = numToOrdinal(n);
+      expect(word).not.toBe('');
+      expect(ordinalToNum(word)).toBe(n);
+    }
+  });
+
+  it('parses the 11th-20th compound words correctly', () => {
+    expect(ordinalToNum('KESEBELAS')).toBe(11);
+    expect(ordinalToNum('KEDUA BELAS')).toBe(12);
+    expect(ordinalToNum('KESEMBILAN BELAS')).toBe(19);
+    expect(ordinalToNum('KEDUA PULUH')).toBe(20);
+  });
+
+  it('still parses "KE-N" / "KE N" / bare "N" up to 20, and rejects 21+', () => {
+    expect(ordinalToNum('KE-15')).toBe(15);
+    expect(ordinalToNum('KE 20')).toBe(20);
+    expect(ordinalToNum('20')).toBe(20);
+    expect(ordinalToNum('KE-21')).toBeNull();
+  });
+
+  it('numToOrdinal returns "" past the 20th', () => {
+    expect(numToOrdinal(21)).toBe('');
+  });
+});
 
 const CATALOG = [
   { code: 'SM-13187', price: 6, children: [

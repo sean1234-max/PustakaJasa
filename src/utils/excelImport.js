@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import { ordinalToNum, resolveSelempangWarna } from '../data/catalog';
+import { ordinalToNum, resolveSelempangWarna, makeDynamicCategoryKey } from '../data/catalog';
 
 // Reads a teacher's own filled-in copy of the FORM ANUGERAH Excel template —
 // not just the new "KLAS MATRIX" sheet, but the ORIGINAL sheets teachers
@@ -108,6 +108,21 @@ function sheetRange(ws) {
   if (!ref) return { r1: 1, r2: 1, c1: 1, c2: 1 };
   const dec = XLSX.utils.decode_range(ref);
   return { r1: dec.s.r + 1, r2: dec.e.r + 1, c1: dec.s.c + 1, c2: dec.e.c + 1 };
+}
+
+// Whether a leftover sheet has any real (non-placeholder-dash) text at all —
+// distinguishes a teacher's untouched template sheet (skip silently, same
+// as always) from one they actually typed something into but whose shape
+// none of the parsers below recognized (worth a warning — see
+// parseFormAnugerahExcel's `unrecognizedSheets`).
+function sheetHasContent(ws) {
+  const range = sheetRange(ws);
+  for (let r = range.r1; r <= range.r2; r++) {
+    for (let c = range.c1; c <= range.c2; c++) {
+      if (cellText(ws, r, c)) return true;
+    }
+  }
+  return false;
 }
 
 // Scans the whole sheet for cells whose text exactly matches (case/space
@@ -1564,6 +1579,17 @@ function findSheet(wb, name) {
   return found ? wb.Sheets[found] : null;
 }
 
+// Like findSheet, but tries each candidate name in order and returns the
+// first match — for a sheet whose real official name differs from what
+// every other lookup here otherwise expects (see the "PPKI,PRA" alias).
+function findSheetAny(wb, names) {
+  for (const name of names) {
+    const ws = findSheet(wb, name);
+    if (ws) return ws;
+  }
+  return null;
+}
+
 // The FRONT PG cover sheet's own JENIS PLAK / QTY table — the school's
 // hand-totalled grand total per plaque code, used purely as a cross-check
 // oracle against what each imported section actually adds up to (see
@@ -1667,14 +1693,129 @@ export function parseFormAnugerahExcel(arrayBuffer) {
 
   const sampleCards = findSampleCards(wb);
   const allSections = [];
+  // A leftover sheet (not one of the canonical exact names below) whose
+  // content matched no recognized shape at all, despite having something
+  // actually typed into it — most likely a duplicated/renamed template
+  // sheet whose format we don't yet auto-detect (see the ALIRAN check
+  // just below for the one format Phase 1 covers). Surfaced to the
+  // teacher on Step 2 (AppState.jsx) instead of the data silently
+  // vanishing — an untouched, still-blank template sheet is NOT reported
+  // here (see sheetHasContent).
+  const unrecognizedSheets = [];
   wb.SheetNames.forEach((name) => {
     const upper = name.trim().toUpperCase();
-    if (upper === 'KLAS MATRIX' || upper === 'FRONT PG' || upper === 'TOKOH' || upper === 'PPKI' || upper === 'PBD'
+    // "PPKI,PRA" is the real official FORM ANUGERAH template's actual tab
+    // name for what every other lookup here calls "PPKI" (confirmed
+    // against the school's own blank template) — not a renamed/duplicated
+    // sheet, just a long-standing name mismatch between the template and
+    // this exact-name check. Excluded here so it reaches the dedicated
+    // findSheetAny(wb, ['PPKI', 'PPKI,PRA']) lookup below instead of being
+    // treated as unrecognized.
+    if (upper === 'KLAS MATRIX' || upper === 'FRONT PG' || upper === 'TOKOH' || upper === 'PPKI' || upper === 'PPKI,PRA' || upper === 'PBD'
       || upper === 'ALIRAN TERBAIK' || upper === 'ALIRAN TERBAIK KALAU ADA KELAS'
       || upper === 'LONJAKAN SAUJANA' || upper === 'KEHADIRAN PENUH'
       || upper === 'MP THP 1' || upper === 'MP THP 2' || upper === 'SELEMPANG'
       || upper === 'MP THP 1 (KALAU ADA KELAS)' || upper === 'MP THP 2 (KALAU ADA KELAS)') return;
     const ws = wb.Sheets[name];
+
+    // A renamed/duplicated copy of an ALIRAN TERBAIK-shaped template (a
+    // teacher reusing that layout for a second, differently-named event —
+    // e.g. "PENCAPAIAN") — detected purely from content (TAHUN +
+    // KEDUDUKAN + DARI/HINGGA KE, optionally a JENIS PLAK footer),
+    // independent of the sheet's own tab name. Whether a real Nama Kelas
+    // breakdown is filled in decides ALIRAN vs ALIRAN_KELAS behaviour —
+    // same auto-detection parseAliranKelasSheet already does for the
+    // exactly-named sheet. See catalog.js's makeDynamicCategoryKey/
+    // resolveCategory — the synthetic key alone carries both which
+    // behaviour to clone and the sheet's own label.
+    const aliranLike = parseAliranKelasSheet(ws);
+    if (aliranLike) {
+      const hasKelas = Array.isArray(aliranLike.levelBreakdown) && aliranLike.levelBreakdown.length > 0;
+      aliranLike.sourceSheet = name;
+      aliranLike.dynamicCategoryKey = makeDynamicCategoryKey(hasKelas ? 'ALIRAN_KELAS' : 'ALIRAN', name);
+      allSections.push(aliranLike);
+      return;
+    }
+
+    // A renamed/duplicated copy of TOKOH's own sheet (exact TOKOH cell +
+    // a KUANTITI/QTY header + per-row NAMA MURID) — distinct shape, no
+    // overlap with anything else checked here.
+    const tokohLike = parseTokohAnugerahSheet(ws);
+    if (tokohLike) {
+      tokohLike.sourceSheet = name;
+      tokohLike.dynamicCategoryKey = makeDynamicCategoryKey('TOKOH_SHEET', name);
+      allSections.push(tokohLike);
+      return;
+    }
+
+    // A renamed/duplicated copy of SELEMPANG's sheet (ACARA + WARNA) —
+    // unlikely a teacher reuses this one (sashes, not plaques, shared
+    // stock, never exported as a CSV — catalog.js's noCsv), but it must
+    // still resolve correctly rather than fall through to the generic
+    // matrix scanner if they do.
+    const selempangLike = parseSelempangSheet(ws);
+    if (selempangLike) {
+      selempangLike.sourceSheet = name;
+      selempangLike.dynamicCategoryKey = makeDynamicCategoryKey('SELEMPANG', name);
+      allSections.push(selempangLike);
+      return;
+    }
+
+    // PBD TERBAIK vs. LONJAKAN SAUJANA/KEHADIRAN PENUH share the same base
+    // shape (TAHUN + a quantity column, no KEDUDUKAN) — the distinguishing
+    // signal is whether a real Nama Kelas breakdown is actually filled in
+    // next to the TAHUN rows: filled in -> PBD-style (the quantity is
+    // split across the named classes); empty/absent -> LONJAKAN/KEHADIRAN-
+    // style (a flat count, Jenis Plak picked per row — parsePbdSheet
+    // doesn't read a per-row Jenis Plak at all, so that data would
+    // otherwise be silently lost). Try the PBD-shaped parser first since
+    // it alone reports whether a breakdown was found; only re-parse with
+    // the LONJAKAN-shaped one when there wasn't one AND that shape (its
+    // own mandatory KUANTITI header, unlike PBD's optional/defaulted one)
+    // actually matches — a sheet PBD's own lenient parser reads but that
+    // isn't really LONJAKAN-shaped just stays PBD-kind.
+    const pbdLike = parsePbdSheet(ws);
+    const hasKelasBreakdown = pbdLike && Array.isArray(pbdLike.levelBreakdown) && pbdLike.levelBreakdown.length > 0;
+    if (pbdLike && hasKelasBreakdown) {
+      pbdLike.sourceSheet = name;
+      pbdLike.dynamicCategoryKey = makeDynamicCategoryKey('PBD', name);
+      allSections.push(pbdLike);
+      return;
+    }
+    const lonjakanLike = !hasKelasBreakdown ? parseTahunPlakRowSheet(ws) : null;
+    if (lonjakanLike) {
+      lonjakanLike.sourceSheet = name;
+      lonjakanLike.dynamicCategoryKey = makeDynamicCategoryKey('LONJAKAN', name);
+      allSections.push(lonjakanLike);
+      return;
+    }
+    if (pbdLike) {
+      pbdLike.sourceSheet = name;
+      pbdLike.dynamicCategoryKey = makeDynamicCategoryKey('PBD', name);
+      allSections.push(pbdLike);
+      return;
+    }
+
+    // A renamed/duplicated PPKI/MP-THP-shaped sheet (exact SUBJEK cell +
+    // level columns, e.g. PRA PPKI/PPKI/PRASEKOLAH or TAHUN 1/2/3) —
+    // there's no content signal distinguishing which of PPKI/MP1/MP2/their
+    // "Kalau ada kelas" variants this "was" (same shape, always has been —
+    // see SOURCE_SHEET_TO_CATEGORY's own header comment), so it's routed
+    // to the generic subject/level matrix behaviour (KLAS_MATRIX's own
+    // mode: 'dynamicMatrix', which already stores per-order rows/columns
+    // rather than a fixed catalog list) instead of guessing. Uses the SAME
+    // dedicated parser the exact-named PPKI/MP THP 1/MP THP 2 sheets do —
+    // more reliable than the fully generic scanSheetForSections/
+    // scanSheetForRosters fallback below at reading this specific layout
+    // (its Nama Kelas breakdown blocks, the "TOLONG ISI DI SINI" skip).
+    const subjectLike = parseSubjectLevelSheet(ws);
+    if (subjectLike) {
+      subjectLike.sourceSheet = name;
+      subjectLike.dynamicCategoryKey = makeDynamicCategoryKey('KLAS_MATRIX', name);
+      allSections.push(subjectLike);
+      return;
+    }
+
     // Mutually exclusive in practice — a "JENIS PLAK" footer sheet never
     // also carries a "NAMA MURID"/"NAMA GURU" roster header, so running
     // both scans on every sheet is safe and needs no shape pre-detection.
@@ -1684,9 +1825,10 @@ export function parseFormAnugerahExcel(arrayBuffer) {
     // when a file lands more than one.
     const sheetSections = [...scanSheetForSections(ws), ...scanSheetForRosters(ws, sampleCards)];
     sheetSections.forEach((s) => { s.sourceSheet = name; });
+    if (sheetSections.length === 0 && sheetHasContent(ws)) unrecognizedSheets.push(name);
     allSections.push(...sheetSections);
   });
-  const ppkiSheet = findSheet(wb, 'PPKI');
+  const ppkiSheet = findSheetAny(wb, ['PPKI', 'PPKI,PRA']);
   if (ppkiSheet) {
     const ppkiSection = parseSubjectLevelSheet(ppkiSheet);
     if (ppkiSection) { ppkiSection.sourceSheet = 'PPKI'; allSections.push(ppkiSection); }
@@ -1796,7 +1938,7 @@ export function parseFormAnugerahExcel(arrayBuffer) {
     });
   }
 
-  if (allSections.length === 0 && kivNotes.length === 0) {
+  if (allSections.length === 0 && kivNotes.length === 0 && unrecognizedSheets.length === 0) {
     return { klasMatrix: null, error: 'No filled-in data found in any recognized sheet of this file.' };
   }
 
@@ -1809,13 +1951,17 @@ export function parseFormAnugerahExcel(arrayBuffer) {
   const categorized = {};
   const klasMatrixSections = [];
   allSections.forEach((s) => {
-    const catKey = SOURCE_SHEET_TO_CATEGORY[s.sourceSheet];
+    // `dynamicCategoryKey` (a renamed/duplicated template sheet — set just
+    // above) takes priority over the fixed-name lookup, since its own
+    // sourceSheet is never one of SOURCE_SHEET_TO_CATEGORY's literal keys.
+    const catKey = s.dynamicCategoryKey || SOURCE_SHEET_TO_CATEGORY[s.sourceSheet];
     if (catKey) (categorized[catKey] = categorized[catKey] || []).push(s);
     else klasMatrixSections.push(s);
   });
 
   return {
     categorized,
+    unrecognizedSheets,
     klasMatrix: klasMatrixSections.length > 0 ? { sections: klasMatrixSections } : null,
     kivNotes,
   };

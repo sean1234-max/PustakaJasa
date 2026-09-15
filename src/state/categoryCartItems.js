@@ -1,4 +1,4 @@
-import { CATEGORIES, SELEMPANG_CODE } from '../data/catalog';
+import { resolveCategory, SELEMPANG_CODE } from '../data/catalog';
 import { computeBlocks, snapshotDetail, noopUpdaters } from '../utils/computeBlocks';
 
 // Turns one category's live draft (lineValues / matrixValues / rowsByBlock
@@ -18,7 +18,7 @@ export function buildCategoryCartItems(st, catKey) {
   const { blocks, isMatrix, isDynamicMatrix } = computeBlocks(
     catKey, st.lineValues, st.matrixValues, st.rowsByBlock, st.plakRows, st.columnsByBlock, noopUpdaters, st.plakCatalog, st.schoolLanguage,
   );
-  const cat = CATEGORIES.find((c) => c.key === catKey);
+  const cat = resolveCategory(catKey);
   let engaged = false;
 
   // Catches the ways a category can be left half-finished — a reference

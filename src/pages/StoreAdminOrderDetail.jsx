@@ -181,10 +181,12 @@ export default function StoreAdminOrderDetail() {
               {order.terms && <div><div className="dim">Terms</div><div>{order.terms}</div></div>}
               {awaitingApproval ? (
                 <>
-                  {/* Shipment Date can't be after the Function Date (the event
-                      itself) — picker caps at it and Approve re-checks. */}
-                  <DatePicker label="Shipment Date" id="storeAdminDueDate" selected={dueDateDraft} today={today} onSelect={setDueDateDraft} maxDate={functionDateDraft} />
-                  <DatePicker label="Function Date" id="storeAdminFunctionDate" selected={functionDateDraft} today={today} onSelect={setFunctionDateDraft} minDate={dueDateDraft} />
+                  {/* Shipment Date can't be before today (already-past dates
+                      aren't a real shipment option) or after the Function
+                      Date (the event itself) — picker caps at both and
+                      Approve re-checks. */}
+                  <DatePicker label="Shipment Date" id="storeAdminDueDate" selected={dueDateDraft} today={today} onSelect={setDueDateDraft} minDate={today} maxDate={functionDateDraft} />
+                  <DatePicker label="Function Date" id="storeAdminFunctionDate" selected={functionDateDraft} today={today} onSelect={setFunctionDateDraft} minDate={dueDateDraft || today} />
                   {dateError && <div className="login-error" style={{ gridColumn: '1 / -1', margin: 0 }}>{dateError}</div>}
                 </>
               ) : (

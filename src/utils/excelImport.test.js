@@ -5,6 +5,7 @@ import { computeBlocks, noopUpdaters } from './computeBlocks';
 import { buildCategoryCartItems } from '../state/categoryCartItems';
 import { buildCsvRows } from './exportCsv';
 import { checkAliranKelasTotals } from './importChecks';
+import { makeDynamicCategoryKey, resolveCategory } from '../data/catalog';
 
 function workbookFromSheets(sheets) {
   const wb = XLSX.utils.book_new();
@@ -48,6 +49,37 @@ describe('parseFormAnugerahExcel — SELEMPANG sheet', () => {
     });
     const parsed = parseFormAnugerahExcel(buf);
     expect(parsed.categorized?.SELEMPANG).toBeUndefined();
+  });
+});
+
+describe('parseFormAnugerahExcel — "PPKI,PRA" sheet name (the real official template\'s actual PPKI tab)', () => {
+  const ppkiRows = [
+    ['SUBJEK', 'KUANTITI'],
+    [null, 'PRA PPKI', 'PPKI', 'PRASEKOLAH'],
+    ['BAHASA MELAYU', 14, 6, 16],
+    ['TOTAL', 14, 6, 16],
+  ];
+
+  it('is recognized as PPKI, not left unrecognized', () => {
+    const parsed = parseFormAnugerahExcel(workbookFromSheets({ 'PPKI,PRA': ppkiRows }));
+    expect(parsed.unrecognizedSheets).toEqual([]);
+    const section = (parsed.categorized?.PPKI || [])[0];
+    expect(section).toBeDefined();
+    expect(section.subjectOrder).toEqual(['BAHASA MELAYU']);
+  });
+
+  it('an exact "PPKI" sheet still works too (the alias is additive, not a replacement)', () => {
+    const parsed = parseFormAnugerahExcel(workbookFromSheets({ PPKI: ppkiRows }));
+    expect((parsed.categorized?.PPKI || [])[0]).toBeDefined();
+  });
+
+  it('"PPKI,PRA" is not double-counted as an ALSO-unrecognized leftover sheet', () => {
+    const parsed = parseFormAnugerahExcel(workbookFromSheets({
+      'PPKI,PRA': ppkiRows,
+      'ALIRAN TERBAIK': [['TAHUN', 'KEDUDUKAN'], [null, 'DARI', 'HINGGA KE'], ['TAHUN 1', 'PERTAMA', 'KETIGA']],
+    }));
+    expect(parsed.categorized?.PPKI).toHaveLength(1);
+    expect(parsed.unrecognizedSheets).toEqual([]);
   });
 });
 
@@ -128,7 +160,8 @@ describe('parseFormAnugerahExcel — ALIRAN TERBAIK (Kalau ada kelas)', () => {
     base[3] = [null, null, null, null, 'TAHUN 4'];
     base[8] = ['TAHUN', 'KEDUDUKAN', null, 'TOTAL', null, null, 'TAHUN 4', null, null, 'TAHUN 5'];
     base[9] = [null, 'DARI', 'HINGGA KE', null, null, null, 'NAMA KELAS', 'QTY', null, 'NAMA KELAS', 'QTY'];
-    // TAHUN 4 ranked PERTAMA–KELIMA (5), 3 Nama Kelas × 1 → derived 15.
+    // TAHUN 4 ranked PERTAMA–KELIMA (5, irrelevant to the total — each
+    // class's own QTY already IS the total), 3 Nama Kelas × 1 -> total 3.
     base[10] = ['TAHUN 4', 'PERTAMA', 'KELIMA', null, null, null, 'ADIL', 1, null, 'ADIL', 1];
     base[11] = ['TAHUN 5', null, null, null, null, null, 'BESTARI', 1, null, 'BESTARI', 1];
     base[12] = ['TAHUN 6', null, null, null, null, null, 'CEKAL', 1];
@@ -138,10 +171,10 @@ describe('parseFormAnugerahExcel — ALIRAN TERBAIK (Kalau ada kelas)', () => {
       r[10][3] = total; // the TOTAL column (right of HINGGA KE)
       return (parseFormAnugerahExcel(workbookFromSheets({ 'ALIRAN TERBAIK Kalau ada kelas': r })).categorized?.ALIRAN_KELAS || [])[0];
     };
-    expect(parseWithTotal(15).tahunRows[0].statedTotal).toBe(15);
-    expect(checkAliranKelasTotals(parseWithTotal(15))).toEqual([]);
+    expect(parseWithTotal(3).tahunRows[0].statedTotal).toBe(3);
+    expect(checkAliranKelasTotals(parseWithTotal(3))).toEqual([]);
     expect(checkAliranKelasTotals(parseWithTotal(9))).toEqual([
-      { id: 'aliranktot:TAHUN 4', level: 'TAHUN 4', stated: 9, computed: 15, classSum: 3, classCount: 3, rangeSize: 5 },
+      { id: 'aliranktot:TAHUN 4', level: 'TAHUN 4', stated: 9, computed: 3, classSum: 3, classCount: 3 },
     ]);
   });
 });
@@ -149,8 +182,9 @@ describe('parseFormAnugerahExcel — ALIRAN TERBAIK (Kalau ada kelas)', () => {
 describe('ALIRAN TERBAIK (Kalau ada kelas) — import → auto TOTAL → cart → CSV', () => {
   // The "TAHUN 1" breakdown block (col G) lists ADIL/BESTARI/CEKAL — 3
   // classes for the flat TAHUN 1 → TOTAL 3. The "TAHUN 4" block (col J)
-  // lists ADIL/BESTARI/CEKAL/DINAMIK — 4 classes, and TAHUN 4 is ranked
-  // PERTAMA–KELIMA (5) → TOTAL 4 × 5 = 20. Grand total 23.
+  // lists ADIL/BESTARI/CEKAL/DINAMIK — 4 classes → TOTAL 4 (each class's
+  // own QTY is its total directly — NOT multiplied by the KEDUDUKAN range,
+  // even though TAHUN 4 is ranked PERTAMA–KELIMA). Grand total 7.
   const r = [];
   r[0] = [null, null, null, null, 'TOLONG ISI DI SINI'];
   r[1] = [null, null, null, null, 'SEKOLAH KEBANGSAAN CONTOH\nHARI ANUGERAH 2026'];
@@ -203,31 +237,339 @@ describe('ALIRAN TERBAIK (Kalau ada kelas) — import → auto TOTAL → cart �
     return { lineValues, matrixValues: {}, rowsByBlock, plakRows: { [key]: plak }, columnsByBlock: {}, plakCatalog: catalog, schoolLanguage: 'SK' };
   };
 
-  it('each Tahun TOTAL = classes × KEDUDUKAN range; cart + CSV line up', () => {
+  it('each Tahun TOTAL = its own Nama Kelas sum (not multiplied by KEDUDUKAN range); cart + CSV line up', () => {
     const section = (parseFormAnugerahExcel(workbookFromSheets({ 'ALIRAN TERBAIK Kalau ada kelas': r.map((x) => x || []) })).categorized?.ALIRAN_KELAS || [])[0];
     expect(section.isAliranKelas).toBe(true);
 
     const st = buildDraft(section);
     const blk = computeBlocks('ALIRAN_KELAS', st.lineValues, {}, st.rowsByBlock, st.plakRows, {}, noopUpdaters, catalog, 'SK').blocks[0];
-    expect(blk.rows.map((x) => Number(x.qty) || 0)).toEqual([3, 0, 0, 20, 0, 0]);
+    expect(blk.rows.map((x) => Number(x.qty) || 0)).toEqual([3, 0, 0, 4, 0, 0]);
     expect(blk.rows[0].qtyReadOnly && blk.rows[3].qtyReadOnly).toBe(true);
-    expect(blk.blockTotalQty).toBe(23);
+    expect(blk.blockTotalQty).toBe(7);
 
     const res = buildCategoryCartItems(st, 'ALIRAN_KELAS');
     expect(res.error).toBeUndefined();
-    expect(res.items.map((i) => i.qty).reduce((a, b) => a + b, 0)).toBe(23);
+    expect(res.items.map((i) => i.qty).reduce((a, b) => a + b, 0)).toBe(7);
 
     const { rows, skippedItemIds } = buildCsvRows({ schoolLanguage: 'SK', items: res.items }, 'ALIRAN_KELAS', res.items);
     expect(skippedItemIds).toEqual([]);
-    expect(rows).toHaveLength(23);
+    expect(rows).toHaveLength(7);
     // event_header two-line, year retired, event_line_1 = ACARA for all.
     expect(rows.every((x) => x[0] === 'SEKOLAH KEBANGSAAN CONTOH\nHARI ANUGERAH 2026' && x[1] === '' && x[3] === 'TERBAIK DALAM ALIRAN')).toBe(true);
-    // TAHUN 4 DINAMIK: 5 plaques, positions PERTAMA..KELIMA.
-    expect(rows.filter((x) => x[4] === 'TAHUN 4 DINAMIK')).toHaveLength(5);
+    // TAHUN 4 DINAMIK: qty 1, one plaque — its single position falls at
+    // the start of the range (distributeQtyOverPositions' remainder rule).
+    expect(rows.filter((x) => x[4] === 'TAHUN 4 DINAMIK')).toHaveLength(1);
     expect(new Set(rows.filter((x) => x[4] === 'TAHUN 4 DINAMIK').map((x) => x[2])))
-      .toEqual(new Set(['PERTAMA', 'KEDUA', 'KETIGA', 'KEEMPAT', 'KELIMA']));
+      .toEqual(new Set(['PERTAMA']));
+    // The Jenis Plak footer covers the Tahun's whole range (DECO LIGHT:
+    // PERTAMA-KELIMA), so its own combined qty still equals the Tahun's
+    // full total (ADIL+BESTARI+CEKAL+DINAMIK = 4), just distributed across
+    // fewer distinct positions than the old (wrong) ×range-size behaviour.
+    expect(rows.filter((x) => x[4]?.startsWith('TAHUN 4 '))).toHaveLength(4);
     // Flat Tahuns: blank position, "TAHUN N <class>" in event_line_2.
     expect(rows.filter((x) => x[2] === '' && x[4] === 'TAHUN 1 ADIL')).toHaveLength(1);
+  });
+});
+
+describe('parseFormAnugerahExcel — renamed/duplicated template sheet becomes its own category', () => {
+  // A plain ALIRAN-shaped sheet (TAHUN + KEDUDUKAN + DARI/HINGGA KE + a
+  // JENIS PLAK footer), no Nama Kelas breakdown — same shape parseAliranSheet
+  // (not the Kelas variant) recognizes.
+  const plainAliranRows = () => {
+    const r = [];
+    r[0] = [null, null, null, null, 'TOLONG ISI DI SINI'];
+    r[1] = [null, null, null, null, 'HARI ANUGERAH 2026'];
+    r[2] = [null, null, null, null, 'TERBAIK DALAM ALIRAN'];
+    r[8] = ['TAHUN', 'KEDUDUKAN'];
+    r[9] = [null, 'DARI', 'HINGGA KE'];
+    r[10] = ['TAHUN 1', 'PERTAMA', 'KETIGA'];
+    r[11] = ['TAHUN 2'];
+    r[12] = ['TAHUN 3'];
+    r[13] = ['TAHUN 4'];
+    r[14] = ['TAHUN 5'];
+    r[15] = ['TAHUN 6'];
+    r[16] = ['TOTAL:'];
+    r[19] = [null, 'JENIS PLAK', 'CATATAN', null, 'QTY', 'HARGA'];
+    r[20] = [null, null, 'DARI', 'HINGGA KE'];
+    r[21] = [null, 'DECO LIGHT', 'PERTAMA', 'KETIGA'];
+    return r.map((x) => x || []);
+  };
+
+  it('a sheet named after the teacher\'s own event (not "ALIRAN TERBAIK") is still recognized by shape, under its own dynamic key', () => {
+    const parsed = parseFormAnugerahExcel(workbookFromSheets({ PENCAPAIAN: plainAliranRows() }));
+    const key = makeDynamicCategoryKey('ALIRAN', 'PENCAPAIAN');
+    expect(parsed.categorized?.ALIRAN).toBeUndefined();
+    const section = (parsed.categorized?.[key] || [])[0];
+    expect(section).toBeDefined();
+    // parseAliranKelasSheet (the detector used, since it's a strict superset
+    // of parseAliranSheet) always tags isAliranKelas:true even with no real
+    // breakdown — the *category* still correctly resolves to plain ALIRAN
+    // below, since that's decided by levelBreakdown actually having content.
+    expect(section.levelBreakdown).toBeNull();
+    expect(section.tahunRows[0]).toEqual({ tahun: 'TAHUN 1', dari: 1, hingga: 3, statedTotal: null });
+    const cat = resolveCategory(key);
+    expect(cat.label).toBe('PENCAPAIAN');
+    expect(cat.aliranKedudukan).toBe(true);
+    expect(cat.key.startsWith(makeDynamicCategoryKey('ALIRAN', ''))).toBe(true);
+  });
+
+  it('a renamed sheet WITH a real Nama Kelas breakdown resolves as the ALIRAN_KELAS template kind', () => {
+    // Same shape as the "ALIRAN TERBAIK (Kalau ada kelas)" fixture above
+    // (two per-Tahun Nama Kelas blocks), just under an arbitrary sheet name.
+    const r = [];
+    r[0] = [null, null, null, null, 'TOLONG ISI DI SINI'];
+    r[1] = [null, null, null, null, 'HARI ANUGERAH KECEMERLANGAN 2026'];
+    r[2] = [null, null, null, null, 'TERBAIK DALAM ALIRAN'];
+    r[3] = [null, null, null, null, 'TAHUN 1'];
+    r[4] = [null, null, null, null, 'PERTAMA'];
+    r[8] = ['TAHUN', 'KEDUDUKAN', null, 'TOTAL', null, null, 'TAHUN 1', null, null, 'TAHUN 4'];
+    r[9] = [null, 'DARI', 'HINGGA KE', null, null, null, 'NAMA KELAS', 'QTY', null, 'NAMA KELAS', 'QTY'];
+    r[10] = ['TAHUN 1', null, null, null, null, null, 'ADIL', 1, null, 'ADIL', 1];
+    r[11] = ['TAHUN 2', null, null, null, null, null, 'BESTARI', 1, null, 'BESTARI', 1];
+    r[12] = ['TAHUN 3', null, null, null, null, null, null, null, null, 'CEKAL', 1];
+    r[13] = ['TAHUN 4', 'PERTAMA', 'KELIMA'];
+    r[14] = ['TAHUN 5'];
+    r[15] = ['TAHUN 6'];
+    r[16] = ['TOTAL:'];
+    r[19] = [null, 'JENIS PLAK', 'CATATAN', null, 'QTY', 'HARGA'];
+    r[20] = [null, null, 'DARI', 'HINGGA KE'];
+    r[21] = [null, 'DECO LIGHT', 'PERTAMA', 'KELIMA'];
+    const parsed = parseFormAnugerahExcel(workbookFromSheets({ 'SUKAN 2026': r.map((x) => x || []) }));
+    const key = makeDynamicCategoryKey('ALIRAN_KELAS', 'SUKAN 2026');
+    const section = (parsed.categorized?.[key] || [])[0];
+    expect(section).toBeDefined();
+    expect(section.isAliranKelas).toBe(true);
+    expect(section.levelBreakdown.map((lb) => lb.label)).toEqual(['TAHUN 1', 'TAHUN 4']);
+  });
+
+  it('a real "ALIRAN TERBAIK" sheet AND a renamed duplicate coexist as two separate categories, not a collision', () => {
+    const parsed = parseFormAnugerahExcel(workbookFromSheets({
+      'ALIRAN TERBAIK': plainAliranRows(),
+      'HARI KOKURIKULUM': plainAliranRows(),
+    }));
+    const dynKey = makeDynamicCategoryKey('ALIRAN', 'HARI KOKURIKULUM');
+    expect(parsed.categorized?.ALIRAN).toHaveLength(1);
+    expect(parsed.categorized?.[dynKey]).toHaveLength(1);
+  });
+
+  it('a leftover sheet with real content matching no recognized shape is reported, not silently dropped', () => {
+    const parsed = parseFormAnugerahExcel(workbookFromSheets({
+      'RANDOM NOTES': [['Just some notes the teacher left here', 'not a real order sheet']],
+    }));
+    expect(parsed.unrecognizedSheets).toEqual(['RANDOM NOTES']);
+  });
+
+  it('an untouched, still-blank sheet is skipped silently — no warning', () => {
+    const parsed = parseFormAnugerahExcel(workbookFromSheets({
+      'ALIRAN TERBAIK': plainAliranRows(),
+      'BLANK SHEET': [[]],
+    }));
+    expect(parsed.unrecognizedSheets).toEqual([]);
+  });
+
+  it('a renamed TOKOH-shaped sheet is recognized under its own dynamic key', () => {
+    const parsed = parseFormAnugerahExcel(workbookFromSheets({
+      'ANUGERAH KHAS': [
+        [null, null, null, 'TOLONG ISI DI SINI'],
+        [null, null, null, 'HARI ANUGERAH KECEMERLANGAN MURID'],
+        [null, null, null, 'TOKOH MURID'],
+        [],
+        [],
+        ['TOKOH', 'NAMA MURID', 'GAMBAR (YES/NO)', 'KUANTITI', 'JENIS PLAK'],
+        ['TOKOH MURID', 'Ali', 'YES', 1, 'DECO LIGHT'],
+      ],
+    }));
+    const key = makeDynamicCategoryKey('TOKOH_SHEET', 'ANUGERAH KHAS');
+    const section = (parsed.categorized?.[key] || [])[0];
+    expect(section).toBeDefined();
+    expect(section.isTokohList).toBe(true);
+    expect(resolveCategory(key).label).toBe('ANUGERAH KHAS');
+  });
+
+  it('a renamed SELEMPANG-shaped sheet is recognized under its own dynamic key', () => {
+    const parsed = parseFormAnugerahExcel(workbookFromSheets({
+      'SELEMPANG SUKAN': [
+        ['ACARA', 'WARNA', 'KUANTITI'],
+        ['HARI SUKAN', 'BIRU', 30],
+      ],
+    }));
+    const key = makeDynamicCategoryKey('SELEMPANG', 'SELEMPANG SUKAN');
+    const section = (parsed.categorized?.[key] || [])[0];
+    expect(section).toBeDefined();
+    expect(section.isSelempangList).toBe(true);
+    expect(resolveCategory(key).noCsv).toBe(true);
+  });
+
+  it('a renamed PBD-shaped sheet WITH a real Nama Kelas breakdown resolves as PBD', () => {
+    // Same shape as the "PBD Tahun labels follow the sheet" fixture above
+    // (findPpkiNamaKelasBlocks needs 2+ side-by-side blocks to line up
+    // column boundaries), just under an arbitrary sheet name.
+    const rows = [];
+    rows[1] = [null, 'TOLONG ISI DI SINI'];
+    rows[2] = [null, 'HARI ANUGERAH KECEMERLANGAN MURID'];
+    rows[3] = [null, 'ANUGERAH KECEMERLANGAN PBD'];
+    rows[6] = ['TAHUN', 'KUANTITI', null, null, 'TAHUN 1', null, null, null, 'TAHUN 2'];
+    rows[7] = [null, null, null, null, 'NAMA KELAS', 'QTY', null, null, 'NAMA KELAS', 'QTY'];
+    rows[8] = ['TAHUN 1', 12, null, null, 'GAGI', 5, null, null, 'GAGI', 8];
+    rows[9] = ['TAHUN 2', 11, null, null, 'HAZIQ', 7, null, null, 'HAZIQ', 3];
+    rows[10] = ['TAHUN 3', 5];
+    rows[11] = ['TOTAL', 28];
+    rows[13] = [null, 'JENIS PLAK', 'QTY', 'HARGA'];
+    rows[14] = [null, 'DECO LIGHT', 28];
+    const parsed = parseFormAnugerahExcel(workbookFromSheets({ 'PENCAPAIAN PBD': rows.map((r) => r || []) }));
+    const pbdKey = makeDynamicCategoryKey('PBD', 'PENCAPAIAN PBD');
+    const lonjakanKey = makeDynamicCategoryKey('LONJAKAN', 'PENCAPAIAN PBD');
+    expect(parsed.categorized?.[lonjakanKey]).toBeUndefined();
+    const section = (parsed.categorized?.[pbdKey] || [])[0];
+    expect(section).toBeDefined();
+    expect(section.isTahunList).toBe(true);
+    expect(section.levelBreakdown.map((lb) => lb.label)).toEqual(['TAHUN 1', 'TAHUN 2']);
+    expect(resolveCategory(pbdKey).levelBreakdownAxis).toBe('subject');
+  });
+
+  it('a renamed TAHUN+KUANTITI sheet with NO Nama Kelas breakdown resolves as LONJAKAN, not PBD', () => {
+    const parsed = parseFormAnugerahExcel(workbookFromSheets({
+      'PENCAPAIAN SUKAN': [
+        ['TAHUN', 'KUANTITI', 'JENIS PLAK'],
+        ['TAHUN 1', 5, 'DECO LIGHT'],
+        ['TAHUN 2', 3, 'H25'],
+      ],
+    }));
+    const pbdKey = makeDynamicCategoryKey('PBD', 'PENCAPAIAN SUKAN');
+    const lonjakanKey = makeDynamicCategoryKey('LONJAKAN', 'PENCAPAIAN SUKAN');
+    expect(parsed.categorized?.[pbdKey]).toBeUndefined();
+    const section = (parsed.categorized?.[lonjakanKey] || [])[0];
+    expect(section).toBeDefined();
+    expect(section.isSimpleTahunList).toBe(true);
+    expect(section.tahunRows).toEqual([
+      { tahun: 'TAHUN 1', qty: 5, jenisPlak: 'DECO LIGHT' },
+      { tahun: 'TAHUN 2', qty: 3, jenisPlak: 'H25' },
+    ]);
+    // Clones LONJAKAN's per-row Jenis Plak behaviour, not PBD's matrix one.
+    expect(resolveCategory(lonjakanKey).plakPerRow).toBe(true);
+    expect(resolveCategory(lonjakanKey).positionFromRows).toBe(true);
+  });
+
+  it('a real "PBD" sheet AND a renamed duplicate (no breakdown) coexist as two separate categories', () => {
+    // No Nama Kelas breakdown here, so the renamed copy resolves as
+    // LONJAKAN-kind (per the disambiguation rule above) — the point of
+    // this test is just that the two don't collide into one, not which
+    // template kind the renamed one lands under.
+    const pbdRows = [
+      ['TAHUN', 'KUANTITI'],
+      ['TAHUN 1', 5],
+    ];
+    const parsed = parseFormAnugerahExcel(workbookFromSheets({
+      PBD: pbdRows,
+      'PENCAPAIAN AKADEMIK': pbdRows,
+    }));
+    const dynKey = makeDynamicCategoryKey('LONJAKAN', 'PENCAPAIAN AKADEMIK');
+    expect(parsed.categorized?.PBD).toHaveLength(1);
+    expect(parsed.categorized?.[dynKey]).toHaveLength(1);
+  });
+
+  it('a real "PBD" sheet WITH a breakdown AND a renamed duplicate WITH a breakdown both resolve as PBD, uncollided', () => {
+    const rows = [];
+    rows[1] = [null, 'TOLONG ISI DI SINI'];
+    rows[6] = ['TAHUN', 'KUANTITI', null, null, 'TAHUN 1', null, null, null, 'TAHUN 2'];
+    rows[7] = [null, null, null, null, 'NAMA KELAS', 'QTY', null, null, 'NAMA KELAS', 'QTY'];
+    rows[8] = ['TAHUN 1', 12, null, null, 'GAGI', 5, null, null, 'GAGI', 8];
+    rows[9] = ['TAHUN 2', 11, null, null, 'HAZIQ', 7, null, null, 'HAZIQ', 3];
+    const aoa = rows.map((r) => r || []);
+    const parsed = parseFormAnugerahExcel(workbookFromSheets({ PBD: aoa, 'PENCAPAIAN PBD 2': aoa }));
+    const dynKey = makeDynamicCategoryKey('PBD', 'PENCAPAIAN PBD 2');
+    expect(parsed.categorized?.PBD).toHaveLength(1);
+    expect(parsed.categorized?.[dynKey]).toHaveLength(1);
+  });
+
+  it('a renamed SUBJEK-shaped sheet (PPKI/MP-THP family) resolves as its own dynamicMatrix category', () => {
+    const rows = [];
+    rows[0] = [null, null, 'TOLONG ISI DI SINI'];
+    rows[1] = [null, null, 'HARI ANUGERAH 2026'];
+    rows[2] = [null, null, 'PENCAPAIAN AKADEMIK TERBAIK'];
+    rows[5] = ['SUBJEK'];
+    rows[6] = [null, 'TAHUN 1', 'TAHUN 2'];
+    rows[7] = ['BAHASA MELAYU', 5, 3];
+    rows[8] = ['MATEMATIK', 2, 4];
+    rows[9] = ['TOTAL', 7, 7];
+    const parsed = parseFormAnugerahExcel(workbookFromSheets({ 'PENCAPAIAN AKADEMIK': rows.map((r) => r || []) }));
+    const dynKey = makeDynamicCategoryKey('KLAS_MATRIX', 'PENCAPAIAN AKADEMIK');
+    expect(parsed.unrecognizedSheets).toEqual([]);
+    const section = (parsed.categorized?.[dynKey] || [])[0];
+    expect(section).toBeDefined();
+    expect(section.classes.map((c) => c.tahunFrom)).toEqual(['TAHUN 1', 'TAHUN 2']);
+    expect(section.classes.map((c) => c.subjects)).toEqual([
+      [{ name: 'BAHASA MELAYU', qty: 5 }, { name: 'MATEMATIK', qty: 2 }],
+      [{ name: 'BAHASA MELAYU', qty: 3 }, { name: 'MATEMATIK', qty: 4 }],
+    ]);
+
+    const cat = resolveCategory(dynKey);
+    expect(cat.mode).toBe('dynamicMatrix');
+    expect(cat.label).toBe('PENCAPAIAN AKADEMIK');
+  });
+});
+
+describe('a renamed SUBJEK-shaped sheet — import → cart → CSV (dynamicMatrix end-to-end)', () => {
+  // Same fixture as the detection test above.
+  const rows = [];
+  rows[0] = [null, null, 'TOLONG ISI DI SINI'];
+  rows[1] = [null, null, 'HARI ANUGERAH 2026'];
+  rows[2] = [null, null, 'PENCAPAIAN AKADEMIK TERBAIK'];
+  rows[5] = ['SUBJEK'];
+  rows[6] = [null, 'TAHUN 1', 'TAHUN 2'];
+  rows[7] = ['BAHASA MELAYU', 5, 3];
+  rows[8] = ['MATEMATIK', 2, 4];
+  rows[9] = ['TOTAL', 7, 7];
+  const catalog = [{ code: 'DECO LIGHT', price: 5, stockQty: 1e6, stockBaseline: 1e6 }];
+  const dynKey = makeDynamicCategoryKey('KLAS_MATRIX', 'PENCAPAIAN AKADEMIK');
+
+  // Minimal replica of AppState.importFormAnugerahExcel's new
+  // `cat.mode === 'dynamicMatrix'` branch (the same rows-as-subjects +
+  // columns-as-classes shape populateMatrixSectionBlock/the KLAS_MATRIX
+  // multi-section import already use) — proves the SAME downstream
+  // pipeline (computeBlocks/buildCategoryCartItems/buildCsvRows) that
+  // already serves the fixed 'KLAS_MATRIX' key handles a dynamically
+  // resolved one identically, since none of them branch on the literal key.
+  const buildDraft = (section) => {
+    const key = `${dynKey}::0`;
+    let id = 1;
+    const presentNames = [...new Set(section.classes.flatMap((c) => c.subjects.map((s) => s.name)))];
+    const subjectRows = presentNames.map((name) => ({ id: id++, desc: name, custom: true }));
+    const rowIdByName = new Map(subjectRows.map((r) => [r.desc, r.id]));
+    const classColumns = section.classes.map((cls) => ({ id: id++, tahunFrom: cls.tahunFrom, tahunTo: cls.tahunTo, namaKelas: cls.namaKelas }));
+    const matrixValues = {};
+    section.classes.forEach((cls, i) => {
+      cls.subjects.forEach(({ name, qty }) => {
+        matrixValues[`${key}::${rowIdByName.get(name)}::${classColumns[i].id}`] = String(qty);
+      });
+    });
+    const lineValues = {};
+    Object.entries(section.lines).forEach(([slot, v]) => { lineValues[`${key}::${slot}`] = v; });
+    const plakRows = { [key]: [{ id: id++, jenisPlak: 'DECO LIGHT' }] };
+    return {
+      lineValues, matrixValues, rowsByBlock: { [key]: subjectRows }, columnsByBlock: { [key]: classColumns },
+      plakRows, plakCatalog: catalog, schoolLanguage: 'SK',
+    };
+  };
+
+  it('renders as a matrix (2 subjects × 2 columns), adds to cart, and exports one CSV row per (subject, class, qty)', () => {
+    const section = (parseFormAnugerahExcel(workbookFromSheets({ 'PENCAPAIAN AKADEMIK': rows.map((r) => r || []) })).categorized?.[dynKey] || [])[0];
+    const st = buildDraft(section);
+
+    const { isDynamicMatrix } = computeBlocks(dynKey, st.lineValues, st.matrixValues, st.rowsByBlock, st.plakRows, st.columnsByBlock, noopUpdaters, catalog, 'SK');
+    expect(isDynamicMatrix).toBe(true);
+
+    const res = buildCategoryCartItems(st, dynKey);
+    expect(res.error).toBeUndefined();
+    expect(res.items).toHaveLength(1);
+    expect(res.items[0].categoryKey).toBe(dynKey);
+
+    const { rows: csvRows } = buildCsvRows({ schoolLanguage: 'SK', items: res.items }, dynKey, res.items);
+    // 2 subjects × 2 classes, quantities 5+2 (TAHUN 1) + 3+4 (TAHUN 2) = 14 rows total.
+    expect(csvRows).toHaveLength(14);
+    expect(csvRows.every((r) => r[0] === 'HARI ANUGERAH 2026' && r[1] === '')).toBe(true);
+    expect(csvRows.filter((r) => r[2].includes('BAHASA MELAYU'))).toHaveLength(5 + 3);
+    expect(csvRows.filter((r) => r[2].includes('MATEMATIK'))).toHaveLength(2 + 4);
   });
 });
 

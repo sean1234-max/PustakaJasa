@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import { useAppState } from '../state/useAppState';
-import { CATEGORIES, getStockStatus } from '../data/catalog';
+import { CATEGORIES, getStockStatus, categoriesUsedByItems, isDynamicCategoryKey } from '../data/catalog';
 import { computeBlocks, noopUpdaters } from '../utils/computeBlocks';
 
 export default function AddOnSummary() {
@@ -17,7 +17,12 @@ export default function AddOnSummary() {
   // that function is about to submit.
   const addOnSummaryItems = useMemo(() => {
     const items = [];
-    CATEGORIES.forEach((cat) => {
+    // A renamed/duplicated template sheet from the original order's own
+    // import has no entry in the static CATEGORIES list — see
+    // submitPendingAddOn's matching fix in AppState.jsx (this preview must
+    // mirror it exactly, per the comment above).
+    const dynamicCats = order ? categoriesUsedByItems(order.items).filter((c) => isDynamicCategoryKey(c.key)) : [];
+    [...CATEGORIES, ...dynamicCats].forEach((cat) => {
       const { blocks } = computeBlocks(cat.key, state.addOnLineValues, state.addOnMatrixValues, state.addOnRowsByBlock, state.addOnPlakRows, state.addOnColumnsByBlock, noopUpdaters, state.plakCatalog, state.schoolLanguage);
       blocks.forEach((blk) => {
         if (blk.selempang) {
@@ -33,7 +38,7 @@ export default function AddOnSummary() {
       });
     });
     return items;
-  }, [state.addOnLineValues, state.addOnMatrixValues, state.addOnRowsByBlock, state.addOnPlakRows, state.addOnColumnsByBlock, state.plakCatalog, state.schoolLanguage]);
+  }, [order, state.addOnLineValues, state.addOnMatrixValues, state.addOnRowsByBlock, state.addOnPlakRows, state.addOnColumnsByBlock, state.plakCatalog, state.schoolLanguage]);
 
   const stockViolation = useMemo(() => addOnSummaryItems
     .map((it) => {

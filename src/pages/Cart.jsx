@@ -2,9 +2,9 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import { useAppState } from '../state/useAppState';
-import { formatDate, getStockStatus, CATEGORIES } from '../data/catalog';
+import { formatDate, getStockStatus, resolveCategory } from '../data/catalog';
 
-const isSelempangItem = (ci) => CATEGORIES.find((c) => c.key === ci.categoryKey)?.selempang;
+const isSelempangItem = (ci) => resolveCategory(ci.categoryKey)?.selempang;
 
 export default function Cart() {
   const { state, patch, today, removeFromCart, editCartCategory, submitOrder } = useAppState();
@@ -24,12 +24,23 @@ export default function Cart() {
   // every item folded into it.
   // One flat list of every selempang line across all cart items (each
   // selempang cart item carries its own acara/warna rows in detail.rows).
-  const selempangLines = state.cart.filter(isSelempangItem)
+  const selempangCartItems = state.cart.filter(isSelempangItem);
+  const selempangLines = selempangCartItems
     .flatMap((ci) => (ci.detail?.rows || []).map((r) => ({ ...r, unitPrice: ci.unitPrice })));
   const selempangQty = selempangLines.reduce((s, r) => s + (Number(r.qty) || 0), 0);
   const selempangHarga = selempangLines.reduce((s, r) => s + (Number(r.qty) || 0) * (r.unitPrice || 0), 0);
+  // Same granularity as the main table's own Remove — one click drops the
+  // whole Selempang entry (categoryCartItems.js builds it as a single
+  // combined cart item, not one per acara/warna line, so there's no finer
+  // "just this one line" removal to offer here anyway).
+  const removeSelempangFromCart = () => selempangCartItems.forEach((ci) => removeFromCart(ci.id));
 
-  const groupedCartRows = useMemo(() => {
+  // Fine-grained (category + Jenis Plak) grouping — kept purely for the
+  // stock-violation check below, which has to compare each SPECIFIC Jenis
+  // Plak's combined qty against ITS OWN stock limit; a category can mix
+  // several Jenis Plak, each with its own separate stock, so this can't be
+  // collapsed down to category level without breaking that check.
+  const groupedCartRowsByPlak = useMemo(() => {
     const rows = [];
     const byKey = new Map();
     state.cart.filter((ci) => !isSelempangItem(ci)).forEach((ci) => {
@@ -51,6 +62,36 @@ export default function Cart() {
     return rows;
   }, [state.cart]);
 
+  // The teacher-facing summary groups by CATEGORY, not Jenis Plak — a raw
+  // catalog code (e.g. "SM-13187 / GOLD") means nothing to a teacher, and
+  // the same code can legitimately appear under more than one category
+  // (getOrderJenisPlakGroups' own reasoning — exportCsv.js), which would
+  // otherwise show as confusing duplicate-looking rows here with no way to
+  // tell them apart. Salesman/Production still see the Jenis Plak
+  // breakdown when they open the order (AdminOrderDetail.jsx) — that view
+  // is unchanged.
+  const categorySummaryRows = useMemo(() => {
+    const rows = [];
+    const byCat = new Map();
+    groupedCartRowsByPlak.forEach((r) => {
+      let row = byCat.get(r.categoryKey);
+      if (!row) {
+        row = {
+          categoryKey: r.categoryKey,
+          categoryLabel: resolveCategory(r.categoryKey)?.label || r.categoryKey,
+          qty: 0, harga: 0, hasPrice: false, ids: [],
+        };
+        byCat.set(r.categoryKey, row);
+        rows.push(row);
+      }
+      row.qty += r.qty;
+      row.harga += r.harga;
+      if (r.hasPrice) row.hasPrice = true;
+      row.ids.push(...r.ids);
+    });
+    return rows;
+  }, [groupedCartRowsByPlak]);
+
   // Re-checked here (not just on the picker in OrderCategoryBlock) since a
   // cart item can sit for a while — another school may have bought into
   // the same low-stock code since it was added. This is still only a
@@ -60,17 +101,19 @@ export default function Cart() {
   // cap breached only once several duplicated blocks are added together
   // still gets caught here.
   const stockViolation = useMemo(() => {
-    const rows = [...groupedCartRows];
-    // SELEMPANG's rows are split out of groupedCartRows (they render in
-    // their own table) — check the shared pool against the combined qty.
+    const rows = [...groupedCartRowsByPlak];
+    // SELEMPANG's rows are split out (they render in their own table) —
+    // check the shared pool against the combined qty.
     if (selempangQty > 0) rows.push({ jenisPlak: 'SELEMPANG', qty: selempangQty });
     return rows
       .map((row) => {
         const status = getStockStatus(row.jenisPlak, state.plakCatalog);
-        return status && Number(row.qty) > status.maxOrderable ? { ...row, maxOrderable: status.maxOrderable } : null;
+        return status && Number(row.qty) > status.maxOrderable
+          ? { ...row, maxOrderable: status.maxOrderable, categoryLabel: row.categoryKey ? resolveCategory(row.categoryKey)?.label : null }
+          : null;
       })
       .find(Boolean);
-  }, [groupedCartRows, selempangQty, state.plakCatalog]);
+  }, [groupedCartRowsByPlak, selempangQty, state.plakCatalog]);
 
   const handleSubmit = async () => {
     if (state.cart.length === 0 || submitting || stockViolation) return;
@@ -113,34 +156,30 @@ export default function Cart() {
           </div>
         </div>
 
-        <div className="card-kicker">Anugerah — Jenis Plak / QTY / Harga</div>
+        <div className="card-kicker">Anugerah — Category / QTY / Harga</div>
         <table className="table" style={{ margin: 'var(--space-3) 0 var(--space-6)' }}>
-          <thead><tr><th>Jenis Plak</th><th style={{ width: 110 }}>QTY</th><th style={{ width: 130 }}>Harga</th><th style={{ width: 48 }} /><th style={{ width: 44 }} /></tr></thead>
+          <thead><tr><th>Category</th><th style={{ width: 110 }}>QTY</th><th style={{ width: 130 }}>Harga</th><th style={{ width: 48 }} /><th style={{ width: 44 }} /></tr></thead>
           <tbody>
-            {groupedCartRows.map((row) => {
-              const status = getStockStatus(row.jenisPlak, state.plakCatalog);
-              const overStock = !!status && Number(row.qty) > status.maxOrderable;
-              return (
-                <tr key={row.key}>
-                  <td>{row.jenisPlak}</td>
-                  <td style={overStock ? { color: '#c0392b', fontWeight: 700 } : undefined}>{row.qty}</td>
-                  <td>{row.hasPrice ? `RM ${row.harga.toFixed(2)}` : '—'}</td>
-                  <td>
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-icon"
-                      aria-label="Edit"
-                      title="Edit this order's details"
-                      onClick={() => { editCartCategory(row.categoryKey); navigate('/order/step2'); }}
-                    >
-                      ✎
-                    </button>
-                  </td>
-                  <td><button type="button" className="btn btn-ghost btn-icon" aria-label="Remove" onClick={() => row.ids.forEach(removeFromCart)}>✕</button></td>
-                </tr>
-              );
-            })}
-            {groupedCartRows.length === 0 && (
+            {categorySummaryRows.map((row) => (
+              <tr key={row.categoryKey}>
+                <td>{row.categoryLabel}</td>
+                <td>{row.qty}</td>
+                <td>{row.hasPrice ? `RM ${row.harga.toFixed(2)}` : '—'}</td>
+                <td>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-icon"
+                    aria-label="Edit"
+                    title="Edit this order's details"
+                    onClick={() => { editCartCategory(row.categoryKey); navigate('/order/step2'); }}
+                  >
+                    ✎
+                  </button>
+                </td>
+                <td><button type="button" className="btn btn-ghost btn-icon" aria-label="Remove" onClick={() => row.ids.forEach(removeFromCart)}>✕</button></td>
+              </tr>
+            ))}
+            {categorySummaryRows.length === 0 && (
               <tr><td colSpan={5} style={{ textAlign: 'center', opacity: 0.5, padding: 'var(--space-4)' }}>No items yet — add categories from New Order → Order Details.</td></tr>
             )}
           </tbody>
@@ -150,7 +189,7 @@ export default function Cart() {
           <>
             <div className="card-kicker">Selempang</div>
             <table className="table" style={{ margin: 'var(--space-3) 0 var(--space-6)' }}>
-              <thead><tr><th>Acara</th><th style={{ width: 160 }}>Warna</th><th style={{ width: 110 }}>Kuantiti</th><th style={{ width: 130 }}>Harga</th><th style={{ width: 44 }} /></tr></thead>
+              <thead><tr><th>Acara</th><th style={{ width: 160 }}>Warna</th><th style={{ width: 110 }}>Kuantiti</th><th style={{ width: 130 }}>Harga</th><th style={{ width: 48 }} /><th style={{ width: 44 }} /></tr></thead>
               <tbody>
                 {selempangLines.map((r, i) => (
                   // eslint-disable-next-line react/no-array-index-key -- flat display list, no stable per-line id across cart items
@@ -162,11 +201,12 @@ export default function Cart() {
                     <td>
                       <button
                         type="button" className="btn btn-ghost btn-icon" aria-label="Edit"
-                        title="Edit selempang" onClick={() => { editCartCategory('SELEMPANG'); navigate('/order/step2'); }}
+                        title="Edit this order's details" onClick={() => { editCartCategory('SELEMPANG'); navigate('/order/step2'); }}
                       >
                         ✎
                       </button>
                     </td>
+                    <td><button type="button" className="btn btn-ghost btn-icon" aria-label="Remove" onClick={removeSelempangFromCart}>✕</button></td>
                   </tr>
                 ))}
                 <tr>
@@ -174,6 +214,7 @@ export default function Cart() {
                   <td />
                   <td><strong>{selempangQty}</strong></td>
                   <td><strong>RM {selempangHarga.toFixed(2)}</strong></td>
+                  <td />
                   <td />
                 </tr>
               </tbody>
@@ -194,7 +235,7 @@ export default function Cart() {
 
         {stockViolation && (
           <p className="hint-text" style={{ color: '#c0392b', fontWeight: 600 }}>
-            Stock tidak cukup untuk &quot;{stockViolation.jenisPlak}&quot; — baki {stockViolation.maxOrderable} sahaja boleh ditempah. Sila kurangkan kuantiti atau hubungi Salesman sebelum submit.
+            Stock tidak cukup untuk &quot;{stockViolation.jenisPlak}&quot;{stockViolation.categoryLabel ? ` (${stockViolation.categoryLabel})` : ''} — baki {stockViolation.maxOrderable} sahaja boleh ditempah. Sila kurangkan kuantiti atau hubungi Salesman sebelum submit.
           </p>
         )}
         <div className="row-split">

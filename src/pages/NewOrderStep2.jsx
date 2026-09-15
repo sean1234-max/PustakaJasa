@@ -5,7 +5,9 @@ import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import { useAppState } from '../state/useAppState';
 import { buildCategoryCartItems } from '../state/categoryCartItems';
-import { ACTIVE_CATEGORIES, filterHiddenPlakCatalog } from '../data/catalog';
+import {
+  ACTIVE_CATEGORIES, filterHiddenPlakCatalog, isDynamicCategoryKey, resolveCategory,
+} from '../data/catalog';
 import { computeBlocks, noopUpdaters } from '../utils/computeBlocks';
 import { createDraftUpdaters } from '../utils/draftUpdaters';
 import { checkEngravingText } from '../lib/grammarCheckApi';
@@ -173,12 +175,25 @@ export default function NewOrderStep2() {
     state.lineValues, state.matrixValues, state.rowsByBlock, state.plakRows,
     state.columnsByBlock, state.plakCatalog, state.schoolLanguage,
   ]);
+  // A renamed/duplicated template sheet (excelImport.js) has no standing
+  // tab in ACTIVE_CATEGORIES — the only place it's discoverable is
+  // visibleBlocksByCategory, which the import sets for it (see
+  // AppState.jsx's `parsed.categorized` handling). Appended after the
+  // static list so a fresh order (no import yet) behaves exactly as before.
+  const allCategories = useMemo(() => {
+    const dynamicCats = Object.keys(state.visibleBlocksByCategory || {})
+      .filter(isDynamicCategoryKey)
+      .map(resolveCategory)
+      .filter(Boolean);
+    return [...ACTIVE_CATEGORIES, ...dynamicCats];
+  }, [state.visibleBlocksByCategory]);
+
   const incompleteCategories = useMemo(() => (
-    ACTIVE_CATEGORIES
+    allCategories
       .map((cat) => ({ cat, res: buildCategoryCartItems(draftForCheck, cat.key) }))
       .filter(({ res }) => res.engaged && res.error)
       .map(({ cat, res }) => ({ key: cat.key, label: cat.label, error: res.error }))
-  ), [draftForCheck]);
+  ), [allCategories, draftForCheck]);
 
   // Codes Production has hidden (e.g. out of stock) never appear in the
   // teacher's picker — see filterHiddenPlakCatalog.
@@ -237,7 +252,7 @@ export default function NewOrderStep2() {
 
   const handleAddAll = () => {
     if (checking) return;
-    const engagedKeys = ACTIVE_CATEGORIES
+    const engagedKeys = allCategories
       .filter((c) => buildCategoryCartItems(draftForCheck, c.key).engaged)
       .map((c) => c.key);
     runAddWithCheck(engagedKeys, addAllToCart);
@@ -339,7 +354,7 @@ export default function NewOrderStep2() {
 
         <div className="card-kicker">Jenis Anugerah (Category)</div>
         <div style={{ margin: 'var(--space-3) 0 var(--space-2)' }}>
-          <CategoryTabs categories={ACTIVE_CATEGORIES} active={state.category} onSelect={(key) => patch({ category: key })} />
+          <CategoryTabs categories={allCategories} active={state.category} onSelect={(key) => patch({ category: key })} />
         </div>
         <div style={{ marginBottom: 'var(--space-6)' }} />
 

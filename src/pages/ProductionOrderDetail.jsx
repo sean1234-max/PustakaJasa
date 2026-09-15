@@ -62,24 +62,24 @@ export default function ProductionOrderDetail() {
     return reconstructOrderDetailGroups(order, currentCat.key, state.plakCatalog);
   }, [order, currentCat, state.plakCatalog]);
 
-  // Order-wide, not scoped to the selected category tab — the CSV's own
-  // columns carry no Jenis Plak info, so two items sharing a Jenis Plak
-  // (even from different categories) are bound for the same physical AI
-  // file and can be exported as one combined CSV. See getOrderJenisPlakGroups.
+  // Scoped to (category, Jenis Plak) — never combined across categories,
+  // since two categories can share a Jenis Plak (same physical AI file)
+  // while needing different reference-sample layouts. See
+  // getOrderJenisPlakGroups.
   const jenisPlakGroups = useMemo(() => (order ? getOrderJenisPlakGroups(order) : []), [order]);
 
-  // Rows + a hard validation result per Jenis Plak group (see validateExport).
-  // `mode` ('csv' | 'manual') is the small-qty split — see getPlakProductionMode:
-  // a Jenis Plak with a small enough combined qty is faster hand-typed into
-  // Illustrator than exported, so Production gets a checklist instead of a
-  // button (but "Export CSV anyway" stays available).
+  // Rows + a hard validation result per (category, Jenis Plak) group (see
+  // validateExport). `mode` ('csv' | 'manual') is the small-qty split — see
+  // getPlakProductionMode: a group with a small enough combined qty is
+  // faster hand-typed into Illustrator than exported, so Production gets a
+  // checklist instead of a button (but "Export CSV anyway" stays available).
   const jenisPlakExport = useMemo(() => {
     if (!order) return [];
     const modes = getPlakProductionMode(order);
-    return jenisPlakGroups.map(({ jenisPlak, items }) => {
-      const csvData = buildCsvRows(order, null, items);
-      const { mode, totalQty } = modes.get(jenisPlak) || { mode: 'csv', totalQty: 0 };
-      return { jenisPlak, items, csvData, mode, totalQty, check: validateExport(order, items, state.plakCatalog, csvData) };
+    return jenisPlakGroups.map((group) => {
+      const csvData = buildCsvRows(order, null, group.items);
+      const { mode, totalQty } = modes.get(group.groupKey) || { mode: 'csv', totalQty: 0 };
+      return { ...group, csvData, mode, totalQty, check: validateExport(order, group.items, state.plakCatalog, csvData) };
     });
   }, [order, jenisPlakGroups, state.plakCatalog]);
 
@@ -109,10 +109,10 @@ export default function ProductionOrderDetail() {
     exportNoteTimer.current = setTimeout(() => setExportNote(''), 4000);
   };
 
-  const handleExportJenisPlak = (jenisPlak, csvData, check) => {
+  const handleExportJenisPlak = (group, csvData, check) => {
     if (!check.ok || csvData.rows.length === 0) return;
     const csv = rowsToCsv(csvData.rows);
-    const filename = buildCategoryCsvFilename(order, jenisPlak);
+    const filename = buildCategoryCsvFilename(order, `${group.categoryLabel} - ${group.jenisPlak}`);
     downloadTextFile(filename, csv);
     setExportNote(`Exported ${csvData.rows.length} row(s) to ${filename}.`);
     clearTimeout(exportNoteTimer.current);
@@ -253,18 +253,21 @@ export default function ProductionOrderDetail() {
             <>
                 <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Export by Jenis Plak</div>
                 <p className="hint-text" style={{ marginTop: 0 }}>
-                  One CSV per Jenis Plak — combined across every order detail that uses it (that's one Adobe Illustrator file).
-                  A Jenis Plak with {MANUAL_MAX_QTY} keping or fewer in total is marked <strong>BUAT MANUAL</strong>: type those few straight into Illustrator, it's faster than exporting and importing. Its plaque text is listed below.
+                  One CSV per Category + Jenis Plak — combined across every order detail that uses the same category and Jenis Plak (that's one Adobe Illustrator file). Never combined across different categories, even when they share a Jenis Plak, since each category's reference-sample layout can differ.
+                  A group with {MANUAL_MAX_QTY} keping or fewer in total is marked <strong>BUAT MANUAL</strong>: type those few straight into Illustrator, it's faster than exporting and importing. Its plaque text is listed below.
                 </p>
                 {jenisPlakGroups.length === 0 ? (
                   <p className="hint-text">No Jenis Plak found for this order.</p>
                 ) : (
                   <>
                     <table className="table" style={{ margin: 'var(--space-3) 0' }}>
-                      <thead><tr><th>Jenis Plak</th><th style={{ width: 110 }}>Order Details</th><th style={{ width: 80 }}>QTY</th><th style={{ width: 110 }}>Rows</th><th style={{ width: 150 }} /></tr></thead>
+                      <thead><tr><th>Category</th><th>Jenis Plak</th><th style={{ width: 110 }}>Order Details</th><th style={{ width: 80 }}>QTY</th><th style={{ width: 110 }}>Rows</th><th style={{ width: 150 }} /></tr></thead>
                       <tbody>
-                        {jenisPlakExport.map(({ jenisPlak, items, csvData, check, mode, totalQty }) => (
-                          <tr key={jenisPlak}>
+                        {jenisPlakExport.map((group) => {
+                          const { groupKey, categoryLabel, jenisPlak, items, csvData, check, mode, totalQty } = group;
+                          return (
+                          <tr key={groupKey}>
+                            <td>{categoryLabel}</td>
                             <td>{jenisPlak}</td>
                             <td>{items.length}</td>
                             <td>{totalQty}</td>
@@ -275,28 +278,29 @@ export default function ProductionOrderDetail() {
                             </td>
                             <td>
                               {mode === 'manual' ? (
-                                <button type="button" className="btn btn-ghost" disabled={!check.ok || csvData.rows.length === 0} onClick={() => handleExportJenisPlak(jenisPlak, csvData, check)}>
+                                <button type="button" className="btn btn-ghost" disabled={!check.ok || csvData.rows.length === 0} onClick={() => handleExportJenisPlak(group, csvData, check)}>
                                   Export CSV anyway
                                 </button>
                               ) : (
-                                <button type="button" className="btn btn-primary" disabled={!check.ok || csvData.rows.length === 0} onClick={() => handleExportJenisPlak(jenisPlak, csvData, check)}>
+                                <button type="button" className="btn btn-primary" disabled={!check.ok || csvData.rows.length === 0} onClick={() => handleExportJenisPlak(group, csvData, check)}>
                                   Export CSV
                                 </button>
                               )}
                             </td>
                           </tr>
-                        ))}
+                          );
+                        })}
                       </tbody>
                     </table>
                     {manualPlakGroups.length > 0 && (
                       <div style={{ marginTop: 'var(--space-2)' }}>
-                        {manualPlakGroups.map(({ jenisPlak, totalQty, csvData }) => {
+                        {manualPlakGroups.map(({ groupKey, categoryLabel, jenisPlak, totalQty, csvData }) => {
                           const engrave = summarizeRowsForManual(csvData.rows);
                           return (
-                            <div key={jenisPlak} style={{ marginBottom: 'var(--space-3)' }}>
+                            <div key={groupKey} style={{ marginBottom: 'var(--space-3)' }}>
                               <div style={{ fontWeight: 700, fontSize: 13 }}>
                                 <span className="pill-manual" style={{ marginRight: 8 }}>Buat Manual</span>
-                                {jenisPlak} — {totalQty} keping
+                                {categoryLabel} — {jenisPlak} — {totalQty} keping
                               </div>
                               {engrave.length > 0 ? (
                                 <ul className="manual-engrave-list">
@@ -315,12 +319,12 @@ export default function ProductionOrderDetail() {
                       </div>
                     )}
                     {jenisPlakExport.filter((g) => !g.check.ok).map((g) => (
-                      <p key={g.jenisPlak} className="hint-text" style={{ color: '#b0392e', fontWeight: 600 }}>
-                        ⚠ {g.jenisPlak}: {g.check.errors.join(' ')}
+                      <p key={g.groupKey} className="hint-text" style={{ color: '#b0392e', fontWeight: 600 }}>
+                        ⚠ {g.categoryLabel} — {g.jenisPlak}: {g.check.errors.join(' ')}
                       </p>
                     ))}
                     {jenisPlakExport.flatMap((g) => g.check.warnings.map((w) => (
-                      <p key={`${g.jenisPlak}-${w}`} className="hint-text" style={{ color: '#b45309' }}>{g.jenisPlak}: {w}</p>
+                      <p key={`${g.groupKey}-${w}`} className="hint-text" style={{ color: '#b45309' }}>{g.categoryLabel} — {g.jenisPlak}: {w}</p>
                     )))}
                   </>
                 )}
