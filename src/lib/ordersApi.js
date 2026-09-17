@@ -26,7 +26,7 @@ function toDbOrder(order) {
     // to null here, not just undefined/null.
     terms: order.terms || null,
     remark: order.remark ?? null,
-    due_date: order.dueDate ?? null,
+    shipment_date: order.shipmentDate ?? null,
     function_date: order.functionDate ?? null,
     logo_data_url: order.logoDataUrl ?? null,
     logo_file_name: order.logoFileName ?? null,
@@ -65,7 +65,7 @@ function fromDbOrder(row) {
     ketuaPanitia: row.ketua_panitia,
     terms: row.terms,
     remark: row.remark,
-    dueDate: row.due_date,
+    shipmentDate: row.shipment_date,
     functionDate: row.function_date,
     logoDataUrl: row.logo_data_url,
     logoFileName: row.logo_file_name,

@@ -29,10 +29,10 @@ export default function SalesOrderSummary() {
   const isOwn = !state.isSalesManager || !order || order.salesmanId === state.userAuthId;
   const editable = order?.status === 'Submitted to Sales' && isOwn;
 
-  // Shipment Date (dueDate) / Function Date stay editable right up to the moment of
+  // Shipment Date (shipmentDate) / Function Date stay editable right up to the moment of
   // approval — the same "Sales can still adjust it" window the price
   // fields already had — then get folded into the approval update below.
-  const [dueDateDraft, setDueDateDraft] = useState(() => (order?.dueDate ? new Date(order.dueDate) : null));
+  const [shipmentDateDraft, setShipmentDateDraft] = useState(() => (order?.shipmentDate ? new Date(order.shipmentDate) : null));
   const [functionDateDraft, setFunctionDateDraft] = useState(() => (order?.functionDate ? new Date(order.functionDate) : null));
   const [dateError, setDateError] = useState('');
 
@@ -129,8 +129,8 @@ export default function SalesOrderSummary() {
   // button takes its place where Approve was.
   const handleApprove = async () => {
     if (busy) return;
-    if (dueDateDraft && functionDateDraft
-      && new Date(dueDateDraft.getFullYear(), dueDateDraft.getMonth(), dueDateDraft.getDate())
+    if (shipmentDateDraft && functionDateDraft
+      && new Date(shipmentDateDraft.getFullYear(), shipmentDateDraft.getMonth(), shipmentDateDraft.getDate())
        > new Date(functionDateDraft.getFullYear(), functionDateDraft.getMonth(), functionDateDraft.getDate())) {
       setDateError('Shipment Date can’t be after the Function Date. Adjust one of them before approving.');
       return;
@@ -138,10 +138,10 @@ export default function SalesOrderSummary() {
     setDateError('');
     const updatedItems = rows.map((r) => ({ ...r, unitPrice: r.unitPrice, harga: r.harga }));
     // Only overrides a date if Sales actually set one — never blanks an
-    // existing due/function date just because the draft state happened to
-    // start empty (e.g. a legacy order that predates these fields).
+    // existing shipment/function date just because the draft state happened
+    // to start empty (e.g. a legacy order that predates these fields).
     const overrides = {};
-    if (dueDateDraft) overrides.dueDate = dueDateDraft;
+    if (shipmentDateDraft) overrides.shipmentDate = shipmentDateDraft;
     if (functionDateDraft) overrides.functionDate = functionDateDraft;
     setBusy(true);
     await approveOrder(order.id, updatedItems, overrides);
@@ -222,18 +222,18 @@ export default function SalesOrderSummary() {
                 {order.terms && <div><div className="dim">Terms</div><div>{order.terms}</div></div>}
                 {editable ? (
                   <>
-                    {/* "Shipment Date" (stored as dueDate) is when the plaques
+                    {/* "Shipment Date" (stored as shipmentDate) is when the plaques
                         ship out — it can't be before today (already-past
                         dates aren't a real shipment option) or after the
                         Function Date (the event itself), so the picker caps
                         at both and Approve re-checks. */}
-                    <DatePicker label="Shipment Date" id="salesDueDate" selected={dueDateDraft} today={today} onSelect={setDueDateDraft} minDate={today} maxDate={functionDateDraft} />
-                    <DatePicker label="Function Date" id="salesFunctionDate" selected={functionDateDraft} today={today} onSelect={setFunctionDateDraft} minDate={dueDateDraft || today} />
+                    <DatePicker label="Shipment Date" id="salesShipmentDate" selected={shipmentDateDraft} today={today} onSelect={setShipmentDateDraft} minDate={today} maxDate={functionDateDraft} />
+                    <DatePicker label="Function Date" id="salesFunctionDate" selected={functionDateDraft} today={today} onSelect={setFunctionDateDraft} minDate={shipmentDateDraft || today} />
                     {dateError && <div className="login-error" style={{ gridColumn: '1 / -1', margin: 0 }}>{dateError}</div>}
                   </>
                 ) : (
                   <>
-                    {order.dueDate && <div><div className="dim">Shipment Date</div><div>{formatDate(new Date(order.dueDate))}</div></div>}
+                    {order.shipmentDate && <div><div className="dim">Shipment Date</div><div>{formatDate(new Date(order.shipmentDate))}</div></div>}
                     {order.functionDate && <div><div className="dim">Function Date</div><div>{formatDate(new Date(order.functionDate))}</div></div>}
                   </>
                 )}
@@ -375,7 +375,7 @@ export default function SalesOrderSummary() {
             {order.picName && <div><div className="dim">PIC Name</div><div>{order.picName}{order.phone ? ` / ${order.phone}` : ''}</div></div>}
             {order.ketuaPanitia && <div><div className="dim">Ketua Panitia</div><div>{order.ketuaPanitia}</div></div>}
             {order.terms && <div><div className="dim">Terms</div><div>{order.terms}</div></div>}
-            {order.dueDate && <div><div className="dim">Shipment Date</div><div>{formatDate(new Date(order.dueDate))}</div></div>}
+            {order.shipmentDate && <div><div className="dim">Shipment Date</div><div>{formatDate(new Date(order.shipmentDate))}</div></div>}
             {order.functionDate && <div><div className="dim">Function Date</div><div>{formatDate(new Date(order.functionDate))}</div></div>}
           </div>
           {/* Printed too, not just shown on screen — a KIV/pending note (see

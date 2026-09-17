@@ -887,6 +887,27 @@ export function standardUnitPrice(code, plakCatalogTree) {
   return entry ? entry.price : null;
 }
 
+// A tracked code auto-hides from teachers once it's down to
+// LOW_STOCK_HIDE_RATIO of its baseline (not just at literal 0) — Production
+// wants the last ~20% held back rather than risking a school ordering it
+// out from under an order already in the pipeline. LOW_STOCK_WARN_RATIO is
+// the earlier heads-up point: still orderable, but low enough that
+// Production/Admin's dashboards should flag it — see getLowStockAlerts.
+// Both are fixed, not Production-configurable, same as stockZoneFor's
+// 15%/25% colour thresholds below.
+export const LOW_STOCK_HIDE_RATIO = 0.20;
+export const LOW_STOCK_WARN_RATIO = 0.40;
+
+// A code with no baseline set only ever hits stockQty === 0 exactly (there's
+// no percentage to measure against), so it still hides at literal zero —
+// same "deliberately out of stock" meaning as before this ratio existed.
+function isLowStockHidden(stockQty, stockBaseline) {
+  if (stockQty == null) return false;
+  if (stockQty === 0) return true;
+  if (stockBaseline > 0) return stockQty <= stockBaseline * LOW_STOCK_HIDE_RATIO;
+  return false;
+}
+
 // Prunes any node marked `hidden` (Production, out of stock) — hiding a
 // whole code or just one branch inside it both work, since this checks
 // every node at every depth. If hiding leaves a group with no selectable
@@ -894,19 +915,14 @@ export function standardUnitPrice(code, plakCatalogTree) {
 // bogus empty leaf. Only used for the teacher-facing picker — Production's
 // own catalog admin view renders the raw, unfiltered tree.
 //
-// `blocked` carries an ancestor's own sold-out state down the recursion —
+// `blocked` carries an ancestor's own low-stock state down the recursion —
 // a parent like GOLD can track its own stock now (not just its leaves), so
-// GOLD hitting 0 has to hide everything beneath it too, not just whichever
-// single leaf happens to also be at 0.
+// GOLD dropping below the hide ratio has to hide everything beneath it too,
+// not just whichever single leaf happens to also be low.
 export function filterHiddenPlakCatalog(nodes, blocked = false) {
   return (nodes || []).flatMap((node) => {
     if (node.hidden) return [];
-    // stockQty === 0 (not null — null means stock isn't tracked for this
-    // node) auto-hides it, and everything beneath it, the moment it sells
-    // out, same as Production manually flipping `hidden`. Naturally
-    // reappears once restocked since this is computed live, not a stored
-    // flag.
-    const nowBlocked = blocked || node.stockQty === 0;
+    const nowBlocked = blocked || isLowStockHidden(node.stockQty, node.stockBaseline);
     if (nowBlocked) return [];
     const hasChildren = Array.isArray(node.children) && node.children.length > 0;
     if (!hasChildren) return [node];
@@ -916,8 +932,52 @@ export function filterHiddenPlakCatalog(nodes, blocked = false) {
   });
 }
 
+// Every tracked code — leaf or parent, independently tracked or sharing a
+// Stock Group — currently at or below LOW_STOCK_WARN_RATIO of its baseline,
+// for Production/Admin's dashboards to flag before a restock is a
+// surprise. Stock-Group-linked codes are reported once per shared pool
+// (keyed by stockGroupKey) rather than once per linked code, since they're
+// the same physical stock — whichever linked code is encountered first in
+// the tree lends its path (and its own `nodeId`) as the representative.
+// `nodeId` is what the dashboard's alert links to — clicking it jumps to
+// and highlights that one row in the catalog admin page (even though a
+// shared pool has several rows, any one of them is a valid place to land).
+// Sorted worst (closest to 0) first.
+export function getLowStockAlerts(nodes) {
+  const seen = new Set();
+  const alerts = [];
+  const walk = (list, path) => {
+    (list || []).forEach((node) => {
+      const nodePath = [...path, node.code];
+      if (node.stockQty != null && node.stockBaseline > 0) {
+        const key = node.stockGroupKey || node.id || nodePath.join(' / ');
+        if (!seen.has(key)) {
+          const ratio = node.stockQty / node.stockBaseline;
+          if (ratio <= LOW_STOCK_WARN_RATIO) {
+            seen.add(key);
+            alerts.push({
+              label: node.stockGroupKey || nodePath.join(' / '),
+              path: nodePath.join(' / '),
+              nodeId: node.id,
+              stockQty: node.stockQty,
+              stockBaseline: node.stockBaseline,
+              hidden: ratio <= LOW_STOCK_HIDE_RATIO,
+              sharedWith: node.stockGroupSize > 1 ? node.stockGroupSize - 1 : 0,
+            });
+          } else {
+            seen.add(key);
+          }
+        }
+      }
+      if (Array.isArray(node.children)) walk(node.children, nodePath);
+    });
+  };
+  walk(nodes, []);
+  return alerts.sort((a, b) => (a.stockQty / a.stockBaseline) - (b.stockQty / b.stockBaseline));
+}
+
 // 'Shipped' and 'Completed' are both reached purely from the calendar, not
-// a button: the day an order's Shipment Date (order.dueDate) arrives it
+// a button: the day an order's Shipment Date (order.shipmentDate) arrives it
 // becomes 'Shipped', and the day after it becomes 'Completed'. Production's
 // "Mark as Done" (markProductionDone in src/state/AppState.jsx) applies the
 // same rule at click time, and a daily job (sweep_shipped_orders, see
@@ -954,7 +1014,7 @@ export function addDays(d, days) {
 }
 
 // The calendar-driven part of the pipeline. Given an order's Shipment Date
-// (order.dueDate, stored as an ISO string) and today, returns which of the
+// (order.shipmentDate, stored as an ISO string) and today, returns which of the
 // three post-production stages the order belongs in:
 //   Shipment Date in the future -> 'Waiting for Delivery'
 //   Shipment Date is today       -> 'Shipped'
@@ -963,9 +1023,9 @@ export function addDays(d, days) {
 // the daily sweep_shipped_orders job (supabase/migrations/0056) can't drift
 // apart. A missing/unparseable date falls back to 'Waiting for Delivery' —
 // nothing should auto-ship an order with no real Shipment Date on record.
-export function deliveryStageForShipmentDate(dueDate, today) {
-  if (!dueDate) return 'Waiting for Delivery';
-  const parsed = new Date(dueDate);
+export function deliveryStageForShipmentDate(shipmentDate, today) {
+  if (!shipmentDate) return 'Waiting for Delivery';
+  const parsed = new Date(shipmentDate);
   if (Number.isNaN(parsed.getTime())) return 'Waiting for Delivery';
   const ship = new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
   const now = new Date(today.getFullYear(), today.getMonth(), today.getDate());

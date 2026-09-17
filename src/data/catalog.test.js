@@ -5,6 +5,7 @@ import {
   deliveryStageForShipmentDate, resolveSelempangWarna,
   MALAY_ORDINALS, ordinalToNum, numToOrdinal, distributeQtyOverPositions,
   CATEGORIES, makeDynamicCategoryKey, isDynamicCategoryKey, resolveCategory, categoriesUsedByItems,
+  filterHiddenPlakCatalog, getLowStockAlerts,
 } from './catalog';
 
 describe('distributeQtyOverPositions', () => {
@@ -205,6 +206,66 @@ describe('stock thresholds', () => {
   });
 });
 
+describe('filterHiddenPlakCatalog — auto-hide at the low-stock ratio', () => {
+  it('hides a leaf at or below 20% of its baseline, keeps one above it', () => {
+    const tree = [
+      { code: 'A', stockQty: 200, stockBaseline: 1000 }, // 20% -> hidden
+      { code: 'B', stockQty: 210, stockBaseline: 1000 }, // 21% -> kept
+    ];
+    const codes = filterHiddenPlakCatalog(tree).map((n) => n.code);
+    expect(codes).toEqual(['B']);
+  });
+
+  it('a code with no baseline only hides at literal 0, same as before', () => {
+    const tree = [
+      { code: 'A', stockQty: 1 }, // no baseline: only 0 hides it
+      { code: 'B', stockQty: 0 },
+    ];
+    const codes = filterHiddenPlakCatalog(tree).map((n) => n.code);
+    expect(codes).toEqual(['A']);
+  });
+
+  it('a low-stock parent hides every variant beneath it, not just a matching leaf', () => {
+    const tree = [
+      {
+        code: 'GOLD', stockQty: 100, stockBaseline: 1000, children: [
+          { code: 'BASE A', stockQty: 500, stockBaseline: 1000 },
+        ],
+      },
+    ];
+    expect(filterHiddenPlakCatalog(tree)).toEqual([]);
+  });
+});
+
+describe('getLowStockAlerts', () => {
+  it('flags a code at or below 40% and marks whether it is already hidden', () => {
+    const tree = [
+      { code: 'OK', stockQty: 500, stockBaseline: 1000 }, // 50% -> not flagged
+      { code: 'LOW', stockQty: 300, stockBaseline: 1000 }, // 30% -> flagged, not hidden
+      { code: 'GONE', stockQty: 100, stockBaseline: 1000 }, // 10% -> flagged, hidden
+    ];
+    const alerts = getLowStockAlerts(tree);
+    expect(alerts.map((a) => a.path)).toEqual(['GONE', 'LOW']); // worst first
+    expect(alerts.find((a) => a.path === 'LOW').hidden).toBe(false);
+    expect(alerts.find((a) => a.path === 'GONE').hidden).toBe(true);
+  });
+
+  it('reports a Stock-Group-shared code once, not once per linked variant', () => {
+    const tree = [
+      { code: 'GOLD', children: [{ id: 'g1', code: 'BASE A', stockQty: 200, stockBaseline: 1000, stockGroupKey: 'BASE A', stockGroupSize: 2 }] },
+      { code: 'SILVER', children: [{ id: 's1', code: 'BASE A', stockQty: 200, stockBaseline: 1000, stockGroupKey: 'BASE A', stockGroupSize: 2 }] },
+    ];
+    const alerts = getLowStockAlerts(tree);
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0].label).toBe('BASE A');
+    expect(alerts[0].sharedWith).toBe(1);
+  });
+
+  it('ignores untracked codes', () => {
+    expect(getLowStockAlerts([{ code: 'X' }])).toEqual([]);
+  });
+});
+
 describe('statusPillStyle', () => {
   it('returns a concrete {background,color} for each pipeline stage', () => {
     for (const s of STATUS_STAGES) {
@@ -228,7 +289,7 @@ describe('statusPillStyle', () => {
 
 describe('deliveryStageForShipmentDate', () => {
   const today = new Date(2026, 8, 10); // 10 Sep 2026, local midnight
-  // dueDate reaches this function as the ISO string supabase-js produced
+  // shipmentDate reaches this function as the ISO string supabase-js produced
   // from a JS Date; build the fixtures the same way so the test doesn't
   // depend on the runner's timezone.
   const shipISO = (y, m, d) => new Date(y, m, d, 12).toISOString();

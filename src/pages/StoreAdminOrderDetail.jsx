@@ -57,13 +57,13 @@ export default function StoreAdminOrderDetail() {
   const [busy, setBusy] = useState(false);
   const [importErr, setImportErr] = useState('');
 
-  // Shipment Date (dueDate) / Function Date — editable only while the order
-  // is still awaiting approval, the same window Sales has (guard 0038 lets
-  // Store Admin change due_date/function_date only before 'In Production').
-  // A Salesman who's out of office can hand Store Admin the paper hard copy
-  // to key the Shipment Date + Invoice Number here, force-approving it
-  // straight into Production.
-  const [dueDateDraft, setDueDateDraft] = useState(() => (order?.dueDate ? new Date(order.dueDate) : null));
+  // Shipment Date (shipmentDate) / Function Date — editable only while the
+  // order is still awaiting approval, the same window Sales has (guard 0038
+  // lets Store Admin change shipment_date/function_date only before 'In
+  // Production'). A Salesman who's out of office can hand Store Admin the
+  // paper hard copy to key the Shipment Date + Invoice Number here,
+  // force-approving it straight into Production.
+  const [shipmentDateDraft, setShipmentDateDraft] = useState(() => (order?.shipmentDate ? new Date(order.shipmentDate) : null));
   const [functionDateDraft, setFunctionDateDraft] = useState(() => (order?.functionDate ? new Date(order.functionDate) : null));
   const [dateError, setDateError] = useState('');
 
@@ -121,8 +121,8 @@ export default function StoreAdminOrderDetail() {
 
   const handleApproveAndInvoice = async () => {
     if (busy) return;
-    if (dueDateDraft && functionDateDraft
-      && new Date(dueDateDraft.getFullYear(), dueDateDraft.getMonth(), dueDateDraft.getDate())
+    if (shipmentDateDraft && functionDateDraft
+      && new Date(shipmentDateDraft.getFullYear(), shipmentDateDraft.getMonth(), shipmentDateDraft.getDate())
        > new Date(functionDateDraft.getFullYear(), functionDateDraft.getMonth(), functionDateDraft.getDate())) {
       setDateError('Shipment Date can’t be after the Function Date. Adjust one of them before approving.');
       return;
@@ -130,9 +130,9 @@ export default function StoreAdminOrderDetail() {
     setDateError('');
     const updatedItems = rows.map((r) => ({ ...r, unitPrice: r.unitPrice, harga: r.harga }));
     // Only sends a date when Store Admin actually has one — never blanks an
-    // existing due/function date because the draft started empty.
+    // existing shipment/function date because the draft started empty.
     const overrides = {};
-    if (dueDateDraft) overrides.dueDate = dueDateDraft;
+    if (shipmentDateDraft) overrides.shipmentDate = shipmentDateDraft;
     if (functionDateDraft) overrides.functionDate = functionDateDraft;
     setBusy(true);
     const res = await approveAndSetInvoiceId(order.id, updatedItems, invoiceDraft, overrides);
@@ -185,13 +185,13 @@ export default function StoreAdminOrderDetail() {
                       aren't a real shipment option) or after the Function
                       Date (the event itself) — picker caps at both and
                       Approve re-checks. */}
-                  <DatePicker label="Shipment Date" id="storeAdminDueDate" selected={dueDateDraft} today={today} onSelect={setDueDateDraft} minDate={today} maxDate={functionDateDraft} />
-                  <DatePicker label="Function Date" id="storeAdminFunctionDate" selected={functionDateDraft} today={today} onSelect={setFunctionDateDraft} minDate={dueDateDraft || today} />
+                  <DatePicker label="Shipment Date" id="storeAdminShipmentDate" selected={shipmentDateDraft} today={today} onSelect={setShipmentDateDraft} minDate={today} maxDate={functionDateDraft} />
+                  <DatePicker label="Function Date" id="storeAdminFunctionDate" selected={functionDateDraft} today={today} onSelect={setFunctionDateDraft} minDate={shipmentDateDraft || today} />
                   {dateError && <div className="login-error" style={{ gridColumn: '1 / -1', margin: 0 }}>{dateError}</div>}
                 </>
               ) : (
                 <>
-                  {order.dueDate && <div><div className="dim">Shipment Date</div><div>{formatDate(new Date(order.dueDate))}</div></div>}
+                  {order.shipmentDate && <div><div className="dim">Shipment Date</div><div>{formatDate(new Date(order.shipmentDate))}</div></div>}
                   {order.functionDate && <div><div className="dim">Function Date</div><div>{formatDate(new Date(order.functionDate))}</div></div>}
                 </>
               )}
@@ -247,7 +247,7 @@ export default function StoreAdminOrderDetail() {
 
                 <div className="row-split" style={{ marginTop: 'var(--space-4)' }}>
                   <span />
-                  <button type="button" className="btn btn-primary" onClick={handleApproveAndInvoice} disabled={busy || !invoiceDraft.trim() || !dueDateDraft}>
+                  <button type="button" className="btn btn-primary" onClick={handleApproveAndInvoice} disabled={busy || !invoiceDraft.trim() || !shipmentDateDraft}>
                     {busy ? 'Working…' : 'Approve & Save Invoice'}
                   </button>
                 </div>

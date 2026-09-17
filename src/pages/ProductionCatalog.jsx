@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   DndContext, closestCenter, PointerSensor, TouchSensor, KeyboardSensor, useSensor, useSensors,
 } from '@dnd-kit/core';
@@ -65,7 +66,7 @@ const catalogAnnouncements = {
 function CatalogRow({
   node, depth, parentId, path, canReorder, onAddChild, onRemove, onRename, ordersUsingPath, onPriceChange, onStockChange, onToggleHidden,
   onLinkStockGroup, onUnlinkStockGroup, existingGroupKeys,
-  collapsedIds, onToggleCollapsed, dragActive,
+  collapsedIds, onToggleCollapsed, dragActive, highlightedId,
 }) {
   const fullPath = [...path, node.code].join(' / ');
   const [addingChild, setAddingChild] = useState(false);
@@ -200,7 +201,12 @@ function CatalogRow({
 
   return (
     <>
-      <div ref={setNodeRef} className="catalog-admin-row" style={rowStyle}>
+      <div
+        ref={setNodeRef}
+        id={`catalog-node-${node.id}`}
+        className={`catalog-admin-row${node.id === highlightedId ? ' catalog-row-flash' : ''}`}
+        style={rowStyle}
+      >
         {hasChildren ? (
           <button
             type="button"
@@ -305,6 +311,7 @@ function CatalogRow({
               collapsedIds={collapsedIds}
               onToggleCollapsed={onToggleCollapsed}
               dragActive={dragActive}
+              highlightedId={highlightedId}
             />
           ))}
         </SortableContext>
@@ -334,6 +341,21 @@ function collectStockGroupKeys(nodes, out) {
   return out;
 }
 
+// Every ancestor id (not including targetId itself) on the path down to
+// targetId — used to jump-to-and-flash a code from a Dashboard Low Stock
+// alert: those ancestor groups need expanding (removed from collapsedIds)
+// before the target row exists in the DOM to scroll to.
+function findAncestorIds(nodes, targetId, trail) {
+  for (const node of (nodes || [])) {
+    if (node.id === targetId) return trail;
+    if (Array.isArray(node.children)) {
+      const found = findAncestorIds(node.children, targetId, [...trail, node.id]);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
 export default function ProductionCatalog() {
   const {
     state, addCatalogNode, removeCatalogNode, updateCatalogNodePrice, renameCatalogNode, updateCatalogNodeStock, setCatalogNodeHidden, reorderCatalogSiblings,
@@ -346,9 +368,45 @@ export default function ProductionCatalog() {
   // expanded back closed on the very next catalog refresh.
   const [collapsedIds, setCollapsedIds] = useState(null);
   const [draggingId, setDraggingId] = useState(null);
+  const [highlightedId, setHighlightedId] = useState(null);
+  const location = useLocation();
+  const navigate = useNavigate();
   if (collapsedIds === null && state.plakCatalog.length > 0) {
     setCollapsedIds(collectParentIds(state.plakCatalog, new Set()));
   }
+
+  // Arrived via a Dashboard Low Stock alert's "jump to this code" link —
+  // expand every ancestor group on its path (it may be several levels deep
+  // inside a collapsed group), scroll it into view, and flash it 3 times so
+  // it's unmistakable among everything else on the page. Consumed once: the
+  // nav state is cleared immediately so a later revisit (back button, or
+  // just staying on this page) doesn't replay it.
+  useEffect(() => {
+    const targetId = location.state?.highlightNodeId;
+    if (!targetId || collapsedIds === null) return;
+    const ancestorIds = findAncestorIds(state.plakCatalog, targetId, []);
+    if (ancestorIds === null) return;
+    if (ancestorIds.length > 0) {
+      setCollapsedIds((prev) => {
+        const next = new Set(prev || []);
+        ancestorIds.forEach((id) => next.delete(id));
+        return next;
+      });
+    }
+    navigate(location.pathname, { replace: true, state: null });
+    // One extra frame past the collapse-state update above so the target
+    // row actually exists in the DOM before scrollIntoView runs.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        document.getElementById(`catalog-node-${targetId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setHighlightedId(targetId);
+        setTimeout(() => setHighlightedId(null), 1800);
+      });
+    });
+    // Only ever wants to run once per navigation-with-state; collapsedIds
+    // and state.plakCatalog change on every unrelated catalog edit too.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state, collapsedIds !== null]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -505,6 +563,7 @@ export default function ProductionCatalog() {
                     collapsedIds={collapsedIds || new Set()}
                     onToggleCollapsed={toggleCollapsed}
                     dragActive={draggingId !== null}
+                    highlightedId={highlightedId}
                   />
                 ))}
               </SortableContext>

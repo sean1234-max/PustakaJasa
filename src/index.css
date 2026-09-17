@@ -515,6 +515,22 @@ input.catalog-admin-code { padding: 6px 8px; }
 .catalog-admin-add-row { background: var(--color-neutral-100); gap: var(--space-2); }
 .catalog-admin-add-row .input { flex: none; width: auto; }
 .catalog-admin-add-row input[placeholder^="Code"] { flex: 1; }
+
+/* An inline text link rendered as a <button> (a Low Stock alert row, say) —
+   no button chrome, just an underline-on-hover cue that it's clickable. */
+.btn-link {
+  background: none; border: none; padding: 0; margin: 0;
+  font: inherit; text-align: left; cursor: pointer;
+}
+.btn-link:hover { text-decoration: underline; }
+
+/* Jumped to from a Dashboard Low Stock alert — flashes 3 times so the row
+   that scrolled into view is unmistakable among ~150 other rows. */
+@keyframes catalog-row-flash {
+  0%, 100% { background-color: transparent; }
+  50% { background-color: rgba(217, 140, 0, 0.35); }
+}
+.catalog-row-flash { animation: catalog-row-flash 0.5s ease-in-out 3; }
 .line-num {
   width: 24px; height: 24px;
   border-radius: 50%;

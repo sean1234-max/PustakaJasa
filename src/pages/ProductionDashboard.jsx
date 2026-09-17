@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import { useAppState } from '../state/useAppState';
-import { statusPillStyle, formatDate, deliveryStageForShipmentDate } from '../data/catalog';
+import { statusPillStyle, formatDate, deliveryStageForShipmentDate, getLowStockAlerts } from '../data/catalog';
 import { getOrderChangeStamp } from '../utils/orderStamp';
 
 // Production works 'In Production' orders (invoice number or not — that's
@@ -20,9 +20,9 @@ import { getOrderChangeStamp } from '../utils/orderStamp';
 
 // Whole days from an order's Shipment Date to `today` (0 = due today,
 // positive = in the past). null when there's no parseable Shipment Date.
-function daysSinceShipmentDate(dueDate, today) {
-  if (!dueDate) return null;
-  const d = new Date(dueDate);
+function daysSinceShipmentDate(shipmentDate, today) {
+  if (!shipmentDate) return null;
+  const d = new Date(shipmentDate);
   if (Number.isNaN(d.getTime())) return null;
   const ship = new Date(d.getFullYear(), d.getMonth(), d.getDate());
   const now = new Date(today.getFullYear(), today.getMonth(), today.getDate());
@@ -37,7 +37,7 @@ const TABS = [
     label: 'Completed',
     match: (o, today) => {
       if (o.status !== 'Completed') return false;
-      const days = daysSinceShipmentDate(o.dueDate, today);
+      const days = daysSinceShipmentDate(o.shipmentDate, today);
       return days !== null && days <= 3;
     },
   },
@@ -47,21 +47,21 @@ const TABS = [
     match: (o, today) => {
       if (o.status === 'Waiting for Delivery') return true;
       if (o.status !== 'Completed') return false;
-      const days = daysSinceShipmentDate(o.dueDate, today);
+      const days = daysSinceShipmentDate(o.shipmentDate, today);
       return days === null || days >= 4;
     },
   },
 ];
 
-// order.dueDate is stored as free-form text (see supabase/migrations/0001,
-// 0002) but every order-creation/approval path writes it from a JS Date —
+// order.shipmentDate is stored as free-form text (see supabase/migrations/0001,
+// 0002, 0065) but every order-creation/approval path writes it from a JS Date —
 // re-parsing with `new Date(...)` and reading local y/m/d back out gives
 // the same plain calendar date `formatDate` shows elsewhere, so the
-// delivery-date filter below compares like for like with the <input
+// shipment-date filter below compares like for like with the <input
 // type="date"> value (always "YYYY-MM-DD").
-function dueDateKey(dueDate) {
-  if (!dueDate) return '';
-  const d = new Date(dueDate);
+function shipmentDateKey(shipmentDate) {
+  if (!shipmentDate) return '';
+  const d = new Date(shipmentDate);
   if (Number.isNaN(d.getTime())) return '';
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
@@ -70,27 +70,30 @@ export default function ProductionDashboard() {
   const { state, today, markProductionDone } = useAppState();
   const navigate = useNavigate();
   const [tab, setTab] = useState(TABS[0].key);
-  // Lets Production see, at a glance, everything due out on one delivery
+  // Lets Production see, at a glance, everything due out on one shipment
   // date — useful across all three tabs (what's coming up in Pending
   // Invoice, what's ready to ship today, what already went out).
-  const [dueDateFilter, setDueDateFilter] = useState('');
+  const [shipmentDateFilter, setShipmentDateFilter] = useState('');
 
   const handleMarkDone = (ord) => {
-    const nextStatus = deliveryStageForShipmentDate(ord.dueDate, today);
+    const nextStatus = deliveryStageForShipmentDate(ord.shipmentDate, today);
     if (!window.confirm(`Mark order ${ord.id} as done? Its status will change to "${nextStatus}".`)) return;
     markProductionDone(ord.id);
   };
 
+  const lowStockAlerts = getLowStockAlerts(state.plakCatalog);
+
   const activeTab = TABS.find((t) => t.key === tab);
   const ordersInTab = state.orders.filter((o) => activeTab.match(o, today));
   const filteredOrders = ordersInTab
-    .filter((o) => !dueDateFilter || dueDateKey(o.dueDate) === dueDateFilter);
+    .filter((o) => !shipmentDateFilter || shipmentDateKey(o.shipmentDate) === shipmentDateFilter);
 
-  // Only due dates that actually have an order in this tab are selectable —
-  // production shouldn't be able to pick a date with nothing to show.
-  const dueDateOptions = [...ordersInTab.reduce((map, o) => {
-    const key = dueDateKey(o.dueDate);
-    if (key && !map.has(key)) map.set(key, o.dueDate);
+  // Only shipment dates that actually have an order in this tab are
+  // selectable — production shouldn't be able to pick a date with nothing
+  // to show.
+  const shipmentDateOptions = [...ordersInTab.reduce((map, o) => {
+    const key = shipmentDateKey(o.shipmentDate);
+    if (key && !map.has(key)) map.set(key, o.shipmentDate);
     return map;
   }, new Map())].sort(([a], [b]) => a.localeCompare(b));
 
@@ -104,6 +107,29 @@ export default function ProductionDashboard() {
           <p className="hint-text" style={{ margin: 0 }}>Open an order and export each category's CSV for the AI file — no need to wait for an invoice number.</p>
         </div>
       </div>
+
+      {lowStockAlerts.length > 0 && (
+        <div className="card" style={{ borderColor: '#d98c00', marginBottom: 'var(--space-4)' }}>
+          <div className="card-kicker" style={{ color: '#d98c00' }}>⚠ Low Stock</div>
+          <p className="hint-text" style={{ marginBottom: 'var(--space-2)' }}>
+            These Jenis Plak codes are at or below 40% of their last-set Stock Qty. A code at or below 20% is auto-hidden from teachers until restocked. Click one to jump straight to it in the catalog.
+          </p>
+          <ul style={{ margin: 0, paddingLeft: 18 }}>
+            {lowStockAlerts.map((a) => (
+              <li key={a.label}>
+                <button
+                  type="button"
+                  className="btn-link"
+                  style={{ color: a.hidden ? '#c0392b' : '#d98c00', fontWeight: a.hidden ? 700 : 400 }}
+                  onClick={() => navigate('/production/catalog', { state: { highlightNodeId: a.nodeId } })}
+                >
+                  {a.label}{a.sharedWith > 0 ? ` (shared with ${a.sharedWith} other code${a.sharedWith > 1 ? 's' : ''})` : ''}: {a.stockQty} / {a.stockBaseline} left ({Math.round((a.stockQty / a.stockBaseline) * 100)}%){a.hidden ? ' — hidden from teachers' : ''}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {state.productionToast && (
         <div className="update-toast">
@@ -120,7 +146,7 @@ export default function ProductionDashboard() {
               key={t.key}
               type="button"
               className={`btn ${t.key === tab ? 'btn-primary' : 'btn-ghost'}`}
-              onClick={() => { setTab(t.key); setDueDateFilter(''); }}
+              onClick={() => { setTab(t.key); setShipmentDateFilter(''); }}
             >
               {t.label} ({count})
             </button>
@@ -130,16 +156,16 @@ export default function ProductionDashboard() {
 
       <div className="card-kicker">{activeTab.label}</div>
       <div className="field" style={{ maxWidth: 260, margin: 'var(--space-3) 0 var(--space-4)' }}>
-        <label htmlFor="dueDateFilter">Filter by Shipment Date</label>
+        <label htmlFor="shipmentDateFilter">Filter by Shipment Date</label>
         <select
           className="input"
-          id="dueDateFilter"
-          value={dueDateFilter}
-          onChange={(e) => setDueDateFilter(e.target.value)}
-          disabled={dueDateOptions.length === 0}
+          id="shipmentDateFilter"
+          value={shipmentDateFilter}
+          onChange={(e) => setShipmentDateFilter(e.target.value)}
+          disabled={shipmentDateOptions.length === 0}
         >
           <option value="">All dates ({ordersInTab.length})</option>
-          {dueDateOptions.map(([key, rawDate]) => (
+          {shipmentDateOptions.map(([key, rawDate]) => (
             <option key={key} value={key}>{formatDate(new Date(rawDate))}</option>
           ))}
         </select>
@@ -166,7 +192,7 @@ export default function ProductionDashboard() {
               <div className="order-card-meta">
                 <div><div className="dim">Date Placed</div><div>{ord.datePlaced}</div></div>
                 <div><div className="dim">Sales</div><div>{ord.sales || '—'}</div></div>
-                <div><div className="dim">Shipment Date</div><div>{ord.dueDate ? formatDate(new Date(ord.dueDate)) : '—'}</div></div>
+                <div><div className="dim">Shipment Date</div><div>{ord.shipmentDate ? formatDate(new Date(ord.shipmentDate)) : '—'}</div></div>
                 <div>
                   <div className="dim">Total QTY</div>
                   <div className="order-card-qty">{(ord.items || []).reduce((sum, it) => sum + (Number(it.qty) || 0), 0)}</div>

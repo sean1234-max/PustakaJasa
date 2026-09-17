@@ -255,7 +255,7 @@ function initialState() {
     ketuaPanitia: '',
     terms: '',
     remark: '',
-    dueSelected: null,
+    shipmentDateSelected: null,
     funcSelected: null,
     logoDataUrl: null,
     logoFileName: '',
@@ -581,7 +581,7 @@ export function AppStateProvider({ children }) {
   const startNewOrder = useCallback(() => {
     patch((st) => ({
       sales: '', picName: '', phone: '', ketuaPanitia: '', terms: '', remark: '',
-      dueSelected: null, funcSelected: null,
+      shipmentDateSelected: null, funcSelected: null,
       logoDataUrl: null, logoFileName: '', logoRemark: '', schoolType: null, stepError: '',
       importFilePath: null, importFileName: null,
 
@@ -1337,7 +1337,7 @@ export function AppStateProvider({ children }) {
       createdBy: st.userAuthId,
       salesmanId: selectedSalesman.id,
       sekolah: st.sekolah, schoolLanguage: st.schoolLanguage, sales: selectedSalesman.name, picName: st.picName, phone: st.phone, ketuaPanitia: st.ketuaPanitia, terms: st.terms, remark: st.remark,
-      dueDate: st.dueSelected, functionDate: st.funcSelected,
+      shipmentDate: st.shipmentDateSelected, functionDate: st.funcSelected,
       logoDataUrl: st.logoDataUrl, logoFileName: st.logoFileName, logoRemark: st.logoRemark, schoolType: st.schoolType,
       importFilePath: st.importFilePath, importFileName: st.importFileName,
       snapshot, items: st.cart.map((ci) => ({ ...ci })),
@@ -1395,7 +1395,7 @@ export function AppStateProvider({ children }) {
     const restored = buildDraftFromOrder(ord);
     patch((st) => ({
       sekolah: ord.sekolah, sales: ord.sales, picName: ord.picName, phone: ord.phone, ketuaPanitia: ord.ketuaPanitia || '', terms: ord.terms || '', remark: ord.remark,
-      dueSelected: ord.dueDate || null, funcSelected: ord.functionDate || null,
+      shipmentDateSelected: ord.shipmentDate || null, funcSelected: ord.functionDate || null,
       logoDataUrl: ord.logoDataUrl || null, logoFileName: ord.logoFileName || '', logoRemark: ord.logoRemark || '', schoolType: ord.schoolType || null,
       // A reorder is a fresh order — no upload behind it unless the teacher
       // imports one now.
@@ -1802,7 +1802,7 @@ export function AppStateProvider({ children }) {
   // downstream, so production knows to double-check it against the catalog.
   // Approving sends the order straight into production — there's no
   // separate "approved but not yet in production" holding stage.
-  // `overrides` lets Sales adjust Shipment Date (dueDate) / Function Date (in addition to
+  // `overrides` lets Sales adjust Shipment Date (shipmentDate) / Function Date (in addition to
   // per-item price, already folded into updatedItems) at the same moment
   // they approve — the only point before production where those dates are
   // still editable.
@@ -1997,7 +1997,7 @@ export function AppStateProvider({ children }) {
       // Date has already arrived (or passed) by the time Production finishes,
       // the calendar rule sends it straight to 'Shipped' / 'Completed', the
       // same as the daily sweep_shipped_orders job would on its next run.
-      const nextStatus = deliveryStageForShipmentDate(order.dueDate, TODAY);
+      const nextStatus = deliveryStageForShipmentDate(order.shipmentDate, TODAY);
       const toastForStatus = {
         'Waiting for Delivery': 'Production completed. Order is now waiting for delivery.',
         Shipped: 'Production completed. Shipment Date has arrived — order is now Shipped.',

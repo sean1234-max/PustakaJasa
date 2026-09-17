@@ -4,7 +4,7 @@ import AdminLayout from '../components/AdminLayout';
 import { useAppState } from '../state/useAppState';
 import { fetchAllProfiles } from '../lib/adminApi';
 import { loadWithRetry } from '../lib/loadWithRetry';
-import { STATUS_STAGES, statusPillStyle } from '../data/catalog';
+import { STATUS_STAGES, statusPillStyle, getLowStockAlerts } from '../data/catalog';
 
 function StatTile({ value, label }) {
   return (
@@ -38,12 +38,39 @@ export default function AdminDashboard() {
   const inactiveCount = (profiles || []).filter((p) => p.status !== 'active').length;
 
   const orders = state.orders || [];
+  // datePlaced is a display string like "17 Sep 2026" (see formatDate in
+  // data/catalog.js) — a plain string comparison sorts wrong across month/
+  // day boundaries (e.g. "10 Jan" would sort before "2 Jan"), so re-parse
+  // with `new Date(...)` for the actual chronological order.
   const recentOrders = [...orders]
-    .sort((a, b) => (a.datePlaced < b.datePlaced ? 1 : -1))
+    .sort((a, b) => new Date(b.datePlaced) - new Date(a.datePlaced))
     .slice(0, 8);
+
+  const lowStockAlerts = getLowStockAlerts(state.plakCatalog);
 
   return (
     <AdminLayout title="Admin Dashboard" subtitle="What's happening in the system right now.">
+      {lowStockAlerts.length > 0 && (
+        <section className="mb-10 bg-amber-50 border border-amber-300 rounded-lg p-5">
+          <h3 className="text-headline-sm text-amber-900 mb-1">⚠ Low Stock</h3>
+          <p className="text-body-sm text-amber-800 mb-3">
+            These Jenis Plak codes are at or below 40% of their last-set Stock Qty. A code at or below 20% is auto-hidden from teachers until restocked. Click one to jump straight to it in the catalog.
+          </p>
+          <ul className="list-disc pl-5 space-y-1">
+            {lowStockAlerts.map((a) => (
+              <li key={a.label}>
+                <button
+                  type="button"
+                  className={`text-body-sm text-left hover:underline ${a.hidden ? 'text-error font-semibold' : 'text-amber-900'}`}
+                  onClick={() => navigate('/admin/catalog', { state: { highlightNodeId: a.nodeId } })}
+                >
+                  {a.label}{a.sharedWith > 0 ? ` (shared with ${a.sharedWith} other code${a.sharedWith > 1 ? 's' : ''})` : ''}: {a.stockQty} / {a.stockBaseline} left ({Math.round((a.stockQty / a.stockBaseline) * 100)}%){a.hidden ? ' — hidden from teachers' : ''}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       {loadError ? (
         <div className="text-body-md">
           <p className="text-error mb-2">{loadError}</p>

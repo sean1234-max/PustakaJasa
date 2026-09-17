@@ -4,7 +4,7 @@ const STORAGE_KEY = 'schoolportal.orderDraft.v1';
 // aren't (they'll live server-side once the backend lands), and login
 // fields never should be.
 const DRAFT_FIELDS = [
-  'sekolah', 'sales', 'picName', 'phone', 'ketuaPanitia', 'terms', 'remark', 'dueSelected', 'funcSelected',
+  'sekolah', 'sales', 'picName', 'phone', 'ketuaPanitia', 'terms', 'remark', 'shipmentDateSelected', 'funcSelected',
   'logoDataUrl', 'logoFileName', 'logoRemark', 'schoolType',
   'category', 'lineValues', 'matrixValues', 'rowsByBlock', 'plakRows', 'columnsByBlock',
   'nextRowId', 'nextPlakRowId', 'nextColumnId',
@@ -29,7 +29,7 @@ export function loadDraft() {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    if (parsed.dueSelected) parsed.dueSelected = new Date(parsed.dueSelected);
+    if (parsed.shipmentDateSelected) parsed.shipmentDateSelected = new Date(parsed.shipmentDateSelected);
     if (parsed.funcSelected) parsed.funcSelected = new Date(parsed.funcSelected);
     return parsed;
   } catch {
