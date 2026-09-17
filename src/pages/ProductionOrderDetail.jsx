@@ -6,7 +6,7 @@ import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import { useAppState } from '../state/useAppState';
 import { statusPillStyle, formatDate, MANUAL_MAX_QTY } from '../data/catalog';
 import { reconstructOrderDetailGroups, reconstructBlocksForCategory } from '../utils/computeBlocks';
-import { getExportableCategories, splitOrderCategories, getOrderJenisPlakGroups, getPlakProductionMode, summarizeRowsForManual, buildCsvRows, rowsToCsv, buildCategoryCsvFilename, validateExport } from '../utils/exportCsv';
+import { getExportableCategories, splitOrderCategories, getOrderJenisPlakGroups, getPlakProductionMode, summarizeRowsForManual, buildCsvRows, rowsToCsv, buildCategoryCsvFilename, combineCsvRows, buildCombinedCsvFilename, validateExport } from '../utils/exportCsv';
 import { downloadTextFile } from '../utils/downloadBlob';
 import { getOrderImportUrl } from '../lib/storageApi';
 import { groupItemsByBatch } from '../utils/orderBatches';
@@ -115,6 +115,21 @@ export default function ProductionOrderDetail() {
     const filename = buildCategoryCsvFilename(order, `${group.categoryLabel} - ${group.jenisPlak}`);
     downloadTextFile(filename, csv);
     setExportNote(`Exported ${csvData.rows.length} row(s) to ${filename}.`);
+    clearTimeout(exportNoteTimer.current);
+    exportNoteTimer.current = setTimeout(() => setExportNote(''), 4000);
+  };
+
+  // Every (category, Jenis Plak) group's rows, one file — blocked outright
+  // if any group is itself blocked (validateExport), same "never let bad
+  // data leave the app" rule as the per-group export.
+  const combinedRows = combineCsvRows(jenisPlakExport);
+  const combinedOk = jenisPlakExport.length > 0 && jenisPlakExport.every((g) => g.check.ok) && combinedRows.length > 0;
+  const handleExportCombined = () => {
+    if (!combinedOk) return;
+    const csv = rowsToCsv(combinedRows);
+    const filename = buildCombinedCsvFilename(order);
+    downloadTextFile(filename, csv);
+    setExportNote(`Exported ${combinedRows.length} row(s) to ${filename}.`);
     clearTimeout(exportNoteTimer.current);
     exportNoteTimer.current = setTimeout(() => setExportNote(''), 4000);
   };
@@ -256,6 +271,16 @@ export default function ProductionOrderDetail() {
                   One CSV per Category + Jenis Plak — combined across every order detail that uses the same category and Jenis Plak (that's one Adobe Illustrator file). Never combined across different categories, even when they share a Jenis Plak, since each category's reference-sample layout can differ.
                   A group with {MANUAL_MAX_QTY} keping or fewer in total is marked <strong>BUAT MANUAL</strong>: type those few straight into Illustrator, it's faster than exporting and importing. Its plaque text is listed below.
                 </p>
+                {jenisPlakGroups.length > 0 && (
+                  <div style={{ margin: 'var(--space-3) 0' }}>
+                    <button type="button" className="btn btn-primary" disabled={!combinedOk} onClick={handleExportCombined}>
+                      ⬇ Download Combined CSV{combinedRows.length > 0 ? ` (${combinedRows.length} rows)` : ''}
+                    </button>
+                    <p className="hint-text" style={{ marginTop: 4 }}>
+                      Every group above, in one file — each row still carries its own Category and Jenis Plak column. Disabled if any group below is blocked.
+                    </p>
+                  </div>
+                )}
                 {jenisPlakGroups.length === 0 ? (
                   <p className="hint-text">No Jenis Plak found for this order.</p>
                 ) : (

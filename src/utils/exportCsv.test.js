@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   CSV_COLUMNS, rowsToCsv, buildCsvRows, validateExport, buildCategoryCsvFilename, isReservedName,
   getOrderJenisPlakGroups, getExportableCategories, splitOrderCategories,
+  combineCsvRows, buildCombinedCsvFilename,
 } from './exportCsv';
 import { customMatrixLabelKey, matrixCellKey } from '../data/catalog';
 
@@ -34,8 +35,8 @@ describe('buildCsvRows — PBD (per-recipient, Nama Kelas split)', () => {
     }, {});
     const { rows } = buildCsvRows({ schoolLanguage: 'SK', items: [it] }, 'PBD', [it]);
     expect(rows).toEqual([
-      ['HARI ANUGERAH 2026', '', 'ANUGERAH PBD', 'TAHUN 4', '', 'DECO LIGHT'],
-      ['HARI ANUGERAH 2026', '', 'ANUGERAH PBD', 'TAHUN 4', '', 'DECO LIGHT'],
+      ['HARI ANUGERAH 2026', '', 'ANUGERAH PBD', 'TAHUN 4', '', 'DECO LIGHT', 'PBD TERBAIK'],
+      ['HARI ANUGERAH 2026', '', 'ANUGERAH PBD', 'TAHUN 4', '', 'DECO LIGHT', 'PBD TERBAIK'],
     ]);
   });
 
@@ -64,8 +65,8 @@ describe('CSV column remap — reference-sample lines -> CSV columns', () => {
     };
     const { rows } = buildCsvRows({ schoolLanguage: 'SK', items: [item] }, 'MP1', [item]);
     expect(rows).toEqual([
-      ['HARI ANUGERAH', '', 'TERBAIK MATA PELAJARAN\nBAHASA MELAYU', 'TAHUN 1', '', 'DECO LIGHT'],
-      ['HARI ANUGERAH', '', 'TERBAIK MATA PELAJARAN\nBAHASA MELAYU', 'TAHUN 1', '', 'DECO LIGHT'],
+      ['HARI ANUGERAH', '', 'TERBAIK MATA PELAJARAN\nBAHASA MELAYU', 'TAHUN 1', '', 'DECO LIGHT', 'MP THP 1'],
+      ['HARI ANUGERAH', '', 'TERBAIK MATA PELAJARAN\nBAHASA MELAYU', 'TAHUN 1', '', 'DECO LIGHT', 'MP THP 1'],
     ]);
   });
 
@@ -78,7 +79,7 @@ describe('CSV column remap — reference-sample lines -> CSV columns', () => {
       },
     };
     const { rows } = buildCsvRows({ schoolLanguage: 'SK', items: [item] }, 'PBD', [item]);
-    expect(rows).toEqual([['HARI ANUGERAH', '', 'ANUGERAH PBD\nTERBAIK KESELURUHAN', 'TAHUN 5', '', 'DECO LIGHT']]);
+    expect(rows).toEqual([['HARI ANUGERAH', '', 'ANUGERAH PBD\nTERBAIK KESELURUHAN', 'TAHUN 5', '', 'DECO LIGHT', 'PBD TERBAIK']]);
   });
 
   it('LONJAKAN: line 2 -> position, each row TAHUN -> event_line_1', () => {
@@ -91,9 +92,9 @@ describe('CSV column remap — reference-sample lines -> CSV columns', () => {
     };
     const { rows } = buildCsvRows({ schoolLanguage: 'SK', items: [item] }, 'LONJAKAN', [item]);
     expect(rows).toEqual([
-      ['HARI ANUGERAH', '', 'LONJAKAN SAUJANA', 'TAHUN 3', '', 'DECO LIGHT'],
-      ['HARI ANUGERAH', '', 'LONJAKAN SAUJANA', 'TAHUN 3', '', 'DECO LIGHT'],
-      ['HARI ANUGERAH', '', 'LONJAKAN SAUJANA', 'TAHUN 4', '', 'DECO LIGHT'],
+      ['HARI ANUGERAH', '', 'LONJAKAN SAUJANA', 'TAHUN 3', '', 'DECO LIGHT', 'LONJAKAN SAUJANA'],
+      ['HARI ANUGERAH', '', 'LONJAKAN SAUJANA', 'TAHUN 3', '', 'DECO LIGHT', 'LONJAKAN SAUJANA'],
+      ['HARI ANUGERAH', '', 'LONJAKAN SAUJANA', 'TAHUN 4', '', 'DECO LIGHT', 'LONJAKAN SAUJANA'],
     ]);
   });
 });
@@ -163,6 +164,45 @@ describe('getOrderJenisPlakGroups — never combines different categories sharin
     const groups = getOrderJenisPlakGroups(order);
     expect(groups).toHaveLength(1);
     expect(groups[0].items.map((it) => it.id)).toEqual(['a', 'b']);
+  });
+});
+
+describe('combineCsvRows — one file for every (category, Jenis Plak) group', () => {
+  const order = {
+    id: 'ORD-C', invoiceId: 'DWI-1', schoolLanguage: 'SK',
+    items: [
+      {
+        id: 'a', categoryKey: 'MP1', jenisPlak: 'DECO LIGHT', qty: 1,
+        detail: {
+          lines: { 'MP1::0::0': 'HARI ANUGERAH', 'MP1::0::2': 'ACARA' },
+          matrix: { [customMatrixLabelKey('MP1', 1)]: 'BM', [matrixCellKey('MP1', 'custom-1', 'TAHUN 1')]: '1' },
+        },
+      },
+      {
+        id: 'b', categoryKey: 'TOKOH_SHEET', jenisPlak: 'CPH / A', qty: 1,
+        detail: {
+          lines: { 'TOKOH_SHEET::0::0': 'HARI ANUGERAH' },
+          rows: [{ id: 1, desc: 'TOKOH NILAM', qty: 1, namaMurid: 'SITI' }],
+        },
+      },
+    ],
+  };
+
+  it('flattens every group\'s rows, each still carrying its own category + jenis plak column', () => {
+    const groups = getOrderJenisPlakGroups(order).map((g) => ({ ...g, csvData: buildCsvRows(order, null, g.items) }));
+    const rows = combineCsvRows(groups);
+    expect(rows).toHaveLength(2);
+    expect(rows.filter((r) => r[5] === 'DECO LIGHT' && r[6] === 'MP THP 1')).toHaveLength(1);
+    expect(rows.filter((r) => r[5] === 'CPH / A' && r[6] === 'TOKOH')).toHaveLength(1);
+  });
+
+  it('returns [] for no groups', () => {
+    expect(combineCsvRows([])).toEqual([]);
+    expect(combineCsvRows(undefined)).toEqual([]);
+  });
+
+  it('buildCombinedCsvFilename names the file after the invoice, not any one category', () => {
+    expect(buildCombinedCsvFilename(order)).toBe('(DWI-1) - Combined.csv');
   });
 });
 
@@ -250,7 +290,7 @@ describe('buildCsvRows — TOKOH_SHEET NAMA MURID / Reserved', () => {
     const item = tokohItem('a', { id: 1, desc: 'TOKOH MURID', qty: 1, namaMurid: 'AHMAD BIN ALI' });
     const { rows, reservedCount } = buildCsvRows({ ...order, items: [item] }, 'TOKOH_SHEET', [item]);
     expect(reservedCount).toBe(0);
-    expect(rows).toEqual([['HARI ANUGERAH 2026', '', 'TOKOH MURID', 'AHMAD BIN ALI', '', 'CPH / A']]);
+    expect(rows).toEqual([['HARI ANUGERAH 2026', '', 'TOKOH MURID', 'AHMAD BIN ALI', '', 'CPH / A', 'TOKOH']]);
   });
 
   it('a blank NAMA MURID engraves the TOKOH name qty times, event_line_1 blank', () => {
@@ -265,7 +305,7 @@ describe('buildCsvRows — TOKOH_SHEET NAMA MURID / Reserved', () => {
     const reserved = tokohItem('r', { id: 2, desc: 'TOKOH AKADEMIK', qty: 2, namaMurid: 'Reserved' });
     const items = [named, reserved];
     const csv = buildCsvRows({ ...order, items }, 'TOKOH_SHEET', items);
-    expect(csv.rows).toEqual([['HARI ANUGERAH 2026', '', 'TOKOH MURID', 'SITI', '', 'CPH / A']]);
+    expect(csv.rows).toEqual([['HARI ANUGERAH 2026', '', 'TOKOH MURID', 'SITI', '', 'CPH / A', 'TOKOH']]);
     expect(csv.reservedCount).toBe(2);
 
     const res = validateExport(order, items, [], csv);
@@ -461,8 +501,8 @@ describe('buildCsvRows — ALIRAN TERBAIK (Kalau ada kelas)', () => {
     const { rows } = buildCsvRows({ schoolLanguage: 'SK', items: [mk('FLAT', null, null)] }, 'ALIRAN_KELAS', [mk('FLAT', null, null)]);
     // TAHUN 1 (flat): 2 classes → 2 rows
     expect(rows).toEqual([
-      ['HARI ANUGERAH', '', '', 'TERBAIK DALAM ALIRAN', 'TAHUN 1 ADIL', 'FLAT'],
-      ['HARI ANUGERAH', '', '', 'TERBAIK DALAM ALIRAN', 'TAHUN 1 BESTARI', 'FLAT'],
+      ['HARI ANUGERAH', '', '', 'TERBAIK DALAM ALIRAN', 'TAHUN 1 ADIL', 'FLAT', 'ALIRAN TERBAIK (Kalau ada kelas)'],
+      ['HARI ANUGERAH', '', '', 'TERBAIK DALAM ALIRAN', 'TAHUN 1 BESTARI', 'FLAT', 'ALIRAN TERBAIK (Kalau ada kelas)'],
     ]);
   });
 
@@ -505,8 +545,8 @@ describe('buildCsvRows — dynamicMatrix with a pre-written roster column (event
     // The `year` column is retired — always blank (the year rides on the
     // two-line TAJUK BESAR now).
     expect(rows).toEqual([
-      ['SMK X\nHEM 2024', '', 'ANUGERAH KEPIMPINAN MURID CEMERLANG', 'KESHVINI A/P MUGAN', 'KETUA PENGAWAS\nLEMBAGA PENGAWAS SEKOLAH', 'OTHER - roster plak'],
-      ['SMK X\nHEM 2024', '', 'ANUGERAH KEPIMPINAN MURID CEMERLANG', 'LIEW YONG SHIN', 'SETIAUSAHA\nLEMBAGA PENGAWAS SEKOLAH', 'OTHER - roster plak'],
+      ['SMK X\nHEM 2024', '', 'ANUGERAH KEPIMPINAN MURID CEMERLANG', 'KESHVINI A/P MUGAN', 'KETUA PENGAWAS\nLEMBAGA PENGAWAS SEKOLAH', 'OTHER - roster plak', 'Mata Pelajaran / Klas (Matrix)'],
+      ['SMK X\nHEM 2024', '', 'ANUGERAH KEPIMPINAN MURID CEMERLANG', 'LIEW YONG SHIN', 'SETIAUSAHA\nLEMBAGA PENGAWAS SEKOLAH', 'OTHER - roster plak', 'Mata Pelajaran / Klas (Matrix)'],
     ]);
   });
 
@@ -531,9 +571,9 @@ describe('buildCsvRows — dynamicMatrix with a pre-written roster column (event
     };
     const { rows } = buildCsvRows({ id: 'O', items: [tokoh], schoolLanguage: 'SK' }, 'KLAS_MATRIX', [tokoh]);
     expect(rows).toEqual([
-      ['MAJLIS X', '', 'TOKOH MURID', '', '', 'M1902B'],
-      ['MAJLIS X', '', 'TOKOH NILAM', '', '', 'M1902B'],
-      ['MAJLIS X', '', 'TOKOH NILAM', '', '', 'M1902B'],
+      ['MAJLIS X', '', 'TOKOH MURID', '', '', 'M1902B', 'Mata Pelajaran / Klas (Matrix)'],
+      ['MAJLIS X', '', 'TOKOH NILAM', '', '', 'M1902B', 'Mata Pelajaran / Klas (Matrix)'],
+      ['MAJLIS X', '', 'TOKOH NILAM', '', '', 'M1902B', 'Mata Pelajaran / Klas (Matrix)'],
     ]);
   });
 });

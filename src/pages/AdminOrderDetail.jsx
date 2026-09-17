@@ -7,7 +7,7 @@ import { useAppState } from '../state/useAppState';
 import { statusPillStyle, formatDate } from '../data/catalog';
 import CancelOrderControl from '../components/CancelOrderControl';
 import { reconstructOrderDetailGroups, reconstructBlocksForCategory } from '../utils/computeBlocks';
-import { getExportableCategories, splitOrderCategories, getOrderJenisPlakGroups, buildCsvRows, rowsToCsv, buildCategoryCsvFilename, validateExport } from '../utils/exportCsv';
+import { getExportableCategories, splitOrderCategories, getOrderJenisPlakGroups, buildCsvRows, rowsToCsv, buildCategoryCsvFilename, combineCsvRows, buildCombinedCsvFilename, validateExport } from '../utils/exportCsv';
 import { downloadTextFile } from '../utils/downloadBlob';
 import { getOrderImportUrl } from '../lib/storageApi';
 
@@ -107,6 +107,21 @@ export default function AdminOrderDetail() {
     const filename = buildCategoryCsvFilename(order, `${group.categoryLabel} - ${group.jenisPlak}`);
     downloadTextFile(filename, csv);
     setExportNote(`Exported ${csvData.rows.length} row(s) to ${filename}.`);
+    clearTimeout(exportNoteTimer.current);
+    exportNoteTimer.current = setTimeout(() => setExportNote(''), 4000);
+  };
+
+  // Every (category, Jenis Plak) group's rows, one file — blocked outright
+  // if any group is itself blocked (validateExport), same rule as the
+  // per-group export.
+  const combinedRows = combineCsvRows(jenisPlakExport);
+  const combinedOk = jenisPlakExport.length > 0 && jenisPlakExport.every((g) => g.check.ok) && combinedRows.length > 0;
+  const handleExportCombined = () => {
+    if (!combinedOk) return;
+    const csv = rowsToCsv(combinedRows);
+    const filename = buildCombinedCsvFilename(order);
+    downloadTextFile(filename, csv);
+    setExportNote(`Exported ${combinedRows.length} row(s) to ${filename}.`);
     clearTimeout(exportNoteTimer.current);
     exportNoteTimer.current = setTimeout(() => setExportNote(''), 4000);
   };
@@ -265,6 +280,16 @@ export default function AdminOrderDetail() {
                 <p className="text-body-sm text-on-surface-variant mb-2">
                   Same category + Jenis Plak used in more than one place in this order? Export one combined CSV for it here instead of a separate file per order detail. Never combined across different categories, even when they share a Jenis Plak — each category's reference-sample layout can differ.
                 </p>
+                {jenisPlakGroups.length > 0 && (
+                  <div className="mb-4">
+                    <button type="button" disabled={!combinedOk} onClick={handleExportCombined} className="bg-primary text-on-primary text-label-bold font-semibold px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50">
+                      ⬇ Download Combined CSV{combinedRows.length > 0 ? ` (${combinedRows.length} rows)` : ''}
+                    </button>
+                    <p className="text-body-sm text-on-surface-variant mt-1">
+                      Every group below, in one file — each row still carries its own Category and Jenis Plak column. Disabled if any group below is blocked.
+                    </p>
+                  </div>
+                )}
                 {jenisPlakGroups.length === 0 ? (
                   <p className="text-body-md text-on-surface-variant">No Jenis Plak found for this order.</p>
                 ) : (

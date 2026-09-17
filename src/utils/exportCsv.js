@@ -5,7 +5,7 @@ import {
   resolveCategory, categoriesUsedByItems, distributeQtyOverPositions,
 } from '../data/catalog';
 
-export const CSV_COLUMNS = ['event_header', 'year', 'position', 'event_line_1', 'event_line_2', 'jenis_plak'];
+export const CSV_COLUMNS = ['event_header', 'year', 'position', 'event_line_1', 'event_line_2', 'jenis_plak', 'category'];
 
 // TOKOH_SHEET only: a NAMA MURID of "Reserved" (any case — the three forms
 // teachers use are RESERVED / reserved / Reserved) means the teacher has
@@ -502,11 +502,18 @@ export function buildCsvRows(order, categoryKey, items) {
     } else {
       itemRows = buildFixedRows(item, header, year, getLine(item, 2));
     }
-    // The CSV's own 6th column: every row from this item engraves for the
-    // same Jenis Plak the item itself was assigned (a CSV export is always
-    // pre-scoped to one Jenis Plak per file — getOrderJenisPlakGroups), so
-    // it's stamped on here rather than threaded through every builder above.
-    itemRows.forEach((r) => rows.push([...r, item.jenisPlak || '']));
+    // The CSV's last two columns: every row from this item engraves for the
+    // same Jenis Plak and category the item itself was assigned (a CSV
+    // export is always pre-scoped to one (category, Jenis Plak) pair per
+    // file — getOrderJenisPlakGroups), so both are stamped on here rather
+    // than threaded through every builder above. `category` uses the
+    // resolved label (e.g. "PPKI", or a teacher's own renamed sheet), not
+    // the raw key — this is what a combined multi-category export
+    // (buildCombinedCsvFilename / combineCsvRows) needs so rows from
+    // different categories can still be told apart once merged into one
+    // file.
+    const categoryLabel = cat?.label || item.categoryKey;
+    itemRows.forEach((r) => rows.push([...r, item.jenisPlak || '', categoryLabel]));
   });
 
   return { rows, skippedItemIds, reservedCount };
@@ -566,6 +573,27 @@ export function getPlakProductionMode(order) {
     });
   });
   return modes;
+}
+
+// Flattens every (category, Jenis Plak) group's already-built CSV rows into
+// one combined file — production downloads/imports this single CSV instead
+// of one file per group. Rows are never re-combined or re-grouped here
+// (each group's own rows stay exactly as buildCsvRows produced them); this
+// just concatenates them, in the same order as `groups`. Each row still
+// carries its own `category` and `jenis_plak` columns (buildCsvRows above),
+// which is what lets a human or a script tell rows from different groups
+// apart again once they're all in one file. `groups` is jenisPlakExport-
+// shaped: an array of `{ csvData: { rows } }` (see getOrderJenisPlakGroups
+// + buildCsvRows — ProductionOrderDetail.jsx / AdminOrderDetail.jsx already
+// compute this for the per-group export table, so it's passed in rather
+// than recomputed).
+export function combineCsvRows(groups) {
+  return (groups || []).flatMap((g) => g.csvData.rows);
+}
+
+export function buildCombinedCsvFilename(order) {
+  const invoice = sanitizeFilenamePart(order.invoiceId || order.id);
+  return `(${invoice}) - Combined.csv`;
 }
 
 // Collapses a group's built CSV rows down to the distinct plaque texts a
