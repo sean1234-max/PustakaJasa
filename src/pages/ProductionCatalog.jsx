@@ -55,24 +55,6 @@ const catalogAnnouncements = {
   },
 };
 
-// A parent code has no stock of its own — only its leaf variants do — but
-// Production still wants to see at a glance how much is left across all of
-// them without expanding the group. Sums every tracked descendant leaf
-// (any depth), returning null (rendered as "—") when none of them track
-// stock at all, same "not tracked" meaning a single leaf's own null does.
-function sumDescendantStock(node) {
-  if (!Array.isArray(node.children) || node.children.length === 0) {
-    return node.stockQty == null ? null : node.stockQty;
-  }
-  let total = 0;
-  let anyTracked = false;
-  node.children.forEach((child) => {
-    const childTotal = sumDescendantStock(child);
-    if (childTotal != null) { total += childTotal; anyTracked = true; }
-  });
-  return anyTracked ? total : null;
-}
-
 // One row per catalog node, recursing into its children. Each row can add
 // a variant beneath it, edit its own price/stock, hide/unhide it, remove it
 // (and everything beneath it), or drag it up/down among its own siblings —
@@ -82,6 +64,7 @@ function sumDescendantStock(node) {
 // at once.
 function CatalogRow({
   node, depth, parentId, path, canReorder, onAddChild, onRemove, onRename, ordersUsingPath, onPriceChange, onStockChange, onToggleHidden,
+  onLinkStockGroup, onUnlinkStockGroup, existingGroupKeys,
   collapsedIds, onToggleCollapsed, dragActive,
 }) {
   const fullPath = [...path, node.code].join(' / ');
@@ -91,6 +74,7 @@ function CatalogRow({
   const [codeDraft, setCodeDraft] = useState(node.code);
   const [priceDraft, setPriceDraft] = useState(String(node.price ?? 0));
   const [stockDraft, setStockDraft] = useState(node.stockQty == null ? '' : String(node.stockQty));
+  const [groupDraft, setGroupDraft] = useState(node.stockGroupKey || '');
 
   useEffect(() => { setCodeDraft(node.code); }, [node.code]);
 
@@ -123,10 +107,11 @@ function CatalogRow({
     setStockDraft(node.stockQty == null ? '' : String(node.stockQty));
   }, [node.stockQty]);
 
+  useEffect(() => { setGroupDraft(node.stockGroupKey || ''); }, [node.stockGroupKey]);
+
   const hasChildren = Array.isArray(node.children) && node.children.length > 0;
   const collapsed = collapsedIds.has(node.id);
   const zone = stockZoneFor(node.stockQty, node.stockBaseline);
-  const descendantStock = hasChildren ? sumDescendantStock(node) : null;
 
   const commitCode = () => {
     const next = codeDraft.trim();
@@ -154,12 +139,50 @@ function CatalogRow({
 
   const commitStock = () => {
     if (stockDraft.trim() === '') {
-      if (node.stockQty != null) onStockChange(node.id, null);
+      if (node.stockQty != null) onStockChange(node.id, null, node.stockGroupKey);
       return;
     }
     const val = Math.round(Number(stockDraft));
-    if (!Number.isNaN(val) && val >= 0 && val !== node.stockQty) onStockChange(node.id, val);
+    if (!Number.isNaN(val) && val >= 0 && val !== node.stockQty) onStockChange(node.id, val, node.stockGroupKey);
     else setStockDraft(node.stockQty == null ? '' : String(node.stockQty));
+  };
+
+  // Typing a brand new name asks for a starting number right away (linking
+  // never sums/averages whatever independent numbers this node and its
+  // new group-mates had before — nothing sensible to derive it from).
+  // Typing an existing name just joins it, no number needed. Clearing the
+  // field unlinks — confirmed first since it resets this node's own stock
+  // back to "not tracked yet".
+  const commitStockGroup = async () => {
+    const next = groupDraft.trim();
+    const current = node.stockGroupKey || '';
+    if (next === current) return;
+    if (!next) {
+      if (window.confirm(`Unlink "${node.code}" from Stock Group "${current}"? It goes back to independent tracking, starting from "not tracked" — you'll need to type a fresh Stock Qty.`)) {
+        onUnlinkStockGroup(node.id);
+      } else {
+        setGroupDraft(current);
+      }
+      return;
+    }
+    const isNewGroup = !existingGroupKeys.has(next);
+    let initialStockQty;
+    if (isNewGroup) {
+      const input = window.prompt(`"${next}" is a new Stock Group. Enter its starting Stock Qty:`);
+      if (input === null) { setGroupDraft(current); return; }
+      initialStockQty = Math.round(Number(input));
+      if (Number.isNaN(initialStockQty) || initialStockQty < 0) {
+        window.alert('Enter a valid non-negative number.');
+        setGroupDraft(current);
+        return;
+      }
+    }
+    try {
+      await onLinkStockGroup(node.id, next, initialStockQty);
+    } catch (err) {
+      window.alert(err.message || 'Failed to link Stock Group.');
+      setGroupDraft(current);
+    }
   };
 
   const submitAddChild = () => {
@@ -204,25 +227,32 @@ function CatalogRow({
           onChange={(e) => setPriceDraft(e.target.value)}
           onBlur={commitPrice}
         />
-        {!hasChildren && (
+        <input
+          className="input catalog-admin-price"
+          type="number"
+          step="1"
+          min="0"
+          placeholder="Stock"
+          title="Stock Qty — independent of any child variants beneath this code. Setting a new number resets the 15%/25% warning thresholds against it."
+          value={stockDraft}
+          style={zone !== 'normal' ? { color: STOCK_ZONE_COLOR[zone], fontWeight: 700 } : undefined}
+          onChange={(e) => setStockDraft(e.target.value)}
+          onBlur={commitStock}
+        />
+        <div className="catalog-admin-group-cell">
           <input
-            className="input catalog-admin-price"
-            type="number"
-            step="1"
-            min="0"
-            placeholder="Stock"
-            title="Stock Qty — setting a new number resets the 15%/25% warning thresholds against it"
-            value={stockDraft}
-            style={zone !== 'normal' ? { color: STOCK_ZONE_COLOR[zone], fontWeight: 700 } : undefined}
-            onChange={(e) => setStockDraft(e.target.value)}
-            onBlur={commitStock}
+            className="input catalog-admin-group"
+            placeholder="Stock Group"
+            title="Type the same name on every code that should share one stock count with this one. Leave blank to track this code's stock independently."
+            list="plak-stock-group-keys"
+            value={groupDraft}
+            onChange={(e) => setGroupDraft(e.target.value)}
+            onBlur={commitStockGroup}
           />
-        )}
-        {hasChildren && (
-          <div className="input input-readonly catalog-admin-price" title="Total stock across all variants beneath this code">
-            {descendantStock != null ? descendantStock : '—'}
-          </div>
-        )}
+          {node.stockGroupKey && node.stockGroupSize > 1 && (
+            <div className="hint-text" style={{ fontSize: 11, marginTop: 2 }}>🔗 shared with {node.stockGroupSize - 1} other code(s)</div>
+          )}
+        </div>
         <div className="catalog-admin-actions">
           <button
             type="button"
@@ -269,6 +299,9 @@ function CatalogRow({
               onPriceChange={onPriceChange}
               onStockChange={onStockChange}
               onToggleHidden={onToggleHidden}
+              onLinkStockGroup={onLinkStockGroup}
+              onUnlinkStockGroup={onUnlinkStockGroup}
+              existingGroupKeys={existingGroupKeys}
               collapsedIds={collapsedIds}
               onToggleCollapsed={onToggleCollapsed}
               dragActive={dragActive}
@@ -292,9 +325,19 @@ function collectParentIds(nodes, out) {
   return out;
 }
 
+// Every stockGroupKey used anywhere in the tree, at any depth.
+function collectStockGroupKeys(nodes, out) {
+  (nodes || []).forEach((node) => {
+    if (node.stockGroupKey) out.add(node.stockGroupKey);
+    if (Array.isArray(node.children)) collectStockGroupKeys(node.children, out);
+  });
+  return out;
+}
+
 export default function ProductionCatalog() {
   const {
     state, addCatalogNode, removeCatalogNode, updateCatalogNodePrice, renameCatalogNode, updateCatalogNodeStock, setCatalogNodeHidden, reorderCatalogSiblings,
+    linkCatalogNodeStockGroup, unlinkCatalogNodeStockGroup,
   } = useAppState();
   const [newTopCode, setNewTopCode] = useState('');
   const [newTopPrice, setNewTopPrice] = useState('');
@@ -332,12 +375,17 @@ export default function ProductionCatalog() {
   const handlePriceChange = (id, price) => {
     updateCatalogNodePrice(id, price);
   };
-  const handleStockChange = (id, stockQty) => {
-    updateCatalogNodeStock(id, stockQty);
+  const handleStockChange = (id, stockQty, stockGroupKey) => {
+    updateCatalogNodeStock(id, stockQty, stockGroupKey);
   };
   const handleToggleHidden = (id, hidden) => {
     setCatalogNodeHidden(id, hidden);
   };
+  // Every Stock Group name already in use anywhere in the catalog — lets a
+  // row tell "join this existing group" apart from "create a brand new one"
+  // (which needs a starting number) the moment Production blurs the field.
+  const existingGroupKeys = new Set();
+  collectStockGroupKeys(state.plakCatalog, existingGroupKeys);
   const toggleCollapsed = (id) => {
     setCollapsedIds((prev) => {
       const next = new Set(prev || []);
@@ -381,7 +429,8 @@ export default function ProductionCatalog() {
         <div className="card-title" style={{ marginBottom: 'var(--space-2)' }}>Jenis Plak Catalog</div>
         <p className="hint-text">
           Add, remove, reprice, or hide a code (or just one of its variants) — changes apply for every teacher immediately. Hiding is safer than removing when stock runs out, since it's a one-click undo once restocked.
-          Set Stock Qty on a code to start tracking its inventory — it turns orange under 25% and red under 15% of what you last entered, and orders are automatically capped (and the code auto-hidden at 0) once stock runs low. Leave it blank to skip stock tracking for a code.
+          Set Stock Qty on a code to start tracking its inventory — it turns orange under 25% and red under 15% of what you last entered, and orders are automatically capped (and the code auto-hidden at 0) once stock runs low. Leave it blank to skip stock tracking for a code. A code with variants beneath it can track its own stock too — ordering any variant checks and deducts every tracked level along the way (e.g. GOLD's own count AND the specific base variant's, if both track stock).
+          Type the same Stock Group name on several codes to make them share one stock count instead of tracking separately — e.g. the same physical base sold under different colors or designs. A first-time name asks for a starting number; an existing name just joins it.
         </p>
 
         <div className="catalog-admin-row catalog-admin-add-row" style={{ marginBottom: 'var(--space-4)' }}>
@@ -389,6 +438,13 @@ export default function ProductionCatalog() {
           <input className="input catalog-admin-price" type="number" step="0.01" placeholder="Price" value={newTopPrice} onChange={(e) => setNewTopPrice(e.target.value)} />
           <button type="button" className="btn btn-primary" onClick={addTopLevel}>+ Add Code</button>
         </div>
+
+        {/* Autocomplete only — typing a name NOT in this list is exactly how
+            a brand new Stock Group gets created, so this must never
+            restrict input, just suggest. */}
+        <datalist id="plak-stock-group-keys">
+          {[...existingGroupKeys].map((key) => <option key={key} value={key} />)}
+        </datalist>
 
         {!state.plakCatalogLoaded ? (
           <p className="hint-text">Loading catalog…</p>
@@ -399,12 +455,24 @@ export default function ProductionCatalog() {
             {/* Price and Stock Qty are two identical-looking plain number
                 boxes side by side once filled in (the "Stock" placeholder
                 only shows while empty) — this header labels the columns so
-                it's obvious at a glance which is which. */}
+                it's obvious at a glance which is which. The invisible
+                actions block mirrors CatalogRow's real one below so its
+                fixed width is subtracted from the flex-1 code column the
+                same way here as in every row — otherwise Code has nothing
+                to compete with, grows wider than the real rows, and pushes
+                the Price/Stock labels off to the right of their columns. */}
             <div className="catalog-admin-row catalog-admin-header-row">
               <span style={{ display: 'inline-block', width: 28 }} />
               <span className="catalog-admin-code">Code</span>
               <span className="catalog-admin-price">Price (RM)</span>
               <span className="catalog-admin-price">Stock Qty</span>
+              <span className="catalog-admin-group-cell">Stock Group</span>
+              <div className="catalog-admin-actions" style={{ visibility: 'hidden' }} aria-hidden="true">
+                <button type="button" className="btn btn-ghost btn-icon" tabIndex={-1}>⠿</button>
+                <button type="button" className="btn btn-ghost" tabIndex={-1}>+ Variant</button>
+                <button type="button" className="btn btn-ghost" tabIndex={-1}>Unhide</button>
+                <button type="button" className="btn btn-ghost" tabIndex={-1}>Remove</button>
+              </div>
             </div>
             <DndContext
               sensors={sensors}
@@ -431,6 +499,9 @@ export default function ProductionCatalog() {
                     onPriceChange={handlePriceChange}
                     onStockChange={handleStockChange}
                     onToggleHidden={handleToggleHidden}
+                    onLinkStockGroup={linkCatalogNodeStockGroup}
+                    onUnlinkStockGroup={unlinkCatalogNodeStockGroup}
+                    existingGroupKeys={existingGroupKeys}
                     collapsedIds={collapsedIds || new Set()}
                     onToggleCollapsed={toggleCollapsed}
                     dragActive={draggingId !== null}

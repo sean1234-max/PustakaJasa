@@ -802,21 +802,27 @@ export function isCustomPlakCode(code) {
 // SM-13187 (RM6) → GOLD (RM0) → BASE A (RM6) prices at RM12. Everything
 // below operates on that tree, whatever its current shape.
 
-// Flattens the tree into { code: fullPathString, price: totalPrice } for
-// every leaf — fullPathString (joined with " / ") is exactly what gets
-// stored as an order line's jenisPlak once a teacher finishes picking down
-// a path, so this is also the lookup table standardUnitPrice searches.
-export function flattenPlakCatalog(nodes, prefix = [], priceSoFar = 0) {
+// Flattens the tree into { code: fullPathString, price: totalPrice,
+// stockChain } for every leaf — fullPathString (joined with " / ") is
+// exactly what gets stored as an order line's jenisPlak once a teacher
+// finishes picking down a path, so this is also the lookup table
+// standardUnitPrice searches. `stockChain` is every node from root to this
+// leaf (leaf included) that tracks its own stock — a parent like GOLD can
+// carry an independent count alongside a leaf like BASE A's, and ordering
+// has to satisfy every one of them (see plak_stock_deduct in
+// supabase/migrations/0059_multi_level_plak_stock.sql), so getStockStatus
+// below needs the whole chain, not just the leaf's own number.
+export function flattenPlakCatalog(nodes, prefix = [], priceSoFar = 0, stockChain = []) {
   return (nodes || []).flatMap((node) => {
     const path = [...prefix, node.code];
     const total = priceSoFar + (Number(node.price) || 0);
+    const chain = node.stockQty == null
+      ? stockChain
+      : [...stockChain, { stockQty: node.stockQty, stockBaseline: node.stockBaseline ?? null }];
     if (!node.children || node.children.length === 0) {
-      return [{
-        code: path.join(' / '), price: total,
-        stockQty: node.stockQty ?? null, stockBaseline: node.stockBaseline ?? null,
-      }];
+      return [{ code: path.join(' / '), price: total, stockChain: chain }];
     }
-    return flattenPlakCatalog(node.children, path, total);
+    return flattenPlakCatalog(node.children, path, total, chain);
   });
 }
 
@@ -840,24 +846,36 @@ export function stockZoneFor(stockQty, stockBaseline) {
 // source of truth both the teacher-facing qty warning (OrderCategoryBlock)
 // and the Cart/AddOnSummary submit guard read, so they can never disagree
 // about where the line is. The server-side plak_stock_deduct function
-// (supabase/migrations/0032_add_plak_stock.sql) enforces the same formula
-// atomically at submit time — this is only a live preview against
-// whatever catalog snapshot the client last fetched.
+// (supabase/migrations/0059_multi_level_plak_stock.sql) enforces the same
+// formula atomically, independently per tracked level, at submit time —
+// this is only a live preview against whatever catalog snapshot the client
+// last fetched.
 //
-// Returns null when stock isn't tracked for this code (stockQty is null —
-// e.g. Production hasn't entered a count yet) or the code isn't found, in
-// which case no stock UI/limit applies at all.
+// A leaf can be constrained by more than one tracked level at once (its own
+// stock, plus an ancestor's like GOLD's — see flattenPlakCatalog's
+// stockChain), and ordering has to satisfy all of them, so this returns
+// whichever level allows the FEWEST — the actual bottleneck, and the one
+// whose number/zone the teacher should see.
+//
+// Returns null when no level along this code's path tracks stock at all
+// (e.g. Production hasn't entered a count anywhere on this path) or the
+// code isn't found, in which case no stock UI/limit applies at all.
 export function getStockStatus(code, plakCatalogTree) {
   const entry = flattenPlakCatalog(plakCatalogTree).find((p) => p.code === code);
-  if (!entry || entry.stockQty == null) return null;
-  const { stockQty, stockBaseline } = entry;
-  const zone = stockZoneFor(stockQty, stockBaseline);
-  let maxOrderable = stockQty;
-  if (zone === 'red') {
-    const reserve = Math.ceil(stockBaseline * 0.15 * 0.10);
-    maxOrderable = Math.max(stockQty - reserve, 0);
-  }
-  return { stockQty, stockBaseline, zone, maxOrderable };
+  if (!entry || entry.stockChain.length === 0) return null;
+  let tightest = null;
+  entry.stockChain.forEach(({ stockQty, stockBaseline }) => {
+    const zone = stockZoneFor(stockQty, stockBaseline);
+    let maxOrderable = stockQty;
+    if (zone === 'red') {
+      const reserve = Math.ceil(stockBaseline * 0.15 * 0.10);
+      maxOrderable = Math.max(stockQty - reserve, 0);
+    }
+    if (!tightest || maxOrderable < tightest.maxOrderable) {
+      tightest = { stockQty, stockBaseline, zone, maxOrderable };
+    }
+  });
+  return tightest;
 }
 
 // Standard list price for a plaque code (its full " / "-joined path) —
@@ -875,19 +893,24 @@ export function standardUnitPrice(code, plakCatalogTree) {
 // variants left, the group itself is dropped too rather than left as a
 // bogus empty leaf. Only used for the teacher-facing picker — Production's
 // own catalog admin view renders the raw, unfiltered tree.
-export function filterHiddenPlakCatalog(nodes) {
+//
+// `blocked` carries an ancestor's own sold-out state down the recursion —
+// a parent like GOLD can track its own stock now (not just its leaves), so
+// GOLD hitting 0 has to hide everything beneath it too, not just whichever
+// single leaf happens to also be at 0.
+export function filterHiddenPlakCatalog(nodes, blocked = false) {
   return (nodes || []).flatMap((node) => {
     if (node.hidden) return [];
-    const hadChildren = Array.isArray(node.children) && node.children.length > 0;
-    if (!hadChildren) {
-      // stockQty === 0 (not null — null means stock isn't tracked for this
-      // code) auto-hides it from teachers the moment it sells out, same as
-      // Production manually flipping `hidden`. It naturally reappears once
-      // restocked since this is computed live, not a stored flag.
-      if (node.stockQty === 0) return [];
-      return [node];
-    }
-    const children = filterHiddenPlakCatalog(node.children);
+    // stockQty === 0 (not null — null means stock isn't tracked for this
+    // node) auto-hides it, and everything beneath it, the moment it sells
+    // out, same as Production manually flipping `hidden`. Naturally
+    // reappears once restocked since this is computed live, not a stored
+    // flag.
+    const nowBlocked = blocked || node.stockQty === 0;
+    if (nowBlocked) return [];
+    const hasChildren = Array.isArray(node.children) && node.children.length > 0;
+    if (!hasChildren) return [node];
+    const children = filterHiddenPlakCatalog(node.children, nowBlocked);
     if (children.length === 0) return [];
     return [{ ...node, children }];
   });

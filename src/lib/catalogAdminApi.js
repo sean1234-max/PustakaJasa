@@ -7,13 +7,28 @@ import { isCustomPlakCode } from '../data/catalog';
 
 // Rebuilds the nested { id, code, price, hidden, children } tree PlakPicker
 // and computeBlocks expect from the flat parent_id rows plak_catalog_nodes
-// actually stores.
-export function buildPlakTree(rows) {
-  const byId = new Map(rows.map((r) => [r.id, {
-    id: r.id, code: r.code, price: Number(r.price) || 0, hidden: !!r.hidden,
-    stockQty: r.stock_qty ?? null, stockBaseline: r.stock_baseline ?? null,
-    children: [],
-  }]));
+// actually stores. `stockGroups` (plak_stock_groups rows) overrides a
+// node's own stock_qty/stock_baseline whenever its stock_group_key points
+// at one — see fetchPlakCatalog. stockGroupSize is how many nodes (this one
+// included) currently share that key, used to show "shared with N others"
+// in the catalog admin UI.
+export function buildPlakTree(rows, stockGroups) {
+  const groupByKey = new Map((stockGroups || []).map((g) => [g.key, g]));
+  const groupSize = new Map();
+  rows.forEach((r) => {
+    if (r.stock_group_key) groupSize.set(r.stock_group_key, (groupSize.get(r.stock_group_key) || 0) + 1);
+  });
+  const byId = new Map(rows.map((r) => {
+    const group = r.stock_group_key ? groupByKey.get(r.stock_group_key) : null;
+    return [r.id, {
+      id: r.id, code: r.code, price: Number(r.price) || 0, hidden: !!r.hidden,
+      stockQty: group ? group.stock_qty : (r.stock_qty ?? null),
+      stockBaseline: group ? group.stock_baseline : (r.stock_baseline ?? null),
+      stockGroupKey: r.stock_group_key || null,
+      stockGroupSize: r.stock_group_key ? (groupSize.get(r.stock_group_key) || 1) : 0,
+      children: [],
+    }];
+  }));
   const roots = [];
   rows.forEach((r) => {
     const node = byId.get(r.id);
@@ -32,12 +47,16 @@ export function buildPlakTree(rows) {
 }
 
 export async function fetchPlakCatalog() {
-  const { data, error } = await supabase
-    .from('plak_catalog_nodes')
-    .select('id, parent_id, code, price, hidden, sort_order, stock_qty, stock_baseline')
-    .order('sort_order', { ascending: true });
+  const [{ data, error }, { data: groups, error: groupError }] = await Promise.all([
+    supabase
+      .from('plak_catalog_nodes')
+      .select('id, parent_id, code, price, hidden, sort_order, stock_qty, stock_baseline, stock_group_key')
+      .order('sort_order', { ascending: true }),
+    supabase.from('plak_stock_groups').select('key, stock_qty, stock_baseline'),
+  ]);
   if (error) throw error;
-  return buildPlakTree(data || []);
+  if (groupError) throw groupError;
+  return buildPlakTree(data || [], groups || []);
 }
 
 // parentId null adds a new top-level code; pass an existing node's id to
@@ -73,6 +92,56 @@ export async function updatePlakNodeStock(id, stockQty) {
     .from('plak_catalog_nodes')
     .update({ stock_qty: stockQty, stock_baseline: stockQty })
     .eq('id', id);
+  if (error) throw error;
+}
+
+// Attaches a node to a shared Stock Group (see 0058_add_plak_stock_groups.sql)
+// — from then on its stock lives on the plak_stock_groups row instead of on
+// the node itself. If the group doesn't exist yet, `initialStockQty` creates
+// it (required — linking never sums or averages whatever independent
+// numbers the newly-joining node had before, there's nothing sensible to
+// derive it from). Joining an already-existing group leaves its number
+// untouched and `initialStockQty` is ignored.
+export async function linkPlakNodeToStockGroup(nodeId, groupKey, initialStockQty) {
+  const key = (groupKey || '').trim();
+  if (!key) throw new Error('Stock Group name is required.');
+  const { data: existing, error: fetchError } = await supabase
+    .from('plak_stock_groups').select('key').eq('key', key).maybeSingle();
+  if (fetchError) throw fetchError;
+  if (!existing) {
+    const qty = Math.round(Number(initialStockQty));
+    if (Number.isNaN(qty) || qty < 0) throw new Error('Enter a starting Stock Qty for this new Stock Group.');
+    const { error: insertError } = await supabase
+      .from('plak_stock_groups').insert({ key, stock_qty: qty, stock_baseline: qty });
+    if (insertError) throw insertError;
+  }
+  const { error } = await supabase
+    .from('plak_catalog_nodes')
+    .update({ stock_group_key: key, stock_qty: null, stock_baseline: null })
+    .eq('id', nodeId);
+  if (error) throw error;
+}
+
+// Detaches a node from its Stock Group — it goes back to independent
+// tracking starting from "not tracked yet" (stock_qty null), same as a
+// brand new code. Never inherits a slice of the shared number on the way
+// out; there's nothing sensible to split it by.
+export async function unlinkPlakNodeFromStockGroup(nodeId) {
+  const { error } = await supabase
+    .from('plak_catalog_nodes')
+    .update({ stock_group_key: null, stock_qty: null, stock_baseline: null })
+    .eq('id', nodeId);
+  if (error) throw error;
+}
+
+// Sets a Stock Group's shared count — same reset-the-baseline behavior as
+// updatePlakNodeStock above, just targeting the group row every linked node
+// reads from instead of one node's own columns.
+export async function updateStockGroupStock(groupKey, stockQty) {
+  const { error } = await supabase
+    .from('plak_stock_groups')
+    .update({ stock_qty: stockQty, stock_baseline: stockQty })
+    .eq('key', groupKey);
   if (error) throw error;
 }
 

@@ -18,6 +18,7 @@ import {
 } from '../lib/ordersApi';
 import {
   fetchPlakCatalog, addPlakNode, removePlakNode, updatePlakNode, updatePlakNodeOrder, updatePlakNodeStock,
+  linkPlakNodeToStockGroup, unlinkPlakNodeFromStockGroup, updateStockGroupStock,
   deductPlakStock, restorePlakStock,
 } from '../lib/catalogAdminApi';
 import { supabase } from '../lib/supabaseClient';
@@ -2077,13 +2078,39 @@ export function AppStateProvider({ children }) {
   // same value (see updatePlakNodeStock), so every time Production/Admin
   // types a new number here (first count, restock, or correction) the
   // 15%/25% thresholds recalibrate against it rather than staying pinned
-  // to whatever was entered before.
-  const updateCatalogNodeStock = useCallback(async (id, stockQty) => {
+  // to whatever was entered before. `stockGroupKey` routes the write to the
+  // shared plak_stock_groups row instead of the node's own columns when
+  // this node is linked to one (see linkCatalogNodeStockGroup below).
+  const updateCatalogNodeStock = useCallback(async (id, stockQty, stockGroupKey) => {
     try {
-      await updatePlakNodeStock(id, stockQty);
+      if (stockGroupKey) await updateStockGroupStock(stockGroupKey, stockQty);
+      else await updatePlakNodeStock(id, stockQty);
       await refreshPlakCatalog();
     } catch (err) {
       console.error('Failed to update Jenis Plak stock in Supabase:', err);
+    }
+  }, [refreshPlakCatalog]);
+
+  // Attaches a node to a shared Stock Group (creating it with
+  // initialStockQty if the name is new) so it shares one stock count with
+  // every other node linked to the same key — see
+  // 0058_add_plak_stock_groups.sql. Rethrows (unlike the other catalog
+  // actions here) because the caller needs to know linking failed — e.g. no
+  // starting number was given for a brand new group — so it can keep its
+  // draft input instead of quietly reverting.
+  const linkCatalogNodeStockGroup = useCallback(async (id, groupKey, initialStockQty) => {
+    await linkPlakNodeToStockGroup(id, groupKey, initialStockQty);
+    await refreshPlakCatalog();
+  }, [refreshPlakCatalog]);
+
+  // Detaches a node from its Stock Group back to independent tracking
+  // (starting from "not tracked yet", same as a brand new code).
+  const unlinkCatalogNodeStockGroup = useCallback(async (id) => {
+    try {
+      await unlinkPlakNodeFromStockGroup(id);
+      await refreshPlakCatalog();
+    } catch (err) {
+      console.error('Failed to unlink Jenis Plak Stock Group in Supabase:', err);
     }
   }, [refreshPlakCatalog]);
 
@@ -2156,6 +2183,7 @@ export function AppStateProvider({ children }) {
     ensureOrderLoaded,
     markProductionDone,
     addCatalogNode, removeCatalogNode, updateCatalogNodePrice, renameCatalogNode, updateCatalogNodeStock, setCatalogNodeHidden, moveCatalogNode,
+    linkCatalogNodeStockGroup, unlinkCatalogNodeStockGroup,
     reorderCatalogSiblings,
     refreshAssignedSalesman,
   };

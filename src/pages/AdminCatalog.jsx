@@ -26,6 +26,15 @@ function collectParentIds(nodes, out) {
   return out;
 }
 
+// Every stockGroupKey used anywhere in the tree, at any depth.
+function collectStockGroupKeys(nodes, out) {
+  (nodes || []).forEach((node) => {
+    if (node.stockGroupKey) out.add(node.stockGroupKey);
+    if (Array.isArray(node.children)) collectStockGroupKeys(node.children, out);
+  });
+  return out;
+}
+
 // Admin-only fork of ProductionCatalog.jsx — same AppState handlers
 // (addCatalogNode/removeCatalogNode/updateCatalogNodePrice/
 // setCatalogNodeHidden/moveCatalogNode/reorderCatalogSiblings) and the
@@ -85,6 +94,7 @@ const catalogAnnouncements = {
 
 function CatalogRow({
   node, depth, parentId, path, canMoveUp, canMoveDown, onAddChild, onRemove, onRename, ordersUsingPath, onPriceChange, onStockChange, onToggleHidden, onMove,
+  onLinkStockGroup, onUnlinkStockGroup, existingGroupKeys,
   collapsedIds, onToggleCollapsed, dragActive,
 }) {
   const fullPath = [...path, node.code].join(' / ');
@@ -94,6 +104,7 @@ function CatalogRow({
   const [codeDraft, setCodeDraft] = useState(node.code);
   const [priceDraft, setPriceDraft] = useState(String(node.price ?? 0));
   const [stockDraft, setStockDraft] = useState(node.stockQty == null ? '' : String(node.stockQty));
+  const [groupDraft, setGroupDraft] = useState(node.stockGroupKey || '');
 
   useEffect(() => { setCodeDraft(node.code); }, [node.code]);
 
@@ -108,6 +119,8 @@ function CatalogRow({
   useEffect(() => {
     setStockDraft(node.stockQty == null ? '' : String(node.stockQty));
   }, [node.stockQty]);
+
+  useEffect(() => { setGroupDraft(node.stockGroupKey || ''); }, [node.stockGroupKey]);
 
   const hasChildren = Array.isArray(node.children) && node.children.length > 0;
   const collapsed = collapsedIds.has(node.id);
@@ -156,12 +169,48 @@ function CatalogRow({
 
   const commitStock = () => {
     if (stockDraft.trim() === '') {
-      if (node.stockQty != null) onStockChange(node.id, null);
+      if (node.stockQty != null) onStockChange(node.id, null, node.stockGroupKey);
       return;
     }
     const val = Math.round(Number(stockDraft));
-    if (!Number.isNaN(val) && val >= 0 && val !== node.stockQty) onStockChange(node.id, val);
+    if (!Number.isNaN(val) && val >= 0 && val !== node.stockQty) onStockChange(node.id, val, node.stockGroupKey);
     else setStockDraft(node.stockQty == null ? '' : String(node.stockQty));
+  };
+
+  // Same rules as ProductionCatalog.jsx: a brand new name asks for a
+  // starting number (linking never sums/averages what this node and its
+  // new group-mates tracked independently before); an existing name just
+  // joins it; clearing the field unlinks back to independent tracking.
+  const commitStockGroup = async () => {
+    const next = groupDraft.trim();
+    const current = node.stockGroupKey || '';
+    if (next === current) return;
+    if (!next) {
+      if (window.confirm(`Unlink "${node.code}" from Stock Group "${current}"? It goes back to independent tracking, starting from "not tracked" — you'll need to type a fresh Stock Qty.`)) {
+        onUnlinkStockGroup(node.id);
+      } else {
+        setGroupDraft(current);
+      }
+      return;
+    }
+    const isNewGroup = !existingGroupKeys.has(next);
+    let initialStockQty;
+    if (isNewGroup) {
+      const input = window.prompt(`"${next}" is a new Stock Group. Enter its starting Stock Qty:`);
+      if (input === null) { setGroupDraft(current); return; }
+      initialStockQty = Math.round(Number(input));
+      if (Number.isNaN(initialStockQty) || initialStockQty < 0) {
+        window.alert('Enter a valid non-negative number.');
+        setGroupDraft(current);
+        return;
+      }
+    }
+    try {
+      await onLinkStockGroup(node.id, next, initialStockQty);
+    } catch (err) {
+      window.alert(err.message || 'Failed to link Stock Group.');
+      setGroupDraft(current);
+    }
   };
 
   const submitAddChild = () => {
@@ -214,20 +263,32 @@ function CatalogRow({
             onChange={(e) => setPriceDraft(e.target.value)}
             onBlur={commitPrice}
           />
-          {!hasChildren && (
+          <input
+            className="w-20 px-3 py-1 border border-outline-variant rounded text-right text-body-md focus:ring-1 focus:ring-primary outline-none"
+            type="number"
+            step="1"
+            min="0"
+            placeholder="Stock"
+            title="Stock Qty — independent of any child variants beneath this code. Setting a new number resets the 15%/25% warning thresholds against it."
+            value={stockDraft}
+            style={zone !== 'normal' ? { color: STOCK_ZONE_COLOR[zone], fontWeight: 700 } : undefined}
+            onChange={(e) => setStockDraft(e.target.value)}
+            onBlur={commitStock}
+          />
+          <div className="flex flex-col">
             <input
-              className="w-20 px-3 py-1 border border-outline-variant rounded text-right text-body-md focus:ring-1 focus:ring-primary outline-none"
-              type="number"
-              step="1"
-              min="0"
-              placeholder="Stock"
-              title="Stock Qty — setting a new number resets the 15%/25% warning thresholds against it"
-              value={stockDraft}
-              style={zone !== 'normal' ? { color: STOCK_ZONE_COLOR[zone], fontWeight: 700 } : undefined}
-              onChange={(e) => setStockDraft(e.target.value)}
-              onBlur={commitStock}
+              className="w-32 px-3 py-1 border border-outline-variant rounded text-body-md focus:ring-1 focus:ring-primary outline-none"
+              placeholder="Stock Group"
+              title="Type the same name on every code that should share one stock count with this one. Leave blank to track this code's stock independently."
+              list="plak-stock-group-keys"
+              value={groupDraft}
+              onChange={(e) => setGroupDraft(e.target.value)}
+              onBlur={commitStockGroup}
             />
-          )}
+            {node.stockGroupKey && node.stockGroupSize > 1 && (
+              <span className="text-label-bold text-on-surface-variant" style={{ fontSize: 11 }}>🔗 shared with {node.stockGroupSize - 1} other code(s)</span>
+            )}
+          </div>
           <button
             type="button"
             {...attributes}
@@ -282,6 +343,9 @@ function CatalogRow({
               onStockChange={onStockChange}
               onToggleHidden={onToggleHidden}
               onMove={onMove}
+              onLinkStockGroup={onLinkStockGroup}
+              onUnlinkStockGroup={onUnlinkStockGroup}
+              existingGroupKeys={existingGroupKeys}
               collapsedIds={collapsedIds}
               onToggleCollapsed={onToggleCollapsed}
               dragActive={dragActive}
@@ -296,6 +360,7 @@ function CatalogRow({
 export default function AdminCatalog() {
   const {
     state, addCatalogNode, removeCatalogNode, updateCatalogNodePrice, renameCatalogNode, updateCatalogNodeStock, setCatalogNodeHidden, moveCatalogNode, reorderCatalogSiblings,
+    linkCatalogNodeStockGroup, unlinkCatalogNodeStockGroup,
   } = useAppState();
   const [newTopCode, setNewTopCode] = useState('');
   const [newTopPrice, setNewTopPrice] = useState('');
@@ -338,10 +403,23 @@ export default function AdminCatalog() {
     updateCatalogNodePrice(id, price);
     logCatalogAction('Admin updated a catalog price', id, { price });
   };
-  const handleStockChange = (id, stockQty) => {
-    updateCatalogNodeStock(id, stockQty);
-    logCatalogAction('Admin updated a catalog stock qty', id, { stockQty });
+  const handleStockChange = (id, stockQty, stockGroupKey) => {
+    updateCatalogNodeStock(id, stockQty, stockGroupKey);
+    logCatalogAction('Admin updated a catalog stock qty', id, { stockQty, stockGroupKey });
   };
+  const handleLinkStockGroup = async (id, groupKey, initialStockQty) => {
+    await linkCatalogNodeStockGroup(id, groupKey, initialStockQty);
+    logCatalogAction('Admin linked a code to a Stock Group', id, { groupKey, initialStockQty });
+  };
+  const handleUnlinkStockGroup = (id) => {
+    unlinkCatalogNodeStockGroup(id);
+    logCatalogAction('Admin unlinked a code from its Stock Group', id);
+  };
+  // Every Stock Group name already in use anywhere in the catalog — lets a
+  // row tell "join this existing group" apart from "create a brand new one"
+  // (which needs a starting number) the moment Admin blurs the field.
+  const existingGroupKeys = new Set();
+  collectStockGroupKeys(state.plakCatalog, existingGroupKeys);
   const handleToggleHidden = (id, hidden) => {
     setCatalogNodeHidden(id, hidden);
     logCatalogAction(hidden ? 'Admin hid a catalog code' : 'Admin unhid a catalog code', id);
@@ -389,7 +467,7 @@ export default function AdminCatalog() {
   return (
     <AdminLayout
       title="Jenis Plak Catalog"
-      subtitle="Add, remove, reprice, or hide a code (or just one of its variants) — changes apply for every teacher immediately. Groups open collapsed to just their top-level code; use the chevron to expand one. Set Stock Qty on a code to start tracking its inventory — it turns orange under 25% and red under 15% of what you last entered, orders are automatically capped once stock runs low, and the code auto-hides at 0 (leave it blank to skip stock tracking). Drag the handle icon (or use the ▲▼ buttons) to reorder within a group."
+      subtitle="Add, remove, reprice, or hide a code (or just one of its variants) — changes apply for every teacher immediately. Groups open collapsed to just their top-level code; use the chevron to expand one. Set Stock Qty on a code to start tracking its inventory — it turns orange under 25% and red under 15% of what you last entered, orders are automatically capped once stock runs low, and the code auto-hides at 0 (leave it blank to skip stock tracking). A code with variants beneath it can track its own stock too — ordering any variant checks and deducts every tracked level along the way. Type the same Stock Group name on several codes to make them share one stock count instead of tracking separately. Drag the handle icon (or use the ▲▼ buttons) to reorder within a group."
     >
       <div className="bg-surface-container rounded-lg p-4 border border-outline-variant/50 flex flex-col sm:flex-row gap-4 items-center shadow-sm mb-6">
         <input
@@ -410,6 +488,13 @@ export default function AdminCatalog() {
           Add Code
         </button>
       </div>
+
+      {/* Autocomplete only — typing a name NOT in this list is exactly how
+          a brand new Stock Group gets created, so this must never restrict
+          input, just suggest. */}
+      <datalist id="plak-stock-group-keys">
+        {[...existingGroupKeys].map((key) => <option key={key} value={key} />)}
+      </datalist>
 
       {!state.plakCatalogLoaded ? (
         <p className="text-body-md text-on-surface-variant">Loading catalog…</p>
@@ -444,6 +529,9 @@ export default function AdminCatalog() {
                   onStockChange={handleStockChange}
                   onToggleHidden={handleToggleHidden}
                   onMove={handleMove}
+                  onLinkStockGroup={handleLinkStockGroup}
+                  onUnlinkStockGroup={handleUnlinkStockGroup}
+                  existingGroupKeys={existingGroupKeys}
                   collapsedIds={collapsedIds || new Set()}
                   onToggleCollapsed={toggleCollapsed}
                   dragActive={draggingId !== null}
