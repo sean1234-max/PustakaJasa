@@ -1364,11 +1364,17 @@ function parseTahunPlakRowSheet(ws) {
   for (let r = tahunH.row + 1; r <= range.r2; r++) {
     const label = cellText(ws, r, tahunH.col);
     if (isTotalLabel(label)) break;
-    const tahun = normalizeTahun(label);
-    if (!tahun) continue;
+    if (!label) continue;
     const qty = cellNum(ws, r, kuantitiH.col);
     const jenisPlak = jpH ? cellText(ws, r, jpH.col) : '';
-    if (qty > 0 || jenisPlak) tahunRows.push({ tahun, qty, jenisPlak });
+    if (qty <= 0 && !jenisPlak) continue;
+    // A row only fills one of the fixed TAHUN 1-6 slots when its own label
+    // genuinely reads "TAHUN n" — a teacher who instead adds an extra row
+    // of their own ("TAHAP 1", "TAHAP 2") means that exact wording to show
+    // up on the plaque, not to get silently folded into a same-numbered
+    // TAHUN slot (or dropped) just because it happens to contain a digit.
+    const tahun = /^TAHUN\b/i.test(label.trim()) ? normalizeTahun(label) : '';
+    tahunRows.push({ tahun, label, qty, jenisPlak });
   }
   if (tahunRows.length === 0) return null;
 
@@ -1647,22 +1653,60 @@ function normalizeForPlakMatch(s) {
 // non-orderable middle node. Returns '' if even the top-level code (e.g.
 // "SM-13187") can't be found anywhere in the live catalog at all — the
 // teacher then sees the raw text as-typed and can pick correctly by hand.
+// A code shorter than this (a bare finish letter like "A"/"B"/"C"/"D" —
+// several unrelated product families all use these for their own BASE/
+// DESIGN variants) is never trustworthy as an independent match on its
+// own: it'll turn up as a "substring" of almost any raw text purely by
+// coincidence. Real product-level codes are always longer than this, so
+// the cutoff only ever excludes exactly the ambiguous single letters.
+const MIN_INDEPENDENT_CODE_LEN = 2;
+
+function findBestCodeMatch(nodes, normalized) {
+  let best = null;
+  let bestLen = -1;
+  nodes.forEach((node) => {
+    const codeNorm = normalizeForPlakMatch(node.code);
+    if (codeNorm && codeNorm.length >= MIN_INDEPENDENT_CODE_LEN
+      && normalized.includes(codeNorm) && codeNorm.length > bestLen) {
+      best = node;
+      bestLen = codeNorm.length;
+    }
+  });
+  return best;
+}
+
 export function matchJenisPlakPath(rawText, plakTree) {
   if (!rawText || !Array.isArray(plakTree) || plakTree.length === 0) return '';
   const normalized = normalizeForPlakMatch(rawText);
 
-  let root = null;
-  let rootLen = -1;
-  plakTree.forEach((node) => {
-    const codeNorm = normalizeForPlakMatch(node.code);
-    if (codeNorm && normalized.includes(codeNorm) && codeNorm.length > rootLen) {
-      root = node;
-      rootLen = codeNorm.length;
-    }
-  });
+  let root = findBestCodeMatch(plakTree, normalized);
+  let pathPrefix = [];
+  if (!root) {
+    // Some catalog families group several real product codes under one
+    // umbrella node (e.g. "CRYSTAL" -> "00S" / "R-100") whose own name a
+    // teacher never actually writes — only the specific code one level
+    // down. Falls back to matching there, keeping the umbrella's own code
+    // as the path prefix so the full path still resolves correctly. Scores
+    // every group's own best child match and takes the longest across ALL
+    // of them (not just the first group that matches anything) — several
+    // unrelated root families share generic one-letter children, so the
+    // right candidate is whichever match is the most specific, not merely
+    // the first one found while walking the root list in whatever order.
+    let bestChild = null;
+    let bestGroupCode = '';
+    let bestChildLen = -1;
+    plakTree.forEach((groupNode) => {
+      if (!groupNode.children || groupNode.children.length === 0) return;
+      const child = findBestCodeMatch(groupNode.children, normalized);
+      if (!child) return;
+      const len = normalizeForPlakMatch(child.code).length;
+      if (len > bestChildLen) { bestChild = child; bestGroupCode = groupNode.code; bestChildLen = len; }
+    });
+    if (bestChild) { root = bestChild; pathPrefix = [bestGroupCode]; }
+  }
   if (!root) return '';
 
-  const pathParts = [root.code];
+  const pathParts = [...pathPrefix, root.code];
   let current = root;
   while (current.children && current.children.length > 0) {
     const mentioned = current.children.find((child) => normalized.includes(normalizeForPlakMatch(child.code)));

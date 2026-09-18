@@ -952,16 +952,25 @@ export function AppStateProvider({ children }) {
 
         if (section.isSimpleTahunList) {
           // LONJAKAN SAUJANA — TAHUN 1-6, each with its own QTY + Jenis Plak.
-          const byTahun = new Map(section.tahunRows.map((tr) => [tr.tahun, tr]));
+          const byTahun = new Map(section.tahunRows.filter((tr) => tr.tahun).map((tr) => [tr.tahun, tr]));
           // An un-matched Jenis Plak just leaves the row blank — the teacher
           // picks it here. NewOrderStep2's "can't add to cart" panel
           // (buildCategoryCartItems) names every such row, so no separate
           // import warning is raised.
-          newRowsByBlock[key] = ['TAHUN 1', 'TAHUN 2', 'TAHUN 3', 'TAHUN 4', 'TAHUN 5', 'TAHUN 6'].map((tahun) => {
+          const fixedRows = ['TAHUN 1', 'TAHUN 2', 'TAHUN 3', 'TAHUN 4', 'TAHUN 5', 'TAHUN 6'].map((tahun) => {
             const tr = byTahun.get(tahun);
             const matched = tr?.jenisPlak ? matchJenisPlakPath(tr.jenisPlak, next.plakCatalog) : '';
             return { id: nextRowId++, desc: tahun, qty: tr && tr.qty ? String(tr.qty) : '', jenisPlak: matched };
           });
+          // A row whose own label isn't a plain "TAHUN n" (e.g. "TAHAP 1",
+          // "TAHAP 2") is an extra row the teacher added on the sheet, not a
+          // same-numbered TAHUN slot — kept as its own row with that exact
+          // wording instead of being folded into the fixed 6 above.
+          const extraRows = section.tahunRows.filter((tr) => !tr.tahun).map((tr) => {
+            const matched = tr.jenisPlak ? matchJenisPlakPath(tr.jenisPlak, next.plakCatalog) : '';
+            return { id: nextRowId++, desc: tr.label, qty: tr.qty ? String(tr.qty) : '', jenisPlak: matched };
+          });
+          newRowsByBlock[key] = [...fixedRows, ...extraRows];
         } else if (section.isTokohList) {
           // TOKOH (excelImport.js's parseTokohAnugerahSheet) — one honour
           // per row, in sheet order (not a fixed preset). Each row keeps

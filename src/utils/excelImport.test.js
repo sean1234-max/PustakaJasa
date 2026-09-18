@@ -15,6 +15,38 @@ function workbookFromSheets(sheets) {
   return new Uint8Array(XLSX.write(wb, { type: 'array', bookType: 'xlsx' }));
 }
 
+describe('matchJenisPlakPath', () => {
+  it('matches a root-level code directly, walking down to the mentioned finish', () => {
+    const tree = [
+      { code: 'SM-13187', children: [{ code: 'GOLD', children: [{ code: 'NORMAL' }, { code: 'BASE A' }] }] },
+    ];
+    expect(matchJenisPlakPath('SM - 13187 (GOLD)', tree)).toBe('SM-13187 / GOLD / NORMAL');
+  });
+
+  it('falls back one level when the real product code sits under an umbrella group node the teacher never types', () => {
+    // Mirrors the live catalog: "CRYSTAL" groups "00S" / "R-100", each with
+    // its own DESIGN A/B/C children — a teacher only ever writes "00S" or
+    // "R-100", never "CRYSTAL", so the root-level scan alone finds nothing.
+    const tree = [
+      {
+        code: 'CRYSTAL',
+        children: [
+          { code: '00S', children: [{ code: 'DESIGN A' }, { code: 'DESIGN C' }] },
+          { code: 'R-100', children: [{ code: 'DESIGN A' }, { code: 'DESIGN C' }] },
+        ],
+      },
+    ];
+    expect(matchJenisPlakPath('00S (DESIGN C)', tree)).toBe('CRYSTAL / 00S / DESIGN C');
+    expect(matchJenisPlakPath('R-100 (Design C)', tree)).toBe('CRYSTAL / R-100 / DESIGN C');
+    expect(matchJenisPlakPath('R-100/DESIGN C', tree)).toBe('CRYSTAL / R-100 / DESIGN C');
+  });
+
+  it('returns empty when even the fallback level has no matching code', () => {
+    const tree = [{ code: 'CRYSTAL', children: [{ code: '00S', children: [{ code: 'DESIGN A' }] }] }];
+    expect(matchJenisPlakPath('PKC 266', tree)).toBe('');
+  });
+});
+
 describe('parseFormAnugerahExcel — SELEMPANG sheet', () => {
   it('reads ACARA / WARNA / KUANTITI rows and normalises the colour', () => {
     const buf = workbookFromSheets({
@@ -442,12 +474,34 @@ describe('parseFormAnugerahExcel — renamed/duplicated template sheet becomes i
     expect(section).toBeDefined();
     expect(section.isSimpleTahunList).toBe(true);
     expect(section.tahunRows).toEqual([
-      { tahun: 'TAHUN 1', qty: 5, jenisPlak: 'DECO LIGHT' },
-      { tahun: 'TAHUN 2', qty: 3, jenisPlak: 'H25' },
+      { tahun: 'TAHUN 1', label: 'TAHUN 1', qty: 5, jenisPlak: 'DECO LIGHT' },
+      { tahun: 'TAHUN 2', label: 'TAHUN 2', qty: 3, jenisPlak: 'H25' },
     ]);
     // Clones LONJAKAN's per-row Jenis Plak behaviour, not PBD's matrix one.
     expect(resolveCategory(lonjakanKey).plakPerRow).toBe(true);
     expect(resolveCategory(lonjakanKey).positionFromRows).toBe(true);
+  });
+
+  it('a LONJAKAN-shaped sheet with an extra custom-labelled row (not TAHUN n) keeps that exact wording', () => {
+    // A teacher adding rows below the fixed TAHUN 1-6 list with her own
+    // label ("TAHAP 1"/"TAHAP 2") means that wording to show on the
+    // plaque — not to get folded into the TAHUN slot matching a stray
+    // digit in the label, and not to be silently dropped either.
+    const parsed = parseFormAnugerahExcel(workbookFromSheets({
+      'LONJAKAN SAUJANA': [
+        ['TAHUN', 'KUANTITI', 'JENIS PLAK'],
+        ['TAHUN 1', null, null],
+        ['TAHUN 2', null, null],
+        ['TAHAP 1', 10, 'PKC 266'],
+        ['TAHAP 2', 10, 'PKC 266'],
+      ],
+    }));
+    const section = (parsed.categorized?.LONJAKAN || [])[0];
+    expect(section.isSimpleTahunList).toBe(true);
+    expect(section.tahunRows).toEqual([
+      { tahun: '', label: 'TAHAP 1', qty: 10, jenisPlak: 'PKC 266' },
+      { tahun: '', label: 'TAHAP 2', qty: 10, jenisPlak: 'PKC 266' },
+    ]);
   });
 
   it('a real "PBD" sheet AND a renamed duplicate (no breakdown) coexist as two separate categories', () => {
