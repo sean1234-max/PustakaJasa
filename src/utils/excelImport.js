@@ -201,19 +201,24 @@ function readRefLinesInBand(ws, range, rowStart, rowEnd, slotsByCount = KLAS_MAT
   return splitTwoLineTajuk(lines);
 }
 
-// A TAJUK BESAR the teacher wrote as two lines — an in-cell line break
-// (Alt+Enter) inside the one cell — is split into slot 0 + slot 0b, the
-// same two-line header shape an AI pre-write / roster import already
-// produces (computeBlocks.js renders 0b as its own numbered line; exportCsv
-// rejoins the two with a newline for the CSV's event_header column). Only
-// the first break splits; any further text stays on the second line.
+// A TAJUK BESAR the teacher wrote as two (or more) lines — in-cell line
+// breaks (Alt+Enter) inside the one cell — is split into slot 0 + slot
+// 0b, the same two-line header shape an AI pre-write / roster import
+// already produces (computeBlocks.js renders 0b as its own numbered
+// line, both it and slot 0 sharing the same bigger/bold title styling;
+// exportCsv rejoins the two with a newline for the CSV's event_header
+// column). Only the FIRST break splits the row; any further break(s) stay
+// inside slot 0b's own value (rendered there as their own physical
+// lines — see OrderCategoryBlock's per-line <textarea>/<br/> handling)
+// rather than being squashed onto one line with just a space — a TOKOH
+// sheet's TAJUK BESAR is sometimes written across three lines this way.
 function splitTwoLineTajuk(lines) {
   const raw = lines['0'];
   if (!raw || lines['0b'] || !/\r?\n/.test(raw)) return lines;
   const parts = raw.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
   if (parts.length < 2) { lines['0'] = parts[0] || ''; return lines; }
   lines['0'] = parts[0];
-  lines['0b'] = parts.slice(1).join(' ');
+  lines['0b'] = parts.slice(1).join('\n');
   return lines;
 }
 

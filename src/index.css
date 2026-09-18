@@ -473,6 +473,11 @@ a:hover { color: var(--color-accent-900); text-decoration: underline; }
    text spilling out. */
 .ref-sample-live-line { display: flex; gap: 6px; align-items: baseline; font-size: 13px; line-height: 1.35; white-space: nowrap; }
 .ref-sample-live-line:first-child { font-size: 15px; font-weight: 700; }
+/* TAJUK BESAR's own second line (slot 0b — an Alt+Enter split, or added
+   by hand) is still part of the one title, just wrapped onto its own
+   engraved line — same bigger/bold treatment as the first line, not
+   plain body text (computeBlocks.js's `titleLine` flag). */
+.ref-sample-live-title { font-size: 15px; font-weight: 700; }
 .ref-sample-live-num {
   flex: none; width: 14px; height: 14px; border-radius: 50%;
   background: var(--color-accent-700); color: #fff;

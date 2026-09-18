@@ -285,7 +285,7 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
                 {blk.lines.map((ln) => {
                   const hasValue = String(ln.value || '').trim();
                   return (
-                    <div key={ln.key} className={`ref-sample-live-line${ln.redText ? ' ref-sample-live-red' : ''}`}>
+                    <div key={ln.key} className={`ref-sample-live-line${ln.redText ? ' ref-sample-live-red' : ''}${ln.titleLine ? ' ref-sample-live-title' : ''}`}>
                       <span className="ref-sample-live-num">{ln.num}</span>
                       {/* Red/bold lines (e.g. Main Template's ACARA and
                           SUBJEK/POSITION) always show at full strength —

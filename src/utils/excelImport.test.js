@@ -648,6 +648,23 @@ describe('parseFormAnugerahExcel — two-line TAJUK BESAR', () => {
     expect(section.lines['0b']).toBe('SK CONTOH');
   });
 
+  it('a THREE-line TAJUK BESAR (a TOKOH sheet, say) keeps lines 2+3 as their own lines in slot 0b, not squashed together', () => {
+    const buf = workbookFromSheets({
+      TOKOH: [
+        [null, null, null, 'TOLONG ISI DI SINI'],
+        [null, null, null, 'SK SEREMBAN JAYA\nHARI ANUGERAH KECEMERLANGAN\n2026'],
+        [null, null, null, 'TOKOH MURID'],
+        [],
+        [],
+        ['TOKOH', 'NAMA MURID', 'GAMBAR (YES/NO)', 'KUANTITI', 'JENIS PLAK'],
+        ['TOKOH MURID', 'Ali', 'YES', 1, 'DECO LIGHT'],
+      ],
+    });
+    const section = (parseFormAnugerahExcel(buf).categorized?.TOKOH_SHEET || [])[0];
+    expect(section.lines['0']).toBe('SK SEREMBAN JAYA');
+    expect(section.lines['0b']).toBe('HARI ANUGERAH KECEMERLANGAN\n2026');
+  });
+
   it('leaves a single-line TAJUK BESAR untouched (no slot 0b)', () => {
     const buf = workbookFromSheets({
       'MP THP 2': [

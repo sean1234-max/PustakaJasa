@@ -152,6 +152,11 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
         key, slotId, placeholder, value: lineValues[key] || '',
         required: requiredLineIndices.includes(i),
         starred: starredLineIndices.includes(i),
+        // TAJUK BESAR's own bigger/bold live-preview styling — normally
+        // just whichever line renders first, but that stops being slot 0
+        // once a second title line (0b, below) exists, so it's flagged
+        // explicitly rather than left to rely on CSS :first-child.
+        titleLine: i === 0,
         // Line 3's own text renders red on some categories (OTHERS — see
         // catalog.js's positionFieldsRedText) since it's the position text
         // that actually gets engraved; every other line stays plain.
@@ -195,8 +200,10 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
           key: key0b, slotId: '0b', placeholder: 'Baris kedua tajuk besar',
           value: lineValues[key0b] || '',
           // Same ★ as TAJUK BESAR itself — it's still locked event wording,
-          // just carried on a second engraved line.
+          // just carried on a second engraved line. Same bigger/bold
+          // treatment too — still part of the one title, just wrapped.
           starred: starredLineIndices.includes(0),
+          titleLine: true,
           onChange: (val) => updaters.onLine(key0b, val),
           typoHint: findPossibleTypo(lineValues[key0b]),
           deletable: true,
