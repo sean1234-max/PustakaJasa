@@ -8,6 +8,26 @@ import {
 } from '../data/catalog';
 import { findPossibleTypo } from './typoCheck';
 
+// Assigns each Reference Sample line its displayed number, 1..N — except
+// TAJUK BESAR's own continuation line (slot 0b), which always takes slot
+// 0's own number instead of the next one: it's still the SAME numbered
+// box on the physical plaque (the school's own template draws it as one
+// bordered block spanning every one of its lines), not a separate slot.
+// Looked up by slotId rather than array adjacency so a draggable
+// category reordering everything else around it can't accidentally
+// attach 0b's number to whatever now sits next to it.
+function numberLines(list) {
+  let counter = 0;
+  let zeroNum = null;
+  const numbered = list.map((ln) => {
+    if (ln.slotId === '0b') return ln;
+    counter += 1;
+    if (ln.slotId === '0') zeroNum = counter;
+    return { ...ln, num: counter };
+  });
+  return numbered.map((ln) => (ln.slotId === '0b' ? { ...ln, num: zeroNum ?? ln.num } : ln));
+}
+
 export function snapshotDetail(catKey, blockIdx, isMatrix, isDynamicMatrix, lineValues, matrixValues, rowsByBlockMap, columnsByBlockMap) {
   const detail = { lines: {}, matrix: null, rows: null, columns: null };
   const linePrefix = `${catKey}::${blockIdx}::`;
@@ -232,7 +252,7 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
     // simply not confusing the teacher by having a box they know as
     // "Row 4" suddenly relabel itself "Row 2" just because they dragged
     // it earlier in the list.
-    flatLines = flatLines.map((ln, i) => ({ ...ln, num: i + 1 }));
+    flatLines = numberLines(flatLines);
     // Draggable categories (Main Template, OTHERS): the teacher can freely
     // reorder these rows on screen — purely a display-ORDER convenience so
     // Production knows which row to expect where on the reference-sample
@@ -259,15 +279,20 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
     let lines = hiddenLineSlots && hiddenLineSlots.size
       ? flatLines.filter((ln) => !hiddenLineSlots.has(ln.slotId))
       : flatLines;
-    // KLAS_MATRIX (dynamicMatrix) and the fixed-matrix categories (PPKI,
-    // MP THP 1/2) are the exception: an import here auto-hides the
-    // reference-sample slots its source file skipped — YEAR and/or
-    // SUBJEK/POSITION (see AppState.jsx's deriveKlasMatrixSectionLines) —
-    // so the teacher would otherwise see "1, 3, 5". Renumber what's left
-    // 1..N for a gapless list. Safe only in these branches: unlike Main
-    // Template / OTHERS, neither layout has a "Row N" Kuantiti column keyed
-    // off a line's own number.
-    if (isDynamicMatrix || isMatrix) lines = lines.map((ln, i) => ({ ...ln, num: i + 1 }));
+    // KLAS_MATRIX (dynamicMatrix), the fixed-matrix categories (PPKI,
+    // MP THP 1/2), and TOKOH/LONJAKAN/KEHADIRAN's own per-row Jenis Plak
+    // shape (positionFromRows) are the exception: an import here auto-hides
+    // reference-sample slots its source file skipped or never has to begin
+    // with — YEAR, SUBJEK/POSITION, or TOKOH's own always-blank second box
+    // for a roster import (see AppState.jsx's deriveKlasMatrixSectionLines /
+    // excelImport.js's buildRosterSectionLines) — so the teacher would
+    // otherwise see "1, 2, 3, 5" rather than "1, 2, 3". Renumber what's left
+    // 1..N for a gapless list. Safe in these branches specifically: unlike
+    // Main Template / OTHERS (extendableReferenceSample), none of them has a
+    // "Row N" Kuantiti column keyed off a line's own number.
+    if (isDynamicMatrix || isMatrix || (currentCat.positionFromRows && !currentCat.extendableReferenceSample)) {
+      lines = numberLines(lines);
+    }
 
     let matrixRows = [], columns = [], colTotals = [], grandTotal = 0, rows = [], blockTotalQty = 0, levelBreakdown = null;
     let aliranPlakQty = null;

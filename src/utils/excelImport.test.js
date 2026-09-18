@@ -751,3 +751,32 @@ describe('parseFormAnugerahExcel — two-line TAJUK BESAR', () => {
     expect(section.lines['0b']).toBe('SK CONTOH');
   });
 });
+
+describe('computeBlocks — TAJUK BESAR + 0b share one number', () => {
+  it('slot 0b shares slot 0\'s own number instead of taking the next one, and a hidden 2b leaves no gap', () => {
+    // Mirrors a real TOKOH sheet: TAJUK BESAR written across 3 lines (an
+    // Alt+Enter split gives slot 0 + slot 0b), ACARA (slot 2), TAHUN (slot
+    // 3), and TOKOH's own always-blank SUBJEK/POSITION second box (slot
+    // 2b) hidden outright by the import — the numbered list the teacher
+    // sees should read 1 (both title lines), 2, 3 — not 1, 2, 3, 5.
+    const catKey = 'TOKOH_SHEET';
+    const b = 0;
+    const lineValues = {
+      [`${catKey}::${b}::0`]: 'SK SEREMBAN JAYA',
+      [`${catKey}::${b}::0b`]: 'HARI ANUGERAH KECEMERLANGAN\n2026',
+      [`${catKey}::${b}::2`]: 'ANUGERAH MURID TERBILANG KOKURIKULUM',
+      [`${catKey}::${b}::3`]: 'TAHUN 2026',
+      [`${catKey}::${b}::hiddenLines`]: '2b',
+    };
+    const rowsByBlock = { [`${catKey}::${b}`]: [{ id: 1, desc: 'KETUA MURID', qty: '1', jenisPlak: 'DECO LIGHT' }] };
+    const plakRows = { [`${catKey}::${b}`]: [] };
+    const catalog = [{ code: 'DECO LIGHT', price: 5, stockQty: 10, stockBaseline: 10 }];
+    const { blocks } = computeBlocks(catKey, lineValues, {}, rowsByBlock, plakRows, {}, noopUpdaters, catalog, 'SK');
+    const byValue = new Map(blocks[0].lines.map((ln) => [ln.value, ln.num]));
+    expect(byValue.get('SK SEREMBAN JAYA')).toBe(1);
+    expect(byValue.get('HARI ANUGERAH KECEMERLANGAN\n2026')).toBe(1);
+    expect(byValue.get('ANUGERAH MURID TERBILANG KOKURIKULUM')).toBe(2);
+    expect(byValue.get('TAHUN 2026')).toBe(3);
+    expect(blocks[0].lines.some((ln) => ln.slotId === '2b')).toBe(false);
+  });
+});
