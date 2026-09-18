@@ -1,4 +1,4 @@
-import { useState, useRef, useLayoutEffect } from 'react';
+import { Fragment, useState, useRef, useLayoutEffect } from 'react';
 import PlakPicker from './PlakPicker';
 import SelempangBlock from './SelempangBlock';
 import { getStockStatus, MALAY_ORDINALS } from '../data/catalog';
@@ -261,9 +261,16 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
             aria-hidden="true"
             style={{ position: 'absolute', visibility: 'hidden', height: 0, overflow: 'hidden', pointerEvents: 'none', fontSize: 15, fontWeight: 700 }}
           >
-            {blk.lines.map((ln) => (
-              <div key={ln.key} style={{ width: 'max-content', whiteSpace: 'nowrap' }}>{ln.value || ln.placeholder || ''}</div>
-            ))}
+            {blk.lines.flatMap((ln) => {
+              // A value with its own Alt+Enter line break now renders as
+              // two physical lines (the <br/> above) — probe each one
+              // separately so "widest" reflects the actual rendered width,
+              // not the single collapsed-with-a-space string.
+              const text = ln.value || ln.placeholder || '';
+              return text.split('\n').map((part, i) => (
+                <div key={`${ln.key}-${i}`} style={{ width: 'max-content', whiteSpace: 'nowrap' }}>{part}</div>
+              ));
+            })}
           </div>
 
           <div ref={refGridRef} className={`ref-sample-grid${stackRefSample ? ' ref-sample-grid-stacked' : ''}`}>
@@ -285,7 +292,21 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
                           dimming them the same as a plain placeholder would
                           undercut the whole point of calling them out. */}
                       <span className="ref-sample-live-text" style={{ opacity: hasValue || ln.redText ? 1 : 0.4 }}>
-                        {hasValue ? ln.value : ln.placeholder}
+                        {/* An imported Alt+Enter line break stays inside
+                            this one value (see the matching <textarea>
+                            fix above) — rendered as an explicit <br/> so it
+                            shows on two lines here too, same numbered slot,
+                            without weakening the surrounding `nowrap` that
+                            keeps every OTHER (single-line) title from
+                            wrapping mid-sentence. */}
+                        {hasValue
+                          ? ln.value.split('\n').map((part, i, arr) => (
+                            <Fragment key={i}>
+                              {part}
+                              {i < arr.length - 1 && <br />}
+                            </Fragment>
+                          ))
+                          : ln.placeholder}
                       </span>
                     </div>
                   );
