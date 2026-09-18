@@ -323,13 +323,34 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
                     {ln.num}
                   </div>
                   <div style={{ flex: 1 }}>
-                    <input
-                      className={ln.redText ? 'input input-red' : 'input'}
-                      placeholder={ln.placeholder}
-                      value={ln.value}
-                      readOnly={!editable.lines}
-                      onChange={editable.lines ? (e) => ln.onChange(e.target.value) : undefined}
-                    />
+                    {/* An imported Excel cell can carry its own in-cell line
+                        break (Alt+Enter) on ANY reference-sample line, not
+                        just TAJUK BESAR's own dedicated 0/0b split — a plain
+                        single-line <input> silently strips \n from its value
+                        (the browser's own value-sanitization for text
+                        inputs), squashing the two lines together with no
+                        separator at all. Switching to a <textarea> only when
+                        the value actually has a line break keeps every
+                        normal, single-line field exactly as before. */}
+                    {ln.value.includes('\n') ? (
+                      <textarea
+                        className={ln.redText ? 'input input-red' : 'input'}
+                        style={{ resize: 'none', lineHeight: 1.4 }}
+                        rows={ln.value.split('\n').length}
+                        placeholder={ln.placeholder}
+                        value={ln.value}
+                        readOnly={!editable.lines}
+                        onChange={editable.lines ? (e) => ln.onChange(e.target.value) : undefined}
+                      />
+                    ) : (
+                      <input
+                        className={ln.redText ? 'input input-red' : 'input'}
+                        placeholder={ln.placeholder}
+                        value={ln.value}
+                        readOnly={!editable.lines}
+                        onChange={editable.lines ? (e) => ln.onChange(e.target.value) : undefined}
+                      />
+                    )}
                     {ln.typoHint && (
                       <div className="typo-hint">
                         Possible typo: "{ln.typoHint.word}" — did you mean "{ln.typoHint.suggestion}"?
