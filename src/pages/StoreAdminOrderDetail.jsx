@@ -12,6 +12,7 @@ import { splitOrderCategories } from '../utils/exportCsv';
 import { getOrderImportUrl } from '../lib/storageApi';
 import { groupItemsByBatch } from '../utils/orderBatches';
 import { getOrderChangeStamp } from '../utils/orderStamp';
+import { isUrgentShipment } from '../utils/urgentOrder';
 
 // Downloads the teacher's original FORM ANUGERAH upload (0055) via a
 // short-lived signed URL — for cross-checking the order against the file.
@@ -45,7 +46,7 @@ const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: f
 // (approved via either path), pricing and dates are frozen and this page
 // falls back to the simple invoice-only entry (setInvoiceId), same as before.
 export default function StoreAdminOrderDetail() {
-  const { state, today, setInvoiceId, approveAndSetInvoiceId, ensureOrderLoaded } = useAppState();
+  const { state, today, setInvoiceId, approveAndSetInvoiceId, retryUrgentSheetSync, ensureOrderLoaded } = useAppState();
   const { id } = useParams();
   const navigate = useNavigate();
   const order = state.orders.find((o) => o.id === id);
@@ -188,6 +189,13 @@ export default function StoreAdminOrderDetail() {
                   <DatePicker label="Shipment Date" id="storeAdminShipmentDate" selected={shipmentDateDraft} today={today} onSelect={setShipmentDateDraft} minDate={today} maxDate={functionDateDraft} />
                   <DatePicker label="Function Date" id="storeAdminFunctionDate" selected={functionDateDraft} today={today} onSelect={setFunctionDateDraft} minDate={shipmentDateDraft || today} />
                   {dateError && <div className="login-error" style={{ gridColumn: '1 / -1', margin: 0 }}>{dateError}</div>}
+                  {/* Same non-blocking heads-up as SalesOrderSummary.jsx — see
+                      urgentOrder.js. No override control. */}
+                  {shipmentDateDraft && isUrgentShipment(today, shipmentDateDraft) && (
+                    <p className="urgent-hint" style={{ gridColumn: '1 / -1', margin: 0 }}>
+                      ⚡ This Shipment Date is less than 5 working days away — the order will be marked Urgent once approved.
+                    </p>
+                  )}
                 </>
               ) : (
                 <>
@@ -258,6 +266,17 @@ export default function StoreAdminOrderDetail() {
                 {order.invoiceId ? (
                   <div style={{ marginTop: 'var(--space-2)' }}>
                     <div>{order.invoiceId}</div>
+                    {/* Gated on the PERSISTED urgentSheetSyncedAt flag (not
+                        just this session's sheetSyncErrors), so it reappears
+                        correctly after a page refresh too — see
+                        attemptUrgentSheetSync/retryUrgentSheetSync in
+                        AppState.jsx. */}
+                    {order.urgent && !order.urgentSheetSyncedAt && (
+                      <p className="text-error" style={{ marginTop: 'var(--space-2)' }}>
+                        {state.sheetSyncErrors[order.id] || 'Urgent-order sheet sync pending.'}{' '}
+                        <button type="button" onClick={() => retryUrgentSheetSync(order.id)} className="text-label-bold font-semibold text-primary hover:underline">Retry</button>
+                      </p>
+                    )}
                   </div>
                 ) : (
                   <div className="field" style={{ maxWidth: 340, marginTop: 'var(--space-2)' }}>

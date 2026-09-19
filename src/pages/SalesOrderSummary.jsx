@@ -11,6 +11,7 @@ import CancelOrderControl from '../components/CancelOrderControl';
 import { reconstructBlocksForCategory } from '../utils/computeBlocks';
 import { splitOrderCategories } from '../utils/exportCsv';
 import { getOrderChangeStamp } from '../utils/orderStamp';
+import { isUrgentShipment } from '../utils/urgentOrder';
 
 // Read-only everywhere — this page only ever displays what the teacher
 // already submitted, it never edits the underlying order/category data.
@@ -230,6 +231,15 @@ export default function SalesOrderSummary() {
                     <DatePicker label="Shipment Date" id="salesShipmentDate" selected={shipmentDateDraft} today={today} onSelect={setShipmentDateDraft} minDate={today} maxDate={functionDateDraft} />
                     <DatePicker label="Function Date" id="salesFunctionDate" selected={functionDateDraft} today={today} onSelect={setFunctionDateDraft} minDate={shipmentDateDraft || today} />
                     {dateError && <div className="login-error" style={{ gridColumn: '1 / -1', margin: 0 }}>{dateError}</div>}
+                    {/* Informational only — never blocks Approve, no way to
+                        override the urgent determination itself. Purely a
+                        heads-up before the "urgent" flag gets snapshotted
+                        on Approve (see urgentOrder.js). */}
+                    {shipmentDateDraft && isUrgentShipment(today, shipmentDateDraft) && (
+                      <p className="urgent-hint" style={{ gridColumn: '1 / -1', margin: 0 }}>
+                        ⚡ This Shipment Date is less than 5 working days away — the order will be marked Urgent once approved.
+                      </p>
+                    )}
                   </>
                 ) : (
                   <>
@@ -365,7 +375,12 @@ export default function SalesOrderSummary() {
             full details into one printout, regardless of which tab is open
             on screen — see the "Print Order" button, only shown once approved. */}
         <div className="print-only">
-          {stamp && <div className="order-stamp">{stamp}</div>}
+          {(order.urgent || stamp) && (
+            <div className="order-stamp-corner">
+              {order.urgent && <div className="order-stamp order-stamp-urgent">URGENT</div>}
+              {stamp && <div className="order-stamp">{stamp}</div>}
+            </div>
+          )}
           <div className="form-grid-2" style={{ marginTop: 'var(--space-3)' }}>
             <div><div className="dim">Order ID</div><div>{order.id}</div></div>
             <div><div className="dim">Invoice Number</div><div>{order.invoiceId || '-'}</div></div>

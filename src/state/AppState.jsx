@@ -23,6 +23,8 @@ import {
 } from '../lib/catalogAdminApi';
 import { supabase } from '../lib/supabaseClient';
 import { uploadOrderImportFile, removeOrderImportFile } from '../lib/storageApi';
+import { syncUrgentOrderToSheet } from '../lib/urgentSheetApi';
+import { isUrgentShipment } from '../utils/urgentOrder';
 
 // Real "today", normalized to midnight so it compares cleanly against the
 // midnight-constructed dates the calendar cells and date-math use.
@@ -299,6 +301,11 @@ function initialState() {
     lastOrderId: '',
     updateToast: '',
     productionToast: '',
+    // Google Sheets sync failure messages for urgent orders, keyed by order
+    // id — persists (unlike the auto-clearing toasts above) until a retry
+    // succeeds, so the retry affordance on StoreAdminOrderDetail.jsx has
+    // something to show. See attemptUrgentSheetSync/retryUrgentSheetSync.
+    sheetSyncErrors: {},
 
     plakCatalog: [],
     plakCatalogLoaded: false,
@@ -1833,7 +1840,13 @@ export function AppStateProvider({ children }) {
     });
     const totalAmount = itemsWithOriginalPrice.reduce((sum, it) => sum + it.harga, 0);
     const priceAdjusted = itemsWithOriginalPrice.some((it) => it.unitPrice !== standardUnitPrice(it.jenisPlak, st.plakCatalog));
-    const fields = { items: itemsWithOriginalPrice, totalAmount, priceAdjusted, status: 'In Production', ...overrides };
+    // Shipment Date is first set right here (never at order creation — see
+    // urgentOrder.js) — this is the one moment "urgent" gets snapshotted,
+    // and it's never recomputed after this. overrides.shipmentDate is
+    // absent only if Sales approved without touching the date picker, in
+    // which case priorOrder.urgent (false from insert) just carries through.
+    const urgent = overrides.shipmentDate ? isUrgentShipment(TODAY, overrides.shipmentDate) : priorOrder.urgent;
+    const fields = { items: itemsWithOriginalPrice, totalAmount, priceAdjusted, status: 'In Production', ...overrides, urgent };
     try {
       await updateOrder(orderId, fields);
     } catch (err) {
@@ -1846,6 +1859,46 @@ export function AppStateProvider({ children }) {
     }));
     return { ok: true };
   }, [patch, flashToast]);
+
+  // One-time Google Sheets sync for urgent orders (see urgentOrder.js) —
+  // fired right after Store Admin saves the Invoice Number, from either
+  // setInvoiceId or approveAndSetInvoiceId below. Deliberately
+  // fire-and-forget relative to the invoice save that triggers it: the
+  // invoice save is the real, already-successful action and must never be
+  // rolled back or delayed by a Sheets failure. `urgentSheetSyncedAt`
+  // (set only on success) is both the idempotency guard against a double
+  // append and the persisted "still pending" flag the retry UI on
+  // StoreAdminOrderDetail.jsx reads — sheetSyncErrors is only the
+  // human-readable message for that UI, not the source of truth.
+  const attemptUrgentSheetSync = useCallback(async (order, fields) => {
+    const payload = {
+      orderId: order.id,
+      invoiceId: fields.invoiceId ?? order.invoiceId,
+      amount: fields.totalAmount ?? order.totalAmount,
+      salesman: order.sales,
+      school: order.sekolah,
+      shipmentDate: fields.shipmentDate ?? order.shipmentDate,
+      functionDate: fields.functionDate ?? order.functionDate,
+      datePlaced: order.datePlaced,
+    };
+    try {
+      await syncUrgentOrderToSheet(payload);
+      const syncedAt = new Date().toISOString();
+      await updateOrder(order.id, { urgentSheetSyncedAt: syncedAt });
+      patch((latest) => ({
+        orders: latest.orders.map((o) => (o.id === order.id ? { ...o, urgentSheetSyncedAt: syncedAt } : o)),
+        sheetSyncErrors: { ...latest.sheetSyncErrors, [order.id]: undefined },
+      }));
+    } catch (err) {
+      console.error('Urgent-order Sheet sync failed:', err);
+      patch((latest) => ({ sheetSyncErrors: { ...latest.sheetSyncErrors, [order.id]: err.message } }));
+    }
+  }, [patch]);
+
+  const retryUrgentSheetSync = useCallback((orderId) => {
+    const order = stateRef.current.orders.find((o) => o.id === orderId);
+    if (order) attemptUrgentSheetSync(order, {});
+  }, [attemptUrgentSheetSync]);
 
   // Production: records the invoice ID billing hands over on paper once an
   // approved order's hardcopy comes back invoiced. Guarded against orders
@@ -1888,8 +1941,16 @@ export function AppStateProvider({ children }) {
       orders: latest.orders.map((o) => (o.id === orderId ? { ...o, invoiceId: normalized } : o)),
     }));
     flashToast('productionToast', 'Invoice ID saved — order is ready for export.');
+    // `urgent` was already snapshotted earlier by approveOrder/
+    // approveAndSetInvoiceId — this is just the OTHER place an Invoice
+    // Number can land, so it's the other trigger point for the one-time
+    // Sheets sync. Fire-and-forget: never blocks/undoes the invoice save
+    // above, which already succeeded.
+    if (order.urgent && !order.urgentSheetSyncedAt) {
+      attemptUrgentSheetSync(order, { invoiceId: normalized });
+    }
     return { ok: true };
-  }, [patch, flashToast]);
+  }, [patch, flashToast, attemptUrgentSheetSync]);
 
   // Store Admin: approves a still-"Submitted to Sales" order and
   // assigns its Invoice Number in the same action — for orders a Salesman
@@ -1932,8 +1993,12 @@ export function AppStateProvider({ children }) {
     });
     const totalAmount = itemsWithOriginalPrice.reduce((sum, it) => sum + it.harga, 0);
     const priceAdjusted = itemsWithOriginalPrice.some((it) => it.unitPrice !== standardUnitPrice(it.jenisPlak, st.plakCatalog));
+    // Shipment Date is first set right here too (same as approveOrder) —
+    // see urgentOrder.js. overrides.shipmentDate is placed after ...overrides
+    // and urgent placed after that, so urgent stays authoritative.
+    const urgent = overrides.shipmentDate ? isUrgentShipment(TODAY, overrides.shipmentDate) : order.urgent;
     const fields = {
-      items: itemsWithOriginalPrice, totalAmount, priceAdjusted, status: 'In Production', invoiceId: normalized, ...overrides,
+      items: itemsWithOriginalPrice, totalAmount, priceAdjusted, status: 'In Production', invoiceId: normalized, ...overrides, urgent,
     };
     try {
       await updateOrder(orderId, fields);
@@ -1946,8 +2011,14 @@ export function AppStateProvider({ children }) {
       orders: latest.orders.map((o) => (o.id === orderId ? { ...o, ...fields } : o)),
     }));
     flashToast('productionToast', 'Order approved and Invoice Number saved.');
+    // Invoice Number and `urgent` both land in this same write — this is
+    // the other trigger point for the one-time Sheets sync (setInvoiceId
+    // above is the other). Fire-and-forget, same reasoning as there.
+    if (urgent && !order.urgentSheetSyncedAt) {
+      attemptUrgentSheetSync({ ...order, ...fields }, fields);
+    }
     return { ok: true };
-  }, [patch, flashToast]);
+  }, [patch, flashToast, attemptUrgentSheetSync]);
 
   // Stamps the actual moment a Teacher/Salesman print action happened —
   // not the order's creation date — so "Order Printed" on the printout
@@ -2187,6 +2258,7 @@ export function AppStateProvider({ children }) {
     importFormAnugerahExcel,
     openAmend, updateAmend,
     openAddOn, submitPendingAddOn, cancelPendingAddOn, rejectAddOn, approveAddOn, approveOrder, setInvoiceId, approveAndSetInvoiceId,
+    retryUrgentSheetSync,
     cancelOrder,
     recordPrint,
     ensureOrderLoaded,

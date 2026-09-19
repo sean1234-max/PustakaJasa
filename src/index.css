@@ -431,6 +431,11 @@ a:hover { color: var(--color-accent-900); text-decoration: underline; }
 
 /* Reference sample */
 .hint-text { font-size: 12px; opacity: 0.6; margin: var(--space-1) 0 var(--space-4); max-width: 60ch; }
+/* Non-blocking heads-up next to Shipment Date when the picked date would
+   make the order Urgent (see src/utils/urgentOrder.js) — deliberately NOT
+   styled like .login-error (no border/background), since it never blocks
+   Approve/Save and there's no way to override the determination itself. */
+.urgent-hint { font-size: 12px; color: #b45f06; font-weight: 600; margin: var(--space-1) 0 0; }
 /* Non-blocking possible-typo hint (see src/utils/typoCheck.js) — shown
    right under a Reference Sample line or Kuantiti Description input;
    never prevents Add to Cart. */
@@ -849,17 +854,24 @@ input.catalog-admin-code { padding: 6px 8px; }
    to content instead. */
 @page { margin: 10mm; }
 
-/* Red "ADD ON" stamp marking an order that carries an approved Add-On
-   round — see getOrderChangeStamp in src/utils/orderStamp.js.
-   Positioned absolute against its container's top-right corner: on the
-   printed order (.print-only) that's the top of page 1, since it's the
-   first thing in that container's normal flow; on Production's screen
-   view it just sits pinned to whichever card/section wraps it (that
-   wrapper needs position: relative). */
-.order-stamp {
+/* Corner wrapper for the printed order's stamp(s) — URGENT (order.urgent,
+   see src/utils/urgentOrder.js) and/or "ADD ON" (getOrderChangeStamp in
+   src/utils/orderStamp.js) can both apply to the same order, so both are
+   pinned together as one stacked unit instead of each positioning itself
+   independently (which would overlap). On the printed order (.print-only)
+   this sits at the top of page 1, since it's the first thing in that
+   container's normal flow (.print-only has position: relative). */
+.order-stamp-corner {
   position: absolute;
   top: 0;
   right: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  pointer-events: none;
+}
+.order-stamp {
   border: 3px solid #c0392b;
   color: #c0392b;
   font-weight: 800;
@@ -870,8 +882,13 @@ input.catalog-admin-code { padding: 6px 8px; }
   border-radius: 8px;
   transform: rotate(8deg);
   letter-spacing: 1px;
-  pointer-events: none;
   background: rgba(255, 255, 255, 0.85);
+}
+.order-stamp-urgent {
+  border-color: #d35400;
+  color: #d35400;
+  font-size: 26px;
+  padding: 8px 20px;
 }
 .order-stamp-inline {
   color: #c0392b;

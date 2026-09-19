@@ -44,6 +44,8 @@ function toDbOrder(order) {
     cancel_reason: order.cancelReason ?? null,
     cancelled_at: order.cancelledAt ?? null,
     cancelled_by: order.cancelledBy ?? null,
+    urgent: !!order.urgent,
+    urgent_sheet_synced_at: order.urgentSheetSyncedAt ?? null,
   };
 }
 
@@ -83,6 +85,8 @@ function fromDbOrder(row) {
     cancelReason: row.cancel_reason || null,
     cancelledAt: row.cancelled_at || null,
     cancelledBy: row.cancelled_by || null,
+    urgent: !!row.urgent,
+    urgentSheetSyncedAt: row.urgent_sheet_synced_at || null,
   };
 }
 
