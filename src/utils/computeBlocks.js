@@ -207,13 +207,14 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
           onDelete: () => updaters.onDeleteReferenceLine(catKey, b, '2b'),
         };
       }
-      // TAJUK BESAR can carry a second engraved line (school on line 1,
-      // event title on line 2) — an Alt+Enter line break in the source
-      // cell (excelImport.js's splitTwoLineTajuk), an AI pre-write, or a
-      // roster import splits it into its own single-line field; the teacher
-      // can also add one by hand ("+ Tajuk besar 2 baris" — sets slot 0b to
-      // an empty string, so the box shows even before anything is typed).
-      // Rejoined into one event_header column on export (exportCsv.js).
+      // TAJUK BESAR can carry a second engraved line as its own separate
+      // box — the teacher adds one by hand ("+ Tajuk besar 2 baris" — sets
+      // slot 0b to an empty string, so the box shows even before anything
+      // is typed). An Alt+Enter line break within slot 0's OWN value (from
+      // an imported source cell, or typed directly) instead renders as a
+      // second physical line inside that same box — see the per-line
+      // <textarea>/<br/> handling above — rather than becoming its own 0b
+      // field. Rejoined into one event_header column on export (exportCsv.js).
       if (i === 0 && lineValues[`${catKey}::${b}::0b`] !== undefined) {
         const key0b = `${catKey}::${b}::0b`;
         line.secondLine = {
@@ -720,11 +721,11 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
       // would be confusing.
       addSubjekPosition: currentCat.deletableReferenceLines && catPositionLine2Placeholder && hiddenLineSlots?.has('2b')
         ? () => updaters.onRestoreReferenceLine(catKey, b, '2b') : null,
-      // "+ Tajuk besar 2 baris" — reveals the optional slot-0b line for a
-      // teacher who wants a two-line TAJUK BESAR (an imported Alt+Enter
-      // already fills it — see excelImport.js's splitTwoLineTajuk). Only
-      // offered for reference-sample categories (not SELEMPANG) that don't
-      // already have it.
+      // "+ Tajuk besar 2 baris" — reveals the optional slot-0b line, for a
+      // teacher who wants a genuinely separate second box rather than an
+      // Alt+Enter line break within slot 0's own value. Only offered for
+      // reference-sample categories (not SELEMPANG) that don't already
+      // have it.
       addTajukLine2: catLinePlaceholders.length > 0 && lineValues[`${catKey}::${b}::0b`] === undefined
         ? () => updaters.onLine(`${catKey}::${b}::0b`, '') : null,
       plakPerBlock: !!currentCat.plakPerBlock,

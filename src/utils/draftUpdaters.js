@@ -279,8 +279,8 @@ export function createDraftUpdaters(patch, fields) {
     onDeleteReferenceLine: (catKey, blockIdx, slotId) => patch((st) => {
       const cat = resolveCategory(catKey);
       // The optional TAJUK BESAR second line (slot 0b) is never a catalog
-      // line — it's an extra a teacher or an import (splitTwoLineTajuk) added
-      // — so it can always be cleared, on any category, unlike the
+      // line — it's an extra a teacher added by hand ("+ Tajuk besar 2
+      // baris") — so it can always be cleared, on any category, unlike the
       // deletableReferenceLines-gated rows below.
       if (slotId === '0b') {
         const newLineValues = { ...st[lineValues] };

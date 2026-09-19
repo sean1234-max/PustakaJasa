@@ -399,9 +399,10 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
               {blk.canAddReferenceLine && (
                 <button type="button" className="btn btn-secondary" onClick={blk.addReferenceLine}>+ Add Reference Row</button>
               )}
-              {/* Two-line TAJUK BESAR — an imported Alt+Enter fills this in
-                  automatically (excelImport.js's splitTwoLineTajuk); this
-                  button is the by-hand way to get the same second box. */}
+              {/* Two-line TAJUK BESAR as a genuinely separate second box —
+                  an Alt+Enter line break within the first box's own value
+                  (imported or typed) instead just renders as a second
+                  physical line inside that same box, no second field. */}
               {blk.addTajukLine2 && (
                 <button type="button" className="btn btn-secondary" onClick={blk.addTajukLine2}>+ Tajuk besar 2 baris</button>
               )}

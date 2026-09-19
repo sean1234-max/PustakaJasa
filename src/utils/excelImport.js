@@ -185,10 +185,12 @@ function readRefLinesInBand(ws, range, rowStart, rowEnd, slotsByCount = KLAS_MAT
   // A standalone year line the school wrote right under the title. The
   // YEAR reference-sample row is retired (computeBlocks.js / exportCsv.js),
   // so instead of parking it in slot 1 it's folded onto the TAJUK BESAR as
-  // a second engraved line (slot 0b, via splitTwoLineTajuk) — it still
-  // reaches the plaque, in event_header. Pulled out here before the
-  // by-count mapping so it isn't counted as ACARA and doesn't push every
-  // following line down a slot.
+  // a second physical line within that SAME box (slot 0's own value keeps
+  // its embedded \n — see OrderCategoryBlock's per-line <textarea>/<br/>
+  // handling, which already renders any line's own line break in place) —
+  // it still reaches the plaque, in event_header. Pulled out here before
+  // the by-count mapping so it isn't counted as ACARA and doesn't push
+  // every following line down a slot.
   const tableHasYearSlot = Object.values(slotsByCount).some((arr) => arr.includes('1'));
   let yearLine = '';
   if (!tableHasYearSlot && values.length >= 2 && STANDALONE_YEAR_RE.test(values[1].trim())) {
@@ -198,27 +200,6 @@ function readRefLinesInBand(ws, range, rowStart, rowEnd, slotsByCount = KLAS_MAT
   const lines = {};
   values.slice(0, slots.length).forEach((val, i) => { lines[slots[i]] = val; });
   if (yearLine) lines['0'] = [lines['0'], yearLine.trim()].filter(Boolean).join('\n');
-  return splitTwoLineTajuk(lines);
-}
-
-// A TAJUK BESAR the teacher wrote as two (or more) lines — in-cell line
-// breaks (Alt+Enter) inside the one cell — is split into slot 0 + slot
-// 0b, the same two-line header shape an AI pre-write / roster import
-// already produces (computeBlocks.js renders 0b as its own numbered
-// line, both it and slot 0 sharing the same bigger/bold title styling;
-// exportCsv rejoins the two with a newline for the CSV's event_header
-// column). Only the FIRST break splits the row; any further break(s) stay
-// inside slot 0b's own value (rendered there as their own physical
-// lines — see OrderCategoryBlock's per-line <textarea>/<br/> handling)
-// rather than being squashed onto one line with just a space — a TOKOH
-// sheet's TAJUK BESAR is sometimes written across three lines this way.
-function splitTwoLineTajuk(lines) {
-  const raw = lines['0'];
-  if (!raw || lines['0b'] || !/\r?\n/.test(raw)) return lines;
-  const parts = raw.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
-  if (parts.length < 2) { lines['0'] = parts[0] || ''; return lines; }
-  lines['0'] = parts[0];
-  lines['0b'] = parts.slice(1).join('\n');
   return lines;
 }
 
@@ -767,8 +748,8 @@ function buildRosterSectionLines(sheetTitle, subTitle, firstClass, groupSample, 
   const card = matchSampleCard(subTitle, cards);
   const lines = {};
   if (card) {
-    // YEAR row is retired — fold a card's year onto TAJUK BESAR as its
-    // second engraved line (slot 0b), same as readRefLinesInBand.
+    // YEAR row is retired — fold a card's year onto TAJUK BESAR as a
+    // second physical line within that same box, same as readRefLinesInBand.
     lines[0] = [card.tajukBesar, card.year].filter(Boolean).join('\n');
     lines[2] = card.acara;
   } else {
@@ -782,7 +763,7 @@ function buildRosterSectionLines(sheetTitle, subTitle, firstClass, groupSample, 
     lines.extraRefLines = String(extras.length);
     extras.forEach((val, i) => { lines[4 + i] = val; });
   }
-  return splitTwoLineTajuk(lines);
+  return lines;
 }
 
 // Some rosters have one more column with no header label at all — a

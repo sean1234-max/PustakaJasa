@@ -628,7 +628,7 @@ describe('a renamed SUBJEK-shaped sheet — import → cart → CSV (dynamicMatr
 });
 
 describe('parseFormAnugerahExcel — two-line TAJUK BESAR', () => {
-  it('splits an in-cell line break (Alt+Enter) into slot 0 + slot 0b', () => {
+  it('keeps an in-cell line break (Alt+Enter) as one multi-line value in slot 0, not split into slot 0b', () => {
     const buf = workbookFromSheets({
       'MP THP 2': [
         [null, 'HARI ANUGERAH KECEMERLANGAN MURID 2026\nSK CONTOH'],
@@ -644,11 +644,11 @@ describe('parseFormAnugerahExcel — two-line TAJUK BESAR', () => {
       ],
     });
     const section = (parseFormAnugerahExcel(buf).categorized?.MP2 || [])[0];
-    expect(section.lines['0']).toBe('HARI ANUGERAH KECEMERLANGAN MURID 2026');
-    expect(section.lines['0b']).toBe('SK CONTOH');
+    expect(section.lines['0']).toBe('HARI ANUGERAH KECEMERLANGAN MURID 2026\nSK CONTOH');
+    expect(section.lines['0b']).toBeUndefined();
   });
 
-  it('a THREE-line TAJUK BESAR (a TOKOH sheet, say) keeps lines 2+3 as their own lines in slot 0b, not squashed together', () => {
+  it('a THREE-line TAJUK BESAR (a TOKOH sheet, say) keeps all three lines together in slot 0, not squashed onto one line', () => {
     const buf = workbookFromSheets({
       TOKOH: [
         [null, null, null, 'TOLONG ISI DI SINI'],
@@ -661,8 +661,8 @@ describe('parseFormAnugerahExcel — two-line TAJUK BESAR', () => {
       ],
     });
     const section = (parseFormAnugerahExcel(buf).categorized?.TOKOH_SHEET || [])[0];
-    expect(section.lines['0']).toBe('SK SEREMBAN JAYA');
-    expect(section.lines['0b']).toBe('HARI ANUGERAH KECEMERLANGAN\n2026');
+    expect(section.lines['0']).toBe('SK SEREMBAN JAYA\nHARI ANUGERAH KECEMERLANGAN\n2026');
+    expect(section.lines['0b']).toBeUndefined();
   });
 
   it('leaves a single-line TAJUK BESAR untouched (no slot 0b)', () => {
@@ -713,8 +713,8 @@ describe('parseFormAnugerahExcel — two-line TAJUK BESAR', () => {
       ],
     });
     const section = (parseFormAnugerahExcel(buf).categorized?.MP2 || [])[0];
-    expect(section.lines['0']).toBe('HARI ANUGERAH KECEMERLANGAN MURID 2026');
-    expect(section.lines['0b']).toBe('SK CONTOH');
+    expect(section.lines['0']).toBe('HARI ANUGERAH KECEMERLANGAN MURID 2026\nSK CONTOH');
+    expect(section.lines['0b']).toBeUndefined();
   });
 
   it('ignores the ALT+ENTER instruction note next to the title (PBD)', () => {
@@ -730,8 +730,8 @@ describe('parseFormAnugerahExcel — two-line TAJUK BESAR', () => {
     rows[12] = [null, 'DECO LIGHT', 12];
     const buf = workbookFromSheets({ PBD: rows.map((r) => r || []) });
     const section = (parseFormAnugerahExcel(buf).categorized?.PBD || [])[0];
-    expect(section.lines['0']).toBe('HARI ANUGERAH KECEMERLANGAN MURID');
-    expect(section.lines['0b']).toBe('SK CONTOH');
+    expect(section.lines['0']).toBe('HARI ANUGERAH KECEMERLANGAN MURID\nSK CONTOH');
+    expect(section.lines['0b']).toBeUndefined();
   });
 
   it('ignores the ALT+ENTER instruction note next to the title (TOKOH)', () => {
@@ -747,8 +747,8 @@ describe('parseFormAnugerahExcel — two-line TAJUK BESAR', () => {
       ],
     });
     const section = (parseFormAnugerahExcel(buf).categorized?.TOKOH_SHEET || [])[0];
-    expect(section.lines['0']).toBe('HARI ANUGERAH KECEMERLANGAN MURID');
-    expect(section.lines['0b']).toBe('SK CONTOH');
+    expect(section.lines['0']).toBe('HARI ANUGERAH KECEMERLANGAN MURID\nSK CONTOH');
+    expect(section.lines['0b']).toBeUndefined();
   });
 });
 
