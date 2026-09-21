@@ -35,11 +35,11 @@ export default function Cart() {
   // "just this one line" removal to offer here anyway).
   const removeSelempangFromCart = () => selempangCartItems.forEach((ci) => removeFromCart(ci.id));
 
-  // Fine-grained (category + Jenis Plak) grouping — kept purely for the
-  // stock-violation check below, which has to compare each SPECIFIC Jenis
-  // Plak's combined qty against ITS OWN stock limit; a category can mix
-  // several Jenis Plak, each with its own separate stock, so this can't be
-  // collapsed down to category level without breaking that check.
+  // Fine-grained (category + Jenis Plak) grouping — drives both the main
+  // summary table (one row per category+Jenis Plak, so a category mixing
+  // several Jenis Plak codes shows as separate rows instead of a single
+  // blended one) and the stock-violation check below, which has to compare
+  // each SPECIFIC Jenis Plak's combined qty against ITS OWN stock limit.
   const groupedCartRowsByPlak = useMemo(() => {
     const rows = [];
     const byKey = new Map();
@@ -50,7 +50,11 @@ export default function Cart() {
         // hasPrice stays false for a code with no resolvable catalog price
         // (Production's OTHER catch-all — see PlakPicker.jsx) — RM 0.00
         // would otherwise read as a free item instead of "price not set".
-        row = { key, jenisPlak: ci.jenisPlak, categoryKey: ci.categoryKey, qty: 0, harga: 0, hasPrice: false, ids: [] };
+        row = {
+          key, jenisPlak: ci.jenisPlak, categoryKey: ci.categoryKey,
+          categoryLabel: resolveCategory(ci.categoryKey)?.label || ci.categoryKey,
+          qty: 0, harga: 0, hasPrice: false, ids: [],
+        };
         byKey.set(key, row);
         rows.push(row);
       }
@@ -61,36 +65,6 @@ export default function Cart() {
     });
     return rows;
   }, [state.cart]);
-
-  // The teacher-facing summary groups by CATEGORY, not Jenis Plak — a raw
-  // catalog code (e.g. "SM-13187 / GOLD") means nothing to a teacher, and
-  // the same code can legitimately appear under more than one category
-  // (getOrderJenisPlakGroups' own reasoning — exportCsv.js), which would
-  // otherwise show as confusing duplicate-looking rows here with no way to
-  // tell them apart. Salesman/Production still see the Jenis Plak
-  // breakdown when they open the order (AdminOrderDetail.jsx) — that view
-  // is unchanged.
-  const categorySummaryRows = useMemo(() => {
-    const rows = [];
-    const byCat = new Map();
-    groupedCartRowsByPlak.forEach((r) => {
-      let row = byCat.get(r.categoryKey);
-      if (!row) {
-        row = {
-          categoryKey: r.categoryKey,
-          categoryLabel: resolveCategory(r.categoryKey)?.label || r.categoryKey,
-          qty: 0, harga: 0, hasPrice: false, ids: [],
-        };
-        byCat.set(r.categoryKey, row);
-        rows.push(row);
-      }
-      row.qty += r.qty;
-      row.harga += r.harga;
-      if (r.hasPrice) row.hasPrice = true;
-      row.ids.push(...r.ids);
-    });
-    return rows;
-  }, [groupedCartRowsByPlak]);
 
   // Re-checked here (not just on the picker in OrderCategoryBlock) since a
   // cart item can sit for a while — another school may have bought into
@@ -156,13 +130,14 @@ export default function Cart() {
           </div>
         </div>
 
-        <div className="card-kicker">Anugerah — Category / QTY / Harga</div>
+        <div className="card-kicker">Anugerah — Category / Jenis Plak / QTY / Harga</div>
         <table className="table" style={{ margin: 'var(--space-3) 0 var(--space-6)' }}>
-          <thead><tr><th>Category</th><th style={{ width: 110 }}>QTY</th><th style={{ width: 130 }}>Harga</th><th style={{ width: 48 }} /><th style={{ width: 44 }} /></tr></thead>
+          <thead><tr><th>Category</th><th>Jenis Plak</th><th style={{ width: 110 }}>QTY</th><th style={{ width: 130 }}>Harga</th><th style={{ width: 48 }} /><th style={{ width: 44 }} /></tr></thead>
           <tbody>
-            {categorySummaryRows.map((row) => (
-              <tr key={row.categoryKey}>
+            {groupedCartRowsByPlak.map((row) => (
+              <tr key={row.key}>
                 <td>{row.categoryLabel}</td>
+                <td>{row.jenisPlak || '—'}</td>
                 <td>{row.qty}</td>
                 <td>{row.hasPrice ? `RM ${row.harga.toFixed(2)}` : '—'}</td>
                 <td>
@@ -179,8 +154,8 @@ export default function Cart() {
                 <td><button type="button" className="btn btn-ghost btn-icon" aria-label="Remove" onClick={() => row.ids.forEach(removeFromCart)}>✕</button></td>
               </tr>
             ))}
-            {categorySummaryRows.length === 0 && (
-              <tr><td colSpan={5} style={{ textAlign: 'center', opacity: 0.5, padding: 'var(--space-4)' }}>No items yet — add categories from New Order → Order Details.</td></tr>
+            {groupedCartRowsByPlak.length === 0 && (
+              <tr><td colSpan={6} style={{ textAlign: 'center', opacity: 0.5, padding: 'var(--space-4)' }}>No items yet — add categories from New Order → Order Details.</td></tr>
             )}
           </tbody>
         </table>
