@@ -1996,3 +1996,105 @@ export function parseFormAnugerahExcel(arrayBuffer) {
     kivNotes,
   };
 }
+
+// A section imported into KLAS_MATRIX (from either excelImport.js or
+// docxImport.js) rarely carries real Reference Sample text for TAHUN
+// (slot '3') — the source document's own "TAHUN 1 UTHMAN"-style text
+// lives in the parsed class data, not in a literal Reference Sample line.
+// Deriving slot '3' from the section's own first class — never overwriting
+// real text the source DID supply — turns the live preview from grey
+// placeholder text into an actual worked example.
+//
+// The reference-sample layout matches what these order files' own paper
+// sample boxes actually use, in this order:
+//   TAJUK BESAR (0, + optional 2nd line 0b)
+//   YEAR (1)          — only when the file wrote a standalone year/SESI
+//                       line right under the title (excelImport.js's
+//                       readRefLinesInBand pulls it out); otherwise hidden
+//   ACARA (2)         — the award name
+//   SUBJEK/POSITION (2b) — ONLY when the file's own sample spelled it out
+//                       on its own line (a 4-line MP THP 1/2 box); never
+//                       synthesized from the section's subjects, and
+//                       hidden outright when absent so the teacher doesn't
+//                       have to ✕ off an empty ( SUBJEK/POSITION ) row
+//   TAHUN example (3) — derived from the section's own first class when
+//                       the sample didn't spell one out
+// Every empty slot except TAJUK BESAR is hidden (not just left blank) so
+// a dozen+ imported sections don't each need the teacher to clear them by
+// hand; a hidden slot also drops out of required-line validation (see
+// computeBlocks.js), which is what we want for an import that genuinely
+// had no ACARA/TAHUN to read.
+export function deriveKlasMatrixSectionLines(section) {
+  const lines = { ...section.lines };
+  const firstClass = section.classes[0];
+  // A combined TOKOH section (excelImport.js's parseTokohSheet): every
+  // "class" here is an award name, not a per-plaque TAHUN/Nama Kelas, so
+  // there's no worked TAHUN example to derive — the reference sample is
+  // just TAJUK BESAR + ACARA (2 rows). Deriving slot '3' from the first
+  // award would wrongly add a third, editable row echoing one honour.
+  if (firstClass && !lines['3'] && !section.positionFromNamaKelas) {
+    const tahunText = [firstClass.tahunFrom, firstClass.namaKelas].filter(Boolean).join(' ').trim();
+    // Not when it just repeats the award-name line (a TOKOH-style section
+    // where the honour title IS the position, not a per-plaque class) —
+    // that would show the same text twice.
+    if (tahunText && tahunText !== (lines['2'] || '').trim()) lines['3'] = tahunText;
+  }
+  const hidden = ['1', '2', '2b', '3'].filter((slot) => !lines[slot]);
+  if (hidden.length) lines.hiddenLines = hidden.join(',');
+  // TAJUK BESAR (slot '0') always leads, filled or not — it's never
+  // hidden (see `hidden` above, which never includes it either), so an
+  // import that happened to leave it blank while deriving some LATER slot
+  // (e.g. slot '3' above) must not let this reorder push it behind that
+  // slot on a draggableReferenceSample category (PPKI, MP THP 1/1 (Kalau
+  // ada kelas)) — a teacher would see the derived line first and an empty,
+  // easy-to-miss TAJUK BESAR pushed to the back.
+  lines.refOrder = ['0', '0b', '1', '2', '2b', '3'].filter((slot) => slot === '0' || lines[slot]).join(',');
+  return lines;
+}
+
+// Turns one KLAS_MATRIX-shaped section (this file's own { classes, lines,
+// jenisPlak, sourceSheet, skipLineDerivation, positionFromNamaKelas,
+// namaKelasLabel, remarkNote }) into ONE block's own rowsByBlock/
+// columnsByBlock/matrixValues/lineValues/plakRows entries — mutates the
+// maps passed in `dest`, and `ids` (nextRowId/nextColumnId/nextPlakRowId)
+// in place so the caller's own counters stay in sync. Shared by
+// AppState.jsx's importFormAnugerahExcelInto (both the KLAS_MATRIX
+// multi-section import and the dynamicMatrix branch of the `categorized`
+// handling) and src/utils/addOnDiff.js (calls it into a scratch `dest` to
+// get the exact same subject-ordering/column-shape/plak-matching a real
+// import produces, when building the "freshly parsed" side of a
+// matrix-category diff for the Tambahan Excel-upload feature). Returns the
+// matched Jenis Plak (or '' if none/unmatched) so each caller can craft its
+// own "couldn't match" warning in whatever phrasing fits its context.
+export function populateMatrixSectionBlock(section, key, defaultNames, ids, dest, plakCatalog) {
+  const { newLineValues, newMatrixValues, newRowsByBlock, newColumnsByBlock, newPlakRows } = dest;
+  const presentNames = new Set();
+  section.classes.forEach((cls) => cls.subjects.forEach(({ name }) => presentNames.add(name)));
+  const subjectNameOrder = [
+    ...defaultNames.filter((name) => presentNames.has(name)),
+    ...[...presentNames].filter((name) => !defaultNames.includes(name)),
+  ];
+  const subjectRows = subjectNameOrder.map((name) => ({ id: ids.nextRowId++, desc: name, custom: true }));
+  const rowIdByName = new Map(subjectRows.map((r) => [r.desc, r.id]));
+  const classColumns = section.classes.map((cls) => ({
+    id: ids.nextColumnId++, tahunFrom: cls.tahunFrom, tahunTo: cls.tahunTo, namaKelas: cls.namaKelas,
+    tingkatan: cls.tingkatan || '', tingkatanMode: !!cls.tingkatanMode,
+    jawatan: cls.jawatan || '', kelasName: cls.kelasName || '', eline2: cls.eline2 || '',
+  }));
+  section.classes.forEach((cls, classIdx) => {
+    const colId = classColumns[classIdx].id;
+    cls.subjects.forEach(({ name, qty }) => {
+      newMatrixValues[`${key}::${rowIdByName.get(name)}::${colId}`] = String(qty);
+    });
+  });
+  const sectionLines = section.skipLineDerivation ? section.lines : deriveKlasMatrixSectionLines(section);
+  Object.entries(sectionLines).forEach(([slot, val]) => { newLineValues[`${key}::${slot}`] = val; });
+  if (section.positionFromNamaKelas) newLineValues[`${key}::posFromKelas`] = '1';
+  if (section.namaKelasLabel) newLineValues[`${key}::namaKelasLabel`] = section.namaKelasLabel;
+  if (section.sourceSheet) newLineValues[`${key}::sourceSheet`] = section.sourceSheet;
+  newRowsByBlock[key] = subjectRows;
+  newColumnsByBlock[key] = classColumns;
+  const matchedPlak = matchJenisPlakPath(section.jenisPlak, plakCatalog);
+  newPlakRows[key] = [{ id: ids.nextPlakRowId++, jenisPlak: matchedPlak }];
+  return matchedPlak;
+}

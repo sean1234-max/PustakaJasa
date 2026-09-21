@@ -8,7 +8,9 @@ import { buildInitialRowsByBlock, buildInitialColumnsByBlock, buildInitialPlakRo
 import {
   computeBlocks, snapshotDetail, noopUpdaters, buildDraftFromOrder,
 } from '../utils/computeBlocks';
-import { parseFormAnugerahExcel, matchJenisPlakPath } from '../utils/excelImport';
+import {
+  parseFormAnugerahExcel, matchJenisPlakPath, deriveKlasMatrixSectionLines, populateMatrixSectionBlock,
+} from '../utils/excelImport';
 import { parseWordingDocx } from '../utils/docxImport';
 import { checkColumnTotals, checkExpansionTotals, checkLevelBreakdownMatch, checkAliranKelasTotals } from '../utils/importChecks';
 import { buildCategoryCartItems } from './categoryCartItems';
@@ -59,109 +61,6 @@ function describeOrderWriteError(err, verb = 'save') {
     return `You're not allowed to ${verb} this order right now — it may have moved to a later stage, or your session changed. Please refresh and try again.`;
   }
   return `Could not ${verb} this order: ${m || 'unknown error'}. Please try again.`;
-}
-
-// A section imported into KLAS_MATRIX (from either excelImport.js or
-// docxImport.js) rarely carries real Reference Sample text for TAHUN
-// (slot '3') — the source document's own "TAHUN 1 UTHMAN"-style text
-// lives in the parsed class data, not in a literal Reference Sample line.
-// Deriving slot '3' from the section's own first class — never overwriting
-// real text the source DID supply — turns the live preview from grey
-// placeholder text into an actual worked example.
-//
-// The reference-sample layout matches what these order files' own paper
-// sample boxes actually use, in this order:
-//   TAJUK BESAR (0, + optional 2nd line 0b)
-//   YEAR (1)          — only when the file wrote a standalone year/SESI
-//                       line right under the title (excelImport.js's
-//                       readRefLinesInBand pulls it out); otherwise hidden
-//   ACARA (2)         — the award name
-//   SUBJEK/POSITION (2b) — ONLY when the file's own sample spelled it out
-//                       on its own line (a 4-line MP THP 1/2 box); never
-//                       synthesized from the section's subjects, and
-//                       hidden outright when absent so the teacher doesn't
-//                       have to ✕ off an empty ( SUBJEK/POSITION ) row
-//   TAHUN example (3) — derived from the section's own first class when
-//                       the sample didn't spell one out
-// Every empty slot except TAJUK BESAR is hidden (not just left blank) so
-// a dozen+ imported sections don't each need the teacher to clear them by
-// hand; a hidden slot also drops out of required-line validation (see
-// computeBlocks.js), which is what we want for an import that genuinely
-// had no ACARA/TAHUN to read.
-function deriveKlasMatrixSectionLines(section) {
-  const lines = { ...section.lines };
-  const firstClass = section.classes[0];
-  // A combined TOKOH section (excelImport.js's parseTokohSheet): every
-  // "class" here is an award name, not a per-plaque TAHUN/Nama Kelas, so
-  // there's no worked TAHUN example to derive — the reference sample is
-  // just TAJUK BESAR + ACARA (2 rows). Deriving slot '3' from the first
-  // award would wrongly add a third, editable row echoing one honour.
-  if (firstClass && !lines['3'] && !section.positionFromNamaKelas) {
-    const tahunText = [firstClass.tahunFrom, firstClass.namaKelas].filter(Boolean).join(' ').trim();
-    // Not when it just repeats the award-name line (a TOKOH-style section
-    // where the honour title IS the position, not a per-plaque class) —
-    // that would show the same text twice.
-    if (tahunText && tahunText !== (lines['2'] || '').trim()) lines['3'] = tahunText;
-  }
-  const hidden = ['1', '2', '2b', '3'].filter((slot) => !lines[slot]);
-  if (hidden.length) lines.hiddenLines = hidden.join(',');
-  // TAJUK BESAR (slot '0') always leads, filled or not — it's never
-  // hidden (see `hidden` above, which never includes it either), so an
-  // import that happened to leave it blank while deriving some LATER slot
-  // (e.g. slot '3' above) must not let this reorder push it behind that
-  // slot on a draggableReferenceSample category (PPKI, MP THP 1/1 (Kalau
-  // ada kelas)) — a teacher would see the derived line first and an empty,
-  // easy-to-miss TAJUK BESAR pushed to the back.
-  lines.refOrder = ['0', '0b', '1', '2', '2b', '3'].filter((slot) => slot === '0' || lines[slot]).join(',');
-  return lines;
-}
-
-// Turns one KLAS_MATRIX-shaped section (excelImport.js's { classes, lines,
-// jenisPlak, sourceSheet, skipLineDerivation, positionFromNamaKelas,
-// namaKelasLabel, remarkNote }) into ONE block's own rowsByBlock/
-// columnsByBlock/matrixValues/lineValues/plakRows entries — mutates the
-// maps passed in `dest`, and `ids` (nextRowId/nextColumnId/nextPlakRowId)
-// in place so the caller's own counters stay in sync. Shared by the
-// KLAS_MATRIX multi-section import below (many independent sections
-// stacked into many blocks of the ONE 'KLAS_MATRIX' category) and the
-// dynamicMatrix branch of the `parsed.categorized` handling further down
-// (a renamed/duplicated PPKI/MP-THP-shaped sheet — excelImport.js's
-// dynamicCategoryKey — always exactly one section landing in that
-// category's own block 0) — same per-section shape either way, just
-// written under a different key. Returns the matched Jenis Plak (or '' if
-// none/unmatched) so each caller can craft its own "couldn't match" warning
-// in whatever phrasing fits its context.
-function populateMatrixSectionBlock(section, key, defaultNames, ids, dest, plakCatalog) {
-  const { newLineValues, newMatrixValues, newRowsByBlock, newColumnsByBlock, newPlakRows } = dest;
-  const presentNames = new Set();
-  section.classes.forEach((cls) => cls.subjects.forEach(({ name }) => presentNames.add(name)));
-  const subjectNameOrder = [
-    ...defaultNames.filter((name) => presentNames.has(name)),
-    ...[...presentNames].filter((name) => !defaultNames.includes(name)),
-  ];
-  const subjectRows = subjectNameOrder.map((name) => ({ id: ids.nextRowId++, desc: name, custom: true }));
-  const rowIdByName = new Map(subjectRows.map((r) => [r.desc, r.id]));
-  const classColumns = section.classes.map((cls) => ({
-    id: ids.nextColumnId++, tahunFrom: cls.tahunFrom, tahunTo: cls.tahunTo, namaKelas: cls.namaKelas,
-    tingkatan: cls.tingkatan || '', tingkatanMode: !!cls.tingkatanMode,
-    jawatan: cls.jawatan || '', kelasName: cls.kelasName || '', eline2: cls.eline2 || '',
-  }));
-  section.classes.forEach((cls, classIdx) => {
-    const colId = classColumns[classIdx].id;
-    cls.subjects.forEach(({ name, qty }) => {
-      newMatrixValues[`${key}::${rowIdByName.get(name)}::${colId}`] = String(qty);
-    });
-  });
-  const sectionLines = section.skipLineDerivation ? section.lines : deriveKlasMatrixSectionLines(section);
-  Object.entries(sectionLines).forEach(([slot, val]) => { newLineValues[`${key}::${slot}`] = val; });
-  if (section.positionFromNamaKelas) newLineValues[`${key}::posFromKelas`] = '1';
-  if (section.namaKelasLabel) newLineValues[`${key}::namaKelasLabel`] = section.namaKelasLabel;
-  if (section.sourceSheet) newLineValues[`${key}::sourceSheet`] = section.sourceSheet;
-  newRowsByBlock[key] = subjectRows;
-  newColumnsByBlock[key] = classColumns;
-  const matchedPlak = matchJenisPlakPath(section.jenisPlak, plakCatalog);
-  newPlakRows[key] = [{ id: ids.nextPlakRowId++, jenisPlak: matchedPlak }];
-  return matchedPlak;
 }
 
 // Finds a catalog node by id anywhere in the tree, along with the sibling
@@ -339,6 +238,24 @@ function initialState() {
     amendVisibleBlocksByCategory: {},
   };
 }
+
+// Draft-namespace field mapping for importFormAnugerahExcelInto's New Order
+// call site — every generic name maps to itself. AddOn.jsx calls
+// importFormAnugerahExcelInto directly with its OWN remapped `fields` (its
+// existing DRAFT_FIELDS, src/pages/AddOn.jsx, plus `category:
+// 'addOnCategory'`) for the Tambahan diff-upload feature — `remark`/
+// `importFilePath`/`importFileName` are simply left undefined there (no
+// AddOn-side equivalent; see src/utils/addOnDiff.js), which no-ops those
+// two blocks in importFormAnugerahExcelInto rather than building new
+// addOnRemark/addOnImportFilePath plumbing nothing else in the AddOn flow
+// reads. Module-level (not a component-local const) so it's a stable
+// reference for the importFormAnugerahExcel wrapper's useCallback deps.
+const NEW_ORDER_IMPORT_FIELDS = {
+  lineValues: 'lineValues', matrixValues: 'matrixValues', rowsByBlock: 'rowsByBlock', columnsByBlock: 'columnsByBlock', plakRows: 'plakRows',
+  nextRowId: 'nextRowId', nextColumnId: 'nextColumnId', nextPlakRowId: 'nextPlakRowId',
+  visibleBlocksByCategory: 'visibleBlocksByCategory', category: 'category',
+  remark: 'remark', importFilePath: 'importFilePath', importFileName: 'importFileName',
+};
 
 export function AppStateProvider({ children }) {
   const [state, setState] = useState(initialState);
@@ -688,7 +605,26 @@ export function AppStateProvider({ children }) {
   // Add to Cart themselves, same as manual entry, so a parsing mistake
   // never silently reaches an order. Returns { ok, message } for the caller
   // to show; never throws.
-  const importFormAnugerahExcel = useCallback(async (file) => {
+  // `fields` maps this function's generic field names onto the caller's own
+  // state-key namespace (see NEW_ORDER_IMPORT_FIELDS above / AddOn.jsx's
+  // DRAFT_FIELDS) — the entire body below is pure field-name bookkeeping,
+  // parameterized so the SAME import/parsing logic (subject ordering, plak
+  // matching, level-breakdown storage, cross-check warnings) serves both
+  // the New Order flow and the AddOn Tambahan-upload flow without a second,
+  // drift-prone implementation.
+  //
+  // `applyFilter(catKey, key, maps)`, if provided, is called once per
+  // category right after its rows/matrix cells are built into
+  // newRowsByBlock/newMatrixValues/newPlakRows but BEFORE they're merged
+  // into `next` — it may mutate those maps in place. Used by the AddOn
+  // diff-confirmation "Apply" step (src/utils/addOnDiff.js) to keep only
+  // the CONFIRMED new rows / confirmed quantity deltas instead of writing
+  // the full re-parsed file (which would double-count content already in
+  // the order). The New Order flow passes no filter (full import, as
+  // today). Only wired into the `parsed.categorized` branch below — the
+  // legacy KLAS_MATRIX branch is inactive for the current catalog (see the
+  // klasMatrixActive check) and isn't a realistic AddOn target.
+  const importFormAnugerahExcelInto = useCallback(async (file, fields, { applyFilter } = {}) => {
     let parsed;
     try {
       const buffer = await file.arrayBuffer();
@@ -746,14 +682,14 @@ export function AppStateProvider({ children }) {
         warnings.push({ type: 'truncated', text: `This file has ${parsed.klasMatrix.sections.length} sections, but only the first ${maxSections} could be imported — please upload the rest separately.` });
       }
       const defaultNames = getCategorySubjects(cat, next.schoolLanguage);
-      let nextRowId = next.nextRowId;
-      let nextColumnId = next.nextColumnId;
-      let nextPlakRowId = next.nextPlakRowId;
-      const newLineValues = { ...next.lineValues };
-      const newMatrixValues = { ...next.matrixValues };
-      const newRowsByBlock = { ...next.rowsByBlock };
-      const newColumnsByBlock = { ...next.columnsByBlock };
-      const newPlakRows = { ...next.plakRows };
+      let nextRowId = next[fields.nextRowId];
+      let nextColumnId = next[fields.nextColumnId];
+      let nextPlakRowId = next[fields.nextPlakRowId];
+      const newLineValues = { ...next[fields.lineValues] };
+      const newMatrixValues = { ...next[fields.matrixValues] };
+      const newRowsByBlock = { ...next[fields.rowsByBlock] };
+      const newColumnsByBlock = { ...next[fields.columnsByBlock] };
+      const newPlakRows = { ...next[fields.plakRows] };
       // Clear every pre-allocated block's own draft first — a fresh import
       // is meant to fully replace whatever was there, not layer on top,
       // including any block this file's sections don't reach.
@@ -817,10 +753,10 @@ export function AppStateProvider({ children }) {
 
       next = {
         ...next,
-        lineValues: newLineValues, matrixValues: newMatrixValues,
-        rowsByBlock: newRowsByBlock, columnsByBlock: newColumnsByBlock, plakRows: newPlakRows,
-        visibleBlocksByCategory: { ...next.visibleBlocksByCategory, [catKey]: maxSections },
-        nextRowId, nextColumnId, nextPlakRowId,
+        [fields.lineValues]: newLineValues, [fields.matrixValues]: newMatrixValues,
+        [fields.rowsByBlock]: newRowsByBlock, [fields.columnsByBlock]: newColumnsByBlock, [fields.plakRows]: newPlakRows,
+        [fields.visibleBlocksByCategory]: { ...next[fields.visibleBlocksByCategory], [catKey]: maxSections },
+        [fields.nextRowId]: nextRowId, [fields.nextColumnId]: nextColumnId, [fields.nextPlakRowId]: nextPlakRowId,
       };
       landOn = catKey;
       messages.push(`Mata Pelajaran/Klas (Matrix): ${maxSections} section(s)`);
@@ -906,10 +842,10 @@ export function AppStateProvider({ children }) {
         }
         const section = sections[0];
         const key = `${catKey}::0`;
-        const newLineValues = { ...next.lineValues };
-        const newMatrixValues = { ...next.matrixValues };
-        const newRowsByBlock = { ...next.rowsByBlock };
-        let nextRowId = next.nextRowId;
+        const newLineValues = { ...next[fields.lineValues] };
+        const newMatrixValues = { ...next[fields.matrixValues] };
+        const newRowsByBlock = { ...next[fields.rowsByBlock] };
+        let nextRowId = next[fields.nextRowId];
         // Subject name -> the `custom-<id>` row it became (subjectsFromImport
         // branch below) — used to resolve a level-breakdown mismatch
         // question's "betulkan" fix to the exact matrix cell.
@@ -931,11 +867,11 @@ export function AppStateProvider({ children }) {
         // the KLAS_MATRIX loop above also uses) and returned early, rather
         // than threaded through the generic chain below.
         if (cat.mode === 'dynamicMatrix') {
-          const newColumnsByBlockDyn = { ...next.columnsByBlock };
+          const newColumnsByBlockDyn = { ...next[fields.columnsByBlock] };
           Object.keys(newColumnsByBlockDyn).forEach((k) => { if (k.startsWith(`${key}::`)) delete newColumnsByBlockDyn[k]; });
-          const newPlakRowsDyn = { ...next.plakRows };
+          const newPlakRowsDyn = { ...next[fields.plakRows] };
           const defaultNamesDyn = getCategorySubjects(cat, next.schoolLanguage);
-          const ids = { nextRowId, nextColumnId: next.nextColumnId, nextPlakRowId: next.nextPlakRowId };
+          const ids = { nextRowId, nextColumnId: next[fields.nextColumnId], nextPlakRowId: next[fields.nextPlakRowId] };
           const matchedPlak = populateMatrixSectionBlock(
             section, key, defaultNamesDyn, ids,
             { newLineValues, newMatrixValues, newRowsByBlock, newColumnsByBlock: newColumnsByBlockDyn, newPlakRows: newPlakRowsDyn },
@@ -945,12 +881,13 @@ export function AppStateProvider({ children }) {
             warnings.push({ type: 'plakMismatch', blockIdx: 0, catKey, text: `${cat.label}: couldn't match Jenis Plak "${section.jenisPlak}" to anything in the catalog — please choose it manually.` });
           }
           if (section.remarkNote) remarkNotes.push(section.remarkNote);
+          if (applyFilter) applyFilter(catKey, key, { newLineValues, newMatrixValues, newRowsByBlock, newPlakRows: newPlakRowsDyn });
           next = {
             ...next,
-            lineValues: newLineValues, matrixValues: newMatrixValues, rowsByBlock: newRowsByBlock,
-            columnsByBlock: newColumnsByBlockDyn, plakRows: newPlakRowsDyn,
-            nextRowId: ids.nextRowId, nextColumnId: ids.nextColumnId, nextPlakRowId: ids.nextPlakRowId,
-            visibleBlocksByCategory: { ...next.visibleBlocksByCategory, [catKey]: 1 },
+            [fields.lineValues]: newLineValues, [fields.matrixValues]: newMatrixValues, [fields.rowsByBlock]: newRowsByBlock,
+            [fields.columnsByBlock]: newColumnsByBlockDyn, [fields.plakRows]: newPlakRowsDyn,
+            [fields.nextRowId]: ids.nextRowId, [fields.nextColumnId]: ids.nextColumnId, [fields.nextPlakRowId]: ids.nextPlakRowId,
+            [fields.visibleBlocksByCategory]: { ...next[fields.visibleBlocksByCategory], [catKey]: 1 },
           };
           if (!landOn) landOn = catKey;
           messages.push(`${cat.label}: imported`);
@@ -1132,12 +1069,12 @@ export function AppStateProvider({ children }) {
         const sectionLines = section.skipLineDerivation ? section.lines : deriveKlasMatrixSectionLines(section);
         Object.entries(sectionLines).forEach(([slot, val]) => { newLineValues[`${key}::${slot}`] = val; });
 
-        let nextPlakRowId = next.nextPlakRowId;
+        let nextPlakRowId = next[fields.nextPlakRowId];
         let newPlakRows;
         if (section.isSimpleTahunList || section.isTokohList || section.isSelempangList) {
           // LONJAKAN / TOKOH — Jenis Plak lives per row (plakPerRow); SELEMPANG
           // has one implicit shared code. Either way, no block-level plak row.
-          newPlakRows = { ...next.plakRows, [key]: [] };
+          newPlakRows = { ...next[fields.plakRows], [key]: [] };
         } else if (section.isAliran || section.isAliranKelas) {
           // One plak row per JENIS PLAK footer entry, each carrying its own
           // position range (posDari/posHingga). QTY per row is derived later
@@ -1179,23 +1116,24 @@ export function AppStateProvider({ children }) {
             aliranRows.push({ id: nextPlakRowId++, jenisPlak: '', posDari: null, posHingga: null, qty: null });
           }
           if (aliranRows.length === 0) aliranRows.push({ id: nextPlakRowId++, jenisPlak: '', posDari: 1, posHingga: null, qty: null });
-          newPlakRows = { ...next.plakRows, [key]: aliranRows };
+          newPlakRows = { ...next[fields.plakRows], [key]: aliranRows };
         } else {
           // Un-matched → blank, picked here; flagged by buildCategoryCartItems.
           const matchedPlak = matchJenisPlakPath(section.jenisPlak, next.plakCatalog);
-          newPlakRows = { ...next.plakRows, [key]: [{ id: nextPlakRowId++, jenisPlak: matchedPlak }] };
+          newPlakRows = { ...next[fields.plakRows], [key]: [{ id: nextPlakRowId++, jenisPlak: matchedPlak }] };
         }
+        if (applyFilter) applyFilter(catKey, key, { newLineValues, newMatrixValues, newRowsByBlock, newPlakRows });
         next = {
           ...next,
-          lineValues: newLineValues, matrixValues: newMatrixValues, rowsByBlock: newRowsByBlock, plakRows: newPlakRows,
-          nextPlakRowId, nextRowId,
+          [fields.lineValues]: newLineValues, [fields.matrixValues]: newMatrixValues, [fields.rowsByBlock]: newRowsByBlock, [fields.plakRows]: newPlakRows,
+          [fields.nextPlakRowId]: nextPlakRowId, [fields.nextRowId]: nextRowId,
           // Every category here is single-block, so nothing else ever needs
           // to read visibleBlocksByCategory for a FIXED key (a static
           // ACTIVE_CATEGORIES tab is always shown regardless). A dynamic
           // key has no such standing tab — this is the only signal
           // NewOrderStep2.jsx/AddOn.jsx have that it now exists in the
           // draft, so it's set only for those.
-          ...(isDynamicCategoryKey(catKey) ? { visibleBlocksByCategory: { ...next.visibleBlocksByCategory, [catKey]: 1 } } : {}),
+          ...(isDynamicCategoryKey(catKey) ? { [fields.visibleBlocksByCategory]: { ...next[fields.visibleBlocksByCategory], [catKey]: 1 } } : {}),
         };
         if (!landOn) landOn = catKey;
         messages.push(`${cat.label}: imported`);
@@ -1221,28 +1159,42 @@ export function AppStateProvider({ children }) {
     if (parsed.kivNotes?.length) {
       parsed.kivNotes.forEach((n) => remarkNotes.push(`${n.desc}${n.qty ? ` — ${n.qty} ORANG` : ''} — KIV (belum ada nama, jangan cetak buat masa ini)`));
     }
-    if (remarkNotes.length > 0) {
-      next = { ...next, remark: next.remark ? `${next.remark}\n${remarkNotes.join('\n')}` : remarkNotes.join('\n') };
+    // No AddOn-side equivalent (fields.remark undefined there) — AddOn
+    // uploads simply don't surface KIV/PERASMI notes anywhere, rather than
+    // building new addOnRemark plumbing nothing else in that flow reads.
+    if (fields.remark && remarkNotes.length > 0) {
+      next = { ...next, [fields.remark]: next[fields.remark] ? `${next[fields.remark]}\n${remarkNotes.join('\n')}` : remarkNotes.join('\n') };
       messages.push(`${remarkNotes.length} note(s) added to Remark`);
     }
 
-    setState({ ...next, category: landOn || next.category });
+    setState({ ...next, [fields.category]: landOn || next[fields.category] });
 
     // Keep the raw upload as a backup on the order — Production / Store
     // Admin / Admin download it to cross-check the order details (0055).
     // Fire-and-forget: a failure here just means no backup file, the import
     // already succeeded. Replaces a file from an earlier import in the same
-    // draft.
-    const prevImportPath = st.importFilePath;
-    uploadOrderImportFile(file).then((res) => {
-      if (res) {
-        patch({ importFilePath: res.path, importFileName: res.name });
-        if (prevImportPath && prevImportPath !== res.path) removeOrderImportFile(prevImportPath);
-      }
-    });
+    // draft. No AddOn-side equivalent (fields.importFilePath undefined
+    // there) — skipped entirely for that flow.
+    if (fields.importFilePath) {
+      const prevImportPath = st[fields.importFilePath];
+      uploadOrderImportFile(file).then((res) => {
+        if (res) {
+          patch({ [fields.importFilePath]: res.path, [fields.importFileName]: res.name });
+          if (prevImportPath && prevImportPath !== res.path) removeOrderImportFile(prevImportPath);
+        }
+      });
+    }
 
     return { ok: true, message: `Imported — ${messages.join('; ')}. Please review carefully before adding to cart.`, warnings };
   }, [patch]);
+
+  // Thin, zero-behavior-change wrapper for the existing New Order call site
+  // (NewOrderStep2.jsx) — always imports into the New Order draft namespace,
+  // full import, no diff filter.
+  const importFormAnugerahExcel = useCallback(
+    (file) => importFormAnugerahExcelInto(file, NEW_ORDER_IMPORT_FIELDS),
+    [importFormAnugerahExcelInto],
+  );
 
   const removeFromCart = useCallback((id) => {
     patch((st) => ({ cart: st.cart.filter((c) => c.id !== id) }));
@@ -2255,7 +2207,7 @@ export function AppStateProvider({ children }) {
   const value = {
     state, patch, today: TODAY, login, logout,
     resetCurrentCategory, startNewOrder, addToCart, addAllToCart, removeFromCart, editCartCategory, submitOrder, reorderOrder,
-    importFormAnugerahExcel,
+    importFormAnugerahExcel, importFormAnugerahExcelInto,
     openAmend, updateAmend,
     openAddOn, submitPendingAddOn, cancelPendingAddOn, rejectAddOn, approveAddOn, approveOrder, setInvoiceId, approveAndSetInvoiceId,
     retryUrgentSheetSync,
