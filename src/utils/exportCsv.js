@@ -79,11 +79,16 @@ function buildMatrixRows(item, cat, header, year, positionPart1, schoolLanguage)
 
   const emitRow = (subject, column, qty) => {
     if (qty <= 0) return;
-    const position = positionPart1 ? `${positionPart1}\n${subject}` : subject;
+    // MP THP 1/2 (`tahunSubjekLine3`): the sample's line 3 is "TAHUN 1
+    // (BAHASA MELAYU)", so the subject rides on event_line_1 with the Tahun
+    // and position is only the ACARA line. Other matrix categories keep the
+    // subject on position and the bare level on event_line_1.
+    const position = cat.tahunSubjekLine3 ? positionPart1 : (positionPart1 ? `${positionPart1}\n${subject}` : subject);
     // A synthetic single "KUANTITI"/"KEDUDUKAN" column (PBD — the row IS the
     // Tahun, there is no real class-level axis) is a stand-in, never an
     // engraved line — same filter buildPbdMatrixRows applies to the subject.
-    const col = ['KUANTITI', 'KEDUDUKAN'].includes(String(column).trim().toUpperCase()) ? '' : column;
+    const bareCol = ['KUANTITI', 'KEDUDUKAN'].includes(String(column).trim().toUpperCase()) ? '' : column;
+    const col = cat.tahunSubjekLine3 ? `${bareCol} (${subject})` : bareCol;
     const row = [header, year, position, col, ''];
     for (let i = 0; i < qty; i++) rows.push(row);
   };

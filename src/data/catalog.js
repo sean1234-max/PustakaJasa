@@ -293,6 +293,9 @@ export const CATEGORIES = [
     positionFieldsRedText: true,
     draggableReferenceSample: true,
     subjectsFromImport: SUBJECTS_FROM_IMPORT,
+    // CSV event_line_1 is "TAHUN N (SUBJEK)" (matching the sample's line 3) and
+    // position is just the ACARA line — see exportCsv.js's buildMatrixRows.
+    tahunSubjekLine3: true,
   },
   {
     // Its own separate category from MP1 above, even though it's the same
@@ -310,6 +313,9 @@ export const CATEGORIES = [
     positionFieldsRedText: true,
     draggableReferenceSample: true,
     subjectsFromImport: SUBJECTS_FROM_IMPORT,
+    // CSV event_line_1 is "TAHUN N (SUBJEK)" (matching the sample's line 3) and
+    // position is just the ACARA line — see exportCsv.js's buildMatrixRows.
+    tahunSubjekLine3: true,
     // A per-Tahun Nama Kelas + Moral Kelas breakdown instead of typing each
     // Tahun's total straight in (see catalog.js's PPKI entry for the same
     // mechanism, computeBlocks.js's levelBreakdown).
@@ -328,6 +334,9 @@ export const CATEGORIES = [
     positionFieldsRedText: true,
     draggableReferenceSample: true,
     subjectsFromImport: SUBJECTS_FROM_IMPORT,
+    // CSV event_line_1 is "TAHUN N (SUBJEK)" (matching the sample's line 3) and
+    // position is just the ACARA line — see exportCsv.js's buildMatrixRows.
+    tahunSubjekLine3: true,
   },
   {
     // Its own separate category from MP2 above, same reasoning as MP1_KELAS
@@ -344,6 +353,9 @@ export const CATEGORIES = [
     positionFieldsRedText: true,
     draggableReferenceSample: true,
     subjectsFromImport: SUBJECTS_FROM_IMPORT,
+    // CSV event_line_1 is "TAHUN N (SUBJEK)" (matching the sample's line 3) and
+    // position is just the ACARA line — see exportCsv.js's buildMatrixRows.
+    tahunSubjekLine3: true,
     hasLevelBreakdown: true,
   },
   {
