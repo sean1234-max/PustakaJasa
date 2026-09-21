@@ -804,20 +804,31 @@ input.catalog-admin-code { padding: 6px 8px; }
      3 levels, ALIRAN's per-Tahun class lists times 6) can still run past
      one page even at this size — there's a real floor below which the
      text stops being legible on paper. */
-  .print-only { font-size: 10px; }
-  .print-only .card-kicker { font-size: 9px; margin-top: 8px; }
+  .print-only { font-size: 12px; }
+  .print-only .card-kicker { font-size: 11px; margin-top: 8px; }
   .print-only .table { margin: 4px 0 8px; }
-  .print-only .table th, .print-only .table td { padding: 2px 5px; font-size: 9px; }
+  .print-only .table th, .print-only .table td { padding: 2px 5px; font-size: 11px; }
   .print-only .field { margin-bottom: 4px; }
-  .print-only .field label { font-size: 9px; margin-bottom: 1px; }
+  .print-only .field label { font-size: 11px; margin-bottom: 1px; }
   .print-only .input, .print-only input, .print-only select {
-    padding: 2px 5px; font-size: 9px; min-height: 0;
+    padding: 2px 5px; font-size: 11px; min-height: 0;
   }
   .print-only .form-grid-2 { gap: 4px; margin-bottom: 4px; }
   .print-only .ref-sample-grid { gap: 8px; margin-bottom: 8px; }
   .print-only .ref-sample-lines { gap: 4px; min-width: 0; }
   .print-only .ref-sample-live-preview { min-height: 60px; padding: 6px; gap: 1px; }
-  .print-only .hint-text { font-size: 8px; margin: 1px 0 4px; }
+  .print-only .hint-text { font-size: 10px; margin: 1px 0 4px; }
+
+  /* Bigger, easier-to-read type for just the Order Summary half of the
+     printout (order metadata + the price table) — see
+     SalesOrderSummary.jsx / OrderDetails.jsx's .print-summary-section.
+     The Order Details half (every category's full block) keeps the
+     compact sizing above — that's load-bearing for fitting a large
+     category (PBD's Nama Kelas breakdown especially) on one printed page,
+     a constraint the short Summary section doesn't have. */
+  .print-only .print-summary-section { font-size: 25px; }
+  .print-only .print-summary-section .card-kicker { font-size: 20px; }
+  .print-only .print-summary-section .table th, .print-only .print-summary-section .table td { font-size: 20px; }
 
   /* Every reviewed matrix/list cell is a <input type="number"> even when
      read-only (shared with the editable screen view) — its up/down spinner

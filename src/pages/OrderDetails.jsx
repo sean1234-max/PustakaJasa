@@ -203,23 +203,27 @@ export default function OrderDetails() {
             Order" button above. Same structure as SalesOrderSummary's
             print-only section. */}
         <div className="print-only">
-          <div className="form-grid-2" style={{ marginTop: 'var(--space-3)' }}>
-            <div><div className="dim">Order ID</div><div>{order.id}</div></div>
-            <div><div className="dim">Invoice Number</div><div>{order.invoiceId || '-'}</div></div>
-            {order.printedAt && <div><div className="dim">Order Printed</div><div>{formatDateTime(order.printedAt)}</div></div>}
-            {order.sekolah && <div><div className="dim">Sekolah</div><div>{order.sekolah}</div></div>}
-            {order.picName && <div><div className="dim">PIC Name</div><div>{order.picName}{order.phone ? ` / ${order.phone}` : ''}</div></div>}
-            {order.ketuaPanitia && <div><div className="dim">Ketua Panitia</div><div>{order.ketuaPanitia}</div></div>}
-            {order.terms && <div><div className="dim">Terms</div><div>{order.terms}</div></div>}
-            {order.shipmentDate && <div><div className="dim">Shipment Date</div><div>{formatDate(new Date(order.shipmentDate))}</div></div>}
-            {order.functionDate && <div><div className="dim">Function Date</div><div>{formatDate(new Date(order.functionDate))}</div></div>}
-          </div>
+          {/* Bigger, easier-to-read type just for the Summary half — see
+              SalesOrderSummary.jsx's identical .print-summary-section. */}
+          <div className="print-summary-section">
+            <div className="form-grid-2" style={{ marginTop: 'var(--space-3)' }}>
+              <div><div className="dim">Order ID</div><div>{order.id}</div></div>
+              <div><div className="dim">Invoice Number</div><div>{order.invoiceId || '-'}</div></div>
+              {order.printedAt && <div><div className="dim">Order Printed</div><div>{formatDateTime(order.printedAt)}</div></div>}
+              {order.sekolah && <div><div className="dim">Sekolah</div><div>{order.sekolah}</div></div>}
+              {order.picName && <div><div className="dim">PIC Name</div><div>{order.picName}{order.phone ? ` / ${order.phone}` : ''}</div></div>}
+              {order.ketuaPanitia && <div><div className="dim">Ketua Panitia</div><div>{order.ketuaPanitia}</div></div>}
+              {order.terms && <div><div className="dim">Terms</div><div>{order.terms}</div></div>}
+              {order.shipmentDate && <div><div className="dim">Shipment Date</div><div>{formatDate(new Date(order.shipmentDate))}</div></div>}
+              {order.functionDate && <div><div className="dim">Function Date</div><div>{formatDate(new Date(order.functionDate))}</div></div>}
+            </div>
 
-          <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Jenis Plak / Price per Unit / QTY / Harga</div>
-          <PriceTable
-            rows={priceRows} editable={false} priceDrafts={{}} setPrice={() => {}}
-            plakCatalog={state.plakCatalog} totalQty={totalQty} totalHarga={totalHarga} priceAdjusted={priceAdjusted}
-          />
+            <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Jenis Plak / Price per Unit / QTY / Harga</div>
+            <PriceTable
+              rows={priceRows} editable={false} priceDrafts={{}} setPrice={() => {}}
+              plakCatalog={state.plakCatalog} totalQty={totalQty} totalHarga={totalHarga} priceAdjusted={priceAdjusted}
+            />
+          </div>
 
           {catBlockGroups.length > 0 && (
             <div className="print-details-section">

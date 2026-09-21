@@ -169,7 +169,7 @@ describe('getOrderJenisPlakGroups — never combines different categories sharin
 
 describe('combineCsvRows — one file for every (category, Jenis Plak) group', () => {
   const order = {
-    id: 'ORD-C', invoiceId: 'DWI-1', schoolLanguage: 'SK',
+    id: 'ORD-C', invoiceId: 'DWI-1', sekolah: 'SK Seremban Jaya', schoolLanguage: 'SK',
     items: [
       {
         id: 'a', categoryKey: 'MP1', jenisPlak: 'DECO LIGHT', qty: 1,
@@ -201,8 +201,12 @@ describe('combineCsvRows — one file for every (category, Jenis Plak) group', (
     expect(combineCsvRows(undefined)).toEqual([]);
   });
 
-  it('buildCombinedCsvFilename names the file after the invoice, not any one category', () => {
-    expect(buildCombinedCsvFilename(order)).toBe('(DWI-1) - Combined.csv');
+  it('buildCombinedCsvFilename names the file after the invoice and school, not any one category', () => {
+    expect(buildCombinedCsvFilename(order)).toBe('(DWI-1) - SK Seremban Jaya.csv');
+  });
+
+  it('buildCombinedCsvFilename falls back to "Combined" when the order has no school name', () => {
+    expect(buildCombinedCsvFilename({ ...order, sekolah: '' })).toBe('(DWI-1) - Combined.csv');
   });
 });
 

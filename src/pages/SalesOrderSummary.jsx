@@ -4,6 +4,7 @@ import Nav from '../components/Nav';
 import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import PriceTable from '../components/PriceTable';
+import TokohDetailsTable from '../components/TokohDetailsTable';
 import DatePicker from '../components/DatePicker';
 import { useAppState } from '../state/useAppState';
 import { statusPillStyle, standardUnitPrice, formatDate, formatDateTime } from '../data/catalog';
@@ -88,6 +89,16 @@ export default function SalesOrderSummary() {
     if (!order) return [];
     return selempangCats.flatMap((cat) => reconstructBlocksForCategory(order, cat.key, state.plakCatalog).blocks);
   }, [order, selempangCats, state.plakCatalog]);
+  // TOKOH's own per-honoree detail (Nama Murid) — surfaced on the Summary
+  // page too (see TokohDetailsTable), not just the category's own Details
+  // tab, since the Summary page's PriceTable combines same-Jenis-Plak rows
+  // and never had a name column at all. Covers a renamed/duplicated TOKOH
+  // sheet (TOKOH (2)/(3)) too, not just the canonical TOKOH_SHEET key.
+  const tokohCats = useMemo(() => categories.filter((c) => c.tokohRowFields), [categories]);
+  const tokohBlocks = useMemo(() => {
+    if (!order) return [];
+    return tokohCats.flatMap((cat) => reconstructBlocksForCategory(order, cat.key, state.plakCatalog).blocks);
+  }, [order, tokohCats, state.plakCatalog]);
 
   // Printing needs every category's details at once, not just whichever
   // tab happens to be open on screen — the tab UI is for browsing, the
@@ -266,6 +277,7 @@ export default function SalesOrderSummary() {
                 plakCatalog={state.plakCatalog} totalQty={totalQty} totalHarga={totalHarga} priceAdjusted={priceAdjusted}
                 hideCategory combineJenisPlak
               />
+              <TokohDetailsTable tokohBlocks={tokohBlocks} />
 
               {order.pendingAddonStatus === 'pending' && isOwn && (
                 <>
@@ -375,40 +387,49 @@ export default function SalesOrderSummary() {
             full details into one printout, regardless of which tab is open
             on screen — see the "Print Order" button, only shown once approved. */}
         <div className="print-only">
-          {(order.urgent || stamp) && (
-            <div className="order-stamp-corner">
-              {order.urgent && <div className="order-stamp order-stamp-urgent">URGENT</div>}
-              {stamp && <div className="order-stamp">{stamp}</div>}
+          {/* Bigger, easier-to-read type just for the Summary half — the
+              Order Details half below (every category's full block, PBD's
+              Nama Kelas breakdown especially) keeps the smaller compact
+              print sizing (see .print-only's own font-size) since that
+              sizing is load-bearing for fitting a large category on one
+              printed page; the short Summary section has no such
+              constraint. */}
+          <div className="print-summary-section">
+            {(order.urgent || stamp) && (
+              <div className="order-stamp-corner">
+                {order.urgent && <div className="order-stamp order-stamp-urgent">URGENT</div>}
+                {stamp && <div className="order-stamp">{stamp}</div>}
+              </div>
+            )}
+            <div className="form-grid-2" style={{ marginTop: 'var(--space-3)' }}>
+              <div><div className="dim">Order ID</div><div>{order.id}</div></div>
+              <div><div className="dim">Invoice Number</div><div>{order.invoiceId || '-'}</div></div>
+              {order.printedAt && <div><div className="dim">Order Printed</div><div>{formatDateTime(order.printedAt)}</div></div>}
+              {order.sekolah && <div><div className="dim">Sekolah</div><div>{order.sekolah}</div></div>}
+              {order.sales && <div><div className="dim">Sales</div><div>{order.sales}</div></div>}
+              {order.picName && <div><div className="dim">PIC Name</div><div>{order.picName}{order.phone ? ` / ${order.phone}` : ''}</div></div>}
+              {order.ketuaPanitia && <div><div className="dim">Ketua Panitia</div><div>{order.ketuaPanitia}</div></div>}
+              {order.terms && <div><div className="dim">Terms</div><div>{order.terms}</div></div>}
+              {order.shipmentDate && <div><div className="dim">Shipment Date</div><div>{formatDate(new Date(order.shipmentDate))}</div></div>}
+              {order.functionDate && <div><div className="dim">Function Date</div><div>{formatDate(new Date(order.functionDate))}</div></div>}
             </div>
-          )}
-          <div className="form-grid-2" style={{ marginTop: 'var(--space-3)' }}>
-            <div><div className="dim">Order ID</div><div>{order.id}</div></div>
-            <div><div className="dim">Invoice Number</div><div>{order.invoiceId || '-'}</div></div>
-            {order.printedAt && <div><div className="dim">Order Printed</div><div>{formatDateTime(order.printedAt)}</div></div>}
-            {order.sekolah && <div><div className="dim">Sekolah</div><div>{order.sekolah}</div></div>}
-            {order.sales && <div><div className="dim">Sales</div><div>{order.sales}</div></div>}
-            {order.picName && <div><div className="dim">PIC Name</div><div>{order.picName}{order.phone ? ` / ${order.phone}` : ''}</div></div>}
-            {order.ketuaPanitia && <div><div className="dim">Ketua Panitia</div><div>{order.ketuaPanitia}</div></div>}
-            {order.terms && <div><div className="dim">Terms</div><div>{order.terms}</div></div>}
-            {order.shipmentDate && <div><div className="dim">Shipment Date</div><div>{formatDate(new Date(order.shipmentDate))}</div></div>}
-            {order.functionDate && <div><div className="dim">Function Date</div><div>{formatDate(new Date(order.functionDate))}</div></div>}
-          </div>
-          {/* Printed too, not just shown on screen — a KIV/pending note (see
-              AppState.jsx's importFormAnugerahExcel) needs to physically
-              travel with the printed order, not just live in the app. */}
-          {order.remark && (
-            <div style={{ marginTop: 'var(--space-4)' }}>
-              <div className="dim">Remark</div>
-              <div>{order.remark}</div>
-            </div>
-          )}
+            {/* Printed too, not just shown on screen — a KIV/pending note (see
+                AppState.jsx's importFormAnugerahExcel) needs to physically
+                travel with the printed order, not just live in the app. */}
+            {order.remark && (
+              <div style={{ marginTop: 'var(--space-4)' }}>
+                <div className="dim">Remark</div>
+                <div>{order.remark}</div>
+              </div>
+            )}
 
-          <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Jenis Plak / Price per Unit / QTY / Harga</div>
-          <PriceTable
-            rows={rows} editable={false} priceDrafts={priceDrafts} setPrice={setPrice}
-            plakCatalog={state.plakCatalog} totalQty={totalQty} totalHarga={totalHarga} priceAdjusted={priceAdjusted}
-            hideCategory combineJenisPlak
-          />
+            <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Jenis Plak / Price per Unit / QTY / Harga</div>
+            <PriceTable
+              rows={rows} editable={false} priceDrafts={priceDrafts} setPrice={setPrice}
+              plakCatalog={state.plakCatalog} totalQty={totalQty} totalHarga={totalHarga} priceAdjusted={priceAdjusted}
+              hideCategory combineJenisPlak
+            />
+          </div>
 
           {catBlockGroups.length > 0 && (
             <div className="print-details-section">

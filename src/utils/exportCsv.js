@@ -593,7 +593,8 @@ export function combineCsvRows(groups) {
 
 export function buildCombinedCsvFilename(order) {
   const invoice = sanitizeFilenamePart(order.invoiceId || order.id);
-  return `(${invoice}) - Combined.csv`;
+  const school = sanitizeFilenamePart(order.sekolah || 'Combined');
+  return `(${invoice}) - ${school}.csv`;
 }
 
 // Collapses a group's built CSV rows down to the distinct plaque texts a
