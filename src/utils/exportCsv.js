@@ -66,6 +66,24 @@ function getTahunField(item) {
   return item.detail?.lines?.[key] || '';
 }
 
+// The teacher's own line 3 decides how the Tahun and subject are engraved —
+// there are two shapes in the wild: "TAHUN 4" alone (the subject sits on its
+// own line above, so it stays on `position`), or a combined line like
+// "TAHUN 1 (BAHASA MELAYU)" / "BAHASA MELAYU - TAHUN 1". For the combined
+// shape this returns the sample with the Tahun swapped for {T} and the subject
+// text for {S}, so each plaque repeats the teacher's exact punctuation/order.
+// null = line 3 has no Tahun, or no subject next to it -> keep the plain
+// layout (subject on position, bare level on event_line_1).
+const TAHUN_TOKEN = /TAHUN\s*\d+|\d+\s*年级|[一二三四五六七八九十]+\s*年级/i;
+export function parseTahunSubjekTemplate(sample) {
+  const text = String(sample || '').trim();
+  if (!TAHUN_TOKEN.test(text)) return null;
+  const withT = text.replace(TAHUN_TOKEN, '{T}');
+  const core = withT.replace('{T}', '').replace(/^[\s()[\]\-–:/,]+|[\s()[\]\-–:/,]+$/g, '');
+  if (!core || !withT.includes(core)) return null;
+  return withT.replace(core, '{S}');
+}
+
 // Matrix categories (MP THP 1/2): the reference sample's second position
 // box and 4th line are only a CONTOH of layout — the real per-plaque data
 // comes from the quantity matrix itself. Each (subject, column) cell with
@@ -76,19 +94,16 @@ function buildMatrixRows(item, cat, header, year, positionPart1, schoolLanguage)
   const matrix = item.detail?.matrix;
   if (!matrix) return rows;
   const columns = getCategoryColumns(cat, schoolLanguage);
+  const template = parseTahunSubjekTemplate(getLine(item, 3));
 
   const emitRow = (subject, column, qty) => {
     if (qty <= 0) return;
-    // MP THP 1/2 (`tahunSubjekLine3`): the sample's line 3 is "TAHUN 1
-    // (BAHASA MELAYU)", so the subject rides on event_line_1 with the Tahun
-    // and position is only the ACARA line. Other matrix categories keep the
-    // subject on position and the bare level on event_line_1.
-    const position = cat.tahunSubjekLine3 ? positionPart1 : (positionPart1 ? `${positionPart1}\n${subject}` : subject);
+    const position = template ? positionPart1 : (positionPart1 ? `${positionPart1}\n${subject}` : subject);
     // A synthetic single "KUANTITI"/"KEDUDUKAN" column (PBD — the row IS the
     // Tahun, there is no real class-level axis) is a stand-in, never an
     // engraved line — same filter buildPbdMatrixRows applies to the subject.
     const bareCol = ['KUANTITI', 'KEDUDUKAN'].includes(String(column).trim().toUpperCase()) ? '' : column;
-    const col = cat.tahunSubjekLine3 ? `${bareCol} (${subject})` : bareCol;
+    const col = template ? template.replace('{T}', bareCol).replace('{S}', subject) : bareCol;
     const row = [header, year, position, col, ''];
     for (let i = 0; i < qty; i++) rows.push(row);
   };
