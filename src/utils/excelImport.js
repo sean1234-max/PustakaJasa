@@ -1354,12 +1354,12 @@ function parseTahunPlakRowSheet(ws) {
     const qty = cellNum(ws, r, kuantitiH.col);
     const jenisPlak = jpH ? cellText(ws, r, jpH.col) : '';
     if (qty <= 0 && !jenisPlak) continue;
-    // A row only fills one of the fixed TAHUN 1-6 slots when its own label
-    // genuinely reads "TAHUN n" — a teacher who instead adds an extra row
-    // of their own ("TAHAP 1", "TAHAP 2") means that exact wording to show
-    // up on the plaque, not to get silently folded into a same-numbered
-    // TAHUN slot (or dropped) just because it happens to contain a digit.
-    const tahun = /^TAHUN\b/i.test(label.trim()) ? normalizeTahun(label) : '';
+    // A row only fills one of the fixed TAHUN 1-6 slots when its label IS
+    // exactly "TAHUN 1".."TAHUN 6" — anything else the teacher types on her
+    // own row ("TAHAP 1", "TAHUN 2026", "TAHUN 1 & 2") means that exact
+    // wording to show up on the plaque, not to get folded into a slot just
+    // because it starts with TAHUN or happens to contain a digit.
+    const tahun = /^TAHUN\s*[1-6]$/i.test(label.trim()) ? normalizeTahun(label) : '';
     tahunRows.push({ tahun, label, qty, jenisPlak });
   }
   if (tahunRows.length === 0) return null;

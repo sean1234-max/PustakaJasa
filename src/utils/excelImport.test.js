@@ -504,6 +504,23 @@ describe('parseFormAnugerahExcel — renamed/duplicated template sheet becomes i
     ]);
   });
 
+  it('a custom row whose label merely starts with TAHUN ("TAHUN 2026") keeps its exact text instead of landing on TAHUN 2', () => {
+    const parsed = parseFormAnugerahExcel(workbookFromSheets({
+      'SAHSIAH TERPUJI': [
+        ['TAHUN', 'KUANTITI', 'JENIS PLAK'],
+        ['TAHUN 1', null, null],
+        ['TAHUN 2', null, null],
+        ['TAHUN 2026', 12, 'PKF 266'],
+        ['tahun 3', 5, 'PKF 266'],
+      ],
+    }));
+    const section = (parsed.categorized?.[makeDynamicCategoryKey('LONJAKAN', 'SAHSIAH TERPUJI')] || [])[0];
+    expect(section.tahunRows).toEqual([
+      { tahun: '', label: 'TAHUN 2026', qty: 12, jenisPlak: 'PKF 266' },
+      { tahun: 'TAHUN 3', label: 'tahun 3', qty: 5, jenisPlak: 'PKF 266' },
+    ]);
+  });
+
   it('a real "PBD" sheet AND a renamed duplicate (no breakdown) coexist as two separate categories', () => {
     // No Nama Kelas breakdown here, so the renamed copy resolves as
     // LONJAKAN-kind (per the disambiguation rule above) — the point of
