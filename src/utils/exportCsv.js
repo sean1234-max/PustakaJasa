@@ -4,6 +4,7 @@ import {
   flattenPlakCatalog, isCustomPlakCode, MANUAL_MAX_QTY, numToOrdinal,
   resolveCategory, categoriesUsedByItems, distributeQtyOverPositions,
 } from '../data/catalog';
+import { breakAcaraLine } from './acaraBreak';
 
 export const CSV_COLUMNS = ['event_header', 'year', 'position', 'event_line_1', 'event_line_2', 'jenis_plak', 'category'];
 
@@ -50,12 +51,16 @@ export function getExportableCategories(order) {
 // buildMatrixRows below.
 function getLine(item, lineIndex) {
   const key = `${item.categoryKey}::${item.blockIdx}::${lineIndex}`;
-  return item.detail?.lines?.[key] || '';
+  const value = item.detail?.lines?.[key] || '';
+  // ACARA is force-split onto two lines for "ANUGERAH PBD ..." wordings —
+  // applied here too (not just at import) so typed text and older orders
+  // export the same way.
+  return lineIndex === 2 ? breakAcaraLine(value) : value;
 }
 
 function getPositionLine2(item) {
   const key = `${item.categoryKey}::${item.blockIdx}::2b`;
-  return item.detail?.lines?.[key] || '';
+  return breakAcaraLine(item.detail?.lines?.[key] || '');
 }
 
 // The new per-Tahun-block TAHUN value (OTHERS' hasTahunField — see

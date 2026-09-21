@@ -1,5 +1,6 @@
 import * as XLSX from 'xlsx';
 import { ordinalToNum, resolveSelempangWarna, makeDynamicCategoryKey } from '../data/catalog';
+import { breakAcaraLine } from './acaraBreak';
 
 // Reads a teacher's own filled-in copy of the FORM ANUGERAH Excel template —
 // not just the new "KLAS MATRIX" sheet, but the ORIGINAL sheets teachers
@@ -1981,6 +1982,9 @@ export function parseFormAnugerahExcel(arrayBuffer) {
   const categorized = {};
   const klasMatrixSections = [];
   allSections.forEach((s) => {
+    // ACARA (slot 2) / position (slot 2b): force the two-line wording split
+    // for "ANUGERAH PBD ..." etc. (see acaraBreak.js).
+    ['2', '2b'].forEach((slot) => { if (s.lines?.[slot]) s.lines[slot] = breakAcaraLine(s.lines[slot]); });
     // `dynamicCategoryKey` (a renamed/duplicated template sheet — set just
     // above) takes priority over the fixed-name lookup, since its own
     // sourceSheet is never one of SOURCE_SHEET_TO_CATEGORY's literal keys.
