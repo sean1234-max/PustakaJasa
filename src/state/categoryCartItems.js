@@ -157,7 +157,15 @@ export function buildCategoryCartItems(st, catKey) {
           (row.tokohFields || []).forEach((f) => { if (f.value) tokoh[f.key] = f.value; });
           newItems.push({
             id: crypto.randomUUID(), jenisPlak: row.jenisPlak, qty: row.qty, harga: row.rawHarga, unitPrice: row.unitPrice,
-            categoryLabel: b.qtyLabel, categoryKey: catKey, blockIdx: b.idx,
+            // cat.label (not b.qtyLabel) — qtyLabel is blank for every
+            // hideQtyLabelSuffix category (ALIRAN/LONJAKAN/KEHADIRAN/
+            // TOKOH_SHEET/SELEMPANG, catalog.js) since that flag is meant
+            // to drop the "Kuantiti — X" heading's OWN suffix, not to blank
+            // the item's stored category identity — this field is what
+            // PriceTable's Category column (and anything else reading
+            // item.categoryLabel directly, not re-resolving the category)
+            // actually displays.
+            categoryLabel: cat?.label || b.qtyLabel, categoryKey: catKey, blockIdx: b.idx,
             // jenisPlak + unitPrice must travel with the row snapshot too,
             // not just the item's own top-level fields above — every
             // read-only view (Order Details, print, Store Admin, Production)
@@ -178,7 +186,8 @@ export function buildCategoryCartItems(st, catKey) {
     b.plakRows.forEach((pr) => {
       if (pr.jenisPlak && pr.qty) newItems.push({
         id: crypto.randomUUID(), jenisPlak: pr.jenisPlak, qty: pr.qty, harga: pr.rawHarga, unitPrice: pr.unitPrice,
-        categoryLabel: b.qtyLabel, categoryKey: catKey, blockIdx: b.idx,
+        // See the plakPerRow branch above for why this is cat.label, not b.qtyLabel.
+        categoryLabel: cat?.label || b.qtyLabel, categoryKey: catKey, blockIdx: b.idx,
         // ALIRAN — which places (1st..Nth) this plak covers, so
         // exportCsv can engrave one plaque per (Tahun, place).
         ...(pr.posDari ? { posDari: pr.posDari, posHingga: pr.posHingga } : {}),

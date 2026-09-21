@@ -97,6 +97,19 @@ describe('buildCategoryCartItems — TOKOH_SHEET (plakPerRow)', () => {
     expect(it.detail.rows[0]).toMatchObject({ desc: 'TOKOH MURID', jenisPlak: 'MP399', unitPrice: 12, namaMurid: 'Ali' });
   });
 
+  // Regression: catalog.js's hideQtyLabelSuffix (set on every plakPerRow
+  // category — ALIRAN/LONJAKAN/KEHADIRAN/TOKOH_SHEET/SELEMPANG) blanks
+  // computeBlocks.js's qtyLabel to drop the "Kuantiti — X" heading's OWN
+  // suffix — it was also feeding categoryLabel here, silently blanking
+  // the Category column on PriceTable (and anything else reading
+  // item.categoryLabel directly) for every one of these categories.
+  it('stamps the real category label (TOKOH), not the blank hideQtyLabelSuffix qtyLabel', () => {
+    const res = buildCategoryCartItems(draftTokoh([
+      { id: 1, desc: 'TOKOH MURID', qty: '1', jenisPlak: 'MP399', namaMurid: 'Ali' },
+    ]), 'TOKOH_SHEET');
+    expect(res.items[0].categoryLabel).toBe('TOKOH');
+  });
+
   it('round-trips through an order and back into a read-only block with Jenis Plak + Harga intact', () => {
     const { items } = buildCategoryCartItems(draftTokoh([
       { id: 1, desc: 'TOKOH MURID', qty: '1', jenisPlak: 'MP399', namaMurid: 'Ali' },
