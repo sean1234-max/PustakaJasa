@@ -20,6 +20,24 @@ function blockHasSectionData(blk) {
   return linesHaveValue || rowsHaveValue || namaKelasHaveValue || !!tahunHasValue || plakHasValue;
 }
 
+// Alt+Enter inserts a line break at the cursor within the SAME Reference
+// Sample field, mirroring Excel's own in-cell line-break convention — an
+// imported cell's own Alt+Enter already renders as two physical lines in
+// one field (see the ln.value.includes('\n') switch below); this lets a
+// teacher type the same thing directly instead of only ever getting it
+// from an import. Every numbered line uses this same handler (not just
+// TAJUK BESAR), since they all share this one <input>/<textarea> pair.
+// Plain Enter is left alone — a single-line <input> already ignores it,
+// and on the <textarea> below it inserts a bare newline the normal way.
+function handleRefLineAltEnter(e, onChange) {
+  if (!e.altKey || e.key !== 'Enter') return;
+  e.preventDefault();
+  const el = e.target;
+  const start = el.selectionStart ?? el.value.length;
+  const end = el.selectionEnd ?? el.value.length;
+  onChange(`${el.value.slice(0, start)}\n${el.value.slice(end)}`);
+}
+
 // Renders one category "block": reference sample + numbered lines, the
 // quantity table (fixed matrix / dynamic matrix / list mode), and the Jenis
 // Plak / QTY / Harga row. Reused by New Order Step 2, Add On, and every
@@ -362,6 +380,7 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
                         value={ln.value}
                         readOnly={!editable.lines}
                         onChange={editable.lines ? (e) => ln.onChange(e.target.value) : undefined}
+                        onKeyDown={editable.lines ? (e) => handleRefLineAltEnter(e, ln.onChange) : undefined}
                       />
                     ) : (
                       <input
@@ -370,6 +389,7 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
                         value={ln.value}
                         readOnly={!editable.lines}
                         onChange={editable.lines ? (e) => ln.onChange(e.target.value) : undefined}
+                        onKeyDown={editable.lines ? (e) => handleRefLineAltEnter(e, ln.onChange) : undefined}
                       />
                     )}
                     {ln.typoHint && (
