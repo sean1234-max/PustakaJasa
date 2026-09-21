@@ -29,7 +29,12 @@ function daysSinceShipmentDate(shipmentDate, today) {
   return Math.round((now - ship) / 86400000);
 }
 
+// 'submitted' is view-only for Production: the order is still awaiting
+// Sales/Store Admin approval, but Production can already open it and export
+// its CSVs to get the AI file ready (ProductionOrderDetail has no
+// status-gated actions, and there's no Done button outside the 'active' tab).
 const TABS = [
+  { key: 'submitted', label: 'Submitted to Sales', match: (o) => o.status === 'Submitted to Sales' },
   { key: 'active', label: 'In Production', match: (o) => o.status === 'In Production' },
   { key: 'shipped', label: 'Shipped', match: (o) => o.status === 'Shipped' },
   {
@@ -69,7 +74,7 @@ function shipmentDateKey(shipmentDate) {
 export default function ProductionDashboard() {
   const { state, today, markProductionDone } = useAppState();
   const navigate = useNavigate();
-  const [tab, setTab] = useState(TABS[0].key);
+  const [tab, setTab] = useState('active');
   // Lets Production see, at a glance, everything due out on one shipment
   // date — useful across all three tabs (what's coming up in Pending
   // Invoice, what's ready to ship today, what already went out).
