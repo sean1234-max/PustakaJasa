@@ -20,11 +20,40 @@ import { isUrgentShipment } from '../utils/urgentOrder';
 const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: false, matrix: false, jenisPlak: false };
 
 export default function SalesOrderSummary() {
-  const { state, today, approveOrder, approveAddOn, rejectAddOn, recordPrint, ensureOrderLoaded } = useAppState();
+  const { state, today, approveOrder, approveAddOn, rejectAddOn, recordPrint, ensureOrderLoaded, loadCorrectedExcelPreview } = useAppState();
   const { id } = useParams();
   const navigate = useNavigate();
   const order = state.orders.find((o) => o.id === id);
   useEffect(() => { ensureOrderLoaded(id); }, [id, ensureOrderLoaded]);
+
+  // Production may have uploaded a corrected FORM ANUGERAH file for this
+  // order (ProductionOrderDetail.jsx's CorrectedExcelControl) — re-parsed
+  // here too so the Order Details tab (and its print output) show the same
+  // corrected reference-sample text/qty Production is now working from,
+  // not the teacher's original. Pricing (rows/PriceTable below) is
+  // deliberately left on the REAL `order` — this never touches
+  // total_amount/stock, same boundary as the Production side.
+  const [correctedItems, setCorrectedItems] = useState(null);
+  const [correctedError, setCorrectedError] = useState('');
+  useEffect(() => {
+    setCorrectedItems(null);
+    setCorrectedError('');
+    if (!order?.correctedImportFilePath) return;
+    let cancelled = false;
+    loadCorrectedExcelPreview(order).then((res) => {
+      if (cancelled) return;
+      if (res.ok) setCorrectedItems(res.items);
+      else setCorrectedError(res.message || 'Could not re-read the corrected file.');
+    });
+    return () => { cancelled = true; };
+    // See ProductionOrderDetail.jsx's identical effect for why this is
+    // scoped to id/correctedImportFilePath rather than the whole `order`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [order?.id, order?.correctedImportFilePath, loadCorrectedExcelPreview]);
+  const effectiveOrder = useMemo(
+    () => (correctedItems ? { ...order, items: correctedItems } : order),
+    [order, correctedItems],
+  );
   // A Sales Manager can open any salesman's order (RLS —
   // supabase/migrations/0048_sales_manager.sql) but only acts on their own;
   // for someone else's order every write control is hidden (the server would
@@ -77,19 +106,19 @@ export default function SalesOrderSummary() {
   }), [order, addOnPriceDrafts]);
 
   const { anugerah: categories, selempang: selempangCats } = useMemo(
-    () => (order ? splitOrderCategories(order) : { anugerah: [], selempang: [] }),
-    [order],
+    () => (effectiveOrder ? splitOrderCategories(effectiveOrder) : { anugerah: [], selempang: [] }),
+    [effectiveOrder],
   );
   const [activeCat, setActiveCat] = useState(() => categories[0]?.key || '');
   const currentCat = categories.find((c) => c.key === activeCat) || categories[0];
   const catBlocks = useMemo(() => {
-    if (!order || !currentCat) return [];
-    return reconstructBlocksForCategory(order, currentCat.key, state.plakCatalog).blocks;
-  }, [order, currentCat, state.plakCatalog]);
+    if (!effectiveOrder || !currentCat) return [];
+    return reconstructBlocksForCategory(effectiveOrder, currentCat.key, state.plakCatalog).blocks;
+  }, [effectiveOrder, currentCat, state.plakCatalog]);
   const selempangBlocks = useMemo(() => {
-    if (!order) return [];
-    return selempangCats.flatMap((cat) => reconstructBlocksForCategory(order, cat.key, state.plakCatalog).blocks);
-  }, [order, selempangCats, state.plakCatalog]);
+    if (!effectiveOrder) return [];
+    return selempangCats.flatMap((cat) => reconstructBlocksForCategory(effectiveOrder, cat.key, state.plakCatalog).blocks);
+  }, [effectiveOrder, selempangCats, state.plakCatalog]);
   // TOKOH's own per-honoree detail (Nama Murid) — surfaced on the Summary
   // page too (see TokohDetailsTable), not just the category's own Details
   // tab, since the Summary page's PriceTable combines same-Jenis-Plak rows
@@ -97,9 +126,9 @@ export default function SalesOrderSummary() {
   // sheet (TOKOH (2)/(3)) too, not just the canonical TOKOH_SHEET key.
   const tokohCats = useMemo(() => categories.filter((c) => c.tokohRowFields), [categories]);
   const tokohBlocks = useMemo(() => {
-    if (!order) return [];
-    return tokohCats.flatMap((cat) => reconstructBlocksForCategory(order, cat.key, state.plakCatalog).blocks);
-  }, [order, tokohCats, state.plakCatalog]);
+    if (!effectiveOrder) return [];
+    return tokohCats.flatMap((cat) => reconstructBlocksForCategory(effectiveOrder, cat.key, state.plakCatalog).blocks);
+  }, [effectiveOrder, tokohCats, state.plakCatalog]);
 
   // Printing needs every category's details at once, not just whichever
   // tab happens to be open on screen — the tab UI is for browsing, the
@@ -107,12 +136,12 @@ export default function SalesOrderSummary() {
   // flattened) so the print layout can force a page break between
   // categories without losing track of which blocks belong together.
   const catBlockGroups = useMemo(() => {
-    if (!order) return [];
+    if (!effectiveOrder) return [];
     return [...categories, ...selempangCats].map((cat) => ({
       cat,
-      blocks: reconstructBlocksForCategory(order, cat.key, state.plakCatalog).blocks,
+      blocks: reconstructBlocksForCategory(effectiveOrder, cat.key, state.plakCatalog).blocks,
     }));
-  }, [order, categories, selempangCats, state.plakCatalog]);
+  }, [effectiveOrder, categories, selempangCats, state.plakCatalog]);
 
   if (!order) return null;
 
@@ -211,6 +240,12 @@ export default function SalesOrderSummary() {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
             {stamp && <span className="order-stamp-inline no-print">{stamp}</span>}
+            {/* Production uploaded a corrected copy of the teacher's file —
+                Order Details below (and the printout) already read from it;
+                pricing above stays on the originally invoiced items. */}
+            {order.correctedImportFilePath && (
+              <span className="status-pill no-print" style={{ background: '#fff4ce', color: '#8a6d00' }}>Excel Updated</span>
+            )}
             <span className="status-pill" style={statusPillStyle(order.status)}>{order.status}</span>
           </div>
         </div>
@@ -362,6 +397,11 @@ export default function SalesOrderSummary() {
             </>
           ) : (
             <>
+              {order.correctedImportFilePath && (
+                <p className="hint-text no-print" style={{ margin: '0 0 var(--space-3)', fontWeight: 600 }}>
+                  {correctedError ? `⚠ ${correctedError} — showing the original data instead.` : 'Production uploaded a corrected Excel — showing that version below, not the teacher\'s original.'}
+                </p>
+              )}
               {categories.length === 0 && selempangBlocks.length === 0 ? (
                 <p className="hint-text" style={{ marginTop: 'var(--space-3)' }}>No category details found for this order.</p>
               ) : (
