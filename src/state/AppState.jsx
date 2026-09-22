@@ -1812,7 +1812,18 @@ export function AppStateProvider({ children }) {
     };
     const items = [];
     const warnings = [];
-    Object.keys(next[f.visibleBlocksByCategory] || {}).forEach((catKey) => {
+    // Every STATIC category (MP1/MP2/PPKI/PBD/LONJAKAN/...) plus every
+    // DYNAMIC one this parse actually touched. visibleBlocksByCategory
+    // alone isn't enough — importFormAnugerahExcelInto only ever sets it
+    // for a dynamic key (a static category always has its own standing tab
+    // elsewhere, so nothing else needed to read it there — see the comment
+    // by its own `isDynamicCategoryKey(catKey)` check). Missing that meant
+    // MP THP 1/2, PPKI, PBD, LONJAKAN etc silently never got built here even
+    // though the parse itself had populated them correctly. A static
+    // category the file didn't touch just resolves to {engaged: false} and
+    // is skipped, same as submitPendingAddOn's own [...CATEGORIES, ...dynamicCats] sweep.
+    const dynamicKeys = Object.keys(next[f.visibleBlocksByCategory] || {});
+    [...CATEGORIES.map((c) => c.key), ...dynamicKeys].forEach((catKey) => {
       const built = buildCategoryCartItems(draft, catKey);
       if (built.items) items.push(...built.items);
       else if (built.error) warnings.push(`${resolveCategory(catKey)?.label || catKey}: ${built.error}`);
