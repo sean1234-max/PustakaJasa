@@ -142,6 +142,11 @@ export default function StoreAdminDashboard() {
                 </div>
                 <span className="status-pill" style={statusPillStyle(ord.status)}>{ord.status}</span>
               </div>
+              {/* Production uploaded a corrected copy of the teacher's file
+                  (see ProductionOrderDetail's CorrectedExcelControl). */}
+              {ord.correctedImportFilePath && (
+                <span className="status-pill" style={{ background: '#fff4ce', color: '#8a6d00', marginTop: 'var(--space-2)' }}>Excel Updated</span>
+              )}
               {stamp && <div className="order-stamp-inline" style={{ marginTop: 'var(--space-1)' }}>{stamp}</div>}
 
               <div className="order-card-meta">

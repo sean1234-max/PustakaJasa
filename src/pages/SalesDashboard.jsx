@@ -103,6 +103,12 @@ export default function SalesDashboard() {
                 </div>
                 <span className="status-pill" style={statusPillStyle(ord.status)}>{ord.status}</span>
               </div>
+              {/* Production uploaded a corrected copy of the teacher's file
+                  (see ProductionOrderDetail's CorrectedExcelControl) — Order
+                  Details on this order's own page already reads from it. */}
+              {ord.correctedImportFilePath && (
+                <span className="status-pill" style={{ background: '#fff4ce', color: '#8a6d00', marginTop: 'var(--space-2)' }}>Excel Updated</span>
+              )}
               {filter === ADDON_FILTER && (
                 <span className="status-pill" style={{ background: 'var(--color-accent-100)', color: 'var(--color-accent-900)', marginTop: 'var(--space-2)' }}>Add-On Pending</span>
               )}
