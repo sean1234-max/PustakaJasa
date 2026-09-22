@@ -1195,7 +1195,8 @@ export function AppStateProvider({ children }) {
       messages.push(`${remarkNotes.length} note(s) added to Remark`);
     }
 
-    setState({ ...next, [fields.category]: landOn || next[fields.category] });
+    const finalState = { ...next, [fields.category]: landOn || next[fields.category] };
+    setState(finalState);
 
     // Keep the raw upload as a backup on the order — Production / Store
     // Admin / Admin download it to cross-check the order details (0055).
@@ -1213,7 +1214,13 @@ export function AppStateProvider({ children }) {
       });
     }
 
-    return { ok: true, message: `Imported — ${messages.join('; ')}. Please review carefully before adding to cart.`, warnings };
+    // `draft` is the actual just-committed state, for a caller that needs
+    // it back synchronously instead of waiting for a re-render to read it
+    // off `state`/`stateRef` — `setState` above won't have been applied by
+    // the time an `await`-continuation right after this resolves (that
+    // race is exactly what silently emptied every category the very first
+    // time parseCorrectedExcelIntoItems read stateRef.current here).
+    return { ok: true, message: `Imported — ${messages.join('; ')}. Please review carefully before adding to cart.`, warnings, draft: finalState };
   }, [patch]);
 
   // Thin, zero-behavior-change wrapper for the existing New Order call site
@@ -1790,15 +1797,22 @@ export function AppStateProvider({ children }) {
     const res = await importFormAnugerahExcelInto(file, PROD_EXCEL_IMPORT_FIELDS);
     if (!res.ok) return { ok: false, message: res.message };
 
-    const st = stateRef.current;
+    // Read the just-committed draft straight off the import's own return
+    // value (`res.draft`), NOT stateRef.current — the setState inside
+    // importFormAnugerahExcelInto is not guaranteed to have been applied
+    // (and stateRef.current updated) by the time this async function's
+    // very next line runs, so reading the ref here could still see the
+    // pre-import (blank) draft and report every category as unreadable.
+    const next = res.draft;
+    const f = PROD_EXCEL_IMPORT_FIELDS;
     const draft = {
-      lineValues: st.prodExcelLineValues, matrixValues: st.prodExcelMatrixValues, rowsByBlock: st.prodExcelRowsByBlock,
-      plakRows: st.prodExcelPlakRows, columnsByBlock: st.prodExcelColumnsByBlock,
-      plakCatalog: st.plakCatalog, schoolLanguage: st.schoolLanguage,
+      lineValues: next[f.lineValues], matrixValues: next[f.matrixValues], rowsByBlock: next[f.rowsByBlock],
+      plakRows: next[f.plakRows], columnsByBlock: next[f.columnsByBlock],
+      plakCatalog: next.plakCatalog, schoolLanguage: next.schoolLanguage,
     };
     const items = [];
     const warnings = [];
-    Object.keys(st.prodExcelVisibleBlocksByCategory).forEach((catKey) => {
+    Object.keys(next[f.visibleBlocksByCategory] || {}).forEach((catKey) => {
       const built = buildCategoryCartItems(draft, catKey);
       if (built.items) items.push(...built.items);
       else if (built.error) warnings.push(`${resolveCategory(catKey)?.label || catKey}: ${built.error}`);
