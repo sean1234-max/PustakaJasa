@@ -33,6 +33,9 @@ function toDbOrder(order) {
     logo_remark: order.logoRemark ?? null,
     import_file_path: order.importFilePath ?? null,
     import_file_name: order.importFileName ?? null,
+    corrected_import_file_path: order.correctedImportFilePath ?? null,
+    corrected_import_file_name: order.correctedImportFileName ?? null,
+    corrected_import_uploaded_at: order.correctedImportUploadedAt ?? null,
     school_type: order.schoolType ?? null,
     school_language: order.schoolLanguage ?? null,
     items: order.items ?? [],
@@ -74,6 +77,9 @@ function fromDbOrder(row) {
     logoRemark: row.logo_remark,
     importFilePath: row.import_file_path || null,
     importFileName: row.import_file_name || null,
+    correctedImportFilePath: row.corrected_import_file_path || null,
+    correctedImportFileName: row.corrected_import_file_name || null,
+    correctedImportUploadedAt: row.corrected_import_uploaded_at || null,
     schoolType: row.school_type,
     schoolLanguage: row.school_language,
     items: row.items || [],
@@ -188,4 +194,16 @@ export async function fetchMyAssignedSalesmen() {
     .map((s) => s.display_name)
     .filter(Boolean)
     .sort((a, b) => a.localeCompare(b));
+}
+
+// A teacher can pick any salesman at submit time (fetchAllSalesmen above) —
+// this hands an already-submitted order to a different one, for when the
+// teacher picked the wrong one. supabase/migrations "reassign_order_salesman"
+// is the only path that can move an order's salesman_id: it re-validates
+// caller/ownership/target server-side (a plain client update can't, since
+// the salesman UPDATE policy's WITH CHECK still requires the resulting row
+// to belong to the caller) and records the change in audit_log.
+export async function reassignOrderSalesman(orderId, newSalesmanId) {
+  const { error } = await supabase.rpc('reassign_order_salesman', { p_order_id: orderId, p_new_salesman_id: newSalesmanId });
+  if (error) throw error;
 }

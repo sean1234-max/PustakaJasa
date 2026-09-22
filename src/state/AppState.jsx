@@ -16,7 +16,7 @@ import { checkColumnTotals, checkExpansionTotals, checkLevelBreakdownMatch, chec
 import { buildCategoryCartItems } from './categoryCartItems';
 import { AppStateContext } from './AppStateContext';
 import {
-  fetchOrders, fetchOrderById, insertOrder, updateOrder, nextOrderSeq, fetchAllSalesmen,
+  fetchOrders, fetchOrderById, insertOrder, updateOrder, nextOrderSeq, fetchAllSalesmen, reassignOrderSalesman,
 } from '../lib/ordersApi';
 import {
   fetchPlakCatalog, addPlakNode, removePlakNode, updatePlakNode, updatePlakNodeOrder, updatePlakNodeStock,
@@ -24,7 +24,7 @@ import {
   deductPlakStock, restorePlakStock,
 } from '../lib/catalogAdminApi';
 import { supabase } from '../lib/supabaseClient';
-import { uploadOrderImportFile, removeOrderImportFile } from '../lib/storageApi';
+import { uploadOrderImportFile, removeOrderImportFile, getOrderImportUrl } from '../lib/storageApi';
 import { syncUrgentOrderToSheet } from '../lib/urgentSheetApi';
 import { isUrgentShipment } from '../utils/urgentOrder';
 
@@ -236,6 +236,23 @@ function initialState() {
     amendNextPlakRowId: 1000,
     amendNextColumnId: 1000,
     amendVisibleBlocksByCategory: {},
+
+    // Production's own "corrected Excel" draft (see uploadCorrectedExcel /
+    // loadCorrectedExcelPreview below) — a throwaway scratch parse, never
+    // shown as an editable screen (unlike addOn*/amend* above). Reset before
+    // every parse so prodExcelVisibleBlocksByCategory ends up holding
+    // exactly the categories THIS file touched, nothing left over from a
+    // previous order.
+    prodExcelCategory: '',
+    prodExcelLineValues: {},
+    prodExcelMatrixValues: {},
+    prodExcelRowsByBlock: buildInitialRowsByBlock('SK'),
+    prodExcelColumnsByBlock: buildInitialColumnsByBlock(),
+    prodExcelPlakRows: buildInitialPlakRows(),
+    prodExcelNextRowId: 1000,
+    prodExcelNextPlakRowId: 1000,
+    prodExcelNextColumnId: 1000,
+    prodExcelVisibleBlocksByCategory: {},
   };
 }
 
@@ -255,6 +272,17 @@ const NEW_ORDER_IMPORT_FIELDS = {
   nextRowId: 'nextRowId', nextColumnId: 'nextColumnId', nextPlakRowId: 'nextPlakRowId',
   visibleBlocksByCategory: 'visibleBlocksByCategory', category: 'category',
   remark: 'remark', importFilePath: 'importFilePath', importFileName: 'importFileName',
+};
+
+// Production's "corrected Excel" scratch import (uploadCorrectedExcel /
+// loadCorrectedExcelPreview below) — remark/importFilePath/importFileName
+// left undefined (no equivalent; no-ops those blocks in
+// importFormAnugerahExcelInto), same as ADDON_IMPORT_FIELDS.
+const PROD_EXCEL_IMPORT_FIELDS = {
+  lineValues: 'prodExcelLineValues', matrixValues: 'prodExcelMatrixValues', rowsByBlock: 'prodExcelRowsByBlock',
+  columnsByBlock: 'prodExcelColumnsByBlock', plakRows: 'prodExcelPlakRows',
+  nextRowId: 'prodExcelNextRowId', nextColumnId: 'prodExcelNextColumnId', nextPlakRowId: 'prodExcelNextPlakRowId',
+  visibleBlocksByCategory: 'prodExcelVisibleBlocksByCategory', category: 'prodExcelCategory',
 };
 
 export function AppStateProvider({ children }) {
@@ -1712,6 +1740,123 @@ export function AppStateProvider({ children }) {
     return { ok: true, message: 'Order cancelled and stock returned.' };
   }, [patch, flashToast]);
 
+  // Hands an order to a different salesman — for when the teacher picked
+  // the wrong one on submit (any salesman can be chosen freely, see
+  // submitOrder above) and the order needs to move to whoever actually
+  // covers that school. Only the RPC (reassign_order_salesman) can move
+  // salesman_id; it re-checks ownership/role/target server-side. Once it
+  // succeeds this salesman no longer owns the order (RLS scopes "salesman
+  // reads own orders" to salesman_id = auth.uid()), so it's dropped from
+  // local state rather than patched in place — it would otherwise linger
+  // on screen until the next full refetch.
+  const reassignSalesman = useCallback(async (orderId, newSalesmanId) => {
+    try {
+      await reassignOrderSalesman(orderId, newSalesmanId);
+    } catch (err) {
+      console.error('Failed to reassign order:', err);
+      const message = err.message || 'Could not reassign this order.';
+      flashToast('updateToast', message);
+      return { ok: false, message };
+    }
+    patch((latest) => ({ orders: latest.orders.filter((o) => o.id !== orderId) }));
+    flashToast('updateToast', 'Order reassigned.');
+    return { ok: true };
+  }, [patch, flashToast]);
+
+  // Parses `file` as a scratch, throwaway draft (never shown as an editable
+  // screen) and turns it into cart-shaped items for Production's CSV export
+  // — never order.items, total_amount, stock, or pricing (Production has no
+  // UI for any of those, and there is no stock give-back path anywhere in
+  // this app to safely reconcile a qty change against). Reused by both
+  // uploadCorrectedExcel (right after a fresh upload) and
+  // loadCorrectedExcelPreview (re-deriving it from the already-stored file
+  // whenever anyone opens the order, so it's never stale relative to
+  // whoever originally uploaded it).
+  const parseCorrectedExcelIntoItems = useCallback(async (order, file) => {
+    // schoolLanguage is a top-level, "current working context" field (see
+    // NEW_ORDER_IMPORT_FIELDS/ADDON_IMPORT_FIELDS callers, which all belong
+    // to a teacher already working on THIS school's own order) —
+    // Production has no school of their own, so it must be pointed at
+    // THIS order's school before every parse, or a SJKC file would import
+    // against the wrong (default SK) subject/column lists.
+    patch({
+      schoolLanguage: order.schoolLanguage || 'SK',
+      prodExcelCategory: '', prodExcelLineValues: {}, prodExcelMatrixValues: {},
+      prodExcelRowsByBlock: buildInitialRowsByBlock(order.schoolLanguage || 'SK'),
+      prodExcelColumnsByBlock: buildInitialColumnsByBlock(), prodExcelPlakRows: buildInitialPlakRows(),
+      prodExcelNextRowId: 1000, prodExcelNextPlakRowId: 1000, prodExcelNextColumnId: 1000,
+      prodExcelVisibleBlocksByCategory: {},
+    });
+    const res = await importFormAnugerahExcelInto(file, PROD_EXCEL_IMPORT_FIELDS);
+    if (!res.ok) return { ok: false, message: res.message };
+
+    const st = stateRef.current;
+    const draft = {
+      lineValues: st.prodExcelLineValues, matrixValues: st.prodExcelMatrixValues, rowsByBlock: st.prodExcelRowsByBlock,
+      plakRows: st.prodExcelPlakRows, columnsByBlock: st.prodExcelColumnsByBlock,
+      plakCatalog: st.plakCatalog, schoolLanguage: st.schoolLanguage,
+    };
+    const items = [];
+    const warnings = [];
+    Object.keys(st.prodExcelVisibleBlocksByCategory).forEach((catKey) => {
+      const built = buildCategoryCartItems(draft, catKey);
+      if (built.items) items.push(...built.items);
+      else if (built.error) warnings.push(`${resolveCategory(catKey)?.label || catKey}: ${built.error}`);
+    });
+    if (items.length === 0) {
+      return { ok: false, message: 'Nothing recognizable in this file — no categories could be read.' };
+    }
+    return { ok: true, items, warnings };
+  }, [patch, importFormAnugerahExcelInto]);
+
+  // Production spotted a qty/wording problem against the teacher's
+  // original file — this uploads the corrected copy (kept separate from
+  // import_file_path, the teacher's own original) and immediately re-derives
+  // export items from it. Returns the fresh items so the caller can show
+  // them without a second round trip.
+  const uploadCorrectedExcel = useCallback(async (orderId, file) => {
+    const order = stateRef.current.orders.find((o) => o.id === orderId);
+    if (!order) return { ok: false, message: 'Order not found.' };
+    const uploaded = await uploadOrderImportFile(file);
+    if (!uploaded) return { ok: false, message: 'Could not upload this file. Please try again.' };
+
+    const res = await parseCorrectedExcelIntoItems(order, file);
+    if (!res.ok) return res;
+
+    const correctedFields = {
+      correctedImportFilePath: uploaded.path, correctedImportFileName: uploaded.name,
+      correctedImportUploadedAt: new Date().toISOString(),
+    };
+    try {
+      await updateOrder(orderId, correctedFields);
+    } catch (err) {
+      console.error('Failed to save the corrected Excel on the order:', err);
+      return { ok: false, message: describeOrderWriteError(err, 'save the corrected file for') };
+    }
+    patch((latest) => ({ orders: latest.orders.map((o) => (o.id === orderId ? { ...o, ...correctedFields } : o)) }));
+    return res;
+  }, [patch, parseCorrectedExcelIntoItems]);
+
+  // Re-derives export items from whichever corrected Excel is already on
+  // record (order.correctedImportFilePath) — called whenever
+  // ProductionOrderDetail opens an order that has one, so export always
+  // reflects the latest file on file rather than whatever the uploader's
+  // own browser happened to compute at upload time.
+  const loadCorrectedExcelPreview = useCallback(async (order) => {
+    if (!order?.correctedImportFilePath) return { ok: false, message: 'No corrected file on this order.' };
+    const url = await getOrderImportUrl(order.correctedImportFilePath);
+    if (!url) return { ok: false, message: 'Could not download the corrected file. Please try again.' };
+    let file;
+    try {
+      const blob = await (await fetch(url)).blob();
+      file = new File([blob], order.correctedImportFileName || 'corrected.xlsx');
+    } catch (err) {
+      console.error('Failed to fetch the corrected Excel file:', err);
+      return { ok: false, message: 'Could not download the corrected file. Please try again.' };
+    }
+    return parseCorrectedExcelIntoItems(order, file);
+  }, [parseCorrectedExcelIntoItems]);
+
   // Sales approves a pending add-on — `updatedItems` carries each item's
   // (possibly Sales-negotiated) unitPrice/harga, same as approveOrder
   // below. Stamps every item with the next batch number (1, 2, 3…) so it
@@ -2212,6 +2357,8 @@ export function AppStateProvider({ children }) {
     openAddOn, submitPendingAddOn, cancelPendingAddOn, rejectAddOn, approveAddOn, approveOrder, setInvoiceId, approveAndSetInvoiceId,
     retryUrgentSheetSync,
     cancelOrder,
+    reassignSalesman,
+    uploadCorrectedExcel, loadCorrectedExcelPreview,
     recordPrint,
     ensureOrderLoaded,
     markProductionDone,

@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
+import CorrectedExcelControl from '../components/CorrectedExcelControl';
 import { useAppState } from '../state/useAppState';
 import { statusPillStyle, formatDate, MANUAL_MAX_QTY } from '../data/catalog';
 import { reconstructOrderDetailGroups, reconstructBlocksForCategory } from '../utils/computeBlocks';
@@ -29,27 +30,66 @@ async function downloadOrderImport(order, setErr) {
 }
 
 export default function ProductionOrderDetail() {
-  const { state, ensureOrderLoaded } = useAppState();
+  const { state, ensureOrderLoaded, loadCorrectedExcelPreview } = useAppState();
   const [importErr, setImportErr] = useState('');
   const { id } = useParams();
   const navigate = useNavigate();
   const order = state.orders.find((o) => o.id === id);
   useEffect(() => { ensureOrderLoaded(id); }, [id, ensureOrderLoaded]);
 
+  // Re-derived from order.correctedImportFilePath whenever this order has
+  // one (see loadCorrectedExcelPreview) — null while there's none, or
+  // before the re-parse finishes, so `effectiveOrder` below falls back to
+  // the order's own items until it resolves.
+  const [correctedItems, setCorrectedItems] = useState(null);
+  const [correctedWarnings, setCorrectedWarnings] = useState([]);
+  const [correctedLoading, setCorrectedLoading] = useState(false);
+  const [correctedError, setCorrectedError] = useState('');
+  useEffect(() => {
+    setCorrectedItems(null);
+    setCorrectedWarnings([]);
+    setCorrectedError('');
+    if (!order?.correctedImportFilePath) return;
+    let cancelled = false;
+    setCorrectedLoading(true);
+    loadCorrectedExcelPreview(order).then((res) => {
+      if (cancelled) return;
+      setCorrectedLoading(false);
+      if (res.ok) { setCorrectedItems(res.items); setCorrectedWarnings(res.warnings || []); }
+      else setCorrectedError(res.message || 'Could not re-read the corrected file.');
+    });
+    return () => { cancelled = true; };
+    // Deliberately NOT `order` in full — a realtime status/pricing update on
+    // this order shouldn't re-trigger a full re-parse of the (unchanged)
+    // corrected file; only a genuinely new file (path changes) should.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [order?.id, order?.correctedImportFilePath, loadCorrectedExcelPreview]);
+
+  // Every export below reads from this, never from `order` directly — once
+  // a corrected Excel is on file, its freshly-parsed items stand in for
+  // order.items everywhere export-related (categories, CSV rows, the
+  // Jenis Plak table); order.totalAmount/status/pricing/stock are
+  // untouched regardless, since the Summary tab and Nav still read `order`
+  // itself.
+  const effectiveOrder = useMemo(
+    () => (correctedItems ? { ...order, items: correctedItems } : order),
+    [order, correctedItems],
+  );
+
   const [exportNote, setExportNote] = useState('');
   const exportNoteTimer = useRef(null);
   const [page, setPage] = useState('summary');
 
-  const categories = useMemo(() => (order ? getExportableCategories(order) : []), [order]);
+  const categories = useMemo(() => (effectiveOrder ? getExportableCategories(effectiveOrder) : []), [effectiveOrder]);
   const [activeCat, setActiveCat] = useState(() => categories[0]?.key || '');
   const currentCat = categories.find((c) => c.key === activeCat) || categories[0];
   // SELEMPANG — Production makes nothing for it, so it's kept out of every
   // export tab/CSV and shown read-only just so they can see it was ordered.
   const selempangBlocks = useMemo(() => {
-    if (!order) return [];
-    return splitOrderCategories(order).selempang
-      .flatMap((cat) => reconstructBlocksForCategory(order, cat.key, state.plakCatalog).blocks);
-  }, [order, state.plakCatalog]);
+    if (!effectiveOrder) return [];
+    return splitOrderCategories(effectiveOrder).selempang
+      .flatMap((cat) => reconstructBlocksForCategory(effectiveOrder, cat.key, state.plakCatalog).blocks);
+  }, [effectiveOrder, state.plakCatalog]);
 
   // One entry per (block, batch) — a category can carry more than one
   // distinct "order detail" (e.g. PBD's Kuantiti and Kedudukan variants, or
@@ -58,15 +98,15 @@ export default function ProductionOrderDetail() {
   // merging them would mix rows meant for different physical AI files into
   // one file with no way to tell them apart. See reconstructOrderDetailGroups.
   const detailGroups = useMemo(() => {
-    if (!order || !currentCat) return [];
-    return reconstructOrderDetailGroups(order, currentCat.key, state.plakCatalog);
-  }, [order, currentCat, state.plakCatalog]);
+    if (!effectiveOrder || !currentCat) return [];
+    return reconstructOrderDetailGroups(effectiveOrder, currentCat.key, state.plakCatalog);
+  }, [effectiveOrder, currentCat, state.plakCatalog]);
 
   // Scoped to (category, Jenis Plak) — never combined across categories,
   // since two categories can share a Jenis Plak (same physical AI file)
   // while needing different reference-sample layouts. See
   // getOrderJenisPlakGroups.
-  const jenisPlakGroups = useMemo(() => (order ? getOrderJenisPlakGroups(order) : []), [order]);
+  const jenisPlakGroups = useMemo(() => (effectiveOrder ? getOrderJenisPlakGroups(effectiveOrder) : []), [effectiveOrder]);
 
   // Rows + a hard validation result per (category, Jenis Plak) group (see
   // validateExport). `mode` ('csv' | 'manual') is the small-qty split — see
@@ -74,14 +114,14 @@ export default function ProductionOrderDetail() {
   // faster hand-typed into Illustrator than exported, so Production gets a
   // checklist instead of a button (but "Export CSV anyway" stays available).
   const jenisPlakExport = useMemo(() => {
-    if (!order) return [];
-    const modes = getPlakProductionMode(order);
+    if (!effectiveOrder) return [];
+    const modes = getPlakProductionMode(effectiveOrder);
     return jenisPlakGroups.map((group) => {
-      const csvData = buildCsvRows(order, null, group.items);
+      const csvData = buildCsvRows(effectiveOrder, null, group.items);
       const { mode, totalQty } = modes.get(group.groupKey) || { mode: 'csv', totalQty: 0 };
-      return { ...group, csvData, mode, totalQty, check: validateExport(order, group.items, state.plakCatalog, csvData) };
+      return { ...group, csvData, mode, totalQty, check: validateExport(effectiveOrder, group.items, state.plakCatalog, csvData) };
     });
-  }, [order, jenisPlakGroups, state.plakCatalog]);
+  }, [effectiveOrder, jenisPlakGroups, state.plakCatalog]);
 
   const manualPlakGroups = useMemo(
     () => jenisPlakExport.filter((g) => g.mode === 'manual'),
@@ -91,8 +131,9 @@ export default function ProductionOrderDetail() {
   if (!order) return null;
 
   const stamp = getOrderChangeStamp(order);
-  const totalQty = order.items.reduce((sum, it) => sum + (Number(it.qty) || 0), 0);
-  const itemGroups = groupItemsByBatch(order.items);
+  const totalQty = effectiveOrder.items.reduce((sum, it) => sum + (Number(it.qty) || 0), 0);
+  const effectiveTotalAmount = effectiveOrder.items.reduce((sum, it) => sum + it.harga, 0);
+  const itemGroups = groupItemsByBatch(effectiveOrder.items);
 
   // Both export paths refuse a selection that failed validateExport, even
   // if called programmatically — the disabled button is the first line, this
@@ -167,6 +208,12 @@ export default function ProductionOrderDetail() {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
             {stamp && <span className="order-stamp-inline">{stamp}</span>}
+            {/* Corrected Excel present — every export below already reads
+                from it (see effectiveOrder), this just makes that visible
+                at a glance without opening the order. */}
+            {order.correctedImportFilePath && (
+              <span className="status-pill" style={{ background: '#fff4ce', color: '#8a6d00' }}>Excel Updated</span>
+            )}
             <span className="status-pill" style={statusPillStyle(order.status)}>{order.status}</span>
           </div>
         </div>
@@ -198,13 +245,23 @@ export default function ProductionOrderDetail() {
 
             {order.importFilePath && (
               <div style={{ marginTop: 'var(--space-4)' }}>
-                <div className="dim">Download Excel File (Backup)</div>
+                <div className="dim">Original Excel (from the teacher)</div>
                 <button type="button" className="btn btn-primary" style={{ marginTop: 4 }} onClick={() => downloadOrderImport(order, setImportErr)}>
                   ⬇ {order.importFileName || 'Download file'}
                 </button>
                 {importErr && <div className="login-error" style={{ marginTop: 4 }}>{importErr}</div>}
               </div>
             )}
+
+            <CorrectedExcelControl
+              order={order}
+              onUploaded={(items, warnings) => { setCorrectedItems(items); setCorrectedWarnings(warnings || []); setCorrectedError(''); }}
+            />
+            {correctedLoading && <p className="hint-text" style={{ marginTop: 'var(--space-2)' }}>Re-reading the corrected file…</p>}
+            {correctedError && <p className="hint-text" style={{ color: '#b0392e', fontWeight: 600, marginTop: 'var(--space-2)' }}>⚠ {correctedError} — export is showing the original data instead.</p>}
+            {correctedWarnings.length > 0 && correctedWarnings.map((w) => (
+              <p key={w} className="hint-text" style={{ color: '#b45309', marginTop: 'var(--space-2)' }}>⚠ {w}</p>
+            ))}
 
             <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Invoice</div>
             <div style={{ marginTop: 'var(--space-2)' }}>
@@ -241,7 +298,7 @@ export default function ProductionOrderDetail() {
                       <tr>
                         <td /><td><strong>{itemGroups.length > 1 ? 'SUBTOTAL' : 'TOTAL'}</strong></td>
                         <td><strong>{groupQty}</strong></td>
-                        <td><strong>RM {(itemGroups.length > 1 ? groupHarga : order.totalAmount).toFixed(2)}</strong></td>
+                        <td><strong>RM {(itemGroups.length > 1 ? groupHarga : effectiveTotalAmount).toFixed(2)}</strong></td>
                       </tr>
                     </tbody>
                   </table>
@@ -252,7 +309,7 @@ export default function ProductionOrderDetail() {
               <>
                 <p className="hint-text" style={{ marginTop: 'var(--space-2)' }}>QTY total: {totalQty}</p>
                 <div className="combined-total" style={{ marginTop: 'var(--space-4)' }}>
-                  <span className="dim">Grand Total:</span> <strong>RM {order.totalAmount.toFixed(2)}</strong>
+                  <span className="dim">Grand Total:</span> <strong>RM {effectiveTotalAmount.toFixed(2)}</strong>
                 </div>
               </>
             )}
@@ -367,8 +424,8 @@ export default function ProductionOrderDetail() {
                     {detailGroups.length === 0 && <p className="hint-text">No order details found for this category.</p>}
                     {detailGroups.map((group, gi) => {
                       if (!group.blk) return null;
-                      const csvData = buildCsvRows(order, currentCat.key, group.items);
-                      const check = validateExport(order, group.items, state.plakCatalog, csvData);
+                      const csvData = buildCsvRows(effectiveOrder, currentCat.key, group.items);
+                      const check = validateExport(effectiveOrder, group.items, state.plakCatalog, csvData);
                       return (
                         <div
                           key={group.items[0].id}

@@ -9,6 +9,7 @@ import DatePicker from '../components/DatePicker';
 import { useAppState } from '../state/useAppState';
 import { statusPillStyle, standardUnitPrice, formatDate, formatDateTime } from '../data/catalog';
 import CancelOrderControl from '../components/CancelOrderControl';
+import ReassignSalesmanControl from '../components/ReassignSalesmanControl';
 import { reconstructBlocksForCategory } from '../utils/computeBlocks';
 import { splitOrderCategories } from '../utils/exportCsv';
 import { getOrderChangeStamp } from '../utils/orderStamp';
@@ -337,6 +338,17 @@ export default function SalesOrderSummary() {
                 <div style={{ marginTop: 'var(--space-6)' }}>
                   <div className="card-kicker">Cancel</div>
                   <CancelOrderControl order={order} onCancelled={() => navigate('/sales/dashboard')} />
+                </div>
+              )}
+
+              {/* Any status but Cancelled — a teacher can pick the wrong
+                  salesman regardless of how far the order has since moved,
+                  so this isn't limited to the pre-approval `editable` window
+                  the way Cancel is. */}
+              {isOwn && order.status !== 'Cancelled' && (
+                <div style={{ marginTop: 'var(--space-6)' }}>
+                  <div className="card-kicker">Wrong Salesman?</div>
+                  <ReassignSalesmanControl order={order} onReassigned={() => navigate('/sales/dashboard')} />
                 </div>
               )}
 

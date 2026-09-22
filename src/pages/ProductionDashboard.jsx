@@ -187,7 +187,16 @@ export default function ProductionDashboard() {
                   <div className="order-card-label">Order ID</div>
                   <div className="order-card-id">{ord.id}</div>
                 </div>
-                <span className="status-pill" style={statusPillStyle(ord.status)}>{ord.status}</span>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+                  {/* Production uploaded a corrected copy of the teacher's
+                      file (see ProductionOrderDetail's CorrectedExcelControl)
+                      — flagged here so it's visible without opening the
+                      order, per-request: "不能跟着老师upload 的excel 去做checking". */}
+                  {ord.correctedImportFilePath && (
+                    <span className="status-pill" style={{ background: '#fff4ce', color: '#8a6d00' }}>Excel Updated</span>
+                  )}
+                  <span className="status-pill" style={statusPillStyle(ord.status)}>{ord.status}</span>
+                </div>
               </div>
               {stamp && <div className="order-stamp-inline" style={{ marginTop: 'var(--space-1)' }}>{stamp}</div>}
 
