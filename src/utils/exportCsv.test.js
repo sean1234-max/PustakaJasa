@@ -354,6 +354,30 @@ describe('buildCsvRows — TOKOH_SHEET NAMA MURID / Reserved', () => {
     expect(res.warnings.some((w) => /Reserved.*held for stock/.test(w))).toBe(true);
   });
 
+  it('a blank NAMA MURID falls back to the reference sample\'s own line ③ text', () => {
+    const item = {
+      id: 'c', jenisPlak: '18093 GOLD', qty: 1, categoryKey: 'TOKOH_SHEET', blockIdx: 0,
+      detail: {
+        lines: { 'TOKOH_SHEET::0::0': 'HARI ANUGERAH 2026', 'TOKOH_SHEET::0::2': '', 'TOKOH_SHEET::0::3': 'TAHUN 2026' },
+        rows: [{ id: 1, desc: 'PENGAWAS SEKOLAH', qty: 1 }],
+      },
+    };
+    const { rows } = buildCsvRows({ ...order, items: [item] }, 'TOKOH_SHEET', [item]);
+    expect(rows).toEqual([['HARI ANUGERAH 2026', '', 'PENGAWAS SEKOLAH', 'TAHUN 2026', '', '18093 GOLD', 'TOKOH']]);
+  });
+
+  it('a filled NAMA MURID wins over line ③ — it never mixes with it', () => {
+    const item = {
+      id: 'd', jenisPlak: '18093 GOLD', qty: 1, categoryKey: 'TOKOH_SHEET', blockIdx: 0,
+      detail: {
+        lines: { 'TOKOH_SHEET::0::0': 'HARI ANUGERAH 2026', 'TOKOH_SHEET::0::2': '', 'TOKOH_SHEET::0::3': 'TAHUN 2026' },
+        rows: [{ id: 1, desc: 'PENGAWAS SEKOLAH', qty: 1, namaMurid: 'AHMAD BIN ALI' }],
+      },
+    };
+    const { rows } = buildCsvRows({ ...order, items: [item] }, 'TOKOH_SHEET', [item]);
+    expect(rows[0][3]).toBe('AHMAD BIN ALI');
+  });
+
   it('every case form of "reserved" is treated as a hold', () => {
     ['RESERVED', 'reserved', 'Reserved', '  Reserved  '].forEach((v) => expect(isReservedName(v)).toBe(true));
     ['Reserved for Ali', 'AHMAD', '', undefined].forEach((v) => expect(isReservedName(v)).toBe(false));

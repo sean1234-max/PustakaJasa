@@ -252,8 +252,13 @@ function buildFixedRows(item, header, year, positionPart1) {
 // (LONJAKAN sets positionPrefixFromLine3).
 //
 // `tokohNames` is set only for TOKOH_SHEET (catalog.js's tokohRowFields):
-//   * a filled NAMA MURID engraves as the reference sample's line ③ —
-//     it fills event_line_1 (the CSV's 4th column) for that row's plaques.
+//   * a filled NAMA MURID fills event_line_1 (the CSV's 4th column) for
+//     that row's plaques.
+//   * a BLANK NAMA MURID falls back to the reference sample's own line ③
+//     text (e.g. "TAHUN 2026") — a row with no student name (PENGAWAS
+//     SEKOLAH, KETUA MURID, ...) still needs something on event_line_1,
+//     and line ③ is exactly the CONTOH text the teacher filled in for
+//     that case.
 //   * a "Reserved" NAMA MURID (isReservedName) is a stock hold with no
 //     confirmed name — the row is skipped entirely (no engraving row).
 // For LONJAKAN and Main Template, `tokohNames` is falsy: rows have no
@@ -275,7 +280,7 @@ function buildRowsFromDescriptionRows(item, header, year, positionPart1, tokohNa
     const lonjakanStyle = !tokohNames && !!positionPart1;
     const position = lonjakanStyle ? positionPart1 : (r.desc || '');
     const eventLine1 = tokohNames
-      ? (r.namaMurid || '').trim()
+      ? ((r.namaMurid || '').trim() || getLine(item, 3))
       : (lonjakanStyle ? (r.desc || '') : '');
     const row = [header, year, position, eventLine1, ''];
     for (let i = 0; i < qty; i++) rows.push(row);
