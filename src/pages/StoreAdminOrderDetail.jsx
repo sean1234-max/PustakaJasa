@@ -11,7 +11,6 @@ import { statusPillStyle, formatDate, standardUnitPrice } from '../data/catalog'
 import { reconstructBlocksForCategory } from '../utils/computeBlocks';
 import { splitOrderCategories } from '../utils/exportCsv';
 import { getOrderImportUrl } from '../lib/storageApi';
-import { groupItemsByBatch } from '../utils/orderBatches';
 import { getOrderChangeStamp } from '../utils/orderStamp';
 import { isUrgentShipment } from '../utils/urgentOrder';
 
@@ -33,8 +32,8 @@ const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: f
 
 // Store Admin's own order view (role formerly "Invoicing Department",
 // renamed 0047) — assigns/displays the Invoice Number and shows the
-// original-vs-Tambahan breakdown (groupItemsByBatch, same helper
-// SalesOrderSummary/ProductionOrderDetail already use).
+// original-vs-Tambahan breakdown via PriceTable's own batch-grouping, same
+// component SalesOrderSummary/OrderDetails already use.
 //
 // A Salesman sometimes hands Store Admin a paper hard copy of an order
 // before ever clicking Approve in the system — receiving that hard copy
@@ -116,7 +115,6 @@ export default function StoreAdminOrderDetail() {
   if (!order) return null;
 
   const stamp = getOrderChangeStamp(order);
-  const itemGroups = groupItemsByBatch(order.items);
   const totalQty = rows.reduce((sum, it) => sum + (Number(it.qty) || 0), 0);
   const totalHarga = rows.reduce((sum, it) => sum + it.harga, 0);
   const priceAdjusted = order.priceAdjusted || rows.some((it) => it.unitPrice !== standardUnitPrice(it.jenisPlak, state.plakCatalog));
@@ -178,6 +176,11 @@ export default function StoreAdminOrderDetail() {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
             {stamp && <span className="order-stamp-inline">{stamp}</span>}
+            {/* Production uploaded a corrected copy of the teacher's file
+                (see ProductionOrderDetail's CorrectedExcelControl). */}
+            {order.correctedImportFilePath && (
+              <span className="status-pill" style={{ background: '#fff4ce', color: '#8a6d00' }}>Excel Updated</span>
+            )}
             <span className="status-pill" style={statusPillStyle(order.status)}>{order.status}</span>
           </div>
         </div>
@@ -306,33 +309,14 @@ export default function StoreAdminOrderDetail() {
                 {state.productionToast && <p className="hint-text" style={{ marginTop: 'var(--space-2)' }}>{state.productionToast}</p>}
 
                 <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Original vs Tambahan</div>
-                {itemGroups.map((group, gi) => {
-                  const groupQty = group.items.reduce((sum, it) => sum + (Number(it.qty) || 0), 0);
-                  const groupHarga = group.items.reduce((sum, it) => sum + it.harga, 0);
-                  return (
-                    <div key={group.batch}>
-                      <div className="card-kicker" style={{ marginTop: gi === 0 ? 'var(--space-2)' : 'var(--space-6)' }}>{group.label}</div>
-                      <table className="table" style={{ margin: 'var(--space-3) 0 0' }}>
-                        <thead><tr><th>Category</th><th>Jenis Plak</th><th style={{ width: 110 }}>QTY</th><th style={{ width: 130 }}>Price per Unit</th><th style={{ width: 130 }}>Harga</th></tr></thead>
-                        <tbody>
-                          {group.items.map((it) => (
-                            <tr key={it.id}>
-                              <td>{it.categoryLabel}</td>
-                              <td>{it.jenisPlak}</td>
-                              <td>{it.qty}</td>
-                              <td>{it.originalUnitPrice != null ? `RM ${it.originalUnitPrice.toFixed(2)} → ` : ''}RM {(it.unitPrice ?? 0).toFixed(2)}</td>
-                              <td>RM {it.harga.toFixed(2)}</td>
-                            </tr>
-                          ))}
-                          <tr>
-                            <td /><td /><td><strong>{groupQty}</strong></td><td><strong>SUBTOTAL</strong></td>
-                            <td><strong>RM {groupHarga.toFixed(2)}</strong></td>
-                          </tr>
-                        </tbody>
-                      </table>
-                    </div>
-                  );
-                })}
+                <p className="hint-text" style={{ marginTop: 0 }}>
+                  Combined by Jenis Plak, not Category — the same code bought for two different categories is one line here with one combined QTY.
+                </p>
+                <PriceTable
+                  rows={rows} editable={false} priceDrafts={priceDrafts} setPrice={setPrice}
+                  plakCatalog={state.plakCatalog} totalQty={totalQty} totalHarga={totalHarga} priceAdjusted={priceAdjusted}
+                  hideCategory combineJenisPlak
+                />
                 <TokohDetailsTable tokohBlocks={tokohBlocks} />
               </>
             )}
