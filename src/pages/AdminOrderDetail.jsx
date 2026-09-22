@@ -161,7 +161,14 @@ export default function AdminOrderDetail() {
             <span className="text-label-bold text-on-surface-variant uppercase tracking-widest block mb-1">{page === 'summary' ? 'Summary' : 'Order Details'}</span>
             <h2 className="text-headline-md text-on-surface">{order.id}</h2>
           </div>
-          <span className="px-3 py-1 rounded-md text-label-bold font-semibold" style={statusPillStyle(order.status)}>{order.status}</span>
+          <div className="flex items-center gap-2">
+            {/* Production uploaded a corrected copy of the teacher's file
+                (see ProductionOrderDetail's CorrectedExcelControl). */}
+            {order.correctedImportFilePath && (
+              <span className="px-3 py-1 rounded-md text-label-bold font-semibold" style={{ background: '#fff4ce', color: '#8a6d00' }}>Excel Updated</span>
+            )}
+            <span className="px-3 py-1 rounded-md text-label-bold font-semibold" style={statusPillStyle(order.status)}>{order.status}</span>
+          </div>
         </div>
 
         {page === 'summary' ? (
