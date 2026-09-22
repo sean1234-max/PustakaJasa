@@ -4,7 +4,6 @@ import Nav from '../components/Nav';
 import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import PriceTable from '../components/PriceTable';
-import TokohDetailsTable from '../components/TokohDetailsTable';
 import DatePicker from '../components/DatePicker';
 import { useAppState } from '../state/useAppState';
 import { statusPillStyle, formatDate, standardUnitPrice } from '../data/catalog';
@@ -103,15 +102,6 @@ export default function StoreAdminOrderDetail() {
     if (!order) return [];
     return selempangCats.flatMap((cat) => reconstructBlocksForCategory(order, cat.key, state.plakCatalog).blocks);
   }, [order, selempangCats, state.plakCatalog]);
-  // TOKOH's own per-honoree detail (Nama Murid) surfaced on the Summary
-  // page too — see TokohDetailsTable / SalesOrderSummary.jsx's identical
-  // addition.
-  const tokohCats = useMemo(() => categories.filter((c) => c.tokohRowFields), [categories]);
-  const tokohBlocks = useMemo(() => {
-    if (!order) return [];
-    return tokohCats.flatMap((cat) => reconstructBlocksForCategory(order, cat.key, state.plakCatalog).blocks);
-  }, [order, tokohCats, state.plakCatalog]);
-
   if (!order) return null;
 
   const stamp = getOrderChangeStamp(order);
@@ -251,7 +241,6 @@ export default function StoreAdminOrderDetail() {
                   plakCatalog={state.plakCatalog} totalQty={totalQty} totalHarga={totalHarga} priceAdjusted={priceAdjusted}
                   hideCategory combineJenisPlak
                 />
-                <TokohDetailsTable tokohBlocks={tokohBlocks} />
 
                 <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Approve &amp; Invoice Number</div>
                 <div className="field" style={{ maxWidth: 340, marginTop: 'var(--space-2)' }}>
@@ -317,7 +306,6 @@ export default function StoreAdminOrderDetail() {
                   plakCatalog={state.plakCatalog} totalQty={totalQty} totalHarga={totalHarga} priceAdjusted={priceAdjusted}
                   hideCategory combineJenisPlak
                 />
-                <TokohDetailsTable tokohBlocks={tokohBlocks} />
               </>
             )}
 
