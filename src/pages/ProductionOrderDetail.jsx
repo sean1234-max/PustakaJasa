@@ -4,13 +4,13 @@ import Nav from '../components/Nav';
 import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import CorrectedExcelControl from '../components/CorrectedExcelControl';
+import PriceTable from '../components/PriceTable';
 import { useAppState } from '../state/useAppState';
 import { statusPillStyle, formatDate, MANUAL_MAX_QTY } from '../data/catalog';
 import { reconstructOrderDetailGroups, reconstructBlocksForCategory } from '../utils/computeBlocks';
 import { getExportableCategories, splitOrderCategories, getOrderJenisPlakGroups, getPlakProductionMode, summarizeRowsForManual, buildCsvRows, rowsToCsv, buildCategoryCsvFilename, combineCsvRows, buildCombinedCsvFilename, validateExport } from '../utils/exportCsv';
 import { downloadTextFile } from '../utils/downloadBlob';
 import { getOrderImportUrl } from '../lib/storageApi';
-import { groupItemsByBatch } from '../utils/orderBatches';
 import { getOrderChangeStamp } from '../utils/orderStamp';
 
 const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: false, matrix: false, jenisPlak: false };
@@ -133,7 +133,6 @@ export default function ProductionOrderDetail() {
   const stamp = getOrderChangeStamp(order);
   const totalQty = effectiveOrder.items.reduce((sum, it) => sum + (Number(it.qty) || 0), 0);
   const effectiveTotalAmount = effectiveOrder.items.reduce((sum, it) => sum + it.harga, 0);
-  const itemGroups = groupItemsByBatch(effectiveOrder.items);
 
   // Both export paths refuse a selection that failed validateExport, even
   // if called programmatically — the disabled button is the first line, this
@@ -278,41 +277,14 @@ export default function ProductionOrderDetail() {
         ) : (
           <>
             <div className="card-kicker" style={{ marginTop: 'var(--space-3)' }}>Jenis Plak / QTY / Harga</div>
-            {itemGroups.map((group, gi) => {
-              const groupQty = group.items.reduce((sum, it) => sum + (Number(it.qty) || 0), 0);
-              const groupHarga = group.items.reduce((sum, it) => sum + it.harga, 0);
-              return (
-                <div key={group.batch}>
-                  {itemGroups.length > 1 && <div className="card-kicker" style={{ marginTop: gi === 0 ? 0 : 'var(--space-6)' }}>{group.label}</div>}
-                  <table className="table" style={{ margin: 'var(--space-3) 0 0' }}>
-                    <thead><tr><th>Category</th><th>Jenis Plak</th><th style={{ width: 110 }}>QTY</th><th style={{ width: 130 }}>Harga</th></tr></thead>
-                    <tbody>
-                      {group.items.map((it) => (
-                        <tr key={it.id}>
-                          <td>{it.categoryLabel}</td>
-                          <td>{it.jenisPlak}</td>
-                          <td>{it.qty}</td>
-                          <td>RM {it.harga.toFixed(2)}</td>
-                        </tr>
-                      ))}
-                      <tr>
-                        <td /><td><strong>{itemGroups.length > 1 ? 'SUBTOTAL' : 'TOTAL'}</strong></td>
-                        <td><strong>{groupQty}</strong></td>
-                        <td><strong>RM {(itemGroups.length > 1 ? groupHarga : effectiveTotalAmount).toFixed(2)}</strong></td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              );
-            })}
-            {itemGroups.length > 1 && (
-              <>
-                <p className="hint-text" style={{ marginTop: 'var(--space-2)' }}>QTY total: {totalQty}</p>
-                <div className="combined-total" style={{ marginTop: 'var(--space-4)' }}>
-                  <span className="dim">Grand Total:</span> <strong>RM {effectiveTotalAmount.toFixed(2)}</strong>
-                </div>
-              </>
-            )}
+            <p className="hint-text" style={{ marginTop: 0 }}>
+              Combined by Jenis Plak, not Category — the same code bought for two different categories is one line here. Selempang has its own detail block below (it's never combined into this table); TOKOH's per-honoree names aren't needed here at all — export by Category further down still shows every name.
+            </p>
+            <PriceTable
+              rows={effectiveOrder.items} editable={false} priceDrafts={{}} setPrice={() => {}}
+              plakCatalog={state.plakCatalog} totalQty={totalQty} totalHarga={effectiveTotalAmount} priceAdjusted={false}
+              hideCategory combineJenisPlak
+            />
 
             {selempangBlocks.length > 0 && (
               <div style={{ marginTop: 'var(--space-6)' }}>
