@@ -2076,15 +2076,19 @@ export function AppStateProvider({ children }) {
   }, [patch, flashToast, attemptUrgentSheetSync]);
 
   // Store Admin: splits an order across a second (or third, ...) invoice
-  // number by moving `categoryKeys` into a group billed under `invoiceId`
-  // (orders.invoice_groups, 0070_order_invoice_groups.sql). Any category
-  // NOT listed in any group keeps billing under the order's own invoiceId
-  // — invoiceGroups only ever needs to record the exceptions. A category
-  // can only belong to one invoice at a time, so it's first pulled out of
-  // whichever OTHER group already held it before being (re)placed.
-  const setCategoryInvoiceGroup = useCallback(async (orderId, invoiceId, categoryKeys) => {
+  // number by moving `jenisPlakList` into a group billed under `invoiceId`
+  // (orders.invoice_groups, 0070_order_invoice_groups.sql). Split by Jenis
+  // Plak, not category — "PKC 263" is one physical Illustrator file no
+  // matter which category ordered it (see combineByJenisPlak), so that's
+  // the natural billing unit here, same as the price table above it already
+  // groups by. Any Jenis Plak NOT listed in any group keeps billing under
+  // the order's own invoiceId — invoiceGroups only ever needs to record the
+  // exceptions. A Jenis Plak can only belong to one invoice at a time, so
+  // it's first pulled out of whichever OTHER group already held it before
+  // being (re)placed.
+  const setJenisPlakInvoiceGroup = useCallback(async (orderId, invoiceId, jenisPlakList) => {
     const normalized = (invoiceId || '').replace(/\s+/g, '');
-    const keys = (categoryKeys || []).filter(Boolean);
+    const keys = (jenisPlakList || []).filter(Boolean);
     const st = stateRef.current;
     const order = st.orders.find((o) => o.id === orderId);
     if (!order) return { ok: false };
@@ -2093,7 +2097,7 @@ export function AppStateProvider({ children }) {
       return { ok: false };
     }
     if (keys.length === 0) {
-      flashToast('updateToast', 'Tick at least one category to assign.');
+      flashToast('updateToast', 'Tick at least one Jenis Plak to assign.');
       return { ok: false };
     }
     const isDuplicate = normalized !== (order.invoiceId || '').replace(/\s+/g, '')
@@ -2105,8 +2109,8 @@ export function AppStateProvider({ children }) {
       return { ok: false };
     }
     const withoutKeys = (order.invoiceGroups || [])
-      .map((g) => ({ ...g, categoryKeys: (g.categoryKeys || []).filter((k) => !keys.includes(k)) }))
-      .filter((g) => g.categoryKeys.length > 0);
+      .map((g) => ({ ...g, jenisPlakList: (g.jenisPlakList || []).filter((k) => !keys.includes(k)) }))
+      .filter((g) => g.jenisPlakList.length > 0);
     // Assigning back to the order's own (default) invoice number just
     // removes the exception entirely — no group needed to say "use the
     // default", that's already what an absent entry means.
@@ -2115,9 +2119,9 @@ export function AppStateProvider({ children }) {
       : (() => {
         const existing = withoutKeys.find((g) => g.invoiceId.replace(/\s+/g, '') === normalized);
         if (existing) {
-          return withoutKeys.map((g) => (g === existing ? { ...g, categoryKeys: [...g.categoryKeys, ...keys] } : g));
+          return withoutKeys.map((g) => (g === existing ? { ...g, jenisPlakList: [...g.jenisPlakList, ...keys] } : g));
         }
-        return [...withoutKeys, { invoiceId: normalized, categoryKeys: keys }];
+        return [...withoutKeys, { invoiceId: normalized, jenisPlakList: keys }];
       })();
     try {
       await updateOrder(orderId, { invoiceGroups: newGroups });
@@ -2439,7 +2443,7 @@ export function AppStateProvider({ children }) {
     importFormAnugerahExcel, importFormAnugerahExcelInto,
     openAmend, updateAmend,
     openAddOn, submitPendingAddOn, cancelPendingAddOn, rejectAddOn, approveAddOn, approveOrder, setInvoiceId, approveAndSetInvoiceId,
-    setCategoryInvoiceGroup,
+    setJenisPlakInvoiceGroup,
     retryUrgentSheetSync,
     cancelOrder,
     reassignSalesman,
