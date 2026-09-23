@@ -195,7 +195,16 @@ export default function StoreAdminDashboard() {
               <div className={`order-card-total${ord.priceAdjusted ? ' amount-adjusted' : ''}`}>RM {ord.totalAmount.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
 
               <div className="order-card-actions">
-                <button type="button" className="btn btn-primary btn-block" onClick={() => navigate(`/store-admin/orders/${ord.id}`)}>
+                <button
+                  type="button"
+                  className="btn btn-primary btn-block"
+                  // ?invoice= tells StoreAdminOrderDetail which slice this
+                  // card represents (see getOrderInvoiceSlices above) — a
+                  // no-op for an un-split order (its only invoice already
+                  // covers everything), so this is safe to always pass
+                  // whenever there's an invoice number to pass at all.
+                  onClick={() => navigate(`/store-admin/orders/${ord.id}${ord.invoiceId ? `?invoice=${encodeURIComponent(ord.invoiceId)}` : ''}`)}
+                >
                   {ord.invoiceId ? 'View Order' : ord.status === 'Submitted to Sales' ? 'Approve & Invoice' : 'Assign Invoice'}
                 </button>
               </div>

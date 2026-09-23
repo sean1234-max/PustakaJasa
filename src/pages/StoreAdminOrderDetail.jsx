@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import Nav from '../components/Nav';
 import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
@@ -224,9 +224,25 @@ export default function StoreAdminOrderDetail() {
   } = useAppState();
   const { id } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const order = state.orders.find((o) => o.id === id);
   const awaitingApproval = order?.status === 'Submitted to Sales';
   useEffect(() => { ensureOrderLoaded(id); }, [id, ensureOrderLoaded]);
+
+  // Opened from one specific invoice's card on the dashboard (a split order
+  // shows one card per invoice, see StoreAdminDashboard.jsx/
+  // getOrderInvoiceSlices) — ?invoice= says which one, so the Summary
+  // page's Jenis Plak table/Total/Invoice Number below only show that
+  // invoice's own slice instead of the whole order every time, regardless
+  // of which card was actually clicked. Absent (or an un-split order, which
+  // has no invoiceGroups to slice by) just shows everything, same as
+  // before this existed. The "Order Details" tab (page 2) and the
+  // Download-Excel-Backup button are deliberately NOT filtered — a
+  // category's reference-sample layout and the teacher's original upload
+  // are both whole-order concepts Production needs in full regardless of
+  // how the bill happens to be split.
+  const viewInvoiceId = searchParams.get('invoice') || null;
+  const isFiltered = !!viewInvoiceId && !!(order?.invoiceGroups || []).length;
 
   const [invoiceDraft, setInvoiceDraft] = useState('');
   const [page, setPage] = useState('summary');
@@ -259,11 +275,18 @@ export default function StoreAdminOrderDetail() {
     });
     return out;
   });
-  const rows = useMemo(() => (order?.items || []).map((it) => {
+  // Only this specific invoice's items when opened via ?invoice= (see
+  // isFiltered above) — everything otherwise, same as before this existed.
+  const visibleItems = useMemo(() => {
+    const items = order?.items || [];
+    if (!isFiltered) return items;
+    return items.filter((it) => getInvoiceIdForJenisPlak(order, it.jenisPlak) === viewInvoiceId);
+  }, [order, isFiltered, viewInvoiceId]);
+  const rows = useMemo(() => visibleItems.map((it) => {
     const unitPrice = Number(priceDrafts[it.id] ?? it.unitPrice ?? 0);
     const harga = unitPrice * (Number(it.qty) || 0);
     return { ...it, unitPrice, harga };
-  }), [order, priceDrafts]);
+  }), [visibleItems, priceDrafts]);
   const setPrice = (itemIds, value) => setPriceDrafts((prev) => {
     const next = { ...prev };
     itemIds.forEach((itemId) => { next[itemId] = value; });
@@ -366,6 +389,15 @@ export default function StoreAdminOrderDetail() {
           </div>
         </div>
 
+        {isFiltered && (
+          <p className="hint-text" style={{ marginBottom: 'var(--space-3)' }}>
+            Showing only the <strong>{viewInvoiceId}</strong> invoice for this order — the Jenis Plak/Total below cover just that slice.{' '}
+            <button type="button" onClick={() => navigate(`/store-admin/orders/${order.id}`)} className="text-label-bold font-semibold text-primary hover:underline">
+              View full order
+            </button>
+          </p>
+        )}
+
         {page === 'summary' ? (
           <>
             <div className="form-grid-2" style={{ marginTop: 'var(--space-3)' }}>
@@ -397,7 +429,7 @@ export default function StoreAdminOrderDetail() {
                 </>
               )}
               <div><div className="dim">Order Date</div><div>{order.datePlaced}</div></div>
-              <div><div className="dim">Total Amount</div><div>RM {order.totalAmount.toFixed(2)}</div></div>
+              <div><div className="dim">Total Amount</div><div>RM {(isFiltered ? totalHarga : order.totalAmount).toFixed(2)}</div></div>
             </div>
             {/* Not shown here before this — an import-derived note (a KIV
                 line, a wording-only plaque parked here for now) landed in
@@ -471,7 +503,7 @@ export default function StoreAdminOrderDetail() {
                 <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Invoice Number</div>
                 {order.invoiceId ? (
                   <div style={{ marginTop: 'var(--space-2)' }}>
-                    <div>{order.invoiceId}</div>
+                    <div>{isFiltered ? viewInvoiceId : order.invoiceId}</div>
                     {/* Gated on the PERSISTED urgentSheetSyncedAt flag (not
                         just this session's sheetSyncErrors), so it reappears
                         correctly after a page refresh too — see
