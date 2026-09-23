@@ -34,7 +34,16 @@ const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: f
 // the categories that go on a different invoice, type that invoice's
 // number, and assign. Repeatable: tick the next batch and assign a second
 // invoice number afterward. Anything never touched here keeps billing under
-// the order's own (default) Invoice Number shown above.
+// the order's own (default) Invoice Number.
+//
+// Also usable BEFORE the order is even approved (order.invoiceId still
+// null) — orders_write_guard (0070) excludes invoice_groups from its
+// store_admin diff-check unconditionally, not just once In Production, so
+// this write is allowed at either stage. That lets Store Admin plan the
+// split the moment they SEE the order needs one, instead of being forced to
+// pick one "default" invoice number at Approve time and only split
+// afterwards. Categories with no group yet fall back to display the order's
+// own invoiceId once that's set (see `defaultLabel`).
 function InvoiceSplitPanel({ order, setCategoryInvoiceGroup, updateToast }) {
   const categories = useMemo(() => categoriesUsedByItems(order.items), [order.items]);
   const [selected, setSelected] = useState(() => new Set());
@@ -60,20 +69,32 @@ function InvoiceSplitPanel({ order, setCategoryInvoiceGroup, updateToast }) {
     }
   };
 
+  const defaultLabel = order.invoiceId || 'whatever Invoice Number you approve this order with';
+
   return (
     <div style={{ marginTop: 'var(--space-4)' }}>
       <div className="card-kicker">Split Across Invoices</div>
       <p className="hint-text" style={{ marginTop: 0 }}>
-        Tick the categories that belong on a different invoice, type that invoice number, then assign. Categories left unticked stay on {order.invoiceId}.
+        Tick the categories that belong on a different invoice, type that invoice number, then assign. Categories left unticked stay on {defaultLabel}.
       </p>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)', marginTop: 'var(--space-2)' }}>
-        {categories.map((cat) => (
-          <label key={cat.key} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-            <input type="checkbox" checked={selected.has(cat.key)} onChange={() => toggle(cat.key)} />
-            <span>{cat.label}</span>
-            <span className="dim">— currently {getInvoiceIdForCategory(order, cat.key)}</span>
-          </label>
-        ))}
+        {categories.map((cat) => {
+          const current = getInvoiceIdForCategory(order, cat.key);
+          return (
+            <label key={cat.key} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+              <input type="checkbox" checked={selected.has(cat.key)} onChange={() => toggle(cat.key)} />
+              <span>{cat.label}</span>
+              {/* getInvoiceIdForCategory falls back to order.invoiceId, then
+                  order.id — before approval, order.invoiceId is still null,
+                  so an un-split category would otherwise show the ORDER ID
+                  here and look like a real invoice number. Only show it once
+                  it's a real group override or the order actually has one. */}
+              {(order.invoiceId || (order.invoiceGroups || []).some((g) => (g.categoryKeys || []).includes(cat.key))) && (
+                <span className="dim">— currently {current}</span>
+              )}
+            </label>
+          );
+        })}
       </div>
       <div className="field" style={{ maxWidth: 340, marginTop: 'var(--space-3)' }}>
         <label htmlFor="invoiceSplitDraft">Invoice Number for Ticked Categories</label>
@@ -323,6 +344,8 @@ export default function StoreAdminOrderDetail() {
                 </div>
                 {state.productionToast && <p className="hint-text" style={{ marginTop: 'var(--space-2)' }}>{state.productionToast}</p>}
 
+                <InvoiceSplitPanel order={order} setCategoryInvoiceGroup={setCategoryInvoiceGroup} updateToast={state.updateToast} />
+
                 <div className="row-split" style={{ marginTop: 'var(--space-4)' }}>
                   <span />
                   <button type="button" className="btn btn-primary" onClick={handleApproveAndInvoice} disabled={busy || !invoiceDraft.trim() || !shipmentDateDraft}>
@@ -365,9 +388,7 @@ export default function StoreAdminOrderDetail() {
                 )}
                 {state.productionToast && <p className="hint-text" style={{ marginTop: 'var(--space-2)' }}>{state.productionToast}</p>}
 
-                {order.invoiceId && (
-                  <InvoiceSplitPanel order={order} setCategoryInvoiceGroup={setCategoryInvoiceGroup} updateToast={state.updateToast} />
-                )}
+                <InvoiceSplitPanel order={order} setCategoryInvoiceGroup={setCategoryInvoiceGroup} updateToast={state.updateToast} />
 
                 <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Original vs Tambahan</div>
                 <p className="hint-text" style={{ marginTop: 0 }}>
