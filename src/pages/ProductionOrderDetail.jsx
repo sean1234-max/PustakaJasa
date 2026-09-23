@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import Nav from '../components/Nav';
 import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
@@ -8,7 +8,7 @@ import PriceTable from '../components/PriceTable';
 import { useAppState } from '../state/useAppState';
 import { statusPillStyle, formatDate, MANUAL_MAX_QTY } from '../data/catalog';
 import { reconstructOrderDetailGroups, reconstructBlocksForCategory } from '../utils/computeBlocks';
-import { getExportableCategories, splitOrderCategories, getOrderJenisPlakGroups, getPlakProductionMode, summarizeRowsForManual, buildCsvRows, rowsToCsv, buildCategoryCsvFilename, combineCsvRows, buildCombinedCsvFilename, validateExport } from '../utils/exportCsv';
+import { getExportableCategories, splitOrderCategories, getOrderJenisPlakGroups, getPlakProductionMode, summarizeRowsForManual, buildCsvRows, rowsToCsv, buildCategoryCsvFilename, combineCsvRows, buildCombinedCsvFilename, validateExport, getInvoiceIdForJenisPlak } from '../utils/exportCsv';
 import { downloadTextFile } from '../utils/downloadBlob';
 import { getOrderImportUrl } from '../lib/storageApi';
 import { getOrderChangeStamp } from '../utils/orderStamp';
@@ -34,8 +34,24 @@ export default function ProductionOrderDetail() {
   const [importErr, setImportErr] = useState('');
   const { id } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const order = state.orders.find((o) => o.id === id);
   useEffect(() => { ensureOrderLoaded(id); }, [id, ensureOrderLoaded]);
+
+  // Opened from one specific invoice's card on the Production dashboard (a
+  // split order shows one card per invoice, see ProductionDashboard.jsx/
+  // getOrderInvoiceSlices) — ?invoice= says which one, so both the Export
+  // by Jenis Plak table and the Export by Category tabs below only show
+  // (and let Production export) the Jenis Plak actually billed under THAT
+  // invoice, instead of mixing every invoice's plaques into one page no
+  // matter which card was clicked. Absent, or on an un-split order (no
+  // invoiceGroups to slice by), shows everything — same as before this
+  // existed. The exported CSV content was already correct per invoice even
+  // before this (each (category, Jenis Plak) group is inherently ONE
+  // invoice's data, see getOrderJenisPlakGroups) — this only changes what's
+  // visible/exportable from this page at a glance.
+  const viewInvoiceId = searchParams.get('invoice') || null;
+  const isFiltered = !!viewInvoiceId && !!(order?.invoiceGroups || []).length;
 
   // Re-derived from order.correctedImportFilePath whenever this order has
   // one (see loadCorrectedExcelPreview) — null while there's none, or
@@ -80,7 +96,17 @@ export default function ProductionOrderDetail() {
   const exportNoteTimer = useRef(null);
   const [page, setPage] = useState('summary');
 
-  const categories = useMemo(() => (effectiveOrder ? getExportableCategories(effectiveOrder) : []), [effectiveOrder]);
+  const allCategories = useMemo(() => (effectiveOrder ? getExportableCategories(effectiveOrder) : []), [effectiveOrder]);
+  // When viewing one specific invoice (see isFiltered above), drop a
+  // category entirely once NONE of its items are billed under that invoice
+  // — no point showing an empty tab for a category whose Jenis Plak all
+  // belong to a different invoice.
+  const categories = useMemo(() => {
+    if (!isFiltered) return allCategories;
+    return allCategories.filter((cat) => (effectiveOrder.items || []).some((it) => (
+      it.categoryKey === cat.key && getInvoiceIdForJenisPlak(effectiveOrder, it.jenisPlak) === viewInvoiceId
+    )));
+  }, [allCategories, effectiveOrder, isFiltered, viewInvoiceId]);
   const [activeCat, setActiveCat] = useState(() => categories[0]?.key || '');
   const currentCat = categories.find((c) => c.key === activeCat) || categories[0];
   // SELEMPANG — Production makes nothing for it, so it's kept out of every
@@ -97,16 +123,30 @@ export default function ProductionOrderDetail() {
   // and each needs its own reference-sample view and its own CSV export —
   // merging them would mix rows meant for different physical AI files into
   // one file with no way to tell them apart. See reconstructOrderDetailGroups.
+  // Each group is already exactly one Jenis Plak (see that function's own
+  // `items: [item]`), so filtering by invoice here is a plain array filter
+  // — no partial-block slicing needed, unlike a merged reference-sample
+  // reconstruction would require.
   const detailGroups = useMemo(() => {
     if (!effectiveOrder || !currentCat) return [];
-    return reconstructOrderDetailGroups(effectiveOrder, currentCat.key, state.plakCatalog);
-  }, [effectiveOrder, currentCat, state.plakCatalog]);
+    const groups = reconstructOrderDetailGroups(effectiveOrder, currentCat.key, state.plakCatalog);
+    if (!isFiltered) return groups;
+    return groups.filter((g) => getInvoiceIdForJenisPlak(effectiveOrder, g.jenisPlak) === viewInvoiceId);
+  }, [effectiveOrder, currentCat, state.plakCatalog, isFiltered, viewInvoiceId]);
 
   // Scoped to (category, Jenis Plak) — never combined across categories,
   // since two categories can share a Jenis Plak (same physical AI file)
   // while needing different reference-sample layouts. See
-  // getOrderJenisPlakGroups.
-  const jenisPlakGroups = useMemo(() => (effectiveOrder ? getOrderJenisPlakGroups(effectiveOrder) : []), [effectiveOrder]);
+  // getOrderJenisPlakGroups. Filtered by invoice the same way as
+  // detailGroups above — every downstream export (jenisPlakExport,
+  // combinedRows/handleExportCombined) derives from this, so the "Export by
+  // Jenis Plak" table AND the Combined CSV button both narrow down to just
+  // the invoice being viewed for free.
+  const jenisPlakGroups = useMemo(() => {
+    const groups = effectiveOrder ? getOrderJenisPlakGroups(effectiveOrder) : [];
+    if (!isFiltered) return groups;
+    return groups.filter((g) => getInvoiceIdForJenisPlak(effectiveOrder, g.jenisPlak) === viewInvoiceId);
+  }, [effectiveOrder, isFiltered, viewInvoiceId]);
 
   // Rows + a hard validation result per (category, Jenis Plak) group (see
   // validateExport). `mode` ('csv' | 'manual') is the small-qty split — see
@@ -131,8 +171,13 @@ export default function ProductionOrderDetail() {
   if (!order) return null;
 
   const stamp = getOrderChangeStamp(order);
-  const totalQty = effectiveOrder.items.reduce((sum, it) => sum + (Number(it.qty) || 0), 0);
-  const effectiveTotalAmount = effectiveOrder.items.reduce((sum, it) => sum + it.harga, 0);
+  // Only this invoice's items when filtered — feeds the "Jenis Plak / QTY /
+  // Harga" overview table at the top of Order Details and its two totals.
+  const visibleItems = isFiltered
+    ? effectiveOrder.items.filter((it) => getInvoiceIdForJenisPlak(effectiveOrder, it.jenisPlak) === viewInvoiceId)
+    : effectiveOrder.items;
+  const totalQty = visibleItems.reduce((sum, it) => sum + (Number(it.qty) || 0), 0);
+  const effectiveTotalAmount = visibleItems.reduce((sum, it) => sum + it.harga, 0);
 
   // Both export paths refuse a selection that failed validateExport, even
   // if called programmatically — the disabled button is the first line, this
@@ -217,6 +262,15 @@ export default function ProductionOrderDetail() {
           </div>
         </div>
 
+        {isFiltered && (
+          <p className="hint-text" style={{ marginBottom: 'var(--space-3)' }}>
+            Showing only the <strong>{viewInvoiceId}</strong> invoice for this order — the Jenis Plak table, category tabs, and exports below all cover just that slice.{' '}
+            <button type="button" onClick={() => navigate(`/production/orders/${order.id}`)} className="text-label-bold font-semibold text-primary hover:underline">
+              View full order
+            </button>
+          </p>
+        )}
+
         {page === 'summary' ? (
           <>
             <div className="form-grid-2" style={{ marginTop: 'var(--space-3)' }}>
@@ -228,7 +282,7 @@ export default function ProductionOrderDetail() {
               {order.shipmentDate && <div><div className="dim">Shipment Date</div><div>{formatDate(new Date(order.shipmentDate))}</div></div>}
               {order.functionDate && <div><div className="dim">Function Date</div><div>{formatDate(new Date(order.functionDate))}</div></div>}
               <div><div className="dim">Date Placed</div><div>{order.datePlaced}</div></div>
-              <div><div className="dim">Total Amount</div><div>RM {order.totalAmount.toFixed(2)}</div></div>
+              <div><div className="dim">Total Amount</div><div>RM {(isFiltered ? effectiveTotalAmount : order.totalAmount).toFixed(2)}</div></div>
             </div>
             {/* Not shown here before this — an import-derived note (a KIV
                 line, a wording-only plaque parked here for now) landed in
@@ -265,7 +319,7 @@ export default function ProductionOrderDetail() {
             <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Invoice</div>
             <div style={{ marginTop: 'var(--space-2)' }}>
               <div className="dim">Invoice Number</div>
-              <div>{order.invoiceId || 'Not assigned yet — Store Admin handles this.'}</div>
+              <div>{(isFiltered ? viewInvoiceId : order.invoiceId) || 'Not assigned yet — Store Admin handles this.'}</div>
             </div>
             {state.productionToast && <p className="hint-text" style={{ marginTop: 'var(--space-2)' }}>{state.productionToast}</p>}
 
@@ -281,7 +335,7 @@ export default function ProductionOrderDetail() {
               Combined by Jenis Plak, not Category — the same code bought for two different categories is one line here. Selempang has its own detail block below (it's never combined into this table); TOKOH's per-honoree names aren't needed here at all — export by Category further down still shows every name.
             </p>
             <PriceTable
-              rows={effectiveOrder.items} editable={false} priceDrafts={{}} setPrice={() => {}}
+              rows={visibleItems} editable={false} priceDrafts={{}} setPrice={() => {}}
               plakCatalog={state.plakCatalog} totalQty={totalQty} totalHarga={effectiveTotalAmount} priceAdjusted={false}
               hideCategory combineJenisPlak
             />

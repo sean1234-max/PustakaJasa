@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import { useAppState } from '../state/useAppState';
 import { statusPillStyle, formatDate, deliveryStageForShipmentDate, getLowStockAlerts } from '../data/catalog';
 import { getOrderChangeStamp } from '../utils/orderStamp';
+import { getOrderInvoiceSlices } from '../utils/orderBatches';
 
 // Production works 'In Production' orders (invoice number or not — that's
 // Store Admin's job now, see supabase/migrations/0036_add_invoicing_role.sql
@@ -88,8 +89,22 @@ export default function ProductionDashboard() {
 
   const lowStockAlerts = getLowStockAlerts(state.plakCatalog);
 
+  // A split order (orders.invoice_groups, 0070) shows one card per invoice
+  // it's actually billed under, not one card for the whole order — same
+  // treatment as StoreAdminDashboard.jsx. Each "slice" carries its own
+  // invoiceId/totalAmount/totalQty but is otherwise the same order (same
+  // id, sekolah, status, shipment date, ...), see getOrderInvoiceSlices. An
+  // un-split order still comes back as exactly one slice unchanged, so this
+  // is a no-op for the vast majority of orders.
+  const orderSlices = useMemo(() => state.orders.flatMap((ord) => (
+    getOrderInvoiceSlices(ord).map((slice) => ({
+      ...ord, invoiceId: slice.invoiceId, totalAmount: slice.totalAmount, totalQty: slice.totalQty,
+      _sliceKey: `${ord.id}::${slice.invoiceId || 'default'}`,
+    }))
+  )), [state.orders]);
+
   const activeTab = TABS.find((t) => t.key === tab);
-  const ordersInTab = state.orders.filter((o) => activeTab.match(o, today));
+  const ordersInTab = orderSlices.filter((o) => activeTab.match(o, today));
   const filteredOrders = ordersInTab
     .filter((o) => !shipmentDateFilter || shipmentDateKey(o.shipmentDate) === shipmentDateFilter);
 
@@ -145,7 +160,7 @@ export default function ProductionDashboard() {
 
       <div className="tabs" style={{ marginBottom: 'var(--space-4)' }}>
         {TABS.map((t) => {
-          const count = state.orders.filter((o) => t.match(o, today)).length;
+          const count = orderSlices.filter((o) => t.match(o, today)).length;
           return (
             <button
               key={t.key}
@@ -181,7 +196,7 @@ export default function ProductionDashboard() {
           const stamp = getOrderChangeStamp(ord);
 
           return (
-            <div key={ord.id} className="card order-card">
+            <div key={ord._sliceKey} className="card order-card">
               <div className="order-card-top">
                 <div>
                   <div className="order-card-label">Order ID</div>
@@ -209,7 +224,7 @@ export default function ProductionDashboard() {
                 <div><div className="dim">Shipment Date</div><div>{ord.shipmentDate ? formatDate(new Date(ord.shipmentDate)) : '—'}</div></div>
                 <div>
                   <div className="dim">Total QTY</div>
-                  <div className="order-card-qty">{(ord.items || []).reduce((sum, it) => sum + (Number(it.qty) || 0), 0)}</div>
+                  <div className="order-card-qty">{ord.totalQty}</div>
                 </div>
               </div>
 
@@ -220,7 +235,10 @@ export default function ProductionDashboard() {
               <div className="order-card-actions" style={tab === 'active' ? { display: 'flex', gap: 'var(--space-2)' } : undefined}>
                 {tab === 'active' && (
                   <>
-                    <button type="button" className="btn btn-ghost" style={{ flex: 1 }} onClick={() => navigate(`/production/orders/${ord.id}`)}>
+                    {/* ?invoice= tells ProductionOrderDetail which slice this
+                        card represents (see getOrderInvoiceSlices) — a
+                        no-op for an un-split order. */}
+                    <button type="button" className="btn btn-ghost" style={{ flex: 1 }} onClick={() => navigate(`/production/orders/${ord.id}${ord.invoiceId ? `?invoice=${encodeURIComponent(ord.invoiceId)}` : ''}`)}>
                       View Order
                     </button>
                     <button
@@ -236,7 +254,7 @@ export default function ProductionDashboard() {
                   </>
                 )}
                 {tab !== 'active' && (
-                  <button type="button" className="btn btn-ghost btn-block" onClick={() => navigate(`/production/orders/${ord.id}`)}>
+                  <button type="button" className="btn btn-ghost btn-block" onClick={() => navigate(`/production/orders/${ord.id}${ord.invoiceId ? `?invoice=${encodeURIComponent(ord.invoiceId)}` : ''}`)}>
                     View Order
                   </button>
                 )}

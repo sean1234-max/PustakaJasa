@@ -2,20 +2,20 @@ import { describe, it, expect } from 'vitest';
 import { getOrderInvoiceSlices } from './orderBatches';
 
 describe('getOrderInvoiceSlices', () => {
-  it('un-split order: one slice, using the order\'s own invoiceId/totalAmount unchanged', () => {
+  it('un-split order: one slice, using the order\'s own invoiceId/totalAmount unchanged, totalQty summed from items', () => {
     const order = {
       invoiceId: 'INV-100', totalAmount: 500, invoiceGroups: [],
       items: [{ id: 'a', jenisPlak: 'PKC 263', qty: 10, harga: 500 }],
     };
-    expect(getOrderInvoiceSlices(order)).toEqual([{ invoiceId: 'INV-100', totalAmount: 500 }]);
+    expect(getOrderInvoiceSlices(order)).toEqual([{ invoiceId: 'INV-100', totalAmount: 500, totalQty: 10 }]);
   });
 
   it('waiting-for-invoice order (invoiceId still null) with no groups: one slice with a null invoiceId', () => {
     const order = { invoiceId: null, totalAmount: 500, invoiceGroups: [], items: [] };
-    expect(getOrderInvoiceSlices(order)).toEqual([{ invoiceId: null, totalAmount: 500 }]);
+    expect(getOrderInvoiceSlices(order)).toEqual([{ invoiceId: null, totalAmount: 500, totalQty: 0 }]);
   });
 
-  it('split order: one slice per invoice, summed from each Jenis Plak\'s own harga', () => {
+  it('split order: one slice per invoice, summed from each Jenis Plak\'s own harga/qty', () => {
     const order = {
       invoiceId: 'INV-100', totalAmount: 900,
       invoiceGroups: [{ invoiceId: 'INV-200', jenisPlakList: ['PKF 266'] }],
@@ -25,8 +25,8 @@ describe('getOrderInvoiceSlices', () => {
       ],
     };
     expect(getOrderInvoiceSlices(order)).toEqual([
-      { invoiceId: 'INV-100', totalAmount: 500 },
-      { invoiceId: 'INV-200', totalAmount: 400 },
+      { invoiceId: 'INV-100', totalAmount: 500, totalQty: 10 },
+      { invoiceId: 'INV-200', totalAmount: 400, totalQty: 40 },
     ]);
   });
 
@@ -39,7 +39,7 @@ describe('getOrderInvoiceSlices', () => {
         { id: 'b', jenisPlak: 'PKF 266', qty: 40, harga: 400 },
       ],
     };
-    expect(getOrderInvoiceSlices(order)).toEqual([{ invoiceId: 'INV-200', totalAmount: 900 }]);
+    expect(getOrderInvoiceSlices(order)).toEqual([{ invoiceId: 'INV-200', totalAmount: 900, totalQty: 50 }]);
   });
 
   it('multiple splits: default plus every group, each summed independently', () => {
@@ -56,9 +56,9 @@ describe('getOrderInvoiceSlices', () => {
       ],
     };
     expect(getOrderInvoiceSlices(order)).toEqual([
-      { invoiceId: 'INV-100', totalAmount: 500 },
-      { invoiceId: 'INV-200', totalAmount: 300 },
-      { invoiceId: 'INV-300', totalAmount: 200 },
+      { invoiceId: 'INV-100', totalAmount: 500, totalQty: 10 },
+      { invoiceId: 'INV-200', totalAmount: 300, totalQty: 40 },
+      { invoiceId: 'INV-300', totalAmount: 200, totalQty: 20 },
     ]);
   });
 });
