@@ -670,8 +670,22 @@ function sanitizeFilenamePart(part) {
   return part.replace(WINDOWS_RESERVED_CHARS, '-').replace(/\s+/g, ' ').trim();
 }
 
-export function buildCategoryCsvFilename(order, categoryLabel) {
-  const invoice = sanitizeFilenamePart(order.invoiceId || order.id);
+// order.invoiceGroups (0070) lets Store Admin split ONE order across
+// several invoice numbers, each covering a subset of categories — it only
+// records the EXCEPTIONS (a category key not listed here still bills under
+// the order's own invoice_id, the default). Falls back through
+// order.invoiceId, then order.id, same as the un-split case always did.
+export function getInvoiceIdForCategory(order, categoryKey) {
+  const groups = order.invoiceGroups || [];
+  const match = categoryKey ? groups.find((g) => (g.categoryKeys || []).includes(categoryKey)) : null;
+  return (match && match.invoiceId) || order.invoiceId || order.id;
+}
+
+// `categoryKey` is optional — omit it (or pass one with no invoice_groups
+// override) to fall back to the order's own invoice_id, same as before
+// 0070 existed.
+export function buildCategoryCsvFilename(order, categoryLabel, categoryKey) {
+  const invoice = sanitizeFilenamePart(getInvoiceIdForCategory(order, categoryKey));
   const category = sanitizeFilenamePart(categoryLabel);
   return `(${invoice}) - ${category}.csv`;
 }

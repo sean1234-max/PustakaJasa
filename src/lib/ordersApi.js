@@ -8,6 +8,7 @@ function toDbOrder(order) {
   return {
     id: order.id,
     invoice_id: order.invoiceId ?? null,
+    invoice_groups: order.invoiceGroups ?? [],
     printed_at: order.printedAt ?? null,
     date_placed: order.datePlaced ?? null,
     delivery_date: order.deliveryDate ?? null,
@@ -56,6 +57,7 @@ function fromDbOrder(row) {
   return {
     id: row.id,
     invoiceId: row.invoice_id,
+    invoiceGroups: row.invoice_groups || [],
     printedAt: row.printed_at,
     datePlaced: row.date_placed,
     deliveryDate: row.delivery_date,
