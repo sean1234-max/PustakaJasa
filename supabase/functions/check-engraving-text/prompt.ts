@@ -15,6 +15,7 @@ FLAG:
 
 DO NOT FLAG:
 - Proper nouns you don't recognise — school names, people's names, place names, a school's own made-up event name. When you can't tell if a word is a name or a typo, leave it.
+- A short (2-6 letter) all-caps abbreviation you don't immediately recognise. Malaysian schools use MANY official Ministry of Education abbreviations that look unfamiliar but are correct as-is — e.g. PPKI, PBD, PIBG, SPBT, HEM, PSS, KOKO, PAJSK, LINUS, KAFA, KSSR, KSSM, PdPc. Do not "correct" an abbreviation into a different word or a made-up abbreviation just because it looks unusual — if you don't recognise it, treat it as a real term, not a typo.
 - ALL CAPS text (it is intentional).
 - A year, session, or number unless it is clearly malformed (e.g. "20026").
 - Style, word choice, punctuation, or spacing preferences.

@@ -94,7 +94,7 @@ export default function AdminOrderDetail() {
     const csv = rowsToCsv(csvData.rows);
     const label = [group.blk.qtyLabel, group.batch !== 0 ? group.label : null, group.jenisPlak]
       .filter(Boolean).join(' - ');
-    const filename = buildCategoryCsvFilename(order, label);
+    const filename = buildCategoryCsvFilename(order, label, currentCat?.key);
     downloadTextFile(filename, csv);
     setExportNote(`Exported ${csvData.rows.length} row(s) to ${filename}.`);
     clearTimeout(exportNoteTimer.current);
@@ -104,7 +104,7 @@ export default function AdminOrderDetail() {
   const handleExportJenisPlak = (group, csvData, check) => {
     if (!check.ok || csvData.rows.length === 0) return;
     const csv = rowsToCsv(csvData.rows);
-    const filename = buildCategoryCsvFilename(order, `${group.categoryLabel} - ${group.jenisPlak}`);
+    const filename = buildCategoryCsvFilename(order, `${group.categoryLabel} - ${group.jenisPlak}`, group.categoryKey);
     downloadTextFile(filename, csv);
     setExportNote(`Exported ${csvData.rows.length} row(s) to ${filename}.`);
     clearTimeout(exportNoteTimer.current);

@@ -832,9 +832,9 @@ input.catalog-admin-code { padding: 6px 8px; }
      compact sizing above — that's load-bearing for fitting a large
      category (PBD's Nama Kelas breakdown especially) on one printed page,
      a constraint the short Summary section doesn't have. */
-  .print-only .print-summary-section { font-size: 25px; }
-  .print-only .print-summary-section .card-kicker { font-size: 20px; }
-  .print-only .print-summary-section .table th, .print-only .print-summary-section .table td { font-size: 20px; }
+  .print-only .print-summary-section { font-size: 14px; }
+  .print-only .print-summary-section .card-kicker { font-size: 14px; }
+  .print-only .print-summary-section .table th, .print-only .print-summary-section .table td { font-size: 14px; }
 
   /* Every reviewed matrix/list cell is a <input type="number"> even when
      read-only (shared with the editable screen view) — its up/down spinner

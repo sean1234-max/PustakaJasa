@@ -2075,6 +2075,64 @@ export function AppStateProvider({ children }) {
     return { ok: true };
   }, [patch, flashToast, attemptUrgentSheetSync]);
 
+  // Store Admin: splits an order across a second (or third, ...) invoice
+  // number by moving `categoryKeys` into a group billed under `invoiceId`
+  // (orders.invoice_groups, 0070_order_invoice_groups.sql). Any category
+  // NOT listed in any group keeps billing under the order's own invoiceId
+  // — invoiceGroups only ever needs to record the exceptions. A category
+  // can only belong to one invoice at a time, so it's first pulled out of
+  // whichever OTHER group already held it before being (re)placed.
+  const setCategoryInvoiceGroup = useCallback(async (orderId, invoiceId, categoryKeys) => {
+    const normalized = (invoiceId || '').replace(/\s+/g, '');
+    const keys = (categoryKeys || []).filter(Boolean);
+    const st = stateRef.current;
+    const order = st.orders.find((o) => o.id === orderId);
+    if (!order) return { ok: false };
+    if (!normalized) {
+      flashToast('updateToast', 'Enter a valid Invoice ID.');
+      return { ok: false };
+    }
+    if (keys.length === 0) {
+      flashToast('updateToast', 'Tick at least one category to assign.');
+      return { ok: false };
+    }
+    const isDuplicate = normalized !== (order.invoiceId || '').replace(/\s+/g, '')
+      && st.orders.some((o) => (
+        o.id !== orderId && o.invoiceId && o.invoiceId.replace(/\s+/g, '') === normalized
+      ));
+    if (isDuplicate) {
+      flashToast('updateToast', 'Invoice ID invalid because repeated, please try again.');
+      return { ok: false };
+    }
+    const withoutKeys = (order.invoiceGroups || [])
+      .map((g) => ({ ...g, categoryKeys: (g.categoryKeys || []).filter((k) => !keys.includes(k)) }))
+      .filter((g) => g.categoryKeys.length > 0);
+    // Assigning back to the order's own (default) invoice number just
+    // removes the exception entirely — no group needed to say "use the
+    // default", that's already what an absent entry means.
+    const newGroups = normalized === (order.invoiceId || '').replace(/\s+/g, '')
+      ? withoutKeys
+      : (() => {
+        const existing = withoutKeys.find((g) => g.invoiceId.replace(/\s+/g, '') === normalized);
+        if (existing) {
+          return withoutKeys.map((g) => (g === existing ? { ...g, categoryKeys: [...g.categoryKeys, ...keys] } : g));
+        }
+        return [...withoutKeys, { invoiceId: normalized, categoryKeys: keys }];
+      })();
+    try {
+      await updateOrder(orderId, { invoiceGroups: newGroups });
+    } catch (err) {
+      console.error('Failed to save invoice group to Supabase:', err);
+      flashToast('updateToast', describeOrderWriteError(err, 'save the invoice split for'));
+      return { ok: false };
+    }
+    patch((latest) => ({
+      orders: latest.orders.map((o) => (o.id === orderId ? { ...o, invoiceGroups: newGroups } : o)),
+    }));
+    flashToast('updateToast', 'Invoice split saved.');
+    return { ok: true };
+  }, [patch, flashToast]);
+
   // Store Admin: approves a still-"Submitted to Sales" order and
   // assigns its Invoice Number in the same action — for orders a Salesman
   // hands over as a paper hard copy before ever clicking Approve
@@ -2381,6 +2439,7 @@ export function AppStateProvider({ children }) {
     importFormAnugerahExcel, importFormAnugerahExcelInto,
     openAmend, updateAmend,
     openAddOn, submitPendingAddOn, cancelPendingAddOn, rejectAddOn, approveAddOn, approveOrder, setInvoiceId, approveAndSetInvoiceId,
+    setCategoryInvoiceGroup,
     retryUrgentSheetSync,
     cancelOrder,
     reassignSalesman,

@@ -6,9 +6,9 @@ import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import PriceTable from '../components/PriceTable';
 import DatePicker from '../components/DatePicker';
 import { useAppState } from '../state/useAppState';
-import { statusPillStyle, formatDate, standardUnitPrice } from '../data/catalog';
+import { statusPillStyle, formatDate, standardUnitPrice, categoriesUsedByItems } from '../data/catalog';
 import { reconstructBlocksForCategory } from '../utils/computeBlocks';
-import { splitOrderCategories } from '../utils/exportCsv';
+import { splitOrderCategories, getInvoiceIdForCategory } from '../utils/exportCsv';
 import { getOrderImportUrl } from '../lib/storageApi';
 import { getOrderChangeStamp } from '../utils/orderStamp';
 import { isUrgentShipment } from '../utils/urgentOrder';
@@ -29,6 +29,72 @@ async function downloadOrderImport(order, setErr) {
 
 const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: false, matrix: false, jenisPlak: false };
 
+// Lets Store Admin split ONE order across several invoice numbers when
+// different categories bill separately (orders.invoice_groups, 0070) — tick
+// the categories that go on a different invoice, type that invoice's
+// number, and assign. Repeatable: tick the next batch and assign a second
+// invoice number afterward. Anything never touched here keeps billing under
+// the order's own (default) Invoice Number shown above.
+function InvoiceSplitPanel({ order, setCategoryInvoiceGroup, updateToast }) {
+  const categories = useMemo(() => categoriesUsedByItems(order.items), [order.items]);
+  const [selected, setSelected] = useState(() => new Set());
+  const [invoiceDraft, setInvoiceDraft] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  if (categories.length < 2) return null;
+
+  const toggle = (key) => setSelected((prev) => {
+    const next = new Set(prev);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    return next;
+  });
+
+  const handleAssign = async () => {
+    if (busy || selected.size === 0 || !invoiceDraft.trim()) return;
+    setBusy(true);
+    const res = await setCategoryInvoiceGroup(order.id, invoiceDraft, [...selected]);
+    setBusy(false);
+    if (res?.ok) {
+      setSelected(new Set());
+      setInvoiceDraft('');
+    }
+  };
+
+  return (
+    <div style={{ marginTop: 'var(--space-4)' }}>
+      <div className="card-kicker">Split Across Invoices</div>
+      <p className="hint-text" style={{ marginTop: 0 }}>
+        Tick the categories that belong on a different invoice, type that invoice number, then assign. Categories left unticked stay on {order.invoiceId}.
+      </p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)', marginTop: 'var(--space-2)' }}>
+        {categories.map((cat) => (
+          <label key={cat.key} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+            <input type="checkbox" checked={selected.has(cat.key)} onChange={() => toggle(cat.key)} />
+            <span>{cat.label}</span>
+            <span className="dim">— currently {getInvoiceIdForCategory(order, cat.key)}</span>
+          </label>
+        ))}
+      </div>
+      <div className="field" style={{ maxWidth: 340, marginTop: 'var(--space-3)' }}>
+        <label htmlFor="invoiceSplitDraft">Invoice Number for Ticked Categories</label>
+        <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+          <input
+            className="input"
+            id="invoiceSplitDraft"
+            placeholder="e.g. INV-0091"
+            value={invoiceDraft}
+            onChange={(e) => setInvoiceDraft(e.target.value)}
+          />
+          <button type="button" className="btn btn-primary" onClick={handleAssign} disabled={busy || selected.size === 0 || !invoiceDraft.trim()}>
+            {busy ? 'Saving…' : 'Assign'}
+          </button>
+        </div>
+      </div>
+      {updateToast && <p className="hint-text" style={{ marginTop: 'var(--space-2)' }}>{updateToast}</p>}
+    </div>
+  );
+}
+
 // Store Admin's own order view (role formerly "Invoicing Department",
 // renamed 0047) — assigns/displays the Invoice Number and shows the
 // original-vs-Tambahan breakdown via PriceTable's own batch-grouping, same
@@ -45,7 +111,9 @@ const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: f
 // (approved via either path), pricing and dates are frozen and this page
 // falls back to the simple invoice-only entry (setInvoiceId), same as before.
 export default function StoreAdminOrderDetail() {
-  const { state, today, setInvoiceId, approveAndSetInvoiceId, retryUrgentSheetSync, ensureOrderLoaded } = useAppState();
+  const {
+    state, today, setInvoiceId, approveAndSetInvoiceId, setCategoryInvoiceGroup, retryUrgentSheetSync, ensureOrderLoaded,
+  } = useAppState();
   const { id } = useParams();
   const navigate = useNavigate();
   const order = state.orders.find((o) => o.id === id);
@@ -296,6 +364,10 @@ export default function StoreAdminOrderDetail() {
                   </div>
                 )}
                 {state.productionToast && <p className="hint-text" style={{ marginTop: 'var(--space-2)' }}>{state.productionToast}</p>}
+
+                {order.invoiceId && (
+                  <InvoiceSplitPanel order={order} setCategoryInvoiceGroup={setCategoryInvoiceGroup} updateToast={state.updateToast} />
+                )}
 
                 <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Original vs Tambahan</div>
                 <p className="hint-text" style={{ marginTop: 0 }}>
