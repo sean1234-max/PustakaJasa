@@ -70,7 +70,16 @@ export default function PriceTable({
                             type="number"
                             min="0"
                             step="0.01"
-                            value={it.ids.length === 1 ? priceDrafts[it.ids[0]] : it.unitPrice}
+                            // Falls back to it.unitPrice (same fallback the
+                            // Harga column's own total already relies on,
+                            // see StoreAdminOrderDetail/SalesOrderSummary's
+                            // `rows` memo) whenever priceDrafts hasn't got a
+                            // real number for this item yet — a stray
+                            // null/undefined draft (e.g. a mouse-wheel nudge
+                            // on the native number spinner) must never show
+                            // as a blank field while Harga quietly still
+                            // computes off the correct price underneath.
+                            value={it.ids.length === 1 ? (priceDrafts[it.ids[0]] ?? it.unitPrice) : it.unitPrice}
                             onChange={(e) => setPrice(it.ids, e.target.value)}
                           />
                         ) : (

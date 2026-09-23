@@ -44,13 +44,30 @@ const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: f
 // pick one "default" invoice number at Approve time and only split
 // afterwards. Categories with no group yet fall back to display the order's
 // own invoiceId once that's set (see `defaultLabel`).
+//
+// Collapsed to a single "Split Invoice" button by default — most orders
+// never need this, so the checkbox list/second Invoice Number field would
+// just be noise on every normal order. Clicking it reveals the rest; once
+// expanded it stays expanded (no need to collapse back — there's nothing
+// destructive to hide).
 function InvoiceSplitPanel({ order, setCategoryInvoiceGroup, updateToast }) {
   const categories = useMemo(() => categoriesUsedByItems(order.items), [order.items]);
+  const [expanded, setExpanded] = useState(false);
   const [selected, setSelected] = useState(() => new Set());
   const [invoiceDraft, setInvoiceDraft] = useState('');
   const [busy, setBusy] = useState(false);
 
   if (categories.length < 2) return null;
+
+  if (!expanded) {
+    return (
+      <div style={{ marginTop: 'var(--space-3)' }}>
+        <button type="button" className="btn btn-ghost" onClick={() => setExpanded(true)}>
+          Split Invoice
+        </button>
+      </div>
+    );
+  }
 
   const toggle = (key) => setSelected((prev) => {
     const next = new Set(prev);
