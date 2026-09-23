@@ -283,6 +283,13 @@ a:hover { color: var(--color-accent-900); text-decoration: underline; }
 .btn-ghost:hover { background: var(--color-neutral-100); }
 .btn-danger { background: #b0392e; color: #fff; }
 .btn-danger:hover:not(:disabled) { background: #8f2c23; box-shadow: var(--shadow-sm); }
+/* Store Admin Manager's "Urgent List" link (StoreAdminDashboard.jsx) —
+   needs to read as its own, unmissable thing next to the ordinary
+   btn-primary/btn-ghost buttons, so it gets its own warm/urgent color
+   (matches .urgent-hint/.order-stamp-urgent's #d35400) instead of reusing
+   btn-danger, which is reserved for destructive actions. */
+.btn-urgent { background: #d35400; color: #fff; font-size: 15px; padding: 12px 22px; }
+.btn-urgent:hover:not(:disabled) { background: #a84300; box-shadow: var(--shadow-sm); }
 
 /* Production: this Jenis Plak's total qty is small enough to hand-type
    into Illustrator (see catalog.js MANUAL_MAX_QTY) — shown where an

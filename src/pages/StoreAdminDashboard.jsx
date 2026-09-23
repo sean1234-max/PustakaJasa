@@ -90,7 +90,7 @@ export default function StoreAdminDashboard() {
           <p className="hint-text" style={{ margin: 0 }}>Assign Invoice Numbers for approved orders — or approve one yourself (with pricing) straight from a hard copy — and search/track ones already invoiced.</p>
         </div>
         {isManager && (
-          <a href={URGENT_ORDERS_SHEET_URL} target="_blank" rel="noreferrer" className="btn btn-ghost">
+          <a href={URGENT_ORDERS_SHEET_URL} target="_blank" rel="noreferrer" className="btn btn-urgent">
             ⚡ Urgent List
           </a>
         )}
