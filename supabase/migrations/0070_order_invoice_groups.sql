@@ -1,13 +1,22 @@
 -- ============================================================================
 -- Lets Store Admin split ONE order across MULTIPLE invoice numbers, each
--- covering a different subset of the order's categories — e.g. some
--- categories bill under the order's existing invoice_id, others move to a
--- separate invoice. `invoice_groups` only stores the EXCEPTIONS: any
--- category key not listed here still bills under the order's own
+-- covering a different subset of the order's Jenis Plak codes — e.g. some
+-- Jenis Plak bill under the order's existing invoice_id, others move to a
+-- separate invoice. Split by Jenis Plak (not category): a Jenis Plak like
+-- "PKC 263" is one physical Illustrator file regardless of which category
+-- ordered it (the app already combines it into one priced line across
+-- categories, see src/utils/orderBatches.js's combineByJenisPlak), so
+-- that's the natural billing unit — not the category breakdown Production's
+-- per-category export uses. `invoice_groups` only stores the EXCEPTIONS:
+-- any Jenis Plak not listed here still bills under the order's own
 -- `invoice_id` (the "default" — unchanged, still set once at approval the
--- same way as always). A category can only ever be a member of one entry.
+-- same way as always). A Jenis Plak can only ever be a member of one entry.
 --
--- Shape: [{ "invoiceId": "DWI-27000", "categoryKeys": ["PBD", "MP1"] }, ...]
+-- Shape: [{ "invoiceId": "DWI-27000", "jenisPlakList": ["PKC 263", "PKF 266"] }, ...]
+-- (originally shipped as `"categoryKeys"` — renamed in the app layer once
+-- Jenis Plak turned out to be the more useful split unit; this jsonb column
+-- itself doesn't care about the internal key names, so no further migration
+-- was needed for the rename.)
 --
 -- orders_write_guard (0066) already excludes `invoice_id` from its
 -- store_admin "no changes after already approved" diff — `invoice_groups`

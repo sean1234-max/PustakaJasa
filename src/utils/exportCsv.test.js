@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  CSV_COLUMNS, rowsToCsv, buildCsvRows, validateExport, buildCategoryCsvFilename, getInvoiceIdForCategory, isReservedName,
+  CSV_COLUMNS, rowsToCsv, buildCsvRows, validateExport, buildCategoryCsvFilename, getInvoiceIdForJenisPlak, isReservedName,
   getOrderJenisPlakGroups, getExportableCategories, splitOrderCategories,
   combineCsvRows, buildCombinedCsvFilename,
 } from './exportCsv';
@@ -710,33 +710,33 @@ describe('buildCategoryCsvFilename', () => {
   it('falls back to the order id when there is no invoice id', () => {
     expect(buildCategoryCsvFilename({ id: 'ORD-2026-097' }, 'X')).toBe('(ORD-2026-097) - X.csv');
   });
-  it("uses a category's own invoiceGroups entry when one is assigned (0070)", () => {
+  it("uses a Jenis Plak's own invoiceGroups entry when one is assigned (0070)", () => {
     const order = {
       id: 'ORD-1', invoiceId: 'INV-100',
-      invoiceGroups: [{ invoiceId: 'INV-200', categoryKeys: ['PBD'] }],
+      invoiceGroups: [{ invoiceId: 'INV-200', jenisPlakList: ['PKC 263'] }],
     };
-    expect(buildCategoryCsvFilename(order, 'PBD', 'PBD')).toBe('(INV-200) - PBD.csv');
-    // A category never listed in any group still falls back to the order's
-    // own (default) invoice id.
-    expect(buildCategoryCsvFilename(order, 'MP1', 'MP1')).toBe('(INV-100) - MP1.csv');
+    expect(buildCategoryCsvFilename(order, 'PKC 263', 'PKC 263')).toBe('(INV-200) - PKC 263.csv');
+    // A Jenis Plak never listed in any group still falls back to the
+    // order's own (default) invoice id.
+    expect(buildCategoryCsvFilename(order, 'PKF 266', 'PKF 266')).toBe('(INV-100) - PKF 266.csv');
   });
 });
 
-describe('getInvoiceIdForCategory', () => {
-  it("returns the matching group's invoice id for a listed category", () => {
-    const order = { id: 'ORD-1', invoiceId: 'INV-100', invoiceGroups: [{ invoiceId: 'INV-200', categoryKeys: ['PBD', 'MP1'] }] };
-    expect(getInvoiceIdForCategory(order, 'PBD')).toBe('INV-200');
-    expect(getInvoiceIdForCategory(order, 'MP1')).toBe('INV-200');
+describe('getInvoiceIdForJenisPlak', () => {
+  it("returns the matching group's invoice id for a listed Jenis Plak", () => {
+    const order = { id: 'ORD-1', invoiceId: 'INV-100', invoiceGroups: [{ invoiceId: 'INV-200', jenisPlakList: ['PKC 263', 'PKF 266'] }] };
+    expect(getInvoiceIdForJenisPlak(order, 'PKC 263')).toBe('INV-200');
+    expect(getInvoiceIdForJenisPlak(order, 'PKF 266')).toBe('INV-200');
   });
-  it("falls back to the order's own invoiceId for an unlisted category", () => {
-    const order = { id: 'ORD-1', invoiceId: 'INV-100', invoiceGroups: [{ invoiceId: 'INV-200', categoryKeys: ['PBD'] }] };
-    expect(getInvoiceIdForCategory(order, 'MP1')).toBe('INV-100');
+  it("falls back to the order's own invoiceId for an unlisted Jenis Plak", () => {
+    const order = { id: 'ORD-1', invoiceId: 'INV-100', invoiceGroups: [{ invoiceId: 'INV-200', jenisPlakList: ['PKC 263'] }] };
+    expect(getInvoiceIdForJenisPlak(order, 'PKF 266')).toBe('INV-100');
   });
   it('falls back to the order id when there is no invoiceId at all', () => {
-    expect(getInvoiceIdForCategory({ id: 'ORD-2026-097' }, 'PBD')).toBe('ORD-2026-097');
+    expect(getInvoiceIdForJenisPlak({ id: 'ORD-2026-097' }, 'PKC 263')).toBe('ORD-2026-097');
   });
-  it("falls back to the order's invoiceId when no categoryKey is passed", () => {
-    const order = { id: 'ORD-1', invoiceId: 'INV-100', invoiceGroups: [{ invoiceId: 'INV-200', categoryKeys: ['PBD'] }] };
-    expect(getInvoiceIdForCategory(order)).toBe('INV-100');
+  it("falls back to the order's invoiceId when no jenisPlak is passed", () => {
+    const order = { id: 'ORD-1', invoiceId: 'INV-100', invoiceGroups: [{ invoiceId: 'INV-200', jenisPlakList: ['PKC 263'] }] };
+    expect(getInvoiceIdForJenisPlak(order)).toBe('INV-100');
   });
 });

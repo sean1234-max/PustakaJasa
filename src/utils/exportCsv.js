@@ -671,21 +671,26 @@ function sanitizeFilenamePart(part) {
 }
 
 // order.invoiceGroups (0070) lets Store Admin split ONE order across
-// several invoice numbers, each covering a subset of categories — it only
-// records the EXCEPTIONS (a category key not listed here still bills under
-// the order's own invoice_id, the default). Falls back through
+// several invoice numbers, each covering a subset of Jenis Plak codes — it
+// only records the EXCEPTIONS (a Jenis Plak not listed here still bills
+// under the order's own invoice_id, the default). Split by Jenis Plak
+// rather than category: a Jenis Plak like "PKC 263" is one physical
+// Illustrator file regardless of which category ordered it (see
+// combineByJenisPlak, src/utils/orderBatches.js — the same product bought
+// under two categories is already ONE line for pricing), so that's also the
+// natural unit for "which invoice does this bill under". Falls back through
 // order.invoiceId, then order.id, same as the un-split case always did.
-export function getInvoiceIdForCategory(order, categoryKey) {
+export function getInvoiceIdForJenisPlak(order, jenisPlak) {
   const groups = order.invoiceGroups || [];
-  const match = categoryKey ? groups.find((g) => (g.categoryKeys || []).includes(categoryKey)) : null;
+  const match = jenisPlak ? groups.find((g) => (g.jenisPlakList || []).includes(jenisPlak)) : null;
   return (match && match.invoiceId) || order.invoiceId || order.id;
 }
 
-// `categoryKey` is optional — omit it (or pass one with no invoice_groups
+// `jenisPlak` is optional — omit it (or pass one with no invoice_groups
 // override) to fall back to the order's own invoice_id, same as before
 // 0070 existed.
-export function buildCategoryCsvFilename(order, categoryLabel, categoryKey) {
-  const invoice = sanitizeFilenamePart(getInvoiceIdForCategory(order, categoryKey));
+export function buildCategoryCsvFilename(order, categoryLabel, jenisPlak) {
+  const invoice = sanitizeFilenamePart(getInvoiceIdForJenisPlak(order, jenisPlak));
   const category = sanitizeFilenamePart(categoryLabel);
   return `(${invoice}) - ${category}.csv`;
 }

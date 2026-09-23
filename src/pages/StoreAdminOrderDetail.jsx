@@ -6,9 +6,10 @@ import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import PriceTable from '../components/PriceTable';
 import DatePicker from '../components/DatePicker';
 import { useAppState } from '../state/useAppState';
-import { statusPillStyle, formatDate, standardUnitPrice, categoriesUsedByItems } from '../data/catalog';
+import { statusPillStyle, formatDate, standardUnitPrice } from '../data/catalog';
 import { reconstructBlocksForCategory } from '../utils/computeBlocks';
-import { splitOrderCategories, getInvoiceIdForCategory } from '../utils/exportCsv';
+import { splitOrderCategories, getInvoiceIdForJenisPlak } from '../utils/exportCsv';
+import { combineByJenisPlak } from '../utils/orderBatches';
 import { getOrderImportUrl } from '../lib/storageApi';
 import { getOrderChangeStamp } from '../utils/orderStamp';
 import { isUrgentShipment } from '../utils/urgentOrder';
@@ -30,11 +31,18 @@ async function downloadOrderImport(order, setErr) {
 const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: false, matrix: false, jenisPlak: false };
 
 // Lets Store Admin split ONE order across several invoice numbers when
-// different categories bill separately (orders.invoice_groups, 0070) — tick
-// the categories that go on a different invoice, type that invoice's
-// number, and assign. Repeatable: tick the next batch and assign a second
-// invoice number afterward. Anything never touched here keeps billing under
-// the order's own (default) Invoice Number.
+// different Jenis Plak codes bill separately (orders.invoice_groups, 0070)
+// — tick the Jenis Plak codes that go on a different invoice, type that
+// invoice's number, and assign. Repeatable: tick the next batch and assign
+// a second invoice number afterward. Anything never touched here keeps
+// billing under the order's own (default) Invoice Number.
+//
+// Split by Jenis Plak, not category — "PKC 263" is one physical
+// Illustrator file no matter which category ordered it (the same code
+// bought under two categories is already combined into ONE line above, in
+// the Jenis Plak / Price per Unit / QTY / Harga table via combineByJenisPlak
+// — see PriceTable's combineJenisPlak), so that's the natural unit here too,
+// not the category breakdown Production's per-category export uses.
 //
 // Also usable BEFORE the order is even approved (order.invoiceId still
 // null) — orders_write_guard (0070) excludes invoice_groups from its
@@ -42,22 +50,22 @@ const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: f
 // this write is allowed at either stage. That lets Store Admin plan the
 // split the moment they SEE the order needs one, instead of being forced to
 // pick one "default" invoice number at Approve time and only split
-// afterwards. Categories with no group yet fall back to display the order's
-// own invoiceId once that's set (see `defaultLabel`).
+// afterwards. A Jenis Plak with no group yet falls back to display the
+// order's own invoiceId once that's set (see `defaultLabel`).
 //
 // Collapsed to a single "Split Invoice" button by default — most orders
 // never need this, so the checkbox list/second Invoice Number field would
 // just be noise on every normal order. Clicking it reveals the rest; once
 // expanded it stays expanded (no need to collapse back — there's nothing
 // destructive to hide).
-function InvoiceSplitPanel({ order, setCategoryInvoiceGroup, updateToast }) {
-  const categories = useMemo(() => categoriesUsedByItems(order.items), [order.items]);
+function InvoiceSplitPanel({ order, setJenisPlakInvoiceGroup, updateToast }) {
+  const jenisPlakRows = useMemo(() => combineByJenisPlak(order.items), [order.items]);
   const [expanded, setExpanded] = useState(false);
   const [selected, setSelected] = useState(() => new Set());
   const [invoiceDraft, setInvoiceDraft] = useState('');
   const [busy, setBusy] = useState(false);
 
-  if (categories.length < 2) return null;
+  if (jenisPlakRows.length < 2) return null;
 
   if (!expanded) {
     return (
@@ -78,7 +86,7 @@ function InvoiceSplitPanel({ order, setCategoryInvoiceGroup, updateToast }) {
   const handleAssign = async () => {
     if (busy || selected.size === 0 || !invoiceDraft.trim()) return;
     setBusy(true);
-    const res = await setCategoryInvoiceGroup(order.id, invoiceDraft, [...selected]);
+    const res = await setJenisPlakInvoiceGroup(order.id, invoiceDraft, [...selected]);
     setBusy(false);
     if (res?.ok) {
       setSelected(new Set());
@@ -92,21 +100,21 @@ function InvoiceSplitPanel({ order, setCategoryInvoiceGroup, updateToast }) {
     <div style={{ marginTop: 'var(--space-4)' }}>
       <div className="card-kicker">Split Across Invoices</div>
       <p className="hint-text" style={{ marginTop: 0 }}>
-        Tick the categories that belong on a different invoice, type that invoice number, then assign. Categories left unticked stay on {defaultLabel}.
+        Tick the Jenis Plak that belong on a different invoice, type that invoice number, then assign. Jenis Plak left unticked stay on {defaultLabel}.
       </p>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)', marginTop: 'var(--space-2)' }}>
-        {categories.map((cat) => {
-          const current = getInvoiceIdForCategory(order, cat.key);
+        {jenisPlakRows.map((row) => {
+          const current = getInvoiceIdForJenisPlak(order, row.jenisPlak);
           return (
-            <label key={cat.key} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-              <input type="checkbox" checked={selected.has(cat.key)} onChange={() => toggle(cat.key)} />
-              <span>{cat.label}</span>
-              {/* getInvoiceIdForCategory falls back to order.invoiceId, then
+            <label key={row.jenisPlak} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+              <input type="checkbox" checked={selected.has(row.jenisPlak)} onChange={() => toggle(row.jenisPlak)} />
+              <span>{row.jenisPlak}</span>
+              {/* getInvoiceIdForJenisPlak falls back to order.invoiceId, then
                   order.id — before approval, order.invoiceId is still null,
-                  so an un-split category would otherwise show the ORDER ID
+                  so an un-split Jenis Plak would otherwise show the ORDER ID
                   here and look like a real invoice number. Only show it once
                   it's a real group override or the order actually has one. */}
-              {(order.invoiceId || (order.invoiceGroups || []).some((g) => (g.categoryKeys || []).includes(cat.key))) && (
+              {(order.invoiceId || (order.invoiceGroups || []).some((g) => (g.jenisPlakList || []).includes(row.jenisPlak))) && (
                 <span className="dim">— currently {current}</span>
               )}
             </label>
@@ -114,7 +122,7 @@ function InvoiceSplitPanel({ order, setCategoryInvoiceGroup, updateToast }) {
         })}
       </div>
       <div className="field" style={{ maxWidth: 340, marginTop: 'var(--space-3)' }}>
-        <label htmlFor="invoiceSplitDraft">Invoice Number for Ticked Categories</label>
+        <label htmlFor="invoiceSplitDraft">Invoice Number for Ticked Jenis Plak</label>
         <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
           <input
             className="input"
@@ -150,7 +158,7 @@ function InvoiceSplitPanel({ order, setCategoryInvoiceGroup, updateToast }) {
 // falls back to the simple invoice-only entry (setInvoiceId), same as before.
 export default function StoreAdminOrderDetail() {
   const {
-    state, today, setInvoiceId, approveAndSetInvoiceId, setCategoryInvoiceGroup, retryUrgentSheetSync, ensureOrderLoaded,
+    state, today, setInvoiceId, approveAndSetInvoiceId, setJenisPlakInvoiceGroup, retryUrgentSheetSync, ensureOrderLoaded,
   } = useAppState();
   const { id } = useParams();
   const navigate = useNavigate();
@@ -361,7 +369,7 @@ export default function StoreAdminOrderDetail() {
                 </div>
                 {state.productionToast && <p className="hint-text" style={{ marginTop: 'var(--space-2)' }}>{state.productionToast}</p>}
 
-                <InvoiceSplitPanel order={order} setCategoryInvoiceGroup={setCategoryInvoiceGroup} updateToast={state.updateToast} />
+                <InvoiceSplitPanel order={order} setJenisPlakInvoiceGroup={setJenisPlakInvoiceGroup} updateToast={state.updateToast} />
 
                 <div className="row-split" style={{ marginTop: 'var(--space-4)' }}>
                   <span />
@@ -405,7 +413,7 @@ export default function StoreAdminOrderDetail() {
                 )}
                 {state.productionToast && <p className="hint-text" style={{ marginTop: 'var(--space-2)' }}>{state.productionToast}</p>}
 
-                <InvoiceSplitPanel order={order} setCategoryInvoiceGroup={setCategoryInvoiceGroup} updateToast={state.updateToast} />
+                <InvoiceSplitPanel order={order} setJenisPlakInvoiceGroup={setJenisPlakInvoiceGroup} updateToast={state.updateToast} />
 
                 <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Original vs Tambahan</div>
                 <p className="hint-text" style={{ marginTop: 0 }}>
