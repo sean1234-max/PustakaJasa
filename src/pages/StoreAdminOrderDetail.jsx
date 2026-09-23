@@ -141,6 +141,68 @@ function InvoiceSplitPanel({ order, setJenisPlakInvoiceGroup, updateToast }) {
   );
 }
 
+// Pre-approval only: lets Store Admin decide the split BEFORE ever clicking
+// Approve, instead of committing to one invoice number first and only
+// splitting afterwards. Purely local draft state here — nothing is written
+// to Supabase by this component. handleApproveAndInvoice bundles whatever's
+// ticked here into the SAME approveAndSetInvoiceId call that sets the
+// order's own (default) Invoice Number, so status + both invoice numbers +
+// the split all land in ONE write, one order id, one Approve click — not a
+// separate "Assign" round-trip per group like the post-approval
+// InvoiceSplitPanel below (that one has no single "big action" left to
+// piggyback on, since the main invoice is already committed by then).
+// Collapsed to a single "Split Invoice" button by default, same reasoning
+// as InvoiceSplitPanel — most orders never need this.
+function InvoiceSplitDraft({ order, splitInvoiceId, setSplitInvoiceId, splitSelected, setSplitSelected }) {
+  const jenisPlakRows = useMemo(() => combineByJenisPlak(order.items), [order.items]);
+  const [expanded, setExpanded] = useState(false);
+
+  if (jenisPlakRows.length < 2) return null;
+
+  if (!expanded) {
+    return (
+      <div style={{ marginTop: 'var(--space-3)' }}>
+        <button type="button" className="btn btn-ghost" onClick={() => setExpanded(true)}>
+          Split Invoice
+        </button>
+      </div>
+    );
+  }
+
+  const toggle = (key) => setSplitSelected((prev) => {
+    const next = new Set(prev);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    return next;
+  });
+
+  return (
+    <div style={{ marginTop: 'var(--space-4)' }}>
+      <div className="card-kicker">Split Across Invoices</div>
+      <div className="field" style={{ maxWidth: 340, marginTop: 'var(--space-2)' }}>
+        <label htmlFor="splitInvoiceId">New Invoice Number</label>
+        <input
+          className="input"
+          id="splitInvoiceId"
+          placeholder="e.g. INV-0091"
+          value={splitInvoiceId}
+          onChange={(e) => setSplitInvoiceId(e.target.value)}
+        />
+      </div>
+      <p className="hint-text" style={{ marginTop: 'var(--space-2)' }}>
+        Tick the Jenis Plak that go on this new invoice. Everything else stays on the Invoice Number above once you Approve.
+      </p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)', marginTop: 'var(--space-2)' }}>
+        {jenisPlakRows.map((row) => (
+          <label key={row.jenisPlak} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+            <input type="checkbox" checked={splitSelected.has(row.jenisPlak)} onChange={() => toggle(row.jenisPlak)} />
+            <span>{row.jenisPlak}</span>
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // Store Admin's own order view (role formerly "Invoicing Department",
 // renamed 0047) — assigns/displays the Invoice Number and shows the
 // original-vs-Tambahan breakdown via PriceTable's own batch-grouping, same
@@ -170,6 +232,12 @@ export default function StoreAdminOrderDetail() {
   const [page, setPage] = useState('summary');
   const [busy, setBusy] = useState(false);
   const [importErr, setImportErr] = useState('');
+
+  // Pre-approval invoice-split draft — see InvoiceSplitDraft above. Lives
+  // here (not inside that component) so handleApproveAndInvoice can read it
+  // when building the single approveAndSetInvoiceId call.
+  const [splitInvoiceId, setSplitInvoiceId] = useState('');
+  const [splitSelected, setSplitSelected] = useState(() => new Set());
 
   // Shipment Date (shipmentDate) / Function Date — editable only while the
   // order is still awaiting approval, the same window Sales has (guard 0038
@@ -246,10 +314,19 @@ export default function StoreAdminOrderDetail() {
     const overrides = {};
     if (shipmentDateDraft) overrides.shipmentDate = shipmentDateDraft;
     if (functionDateDraft) overrides.functionDate = functionDateDraft;
+    // Bundles whatever's ticked in InvoiceSplitDraft into this SAME write —
+    // empty if Store Admin never opened/used that panel, same as before.
+    const invoiceGroups = splitSelected.size > 0 && splitInvoiceId.trim()
+      ? [{ invoiceId: splitInvoiceId, jenisPlakList: [...splitSelected] }]
+      : [];
     setBusy(true);
-    const res = await approveAndSetInvoiceId(order.id, updatedItems, invoiceDraft, overrides);
+    const res = await approveAndSetInvoiceId(order.id, updatedItems, invoiceDraft, overrides, invoiceGroups);
     setBusy(false);
-    if (res?.ok) setInvoiceDraft('');
+    if (res?.ok) {
+      setInvoiceDraft('');
+      setSplitInvoiceId('');
+      setSplitSelected(new Set());
+    }
   };
 
   return (
@@ -369,11 +446,22 @@ export default function StoreAdminOrderDetail() {
                 </div>
                 {state.productionToast && <p className="hint-text" style={{ marginTop: 'var(--space-2)' }}>{state.productionToast}</p>}
 
-                <InvoiceSplitPanel order={order} setJenisPlakInvoiceGroup={setJenisPlakInvoiceGroup} updateToast={state.updateToast} />
+                <InvoiceSplitDraft
+                  order={order}
+                  splitInvoiceId={splitInvoiceId}
+                  setSplitInvoiceId={setSplitInvoiceId}
+                  splitSelected={splitSelected}
+                  setSplitSelected={setSplitSelected}
+                />
 
                 <div className="row-split" style={{ marginTop: 'var(--space-4)' }}>
                   <span />
-                  <button type="button" className="btn btn-primary" onClick={handleApproveAndInvoice} disabled={busy || !invoiceDraft.trim() || !shipmentDateDraft}>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={handleApproveAndInvoice}
+                    disabled={busy || !invoiceDraft.trim() || !shipmentDateDraft || (splitSelected.size > 0 && !splitInvoiceId.trim())}
+                  >
                     {busy ? 'Working…' : 'Approve & Save Invoice'}
                   </button>
                 </div>

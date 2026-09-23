@@ -2149,7 +2149,14 @@ export function AppStateProvider({ children }) {
   // land in the same write, not two separate ones. Sales' own approve
   // button (approveOrder) is untouched — this is an additional path to
   // the same end state, not a replacement.
-  const approveAndSetInvoiceId = useCallback(async (orderId, updatedItems, invoiceId, overrides = {}) => {
+  //
+  // `invoiceGroups` (optional, 0070) lets Store Admin decide the split
+  // BEFORE ever clicking Approve — tick which Jenis Plak go on a second
+  // invoice while filling in the main one, then Approve does everything
+  // (status, main invoiceId, AND the split) in this one write, same order
+  // id. Kept optional/defaulted to [] so every other caller of this action
+  // (the common, un-split case) is unaffected.
+  const approveAndSetInvoiceId = useCallback(async (orderId, updatedItems, invoiceId, overrides = {}, invoiceGroups = []) => {
     const normalized = (invoiceId || '').replace(/\s+/g, '');
     const st = stateRef.current;
     const order = st.orders.find((o) => o.id === orderId);
@@ -2161,9 +2168,27 @@ export function AppStateProvider({ children }) {
       flashToast('productionToast', 'Enter a valid Invoice ID.');
       return { ok: false };
     }
-    const isDuplicate = st.orders.some((o) => (
-      o.id !== orderId && o.invoiceId && o.invoiceId.replace(/\s+/g, '') === normalized
-    ));
+    // Normalize the split groups alongside the main invoice number — a
+    // group whose number turns out identical to the main one needs no
+    // exception at all (that's already the default), and every number
+    // (main + every split) must be distinct from each other and from every
+    // OTHER order's invoiceId, same rule setInvoiceId/setJenisPlakInvoiceGroup
+    // already enforce individually.
+    const normalizedGroups = [];
+    (invoiceGroups || []).forEach((g) => {
+      const gNorm = (g.invoiceId || '').replace(/\s+/g, '');
+      const keys = (g.jenisPlakList || []).filter(Boolean);
+      if (!gNorm || keys.length === 0 || gNorm === normalized) return;
+      normalizedGroups.push({ invoiceId: gNorm, jenisPlakList: keys });
+    });
+    const allInvoiceNumbers = [normalized, ...normalizedGroups.map((g) => g.invoiceId)];
+    if (new Set(allInvoiceNumbers).size !== allInvoiceNumbers.length) {
+      flashToast('productionToast', 'Invoice numbers must be different from each other.');
+      return { ok: false };
+    }
+    const isDuplicate = allInvoiceNumbers.some((num) => st.orders.some((o) => (
+      o.id !== orderId && o.invoiceId && o.invoiceId.replace(/\s+/g, '') === num
+    )));
     if (isDuplicate) {
       flashToast('productionToast', 'Invoice ID invalid because repeated, please try again.');
       return { ok: false };
@@ -2183,7 +2208,7 @@ export function AppStateProvider({ children }) {
     // and urgent placed after that, so urgent stays authoritative.
     const urgent = overrides.shipmentDate ? isUrgentShipment(TODAY, overrides.shipmentDate) : order.urgent;
     const fields = {
-      items: itemsWithOriginalPrice, totalAmount, priceAdjusted, status: 'In Production', invoiceId: normalized, ...overrides, urgent,
+      items: itemsWithOriginalPrice, totalAmount, priceAdjusted, status: 'In Production', invoiceId: normalized, invoiceGroups: normalizedGroups, ...overrides, urgent,
     };
     try {
       await updateOrder(orderId, fields);
