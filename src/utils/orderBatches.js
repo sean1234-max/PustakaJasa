@@ -55,6 +55,50 @@ export function combineByJenisPlak(items) {
   });
 }
 
+// Splits ONE order into its billed invoice slices — for the Store Admin
+// dashboard, so a split order (orders.invoice_groups, 0070) shows one card
+// per invoice number instead of a single card that only ever displayed the
+// order's own (default) invoiceId/totalAmount and silently hid the rest.
+// The un-split case (the vast majority of orders) returns exactly one slice
+// carrying the order's own invoiceId/totalAmount UNCHANGED — no Jenis Plak
+// scan needed, so there's zero behavior change for every normal order.
+//
+// A split order's slices are computed by summing each Jenis Plak's harga
+// (via combineByJenisPlak, same combining the price table/split panel
+// already use) into whichever invoice it belongs to — the order's own
+// invoiceId for anything not listed in any group, each group's own
+// invoiceId otherwise. A slice with zero Jenis Plak in it (can happen if
+// every single one got split away, leaving nothing on the default) is
+// simply omitted — the dashboard should never show a card for an invoice
+// nothing is actually billed under.
+export function getOrderInvoiceSlices(order) {
+  const groups = order.invoiceGroups || [];
+  if (groups.length === 0) {
+    return [{ invoiceId: order.invoiceId || null, totalAmount: order.totalAmount }];
+  }
+  const totalsByInvoice = new Map();
+  const defaultKey = order.invoiceId || null;
+  combineByJenisPlak(order.items).forEach((row) => {
+    const match = groups.find((g) => (g.jenisPlakList || []).includes(row.jenisPlak));
+    const key = match ? match.invoiceId : defaultKey;
+    totalsByInvoice.set(key, (totalsByInvoice.get(key) || 0) + row.harga);
+  });
+  // Default slice first (even though it's just been computed into the same
+  // map), then each group in the order Store Admin created them — keeps
+  // card order stable/predictable rather than following Map insertion order
+  // (which follows whichever Jenis Plak happened to appear first).
+  const slices = [];
+  if (totalsByInvoice.has(defaultKey)) {
+    slices.push({ invoiceId: defaultKey, totalAmount: totalsByInvoice.get(defaultKey) });
+  }
+  groups.forEach((g) => {
+    if (totalsByInvoice.has(g.invoiceId)) {
+      slices.push({ invoiceId: g.invoiceId, totalAmount: totalsByInvoice.get(g.invoiceId) });
+    }
+  });
+  return slices;
+}
+
 export function groupItemsByBatch(items) {
   const groups = new Map();
   (items || []).forEach((it) => {

@@ -4,6 +4,7 @@ import Nav from '../components/Nav';
 import { useAppState } from '../state/useAppState';
 import { STATUS_STAGES, statusPillStyle } from '../data/catalog';
 import { getOrderChangeStamp } from '../utils/orderStamp';
+import { getOrderInvoiceSlices } from '../utils/orderBatches';
 import { fetchMyAssignedSalesmen, fetchAllSalesmen } from '../lib/ordersApi';
 
 // Store Admin (formerly "Invoicing Department" — role renamed 0047) can see
@@ -39,6 +40,22 @@ export default function StoreAdminDashboard() {
   const orders = state.orders || EMPTY_ORDERS;
   const isManager = !!state.isStoreAdminManager;
 
+  // A split order (orders.invoice_groups, 0070) shows one card per invoice
+  // it's actually billed under, not one card for the whole order — each
+  // "slice" carries its own invoiceId/totalAmount but is otherwise the same
+  // order (same id, sekolah, status, ...), see getOrderInvoiceSlices. An
+  // un-split order still comes back as exactly one slice with its own
+  // invoiceId/totalAmount unchanged, so this is a no-op for the vast
+  // majority of orders — tabs/search/filters below all now operate on
+  // slices rather than raw orders so a split order's two invoices land in
+  // whichever tab each one's own invoiceId actually belongs to.
+  const orderSlices = useMemo(() => orders.flatMap((ord) => (
+    getOrderInvoiceSlices(ord).map((slice) => ({
+      ...ord, invoiceId: slice.invoiceId, totalAmount: slice.totalAmount,
+      _sliceKey: `${ord.id}::${slice.invoiceId || 'default'}`,
+    }))
+  )), [orders]);
+
   // Every salesman this Store Admin should see in the filter, so it lists
   // them all even with no order currently in view. A Manager (0069) isn't
   // scoped to an assignment list at all — RLS already hands them every
@@ -63,7 +80,7 @@ export default function StoreAdminDashboard() {
   const statusOptions = STATUS_STAGES;
 
   const activeTab = TABS.find((t) => t.key === tab);
-  const ordersInTab = orders.filter(activeTab.match);
+  const ordersInTab = orderSlices.filter(activeTab.match);
 
   const filteredOrders = ordersInTab.filter((o) => {
     const q = search.trim().toLowerCase();
@@ -98,7 +115,7 @@ export default function StoreAdminDashboard() {
 
       <div className="tabs" style={{ marginBottom: 'var(--space-4)' }}>
         {TABS.map((t) => {
-          const count = orders.filter(t.match).length;
+          const count = orderSlices.filter(t.match).length;
           return (
             <button
               key={t.key}
@@ -151,7 +168,7 @@ export default function StoreAdminDashboard() {
         {filteredOrders.map((ord) => {
           const stamp = getOrderChangeStamp(ord);
           return (
-            <div key={ord.id} className="card order-card">
+            <div key={ord._sliceKey} className="card order-card">
               <div className="order-card-top">
                 <div>
                   <div className="order-card-label">Order ID</div>
