@@ -38,7 +38,7 @@ export default function Nav() {
     const ordersActive = pathname === '/store-admin/dashboard' || pathname.startsWith('/store-admin/orders');
     return (
       <nav className="nav">
-        <span className="nav-brand">Store Admin</span>
+        <span className="nav-brand">{state.isStoreAdminManager ? 'Store Admin Manager' : 'Store Admin'}</span>
         <Link to="/store-admin/dashboard" aria-current={ordersActive ? 'page' : undefined}>Orders</Link>
         <button type="button" className="nav-logout" onClick={handleLogout}>Log Out</button>
       </nav>

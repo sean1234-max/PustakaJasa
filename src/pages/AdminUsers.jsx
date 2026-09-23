@@ -243,6 +243,26 @@ export default function AdminUsers() {
     }
   };
 
+  // Mirrors handleToggleSalesManager above — same shape, for Store Admin's
+  // own manager tier (0069_store_admin_manager.sql): sees every salesman's
+  // orders instead of just the ones assigned to them, view-only.
+  const handleToggleStoreAdminManager = async (p, checked) => {
+    try {
+      await updateProfile(p.id, { is_store_admin_manager: checked });
+      await logAdminAction({
+        action: checked ? 'Admin made a store admin a manager' : 'Admin removed manager from a store admin',
+        targetTable: 'profiles',
+        targetId: p.id,
+        before: { is_store_admin_manager: p.is_store_admin_manager },
+        after: { is_store_admin_manager: checked },
+      });
+      setToast(checked ? 'Now a Store Admin Manager.' : 'No longer a Store Admin Manager.');
+      load();
+    } catch (err) {
+      setFormError(err.message);
+    }
+  };
+
   const handleResetPassword = async (p) => {
     if (newPassword.length < 6) {
       setFormError('New password must be at least 6 characters.');
@@ -463,6 +483,7 @@ export default function AdminUsers() {
                       <td className="py-4 px-6 text-on-surface-variant">
                         {ROLE_LABELS[p.role] || p.role}
                         {p.role === 'salesman' && p.is_sales_manager && <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-md bg-primary-container/20 text-primary text-[10px] font-semibold uppercase">Manager</span>}
+                        {p.role === 'store_admin' && p.is_store_admin_manager && <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-md bg-primary-container/20 text-primary text-[10px] font-semibold uppercase">Manager</span>}
                       </td>
                       <td className="py-4 px-6 text-on-surface-variant">{p.email || '—'}</td>
                       <td className="py-4 px-6 text-on-surface-variant">{p.sekolah || '—'}</td>
@@ -505,6 +526,17 @@ export default function AdminUsers() {
                                 <label className="inline-flex items-center gap-3 text-body-md text-on-surface cursor-pointer">
                                   <input type="checkbox" className="w-4 h-4" checked={!!p.is_sales_manager} onChange={(e) => handleToggleSalesManager(p, e.target.checked)} />
                                   {p.is_sales_manager ? 'Is a Sales Manager' : 'Make Sales Manager'}
+                                </label>
+                              </div>
+                            )}
+
+                            {p.role === 'store_admin' && (
+                              <div className="max-w-xl border-t border-outline-variant pt-6 mb-8">
+                                <h4 className="text-label-bold text-on-surface-variant uppercase tracking-wider mb-2">Store Admin Manager</h4>
+                                <p className="text-body-sm text-on-surface-variant mb-3">A Store Admin Manager can see every salesman’s orders (and filter the dashboard by salesman), not just the ones assigned below.</p>
+                                <label className="inline-flex items-center gap-3 text-body-md text-on-surface cursor-pointer">
+                                  <input type="checkbox" className="w-4 h-4" checked={!!p.is_store_admin_manager} onChange={(e) => handleToggleStoreAdminManager(p, e.target.checked)} />
+                                  {p.is_store_admin_manager ? 'Is a Store Admin Manager' : 'Make Store Admin Manager'}
                                 </label>
                               </div>
                             )}

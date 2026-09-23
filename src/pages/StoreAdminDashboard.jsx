@@ -4,7 +4,7 @@ import Nav from '../components/Nav';
 import { useAppState } from '../state/useAppState';
 import { STATUS_STAGES, statusPillStyle } from '../data/catalog';
 import { getOrderChangeStamp } from '../utils/orderStamp';
-import { fetchMyAssignedSalesmen } from '../lib/ordersApi';
+import { fetchMyAssignedSalesmen, fetchAllSalesmen } from '../lib/ordersApi';
 
 // Store Admin (formerly "Invoicing Department" — role renamed 0047) can see
 // and act on every order, including ones still 'Submitted to Sales' — a
@@ -17,6 +17,11 @@ import { fetchMyAssignedSalesmen } from '../lib/ordersApi';
 // Production used to own (see ProductionOrderDetail.jsx's history before
 // this change) and no longer does.
 const EMPTY_ORDERS = [];
+
+// The "Urgent Orders" Google Sheet that sync-urgent-order-sheet writes to
+// (GOOGLE_SHEETS_SPREADSHEET_ID) — kept here just for the button link, the
+// Edge Function still only knows it via its own Supabase secret.
+const URGENT_ORDERS_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1gccvpiiY4QfzkXudF36RCx5350sCY5lVsGPRqW7lvrA/edit?gid=0#gid=0';
 const TABS = [
   { key: 'pending', label: 'Waiting for Invoice', match: (o) => !o.invoiceId },
   { key: 'invoiced', label: 'Invoiced', match: (o) => !!o.invoiceId },
@@ -32,18 +37,25 @@ export default function StoreAdminDashboard() {
   const [typeFilter, setTypeFilter] = useState('all');
 
   const orders = state.orders || EMPTY_ORDERS;
+  const isManager = !!state.isStoreAdminManager;
 
-  // Every salesman assigned to this Store Admin — so the filter lists them
-  // all, including ones with no order currently in view. Falls back to the
-  // salesmen seen on orders if the assignment fetch fails or returns none.
+  // Every salesman this Store Admin should see in the filter, so it lists
+  // them all even with no order currently in view. A Manager (0069) isn't
+  // scoped to an assignment list at all — RLS already hands them every
+  // salesman's orders — so their filter is populated from every salesman
+  // account instead. Falls back to the salesmen seen on orders if the
+  // fetch fails or returns none.
   const [assignedSalesmen, setAssignedSalesmen] = useState([]);
   useEffect(() => {
     let live = true;
-    fetchMyAssignedSalesmen()
+    const fetchNames = isManager
+      ? fetchAllSalesmen().then((rows) => rows.map((s) => s.name).filter(Boolean))
+      : fetchMyAssignedSalesmen();
+    fetchNames
       .then((names) => { if (live) setAssignedSalesmen(names); })
       .catch(() => { if (live) setAssignedSalesmen([]); });
     return () => { live = false; };
-  }, []);
+  }, [isManager]);
   const salesmanOptions = useMemo(() => {
     const fromOrders = orders.map((o) => o.sales).filter(Boolean);
     return [...new Set([...assignedSalesmen, ...fromOrders])].sort((a, b) => a.localeCompare(b));
@@ -74,9 +86,14 @@ export default function StoreAdminDashboard() {
 
       <div className="dashboard-header">
         <div>
-          <div className="card-title" style={{ marginBottom: 'var(--space-2)' }}>Store Admin</div>
+          <div className="card-title" style={{ marginBottom: 'var(--space-2)' }}>{isManager ? 'Store Admin Manager' : 'Store Admin'}</div>
           <p className="hint-text" style={{ margin: 0 }}>Assign Invoice Numbers for approved orders — or approve one yourself (with pricing) straight from a hard copy — and search/track ones already invoiced.</p>
         </div>
+        {isManager && (
+          <a href={URGENT_ORDERS_SHEET_URL} target="_blank" rel="noreferrer" className="btn btn-ghost">
+            ⚡ Urgent List
+          </a>
+        )}
       </div>
 
       <div className="tabs" style={{ marginBottom: 'var(--space-4)' }}>
