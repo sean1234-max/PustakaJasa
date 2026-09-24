@@ -87,6 +87,15 @@ export function buildCategoryCartItems(st, catKey) {
     if (incompleteLine) {
       return { engaged, error: `Please fill in line ${incompleteLine.num} for ${blockLabel} before adding to cart.` };
     }
+    // Same "possible typo" hint shown on screen (src/utils/typoCheck.js) —
+    // now blocking, not just a nudge. findPossibleTypo only flags a word
+    // that's a near-miss (edit distance 1) of a known dictionary word, so
+    // a legitimate word it's never seen (a school's own event name, a
+    // person's name) never trips this — only fixing the actual typo clears it.
+    const typoLine = blk.lines.find((line) => line.typoHint) || (blk.rows || []).find((row) => row.typoHint);
+    if (typoLine) {
+      return { engaged, error: `Possible typo in ${blockLabel}: "${typoLine.typoHint.word}" — did you mean "${typoLine.typoHint.suggestion}"? Fix it before adding to cart.` };
+    }
     if (!hasQty) {
       return { engaged, error: `Please enter a quantity for ${blockLabel} before adding to cart.` };
     }

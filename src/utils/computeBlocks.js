@@ -183,8 +183,8 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
         redText: i === 2 && !!currentCat.positionFieldsRedText,
         onChange: (val) => updaters.onLine(key, val),
         // Flags a likely typo (e.g. "ANIGERAH" for "ANUGERAH") against a
-        // small curated word list — see src/utils/typoCheck.js. Purely a
-        // hint shown near the input; never blocks Add to Cart.
+        // small curated word list — see src/utils/typoCheck.js. Shown near
+        // the input, and also blocks Add to Cart (categoryCartItems.js).
         typoHint: findPossibleTypo(lineValues[key]),
         // TAJUK BESAR (i === 0) can never be deleted even on a
         // deletableReferenceLines category — every other row (including any

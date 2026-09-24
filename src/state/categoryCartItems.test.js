@@ -123,4 +123,29 @@ describe('buildCategoryCartItems — TOKOH_SHEET (plakPerRow)', () => {
       ['TOKOH NILAM', 'MP399', 'RM 12.00'],
     ]);
   });
+
+  // A likely typo (src/utils/typoCheck.js) now blocks Add to Cart instead
+  // of only showing a hint — a teacher must fix the wording, not just see
+  // it flagged, before the order can be submitted.
+  it('blocks Add to Cart when a Reference Sample line has a likely typo', () => {
+    const res = buildCategoryCartItems({
+      lineValues: { 'TOKOH_SHEET::0::0': 'Majlis ANIGERAH', 'TOKOH_SHEET::0::2': 'TOKOH MURID' },
+      matrixValues: {},
+      rowsByBlock: { 'TOKOH_SHEET::0': [{ id: 1, desc: 'TOKOH MURID', qty: '1', jenisPlak: 'MP399', namaMurid: 'Ali' }] },
+      plakRows: {},
+      columnsByBlock: {},
+      plakCatalog: [{ code: 'MP399', price: 12 }],
+      schoolLanguage: 'SK',
+    }, 'TOKOH_SHEET');
+    expect(res.items).toBeUndefined();
+    expect(res.error).toMatch(/typo/i);
+    expect(res.error).toMatch(/ANIGERAH/);
+  });
+
+  it('does not block on a legitimate word the dictionary has never seen (a school\'s own name)', () => {
+    const res = buildCategoryCartItems(draftTokoh([
+      { id: 1, desc: 'TOKOH MURID', qty: '1', jenisPlak: 'MP399', namaMurid: 'Ali' },
+    ]), 'TOKOH_SHEET');
+    expect(res.error).toBeUndefined();
+  });
 });
