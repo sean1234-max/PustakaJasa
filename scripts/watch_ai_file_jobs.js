@@ -1,9 +1,19 @@
 // Local watcher for the "Generate AI File" button (Production order page,
 // see src/lib/aiFileJobsApi.js + migration 0071). Polls ai_file_jobs for
-// pending rows, runs SEAN.jsx against each job's CSV via the same
-// AppleScript-do-javascript bridge already proven out manually (see
-// "AI FILE/trigger_real_script_with_csv.applescript"), then uploads
+// pending rows, runs SEAN.jsx against each job's CSV, then uploads
 // whatever .ai files that run produced to the ai-file-outputs bucket.
+//
+// Cross-platform trigger: on macOS, AppleScript's `do javascript` (the
+// bridge proven out manually — see "AI FILE/trigger_real_script_with_csv.
+// applescript"); on Windows, the same idea via Illustrator's own COM
+// automation (`Illustrator.Application`'s `.DoJavaScript()`), since
+// AppleScript doesn't exist there. Both platforms run the exact same
+// combined script text (buildFullScript below assembles it once, in Node,
+// so there's only one place that does the PRESET_* variable injection) —
+// only the "hand this text to Illustrator" step differs per OS.
+// ponytail: the Windows path is unverified against a real Windows
+// Illustrator install — expect to debug the exact COM ProgID/behaviour
+// against real error output, the same way the macOS bridge was proven out.
 //
 // One watcher per machine, one machine per person (multiple staff each
 // have their own copy of the template .ai files + Illustrator license) —
@@ -15,7 +25,9 @@
 // the original, still-default behaviour).
 //
 // One-time setup on a new machine (see scripts/setup_watcher_autostart.sh
-// for the no-more-Terminal-after-this LaunchAgent install):
+// on macOS — a LaunchAgent — or scripts/setup_watcher_autostart.ps1 on
+// Windows — a Startup-folder entry — for the no-more-Terminal-after-this
+// auto-start install):
 //   node --env-file=.env scripts/watch_ai_file_jobs.js
 // (needs SUPABASE_SERVICE_ROLE_KEY, VITE_SUPABASE_URL, and — for a shared
 // multi-person setup — WATCHER_USER_EMAIL in .env. Service role bypasses
@@ -90,42 +102,76 @@ function asQuote(str) {
   return `"${String(str).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
 }
 
-// Same recipe as trigger_real_script_with_csv.applescript (bundle id
-// addressing + UTF-8 file read) — proven working manually, just with a
-// dynamic csvPath instead of a hardcoded one. Also presets
-// PRESET_TEMPLATE_FOLDER_PATH to this machine's own AI_FILE_DIR — without
-// it, SEAN.jsx falls back to its own hardcoded TEMPLATE_FOLDER_PATH (Sean's
-// machine) no matter which computer's watcher is actually running it,
-// which would silently break template lookup on anyone else's machine (or
-// a shared NAS path each machine mounts differently). Deliberately does
-// NOT set PRESET_OPERATOR_NAME: the Illustrator "enter your name" popup
-// still shows, so whoever is at the machine has to type who actually ran it.
-// Launches Illustrator itself if it isn't already open — the whole point
-// of a person's own machine running this unattended is that they
-// shouldn't have to remember to open Illustrator first every time.
+// Builds the exact ExtendScript text Illustrator will run — the
+// PRESET_CSV_PATH/PRESET_TEMPLATE_FOLDER_PATH/PRESET_LOG_FILE_NAME
+// variable-injection recipe SEAN.jsx expects, same as the proven-manually
+// trigger_real_script_with_csv.applescript, just assembled once here in
+// Node (JSON.stringify already produces a valid, safely-escaped JS string
+// literal) so both platforms' trigger step below can stay dumb — "read
+// this file, hand it to Illustrator" — with no escaping logic of their own.
+// PRESET_TEMPLATE_FOLDER_PATH matters even on a single-machine setup once
+// AI_FILE_DIR differs from SEAN.jsx's own hardcoded default, and doubly so
+// on a shared NAS path each machine can mount differently. Deliberately
+// does NOT set PRESET_OPERATOR_NAME: the Illustrator "enter your name"
+// popup still shows, so whoever is at the machine has to type who actually
+// ran it.
+function buildFullScript(csvPath, logFileName) {
+  const presetLines = [
+    `var PRESET_CSV_PATH = ${JSON.stringify(csvPath)};`,
+    `var PRESET_TEMPLATE_FOLDER_PATH = ${JSON.stringify(AI_FILE_DIR)};`,
+    `var PRESET_LOG_FILE_NAME = ${JSON.stringify(logFileName)};`,
+    '',
+  ].join('\n');
+  return presetLines + readFileSync(SEAN_JSX_PATH, 'utf8');
+}
+
+// macOS: AppleScript's `do javascript`, same bundle-id addressing proven
+// out manually. Launches Illustrator itself if it isn't already open —
+// the whole point of a person's own machine running this unattended is
+// that they shouldn't have to remember to open Illustrator first.
 // ponytail: fixed 8s grace period after a cold launch before sending `do
 // javascript` — a real "wait until ready" would poll Illustrator's own
 // state instead; bump the delay if a slower machine still races it.
-function buildAppleScript(csvPath, logFileName) {
-  return [
-    `set csvPath to ${asQuote(csvPath)}`,
-    `set templateFolderPath to ${asQuote(AI_FILE_DIR)}`,
-    `set logFileName to ${asQuote(logFileName)}`,
-    `set scriptPath to ${asQuote(SEAN_JSX_PATH)}`,
+function runOnMac(scriptFilePath) {
+  const appleScript = [
+    `set scriptPath to ${asQuote(scriptFilePath)}`,
     'set scriptCode to read (POSIX file scriptPath) as «class utf8»',
-    'set presetLines to "var PRESET_CSV_PATH = " & quote & csvPath & quote & ";" & return',
-    'set presetLines to presetLines & "var PRESET_TEMPLATE_FOLDER_PATH = " & quote & templateFolderPath & quote & ";" & return',
-    'set presetLines to presetLines & "var PRESET_LOG_FILE_NAME = " & quote & logFileName & quote & ";" & return',
-    'set fullCode to presetLines & scriptCode',
     'tell application id "com.adobe.illustrator"',
     '    if it is not running then',
     '        launch',
     '        delay 8',
     '    end if',
     '    activate',
-    '    do javascript fullCode',
+    '    do javascript scriptCode',
     'end tell',
   ].join('\n');
+  const appleScriptPath = scriptFilePath.replace(/\.jsx$/, '.applescript');
+  writeFileSync(appleScriptPath, appleScript, 'utf8');
+  execFileSync('osascript', [appleScriptPath], { stdio: 'pipe' });
+}
+
+// Windows: no AppleScript, so the equivalent bridge is Illustrator's own
+// COM automation (New-Object -ComObject Illustrator.Application ->
+// .DoJavaScript()) — instantiating that COM object launches Illustrator
+// itself if it isn't already running, same as AppleScript's `launch`.
+// ponytail: unverified against a real Windows Illustrator install — the
+// exact ProgID/timing may need adjusting once tested for real.
+function runOnWindows(scriptFilePath) {
+  const psScript = [
+    '$ErrorActionPreference = "Stop"',
+    `$code = Get-Content -LiteralPath ${asQuote(scriptFilePath)} -Raw -Encoding UTF8`,
+    '$illustrator = New-Object -ComObject Illustrator.Application',
+    'Start-Sleep -Seconds 3',
+    '$illustrator.DoJavaScript($code)',
+  ].join('\r\n');
+  const psScriptPath = scriptFilePath.replace(/\.jsx$/, '.ps1');
+  writeFileSync(psScriptPath, psScript, 'utf8');
+  execFileSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', psScriptPath], { stdio: 'pipe' });
+}
+
+function runIllustrator(scriptFilePath) {
+  if (process.platform === 'win32') runOnWindows(scriptFilePath);
+  else runOnMac(scriptFilePath);
 }
 
 function listAiFilesWithMtime(folder) {
@@ -153,16 +199,16 @@ async function processJob(job) {
   let resultMessage;
   let status;
   try {
-    const appleScriptPath = path.join(TEMP_DIR, `${job.id}.applescript`);
-    writeFileSync(appleScriptPath, buildAppleScript(csvPath, logFileName), 'utf8');
+    const scriptFilePath = path.join(TEMP_DIR, `${job.id}.jsx`);
+    writeFileSync(scriptFilePath, buildFullScript(csvPath, logFileName), 'utf8');
     // No timeout: this blocks until Illustrator finishes, which includes
     // waiting for a human to answer the name popup — that's expected.
-    execFileSync('osascript', [appleScriptPath], { stdio: 'pipe' });
+    runIllustrator(scriptFilePath);
     resultMessage = existsSync(logPath) ? readFileSync(logPath, 'utf8') : '(Illustrator ran, but no log file was written.)';
     status = /Cancelled|失败: /.test(resultMessage) && !/存成:/.test(resultMessage) ? 'error' : 'done';
   } catch (err) {
     status = 'error';
-    resultMessage = `AppleScript/Illustrator call failed: ${err.stderr?.toString() || err.message}`;
+    resultMessage = `Illustrator call failed: ${err.stderr?.toString() || err.message}`;
   } finally {
     rmSync(logPath, { force: true }); // don't leave a stray per-job log file behind on the (possibly shared) NAS
   }
