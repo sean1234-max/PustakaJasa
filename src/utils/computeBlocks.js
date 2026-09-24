@@ -4,7 +4,7 @@ import {
   getCategoryLinePlaceholders, getCategoryPositionLine2Placeholder,
   getCategoryTahunPlaceholder, getCategoryNamaKelasPlaceholder,
   resolveSelempangWarna, SELEMPANG_CODE, SELEMPANG_UNIT_PRICE, getStockStatus,
-  resolveCategory, categoriesUsedByItems,
+  resolveCategory, categoriesUsedByItems, distributeQtyOverPositions,
 } from '../data/catalog';
 import { findPossibleTypo } from './typoCheck';
 
@@ -631,14 +631,17 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
         // this is just how many places [d..h] fall inside — the SAME Tahun's
         // own range can be split across several Jenis Plak footers this way
         // (e.g. 1st-3rd = one plak, 4th-10th = another). "Kalau ada kelas"
-        // is different (confirmed against a real order): the footer's own
-        // DARI/HINGGA KE there identifies WHICH TAHUN it's for by matching
-        // that Tahun's own KEDUDUKAN exactly — not a position sub-range to
-        // split one Tahun's classQty across several plaques. A Tahun whose
-        // range doesn't exactly match any footer contributes nothing (the
-        // Jenis Plak total vs Tahun total check below then flags it). A
-        // footer row with no range (posDari null) takes the flat-KEDUDUKAN
-        // TAHUNs' own totals.
+        // shares that same "footer covers a place sub-range" shape (a real
+        // school's sheet splits GOLD/SILVER/BRONZE by 1st/2nd/3rd place
+        // within every class, same as plain ALIRAN) — a Tahun's classQty is
+        // prorated across ITS OWN [1..n] places via distributeQtyOverPositions
+        // (same helper the CSV export side already uses), and the footer's
+        // [d..h] claims whichever of those place-buckets it covers, clamped
+        // to that Tahun's own n. d=1,h=n (the footer spans a Tahun's whole
+        // range) still returns the Tahun's full classQty exactly — the one
+        // real-order-confirmed "one Jenis Plak per whole Tahun" case is a
+        // special case of this, not a separate rule. A footer row with no
+        // range (posDari null) takes the flat-KEDUDUKAN TAHUNs' own totals.
         const flatTotal = rawRows.reduce((s, r) => s + ((Number(r.kedudukanHingga) || 0) > 0 ? 0 : derivedFor(r)), 0);
         aliranPlakQty = (pr) => {
           if (!pr.posDari) return flatTotal;
@@ -649,7 +652,12 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
             if (n <= 0) return sum;
             if (nk) {
               const cq = classQtyFor(r);
-              return d === 1 && h === n ? sum + cq : sum;
+              if (cq <= 0) return sum;
+              const buckets = distributeQtyOverPositions(cq, n);
+              const hi = Math.min(h, n);
+              let share = 0;
+              for (let p = d; p <= hi; p += 1) share += buckets[p - 1] || 0;
+              return sum + share;
             }
             const places = Math.max(0, Math.min(h, n) - d + 1);
             return sum + places;

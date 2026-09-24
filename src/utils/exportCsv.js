@@ -322,17 +322,18 @@ function buildAliranRows(item, header, year, acara) {
   // per-place count); event_line_2 = "TAHUN N <class>", event_line_1 =
   // ACARA, position = the ordinal. A flat Tahun (no KEDUDUKAN) with a
   // class list gives one plaque per class, straight off its own QTY,
-  // position blank. A ranked Tahun's own Jenis Plak footer must match that
-  // Tahun's KEDUDUKAN EXACTLY (DARI 1 and the same HINGGA KE) to claim its
-  // classes at all (confirmed against a real order) — the footer's own
-  // DARI/HINGGA KE there identifies WHICH Tahun it's for, not a position
-  // sub-range to split one Tahun's classes across several plaques (unlike
-  // plain ALIRAN's own footer, which still does exactly that — see below).
-  // Once matched, a class's own QTY is spread across ITS Tahun's own
-  // places via distributeQtyOverPositions (e.g. 180 across 1st-20th places
-  // = 9 each) purely to give every plaque its own distinct-ish position
-  // text — every one of those plaques still belongs to this one matched
-  // Jenis Plak.
+  // position blank. A ranked Tahun's own classQty is prorated across ITS
+  // OWN [1..hingga] places via distributeQtyOverPositions (e.g. 180 across
+  // 1st-20th places = 9 each — same helper computeBlocks.js's live
+  // cart-quantity preview uses); a Jenis Plak footer covering places
+  // [DARI..HINGGA KE] claims whichever of those place-buckets fall in its
+  // own range, clamped to the Tahun's own hingga — same shape as plain
+  // ALIRAN's own footer below (a Tahun's range can be split across several
+  // Jenis Plak this way, e.g. 1st place = GOLD, 2nd = SILVER, 3rd =
+  // BRONZE). A footer spanning a Tahun's WHOLE range (DARI 1, HINGGA KE =
+  // that Tahun's own hingga) still claims the Tahun's full classQty
+  // exactly — the "one Jenis Plak per whole Tahun" case confirmed against
+  // a real order is just the single-bucket-range special case of this.
   const breakdown = item.detail?.namaKelasBreakdown || {};
   if (Object.keys(breakdown).length > 0) {
     tahunRows.forEach((tr) => {
@@ -344,9 +345,11 @@ function buildAliranRows(item, header, year, acara) {
         const classLine = [tr.desc, c.desc.trim()].filter(Boolean).join(' ');
         if (hingga > 0) {
           if (!item.posDari) return; // flat plak doesn't take the ranked Tahuns
-          if (Number(item.posDari) !== 1 || (Number(item.posHingga) || 1) !== hingga) return;
+          const lo = Number(item.posDari);
+          const hi = Math.min(Number(item.posHingga) || lo, hingga);
+          if (lo > hi) return; // this Tahun's own range doesn't reach this footer's range at all
           const buckets = distributeQtyOverPositions(cq, hingga);
-          for (let p = 1; p <= hingga; p++) {
+          for (let p = lo; p <= hi; p++) {
             const n = buckets[p - 1] || 0;
             for (let i = 0; i < n; i++) rows.push([header, year, pos(p), acara || '', classLine]);
           }

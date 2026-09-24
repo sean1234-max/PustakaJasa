@@ -516,9 +516,9 @@ describe('buildCsvRows — ALIRAN TERBAIK (Kalau ada kelas)', () => {
     posDari, posHingga, detail: rowsByBlockLikeDetail,
   });
 
-  it('ranged plak: a footer matching the Tahun\'s own KEDUDUKAN exactly claims every class\'s full QTY', () => {
+  it('ranged plak spanning a Tahun\'s WHOLE own range claims every class\'s full QTY', () => {
     const { rows } = buildCsvRows({ schoolLanguage: 'SK', items: [mk('GOLD', 1, 5)] }, 'ALIRAN_KELAS', [mk('GOLD', 1, 5)]);
-    // TAHUN 4 (KEDUDUKAN 1-5) exactly matches GOLD's own 1-5 -> all 3
+    // TAHUN 4 (KEDUDUKAN 1-5): GOLD's 1-5 spans it entirely -> all 3
     // classes' QTY 1 each = 3 rows, every one landing at PERTAMA (see
     // distributeQtyOverPositions(1, 5)'s remainder-to-earliest rule).
     expect(rows).toHaveLength(3);
@@ -527,19 +527,24 @@ describe('buildCsvRows — ALIRAN TERBAIK (Kalau ada kelas)', () => {
     expect(rows.every((r) => r[1] === '' && r[3] === 'TERBAIK DALAM ALIRAN')).toBe(true);
   });
 
-  it('a footer whose range does NOT exactly match the Tahun\'s own KEDUDUKAN claims nothing from it, even if the ranges numerically overlap', () => {
-    // GOLD's 1-3 overlaps TAHUN 4's own 1-5 in raw position numbers, but
-    // isn't an exact match — confirmed against a real order that this must
-    // NOT be treated as "the first 3 places of TAHUN 4" (that would
-    // double-count once a second, exactly-matching footer also claims
-    // TAHUN 4's classes in full).
-    const { rows } = buildCsvRows({ schoolLanguage: 'SK', items: [mk('GOLD', 1, 3)] }, 'ALIRAN_KELAS', [mk('GOLD', 1, 3)]);
-    expect(rows).toHaveLength(0);
+  it('a footer covering only PART of a Tahun\'s own range claims just its prorated share, not the whole class', () => {
+    // A real school's sheet splits a Tahun's own ranked places across
+    // several Jenis Plak (1st place = GOLD, 2nd-5th = SILVER) rather than
+    // one plak per whole Tahun — GOLD's 1-1 here only takes each class's
+    // own "1st place" share of its QTY, same idea as plain ALIRAN's
+    // footer already splitting one Tahun's range this way.
+    const { rows } = buildCsvRows({ schoolLanguage: 'SK', items: [mk('GOLD', 1, 1)] }, 'ALIRAN_KELAS', [mk('GOLD', 1, 1)]);
+    // distributeQtyOverPositions(1, 5) = [1,0,0,0,0] per class (QTY 1 each,
+    // remainder goes to the earliest place) -> position 1 alone gets 1 per
+    // class = 3 rows total (one per TAHUN 4 class), all at PERTAMA.
+    expect(rows).toHaveLength(3);
+    expect(rows.every((r) => r[2] === 'PERTAMA' && r[4]?.startsWith('TAHUN 4 '))).toBe(true);
   });
 
-  it('two Tahuns with different KEDUDUKAN ranges, each claimed by its own exactly-matching footer, never double-count each other', () => {
-    // Mirrors a real order: TAHUN 4 (1st-5th) uses one Jenis Plak, TAHUN 5
-    // (1st-3rd) uses a different one — NOT a split of one shared range.
+  it('a footer\'s range wider than a narrower Tahun\'s own KEDUDUKAN still claims that Tahun\'s full QTY (clamped), same as plain ALIRAN', () => {
+    // TAHUN 5 only goes up to 3rd place — a GOLD footer declared 1-5
+    // reaches past that, so it's clamped to TAHUN 5's own 1-3 and claims
+    // all of it, exactly like plain ALIRAN's own min(h, n) clamping.
     const detail = {
       ...rowsByBlockLikeDetail,
       rows: [...rowsByBlockLikeDetail.rows, { id: 5, desc: 'TAHUN 5', qty: '3', kedudukanHingga: 3 }],
@@ -552,14 +557,44 @@ describe('buildCsvRows — ALIRAN TERBAIK (Kalau ada kelas)', () => {
       id: jenisPlak, jenisPlak, qty: 0, categoryKey: 'ALIRAN_KELAS', blockIdx: 0, posDari, posHingga, detail,
     });
     const { rows: goldRows } = buildCsvRows({ schoolLanguage: 'SK', items: [item('GOLD', 1, 5)] }, 'ALIRAN_KELAS', [item('GOLD', 1, 5)]);
-    const { rows: silverRows } = buildCsvRows({ schoolLanguage: 'SK', items: [item('SILVER', 1, 3)] }, 'ALIRAN_KELAS', [item('SILVER', 1, 3)]);
-    // GOLD (1-5) matches TAHUN 4 only -> its 3 classes (QTY 1 each) = 3,
-    // NOT also picking up TAHUN 5's DINAMIK even though 1-3 ⊂ 1-5.
+    // TAHUN 4's own 3 classes (QTY 1 each) in full, PLUS TAHUN 5's DINAMIK
+    // (QTY 2) in full since 1-5 clamped to TAHUN 5's own 1-3 is its whole range.
     expect(goldRows.filter((r) => r[4]?.startsWith('TAHUN 4 '))).toHaveLength(3);
-    expect(goldRows.filter((r) => r[4]?.startsWith('TAHUN 5 '))).toHaveLength(0);
-    // SILVER (1-3) matches TAHUN 5 only -> DINAMIK's QTY 2, none of TAHUN 4's.
-    expect(silverRows.filter((r) => r[4] === 'TAHUN 5 DINAMIK')).toHaveLength(2);
-    expect(silverRows.filter((r) => r[4]?.startsWith('TAHUN 4 '))).toHaveLength(0);
+    expect(goldRows.filter((r) => r[4] === 'TAHUN 5 DINAMIK')).toHaveLength(2);
+  });
+
+  it('real-school shape: every Tahun ranked 1st-3rd, split into GOLD/SILVER/BRONZE by rank — each footer gets exactly one row per class', () => {
+    // Reported bug: a school's real sheet has every Tahun's own KEDUDUKAN
+    // as PERTAMA-KETIGA (every class has 3 winners), with THREE separate
+    // Jenis Plak footers — PERTAMA-PERTAMA (GOLD), KEDUA-KEDUA (SILVER),
+    // KETIGA-KETIGA (BRONZE) — instead of one plak per whole Tahun. Every
+    // class's QTY 3 must split 1/1/1 across the three footers.
+    const detail = {
+      lines: rowsByBlockLikeDetail.lines,
+      rows: [
+        { id: 1, desc: 'TAHUN 1', qty: '', kedudukanHingga: 3 },
+        { id: 2, desc: 'TAHUN 2', qty: '', kedudukanHingga: 3 },
+      ],
+      namaKelasBreakdown: {
+        'ALIRAN_KELAS::0::TAHUN 1::main': [{ id: 10, desc: 'ZAMRUB', qty: '3' }, { id: 11, desc: 'DELIMA', qty: '3' }],
+        'ALIRAN_KELAS::0::TAHUN 2::main': [{ id: 12, desc: 'TOPAZ', qty: '3' }],
+      },
+    };
+    const item = (jenisPlak, posDari, posHingga) => ({
+      id: jenisPlak, jenisPlak, qty: 0, categoryKey: 'ALIRAN_KELAS', blockIdx: 0, posDari, posHingga, detail,
+    });
+    const { rows: goldRows } = buildCsvRows({ schoolLanguage: 'SK', items: [item('GOLD', 1, 1)] }, 'ALIRAN_KELAS', [item('GOLD', 1, 1)]);
+    const { rows: silverRows } = buildCsvRows({ schoolLanguage: 'SK', items: [item('SILVER', 2, 2)] }, 'ALIRAN_KELAS', [item('SILVER', 2, 2)]);
+    const { rows: bronzeRows } = buildCsvRows({ schoolLanguage: 'SK', items: [item('BRONZE', 3, 3)] }, 'ALIRAN_KELAS', [item('BRONZE', 3, 3)]);
+    // 3 classes total (ZAMRUB/DELIMA/TOPAZ) -> exactly 1 row each per footer.
+    expect(goldRows).toHaveLength(3);
+    expect(silverRows).toHaveLength(3);
+    expect(bronzeRows).toHaveLength(3);
+    expect(goldRows.every((r) => r[2] === 'PERTAMA')).toBe(true);
+    expect(silverRows.every((r) => r[2] === 'KEDUA')).toBe(true);
+    expect(bronzeRows.every((r) => r[2] === 'KETIGA')).toBe(true);
+    // No double-count and nothing missing: 9 plaques total across all three (3 classes x 3 winners).
+    expect(goldRows.length + silverRows.length + bronzeRows.length).toBe(9);
   });
 
   it('flat plak (no range): one row per (flat Tahun, class), blank position', () => {
