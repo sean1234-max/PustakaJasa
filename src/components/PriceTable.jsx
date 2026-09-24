@@ -80,11 +80,16 @@ export default function PriceTable({
                             // as a blank field while Harga quietly still
                             // computes off the correct price underneath.
                             value={it.ids.length === 1 ? (priceDrafts[it.ids[0]] ?? it.unitPrice) : it.unitPrice}
-                            // Strips a stray leading zero (e.g. retyping over
-                            // "0" without fully clearing it first leaves
-                            // "010") while leaving a real decimal like "0.5"
-                            // alone — only a zero immediately followed by
-                            // another digit is a leftover, not an intentional "0.".
+                            // Selects the existing text on focus so the very
+                            // first keystroke replaces it outright — without
+                            // this, clicking in and typing "10" over an
+                            // unselected "0" inserts instead of replacing,
+                            // leaving "010" on screen.
+                            onFocus={(e) => e.target.select()}
+                            // Belt-and-braces for anything that still slips a
+                            // leading zero through (e.g. a paste): strip a
+                            // zero immediately followed by another digit,
+                            // leaving a real decimal like "0.5" untouched.
                             onChange={(e) => setPrice(it.ids, e.target.value.replace(/^0+(?=\d)/, ''))}
                           />
                         ) : (
