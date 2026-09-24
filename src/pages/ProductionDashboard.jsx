@@ -17,7 +17,8 @@ import { getOrderInvoiceSlices } from '../utils/orderBatches';
 //   S+1 .. S+3      -> 'Completed'        (Completed tab — 3 days)
 //   S+4 onwards     -> 'Completed'        (Order History)
 // An order marked Done before its Shipment Date sits in 'Waiting for
-// Delivery' until the daily sweep flips it; those live in Order History too.
+// Delivery' until the daily sweep flips it — its own tab (labelled
+// "Waiting for Shipment"), between In Production and Shipped.
 
 // Whole days from an order's Shipment Date to `today` (0 = due today,
 // positive = in the past). null when there's no parseable Shipment Date.
@@ -37,6 +38,7 @@ function daysSinceShipmentDate(shipmentDate, today) {
 const TABS = [
   { key: 'submitted', label: 'Submitted to Sales', match: (o) => o.status === 'Submitted to Sales' },
   { key: 'active', label: 'In Production', match: (o) => o.status === 'In Production' },
+  { key: 'waiting', label: 'Waiting for Shipment', match: (o) => o.status === 'Waiting for Delivery' },
   { key: 'shipped', label: 'Shipped', match: (o) => o.status === 'Shipped' },
   {
     key: 'completed',
@@ -51,7 +53,6 @@ const TABS = [
     key: 'history',
     label: 'Order History',
     match: (o, today) => {
-      if (o.status === 'Waiting for Delivery') return true;
       if (o.status !== 'Completed') return false;
       const days = daysSinceShipmentDate(o.shipmentDate, today);
       return days === null || days >= 4;
