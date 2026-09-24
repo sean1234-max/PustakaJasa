@@ -11,9 +11,13 @@ describe('breakAcaraLine', () => {
   it('breaks before TERBAIK for ANUGERAH MATA PELAJARAN TERBAIK', () => {
     expect(breakAcaraLine('ANUGERAH MATA PELAJARAN TERBAIK')).toBe('ANUGERAH MATA PELAJARAN\nTERBAIK');
   });
+  it('breaks after ANUGERAH for ANUGERAH KEHADIRAN PENUH/TERBAIK', () => {
+    expect(breakAcaraLine('ANUGERAH KEHADIRAN PENUH')).toBe('ANUGERAH\nKEHADIRAN PENUH');
+    expect(breakAcaraLine('ANUGERAH KEHADIRAN TERBAIK')).toBe('ANUGERAH\nKEHADIRAN TERBAIK');
+  });
   it('leaves everything else alone, including text that already has a line break', () => {
     expect(breakAcaraLine('ANUGERAH PBD')).toBe('ANUGERAH PBD');
-    expect(breakAcaraLine('ANUGERAH KEHADIRAN TERBAIK')).toBe('ANUGERAH KEHADIRAN TERBAIK');
+    expect(breakAcaraLine('ANUGERAH KEHADIRAN')).toBe('ANUGERAH KEHADIRAN');
     expect(breakAcaraLine('ANUGERAH PBD\nMATA PELAJARAN TERBAIK')).toBe('ANUGERAH PBD\nMATA PELAJARAN TERBAIK');
     expect(breakAcaraLine('')).toBe('');
     expect(breakAcaraLine(undefined)).toBe('');
