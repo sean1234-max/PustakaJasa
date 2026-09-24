@@ -69,7 +69,7 @@ export default function PriceTable({
                             className={`input${adjusted ? ' amount-adjusted' : ''}`}
                             type="number"
                             min="0"
-                            step="0.01"
+                            step="1"
                             // Falls back to it.unitPrice (same fallback the
                             // Harga column's own total already relies on,
                             // see StoreAdminOrderDetail/SalesOrderSummary's
@@ -80,7 +80,12 @@ export default function PriceTable({
                             // as a blank field while Harga quietly still
                             // computes off the correct price underneath.
                             value={it.ids.length === 1 ? (priceDrafts[it.ids[0]] ?? it.unitPrice) : it.unitPrice}
-                            onChange={(e) => setPrice(it.ids, e.target.value)}
+                            // Strips a stray leading zero (e.g. retyping over
+                            // "0" without fully clearing it first leaves
+                            // "010") while leaving a real decimal like "0.5"
+                            // alone — only a zero immediately followed by
+                            // another digit is a leftover, not an intentional "0.".
+                            onChange={(e) => setPrice(it.ids, e.target.value.replace(/^0+(?=\d)/, ''))}
                           />
                         ) : (
                           <span className={adjusted ? 'amount-adjusted' : undefined}>
