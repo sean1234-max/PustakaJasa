@@ -5,16 +5,29 @@
 // "AI FILE/trigger_real_script_with_csv.applescript"), then uploads
 // whatever .ai files that run produced to the ai-file-outputs bucket.
 //
-// Run on the Illustrator machine, with Illustrator already open:
+// One watcher per machine, one machine per person (multiple staff each
+// have their own copy of the template .ai files + Illustrator license) —
+// WATCHER_USER_EMAIL in .env scopes this instance to only the jobs THAT
+// person queued (ai_file_jobs.requested_by), so whoever clicks "Generate
+// AI File" on the website has it run on their own machine, not whoever
+// else's watcher happens to be running. Leave it unset for a single-
+// machine setup (picks up any pending job, regardless of who queued it —
+// the original, still-default behaviour).
+//
+// One-time setup on a new machine (see scripts/setup_watcher_autostart.sh
+// for the no-more-Terminal-after-this LaunchAgent install):
 //   node --env-file=.env scripts/watch_ai_file_jobs.js
-// (needs SUPABASE_SERVICE_ROLE_KEY in .env — service role bypasses RLS,
-// which is how this script is allowed to read every pending job and write
-// status back; see migration 0071's policies. Get the key from the
+// (needs SUPABASE_SERVICE_ROLE_KEY, VITE_SUPABASE_URL, and — for a shared
+// multi-person setup — WATCHER_USER_EMAIL in .env. Service role bypasses
+// RLS, which is how this script is allowed to read every pending job and
+// write status back; see migration 0071's policies. Get the key from the
 // Supabase dashboard: Project Settings -> API -> service_role.)
 //
-// ponytail: single instance only, jobs processed one at a time, oldest
-// first — no locking/leasing. Fine for one machine; add a claimed_by/
-// leased_until column if this ever needs more than one watcher.
+// ponytail: single instance PER PERSON, jobs processed one at a time,
+// oldest first — no locking/leasing beyond the plain claim update below.
+// Safe because WATCHER_USER_EMAIL already scopes each machine to a
+// disjoint set of jobs (nobody's watcher polls for someone else's jobs);
+// running two unfiltered watchers on the same job pool would still race.
 // ponytail: a job stuck in 'processing' (watcher crashed mid-run) needs a
 // manual UPDATE back to 'pending' — no automatic recovery/retry.
 import { createClient } from '@supabase/supabase-js';
@@ -23,8 +36,8 @@ import { readFileSync, writeFileSync, mkdirSync, rmSync, readdirSync, statSync, 
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-const AI_FILE_DIR = '/Users/seanng/Documents/Pustaka Jasa/AI FILE';
-const SEAN_JSX_PATH = `${AI_FILE_DIR}/SEAN.jsx`;
+const AI_FILE_DIR = process.env.AI_FILE_DIR || '/Users/seanng/Documents/Pustaka Jasa/AI FILE';
+const SEAN_JSX_PATH = process.env.SEAN_JSX_PATH || `${AI_FILE_DIR}/SEAN.jsx`;
 const OUTPUT_ROOT = `${AI_FILE_DIR}/OUTPUT`;
 const LOG_PATH = `${OUTPUT_ROOT}/last_run_log.txt`;
 const POLL_INTERVAL_MS = 15000;
@@ -37,6 +50,21 @@ if (!supabaseUrl || !serviceRoleKey) {
   process.exit(1);
 }
 const supabase = createClient(supabaseUrl, serviceRoleKey);
+
+// Resolved once at startup below — null means "no filter, pick up any
+// pending job" (single-machine setup).
+let watcherUserId = null;
+async function resolveWatcherUserId() {
+  const email = process.env.WATCHER_USER_EMAIL;
+  if (!email) return null;
+  // supabase-js has no admin.getUserByEmail — list and match. Fine at this
+  // app's staff-account scale; paginate (the `page` param) if that ever grows.
+  const { data, error } = await supabase.auth.admin.listUsers();
+  if (error) { console.error('Could not look up WATCHER_USER_EMAIL:', error.message); process.exit(1); }
+  const user = data.users.find((u) => u.email?.toLowerCase() === email.toLowerCase());
+  if (!user) { console.error(`No account found for WATCHER_USER_EMAIL="${email}".`); process.exit(1); }
+  return user.id;
+}
 
 // Same folder-name sanitizing rule SEAN.jsx applies to the CSV's own base
 // name when it picks OUTPUT_FOLDER_PATH/<company> — must match exactly so
@@ -60,6 +88,12 @@ function asQuote(str) {
 // dynamic csvPath instead of a hardcoded one. Deliberately does NOT set
 // PRESET_OPERATOR_NAME: the Illustrator "enter your name" popup still
 // shows, so whoever is at the machine has to type who actually ran it.
+// Launches Illustrator itself if it isn't already open — the whole point
+// of a person's own machine running this unattended is that they
+// shouldn't have to remember to open Illustrator first every time.
+// ponytail: fixed 8s grace period after a cold launch before sending `do
+// javascript` — a real "wait until ready" would poll Illustrator's own
+// state instead; bump the delay if a slower machine still races it.
 function buildAppleScript(csvPath) {
   return [
     `set csvPath to ${asQuote(csvPath)}`,
@@ -68,6 +102,10 @@ function buildAppleScript(csvPath) {
     'set presetLines to "var PRESET_CSV_PATH = " & quote & csvPath & quote & ";" & return',
     'set fullCode to presetLines & scriptCode',
     'tell application id "com.adobe.illustrator"',
+    '    if it is not running then',
+    '        launch',
+    '        delay 8',
+    '    end if',
     '    activate',
     '    do javascript fullCode',
     'end tell',
@@ -129,12 +167,12 @@ async function processJob(job) {
 }
 
 async function tick() {
-  const { data: jobs, error } = await supabase
+  let query = supabase
     .from('ai_file_jobs')
     .select('id, filename, csv_content')
-    .eq('status', 'pending')
-    .order('created_at', { ascending: true })
-    .limit(1);
+    .eq('status', 'pending');
+  if (watcherUserId) query = query.eq('requested_by', watcherUserId);
+  const { data: jobs, error } = await query.order('created_at', { ascending: true }).limit(1);
   if (error) { console.error('Poll failed:', error.message); return; }
   if (!jobs || jobs.length === 0) return;
   const job = jobs[0];
@@ -147,6 +185,7 @@ async function tick() {
   }
 }
 
-console.log(`Watching ai_file_jobs every ${POLL_INTERVAL_MS / 1000}s. Illustrator must already be open. Ctrl+C to stop.`);
+watcherUserId = await resolveWatcherUserId();
+console.log(`Watching ai_file_jobs every ${POLL_INTERVAL_MS / 1000}s${watcherUserId ? ` for user ${watcherUserId}` : ' (any user)'}. Illustrator opens itself if needed. Ctrl+C to stop.`);
 setInterval(tick, POLL_INTERVAL_MS);
 tick();
