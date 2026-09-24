@@ -11,6 +11,7 @@ import { reconstructOrderDetailGroups, reconstructBlocksForCategory } from '../u
 import { getExportableCategories, splitOrderCategories, getOrderJenisPlakGroups, getPlakProductionMode, summarizeRowsForManual, buildCsvRows, rowsToCsv, buildCategoryCsvFilename, combineCsvRows, buildCombinedCsvFilename, validateExport, getInvoiceIdForJenisPlak } from '../utils/exportCsv';
 import { downloadTextFile } from '../utils/downloadBlob';
 import { getOrderImportUrl } from '../lib/storageApi';
+import { createAiFileJob, getAiFileJob, getLatestAiFileJobForOrder, getAiFileOutputUrl } from '../lib/aiFileJobsApi';
 import { getOrderChangeStamp } from '../utils/orderStamp';
 
 const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: false, matrix: false, jenisPlak: false };
@@ -94,7 +95,28 @@ export default function ProductionOrderDetail() {
 
   const [exportNote, setExportNote] = useState('');
   const exportNoteTimer = useRef(null);
+  const [aiFileJob, setAiFileJob] = useState(null);
+  const [aiFileErr, setAiFileErr] = useState('');
   const [page, setPage] = useState('summary');
+
+  // Picks up an in-flight/last job for this order on load, so a page
+  // refresh doesn't lose track of "already generating" or the last result.
+  useEffect(() => {
+    if (!order) return;
+    getLatestAiFileJobForOrder(order.id).then((job) => { if (job) setAiFileJob(job); });
+  }, [order?.id]);
+
+  // While a job is pending/processing, poll every 4s for the local
+  // watcher's progress — same idea as any other "background job" status
+  // poll in this app, just simpler (no realtime channel, low volume).
+  useEffect(() => {
+    if (!aiFileJob || (aiFileJob.status !== 'pending' && aiFileJob.status !== 'processing')) return;
+    const timer = setInterval(async () => {
+      const updated = await getAiFileJob(aiFileJob.id);
+      if (updated) setAiFileJob(updated);
+    }, 4000);
+    return () => clearInterval(timer);
+  }, [aiFileJob?.id, aiFileJob?.status]);
 
   const allCategories = useMemo(() => (effectiveOrder ? getExportableCategories(effectiveOrder) : []), [effectiveOrder]);
   // When viewing one specific invoice (see isFiltered above), drop a
@@ -217,6 +239,29 @@ export default function ProductionOrderDetail() {
     setExportNote(`Exported ${combinedRows.length} row(s) to ${filename}.`);
     clearTimeout(exportNoteTimer.current);
     exportNoteTimer.current = setTimeout(() => setExportNote(''), 4000);
+  };
+
+  const aiFileJobActive = aiFileJob && (aiFileJob.status === 'pending' || aiFileJob.status === 'processing');
+  const handleGenerateAiFile = async () => {
+    if (!combinedOk || aiFileJobActive) return;
+    setAiFileErr('');
+    try {
+      const csv = rowsToCsv(combinedRows);
+      const filename = buildCombinedCsvFilename(order);
+      const id = await createAiFileJob(order.id, filename, csv);
+      setAiFileJob({ id, status: 'pending', result_message: null, output_paths: [] });
+    } catch (err) {
+      setAiFileErr(err.message || 'Could not queue the AI file job. Please try again.');
+    }
+  };
+  const handleDownloadAiFileOutput = async (path) => {
+    const url = await getAiFileOutputUrl(path);
+    if (!url) { setAiFileErr('Could not download that file right now. Please try again.'); return; }
+    const a = document.createElement('a');
+    a.href = url;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
   };
 
   return (
@@ -362,6 +407,36 @@ export default function ProductionOrderDetail() {
                     <p className="hint-text" style={{ marginTop: 4 }}>
                       Every group above, in one file — each row still carries its own Category and Jenis Plak column. Disabled if any group below is blocked.
                     </p>
+                    <button
+                      type="button" className="btn" style={{ marginTop: 8 }}
+                      disabled={!combinedOk || aiFileJobActive} onClick={handleGenerateAiFile}
+                    >
+                      {aiFileJobActive ? '⏳ Generating…' : '🖨 Generate AI File'}
+                    </button>
+                    <p className="hint-text" style={{ marginTop: 4 }}>
+                      Queues this same combined CSV for the Illustrator machine to pick up — no need to download the CSV and run it by hand. Someone still has to be at that machine to type their name when Illustrator asks.
+                    </p>
+                    {aiFileJob && (
+                      <p className="hint-text" style={{ marginTop: 4 }}>
+                        {aiFileJob.status === 'pending' && 'Waiting for the Illustrator machine to pick this up…'}
+                        {aiFileJob.status === 'processing' && 'Running in Illustrator now…'}
+                        {aiFileJob.status === 'error' && `Failed: ${aiFileJob.result_message || 'unknown error'}`}
+                        {aiFileJob.status === 'done' && (
+                          <>
+                            Done{aiFileJob.result_message ? ` — ${aiFileJob.result_message}` : ''}.
+                            {(aiFileJob.output_paths || []).map((path) => (
+                              <button
+                                key={path} type="button" className="btn-link" style={{ marginLeft: 8 }}
+                                onClick={() => handleDownloadAiFileOutput(path)}
+                              >
+                                ⬇ {path.split('/').pop()}
+                              </button>
+                            ))}
+                          </>
+                        )}
+                      </p>
+                    )}
+                    {aiFileErr && <div className="login-error" style={{ marginTop: 4 }}>{aiFileErr}</div>}
                   </div>
                 )}
                 {jenisPlakGroups.length === 0 ? (
