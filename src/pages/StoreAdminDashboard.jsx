@@ -51,7 +51,7 @@ export default function StoreAdminDashboard() {
   // whichever tab each one's own invoiceId actually belongs to.
   const orderSlices = useMemo(() => orders.flatMap((ord) => (
     getOrderInvoiceSlices(ord, state.plakCatalog).map((slice) => ({
-      ...ord, invoiceId: slice.invoiceId, totalAmount: slice.totalAmount, priceAdjusted: slice.priceAdjusted,
+      ...ord, invoiceId: slice.invoiceId, totalAmount: slice.totalAmount, priceAdjusted: slice.priceAdjusted, status: slice.status,
       _sliceKey: `${ord.id}::${slice.invoiceId || 'default'}`,
     }))
   )), [orders, state.plakCatalog]);

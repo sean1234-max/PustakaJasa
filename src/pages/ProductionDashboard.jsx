@@ -85,7 +85,7 @@ export default function ProductionDashboard() {
   const handleMarkDone = (ord) => {
     const nextStatus = deliveryStageForShipmentDate(ord.shipmentDate, today);
     if (!window.confirm(`Mark order ${ord.id} as done? Its status will change to "${nextStatus}".`)) return;
-    markProductionDone(ord.id);
+    markProductionDone(ord.id, ord.invoiceId);
   };
 
   const lowStockAlerts = getLowStockAlerts(state.plakCatalog);
@@ -93,14 +93,17 @@ export default function ProductionDashboard() {
   // A split order (orders.invoice_groups, 0070) shows one card per invoice
   // it's actually billed under, not one card for the whole order — same
   // treatment as StoreAdminDashboard.jsx. Each "slice" carries its own
-  // invoiceId/totalAmount/totalQty but is otherwise the same order (same
-  // id, sekolah, status, shipment date, ...), see getOrderInvoiceSlices. An
-  // un-split order still comes back as exactly one slice unchanged, so this
-  // is a no-op for the vast majority of orders.
+  // invoiceId/totalAmount/totalQty/status but is otherwise the same order
+  // (same id, sekolah, shipment date, ...), see getOrderInvoiceSlices —
+  // `status` overrides the order's own so a split order's invoices can be
+  // marked done independently (markProductionDone, AppState.jsx) and each
+  // card lands in the right tab on its own. An un-split order still comes
+  // back as exactly one slice unchanged, so this is a no-op for the vast
+  // majority of orders.
   const orderSlices = useMemo(() => state.orders.flatMap((ord) => (
     getOrderInvoiceSlices(ord, state.plakCatalog).map((slice) => ({
       ...ord, invoiceId: slice.invoiceId, totalAmount: slice.totalAmount, totalQty: slice.totalQty,
-      priceAdjusted: slice.priceAdjusted,
+      priceAdjusted: slice.priceAdjusted, status: slice.status,
       _sliceKey: `${ord.id}::${slice.invoiceId || 'default'}`,
     }))
   )), [state.orders, state.plakCatalog]);

@@ -53,6 +53,14 @@ export default function ProductionOrderDetail() {
   // visible/exportable from this page at a glance.
   const viewInvoiceId = searchParams.get('invoice') || null;
   const isFiltered = !!viewInvoiceId && !!(order?.invoiceGroups || []).length;
+  // A split order's invoices can each be marked Done independently
+  // (markProductionDone, AppState.jsx) and carry their own `status` on the
+  // matching invoiceGroups entry — falls back to the whole order's status
+  // when viewing unfiltered, or when this invoice was never marked done on
+  // its own yet, same as getOrderInvoiceSlices (src/utils/orderBatches.js).
+  const sliceStatus = isFiltered
+    ? (order.invoiceGroups || []).find((g) => g.invoiceId === viewInvoiceId)?.status || order.status
+    : order?.status;
 
   // Re-derived from order.correctedImportFilePath whenever this order has
   // one (see loadCorrectedExcelPreview) — null while there's none, or
@@ -303,7 +311,7 @@ export default function ProductionOrderDetail() {
             {order.correctedImportFilePath && (
               <span className="status-pill" style={{ background: '#fff4ce', color: '#8a6d00' }}>Excel Updated</span>
             )}
-            <span className="status-pill" style={statusPillStyle(order.status)}>{order.status}</span>
+            <span className="status-pill" style={statusPillStyle(sliceStatus)}>{sliceStatus}</span>
           </div>
         </div>
 

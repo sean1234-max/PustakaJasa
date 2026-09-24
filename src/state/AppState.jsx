@@ -2266,21 +2266,32 @@ export function AppStateProvider({ children }) {
     }
   }, [patch]);
 
-  // Production: signals the order is physically finished and handed off to
-  // delivery. Only offered once an invoice ID is on record (production's own
+  // Production: signals the order — or, for a split order (0070), just ONE
+  // of its invoices — is physically finished and handed off to delivery.
+  // Only offered once an invoice ID is on record (production's own
   // dashboard groups orders into "Pending Invoice" vs "Ready for Export" —
   // this button lives in the latter, see src/pages/ProductionDashboard.jsx).
-  // Unlike setInvoiceId/approveOrder above (which update local state
-  // immediately and let the Supabase write fail silently in the
-  // background), this awaits the write first — a failed status change here
-  // must never show "Waiting for Delivery" locally when the database still
-  // says otherwise — and surfaces success/failure via the same
-  // `productionToast` the rest of this page's actions already use.
-  const markProductionDone = useCallback(async (orderId) => {
+  // `sliceInvoiceId` is whichever invoice's card the button was clicked on
+  // (see getOrderInvoiceSlices, src/utils/orderBatches.js) — when it's the
+  // order's own (default) invoiceId this writes orders.status exactly as
+  // before; when it's one of order.invoiceGroups' own invoiceId, only that
+  // group's own `status` field is written, so the order's other invoice(s)
+  // are untouched and keep moving independently. Unlike setInvoiceId/
+  // approveOrder above (which update local state immediately and let the
+  // Supabase write fail silently in the background), this awaits the write
+  // first — a failed status change here must never show "Waiting for
+  // Delivery" locally when the database still says otherwise — and
+  // surfaces success/failure via the same `productionToast` the rest of
+  // this page's actions already use.
+  const markProductionDone = useCallback(async (orderId, sliceInvoiceId) => {
     const order = stateRef.current.orders.find((o) => o.id === orderId);
-    if (!order || order.status !== 'In Production') {
+    const groups = order?.invoiceGroups || [];
+    const isDefaultSlice = order && sliceInvoiceId === (order.invoiceId || null);
+    const group = order && !isDefaultSlice ? groups.find((g) => g.invoiceId === sliceInvoiceId) : null;
+    const currentStatus = order && (isDefaultSlice ? order.status : group?.status || order.status);
+    if (!order || (!isDefaultSlice && !group) || currentStatus !== 'In Production') {
       patch({ productionToast: 'This order is not ready to be marked done.' });
-    } else if (!order.invoiceId) {
+    } else if (isDefaultSlice && !order.invoiceId) {
       patch({ productionToast: 'Waiting for Store Admin to assign an Invoice Number before this can be marked done.' });
     } else {
       // Status isn't always 'Waiting for Delivery': if this order's Shipment
@@ -2294,11 +2305,20 @@ export function AppStateProvider({ children }) {
         Completed: 'Production completed. Shipment Date has passed — order is now Completed.',
       };
       try {
-        await updateOrder(orderId, { status: nextStatus });
-        patch((st) => ({
-          orders: st.orders.map((o) => (o.id === orderId ? { ...o, status: nextStatus } : o)),
-          productionToast: toastForStatus[nextStatus],
-        }));
+        if (isDefaultSlice) {
+          await updateOrder(orderId, { status: nextStatus });
+          patch((st) => ({
+            orders: st.orders.map((o) => (o.id === orderId ? { ...o, status: nextStatus } : o)),
+            productionToast: toastForStatus[nextStatus],
+          }));
+        } else {
+          const nextGroups = groups.map((g) => (g.invoiceId === sliceInvoiceId ? { ...g, status: nextStatus } : g));
+          await updateOrder(orderId, { invoiceGroups: nextGroups });
+          patch((st) => ({
+            orders: st.orders.map((o) => (o.id === orderId ? { ...o, invoiceGroups: nextGroups } : o)),
+            productionToast: toastForStatus[nextStatus],
+          }));
+        }
       } catch (err) {
         console.error('Failed to mark order done in Supabase:', err);
         patch({ productionToast: 'Unable to update order status. Please try again.' });

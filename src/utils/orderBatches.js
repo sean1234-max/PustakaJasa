@@ -85,6 +85,14 @@ export function combineByJenisPlak(items) {
 // for every slice in that case (matches every other page's own
 // `order.priceAdjusted || rows.some(...)` fallback) rather than mixed in
 // once a catalog makes the precise per-slice check possible.
+//
+// `status` is per-slice too: each invoice_groups entry can carry its own
+// `status` (set independently by markProductionDone — AppState.jsx — once
+// Production marks THAT invoice done) so a split order's invoices move
+// through Waiting for Delivery/Shipped/Completed on their own instead of
+// jumping together. A group with no `status` of its own yet (never marked
+// done independently) just follows the order's own `status`, same as
+// before this existed.
 export function getOrderInvoiceSlices(order, plakCatalog) {
   const groups = order.invoiceGroups || [];
   const priceAdjustedOf = (rows) => (plakCatalog
@@ -93,7 +101,7 @@ export function getOrderInvoiceSlices(order, plakCatalog) {
   if (groups.length === 0) {
     const totalQty = (order.items || []).reduce((sum, it) => sum + (Number(it.qty) || 0), 0);
     const priceAdjusted = priceAdjustedOf(combineByJenisPlak(order.items));
-    return [{ invoiceId: order.invoiceId || null, totalAmount: order.totalAmount, totalQty, priceAdjusted }];
+    return [{ invoiceId: order.invoiceId || null, totalAmount: order.totalAmount, totalQty, priceAdjusted, status: order.status }];
   }
   const totalsByInvoice = new Map();
   const qtyByInvoice = new Map();
@@ -116,6 +124,7 @@ export function getOrderInvoiceSlices(order, plakCatalog) {
     slices.push({
       invoiceId: defaultKey, totalAmount: totalsByInvoice.get(defaultKey), totalQty: qtyByInvoice.get(defaultKey),
       priceAdjusted: priceAdjustedOf(rowsByInvoice.get(defaultKey) || []),
+      status: order.status,
     });
   }
   groups.forEach((g) => {
@@ -123,6 +132,7 @@ export function getOrderInvoiceSlices(order, plakCatalog) {
       slices.push({
         invoiceId: g.invoiceId, totalAmount: totalsByInvoice.get(g.invoiceId), totalQty: qtyByInvoice.get(g.invoiceId),
         priceAdjusted: priceAdjustedOf(rowsByInvoice.get(g.invoiceId) || []),
+        status: g.status || order.status,
       });
     }
   });
