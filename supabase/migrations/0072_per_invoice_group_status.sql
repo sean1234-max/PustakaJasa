@@ -14,8 +14,8 @@
 -- only needs to teach the daily calendar sweep to advance those per-group
 -- statuses too, the same Waiting for Delivery -> Shipped -> Completed rule
 -- it already applies to orders.status, off the SAME order-level Shipment
--- Date (due_date) — there's still only one ship date per order, just
--- independent statuses per invoice now.
+-- Date (shipment_date — renamed from due_date in 0065) — there's still only
+-- one ship date per order, just independent statuses per invoice now.
 -- ----------------------------------------------------------------------------
 create or replace function public.sweep_shipped_orders()
 returns void
@@ -31,14 +31,14 @@ begin
   update public.orders
      set status = 'Completed'
    where status in ('Waiting for Delivery', 'Shipped')
-     and due_date ~ '^\d{4}-\d\d-\d\d'
-     and (due_date::timestamptz at time zone 'Asia/Kuala_Lumpur')::date < v_today;
+     and shipment_date ~ '^\d{4}-\d\d-\d\d'
+     and (shipment_date::timestamptz at time zone 'Asia/Kuala_Lumpur')::date < v_today;
 
   update public.orders
      set status = 'Shipped'
    where status = 'Waiting for Delivery'
-     and due_date ~ '^\d{4}-\d\d-\d\d'
-     and (due_date::timestamptz at time zone 'Asia/Kuala_Lumpur')::date = v_today;
+     and shipment_date ~ '^\d{4}-\d\d-\d\d'
+     and (shipment_date::timestamptz at time zone 'Asia/Kuala_Lumpur')::date = v_today;
 
   -- Same two rules, applied per invoice_groups[] entry's own `status`.
   -- Only orders whose recomputed array actually differs get written, so a
@@ -51,12 +51,12 @@ begin
              jsonb_agg(
                case
                  when (g ->> 'status') in ('Waiting for Delivery', 'Shipped')
-                      and o2.due_date ~ '^\d{4}-\d\d-\d\d'
-                      and (o2.due_date::timestamptz at time zone 'Asia/Kuala_Lumpur')::date < v_today
+                      and o2.shipment_date ~ '^\d{4}-\d\d-\d\d'
+                      and (o2.shipment_date::timestamptz at time zone 'Asia/Kuala_Lumpur')::date < v_today
                    then g || jsonb_build_object('status', 'Completed')
                  when (g ->> 'status') = 'Waiting for Delivery'
-                      and o2.due_date ~ '^\d{4}-\d\d-\d\d'
-                      and (o2.due_date::timestamptz at time zone 'Asia/Kuala_Lumpur')::date = v_today
+                      and o2.shipment_date ~ '^\d{4}-\d\d-\d\d'
+                      and (o2.shipment_date::timestamptz at time zone 'Asia/Kuala_Lumpur')::date = v_today
                    then g || jsonb_build_object('status', 'Shipped')
                  else g
                end
