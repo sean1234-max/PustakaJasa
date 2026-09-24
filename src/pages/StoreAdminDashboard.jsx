@@ -50,11 +50,11 @@ export default function StoreAdminDashboard() {
   // slices rather than raw orders so a split order's two invoices land in
   // whichever tab each one's own invoiceId actually belongs to.
   const orderSlices = useMemo(() => orders.flatMap((ord) => (
-    getOrderInvoiceSlices(ord).map((slice) => ({
-      ...ord, invoiceId: slice.invoiceId, totalAmount: slice.totalAmount,
+    getOrderInvoiceSlices(ord, state.plakCatalog).map((slice) => ({
+      ...ord, invoiceId: slice.invoiceId, totalAmount: slice.totalAmount, priceAdjusted: slice.priceAdjusted,
       _sliceKey: `${ord.id}::${slice.invoiceId || 'default'}`,
     }))
-  )), [orders]);
+  )), [orders, state.plakCatalog]);
 
   // Every salesman this Store Admin should see in the filter, so it lists
   // them all even with no order currently in view. A Manager (0069) isn't

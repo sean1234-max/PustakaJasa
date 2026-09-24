@@ -1,3 +1,5 @@
+import { standardUnitPrice } from '../data/catalog';
+
 // Items placed with the original order never carry a `batch` field;
 // approveAddOn (src/state/AppState.jsx) stamps every item from an approved
 // add-on round with an incrementing `batch` number (1, 2, 3…) so the
@@ -72,20 +74,38 @@ export function combineByJenisPlak(items) {
 // every single one got split away, leaving nothing on the default) is
 // simply omitted — the dashboard should never show a card for an invoice
 // nothing is actually billed under.
-export function getOrderInvoiceSlices(order) {
+// `plakCatalog` (optional — pass state.plakCatalog) lets each slice report
+// its OWN priceAdjusted instead of the whole order's: a split order can
+// have a price change on only one invoice's Jenis Plak (Store Admin edits
+// prices per group before Approve), and the other invoice's card must not
+// show the red "adjusted" styling just because a sibling invoice did. Only
+// order.priceAdjusted (a persisted whole-order flag stamped at approve
+// time — see AppState.jsx) exists to fall back on when no catalog is
+// given, which is coarser than a real per-slice check, so it's used as-is
+// for every slice in that case (matches every other page's own
+// `order.priceAdjusted || rows.some(...)` fallback) rather than mixed in
+// once a catalog makes the precise per-slice check possible.
+export function getOrderInvoiceSlices(order, plakCatalog) {
   const groups = order.invoiceGroups || [];
+  const priceAdjustedOf = (rows) => (plakCatalog
+    ? rows.some((row) => row.unitPrice !== standardUnitPrice(row.jenisPlak, plakCatalog))
+    : !!order.priceAdjusted);
   if (groups.length === 0) {
     const totalQty = (order.items || []).reduce((sum, it) => sum + (Number(it.qty) || 0), 0);
-    return [{ invoiceId: order.invoiceId || null, totalAmount: order.totalAmount, totalQty }];
+    const priceAdjusted = priceAdjustedOf(combineByJenisPlak(order.items));
+    return [{ invoiceId: order.invoiceId || null, totalAmount: order.totalAmount, totalQty, priceAdjusted }];
   }
   const totalsByInvoice = new Map();
   const qtyByInvoice = new Map();
+  const rowsByInvoice = new Map();
   const defaultKey = order.invoiceId || null;
   combineByJenisPlak(order.items).forEach((row) => {
     const match = groups.find((g) => (g.jenisPlakList || []).includes(row.jenisPlak));
     const key = match ? match.invoiceId : defaultKey;
     totalsByInvoice.set(key, (totalsByInvoice.get(key) || 0) + row.harga);
     qtyByInvoice.set(key, (qtyByInvoice.get(key) || 0) + row.qty);
+    if (!rowsByInvoice.has(key)) rowsByInvoice.set(key, []);
+    rowsByInvoice.get(key).push(row);
   });
   // Default slice first (even though it's just been computed into the same
   // map), then each group in the order Store Admin created them — keeps
@@ -93,11 +113,17 @@ export function getOrderInvoiceSlices(order) {
   // (which follows whichever Jenis Plak happened to appear first).
   const slices = [];
   if (totalsByInvoice.has(defaultKey)) {
-    slices.push({ invoiceId: defaultKey, totalAmount: totalsByInvoice.get(defaultKey), totalQty: qtyByInvoice.get(defaultKey) });
+    slices.push({
+      invoiceId: defaultKey, totalAmount: totalsByInvoice.get(defaultKey), totalQty: qtyByInvoice.get(defaultKey),
+      priceAdjusted: priceAdjustedOf(rowsByInvoice.get(defaultKey) || []),
+    });
   }
   groups.forEach((g) => {
     if (totalsByInvoice.has(g.invoiceId)) {
-      slices.push({ invoiceId: g.invoiceId, totalAmount: totalsByInvoice.get(g.invoiceId), totalQty: qtyByInvoice.get(g.invoiceId) });
+      slices.push({
+        invoiceId: g.invoiceId, totalAmount: totalsByInvoice.get(g.invoiceId), totalQty: qtyByInvoice.get(g.invoiceId),
+        priceAdjusted: priceAdjustedOf(rowsByInvoice.get(g.invoiceId) || []),
+      });
     }
   });
   return slices;

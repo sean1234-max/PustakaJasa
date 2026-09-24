@@ -97,11 +97,12 @@ export default function ProductionDashboard() {
   // un-split order still comes back as exactly one slice unchanged, so this
   // is a no-op for the vast majority of orders.
   const orderSlices = useMemo(() => state.orders.flatMap((ord) => (
-    getOrderInvoiceSlices(ord).map((slice) => ({
+    getOrderInvoiceSlices(ord, state.plakCatalog).map((slice) => ({
       ...ord, invoiceId: slice.invoiceId, totalAmount: slice.totalAmount, totalQty: slice.totalQty,
+      priceAdjusted: slice.priceAdjusted,
       _sliceKey: `${ord.id}::${slice.invoiceId || 'default'}`,
     }))
-  )), [state.orders]);
+  )), [state.orders, state.plakCatalog]);
 
   const activeTab = TABS.find((t) => t.key === tab);
   const ordersInTab = orderSlices.filter((o) => activeTab.match(o, today));
