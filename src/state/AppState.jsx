@@ -2121,7 +2121,10 @@ export function AppStateProvider({ children }) {
         if (existing) {
           return withoutKeys.map((g) => (g === existing ? { ...g, jenisPlakList: [...g.jenisPlakList, ...keys] } : g));
         }
-        return [...withoutKeys, { invoiceId: normalized, jenisPlakList: keys }];
+        // Stamped with the order's current status (same reasoning as
+        // approveAndSetInvoiceId above) so this newly-split-off invoice
+        // starts tracking its own production/delivery status right away.
+        return [...withoutKeys, { invoiceId: normalized, jenisPlakList: keys, status: order.status }];
       })();
     try {
       await updateOrder(orderId, { invoiceGroups: newGroups });
@@ -2179,7 +2182,14 @@ export function AppStateProvider({ children }) {
       const gNorm = (g.invoiceId || '').replace(/\s+/g, '');
       const keys = (g.jenisPlakList || []).filter(Boolean);
       if (!gNorm || keys.length === 0 || gNorm === normalized) return;
-      normalizedGroups.push({ invoiceId: gNorm, jenisPlakList: keys });
+      // Stamped with the status the order is being approved into (below) so
+      // this group tracks its OWN production/delivery status from the
+      // start (markProductionDone, per-invoice — 0072) instead of quietly
+      // inheriting whatever orders.status happens to be until Production
+      // marks it done independently — see getOrderInvoiceSlices's fallback
+      // (src/utils/orderBatches.js), which only exists for groups created
+      // before this existed.
+      normalizedGroups.push({ invoiceId: gNorm, jenisPlakList: keys, status: 'In Production' });
     });
     const allInvoiceNumbers = [normalized, ...normalizedGroups.map((g) => g.invoiceId)];
     if (new Set(allInvoiceNumbers).size !== allInvoiceNumbers.length) {
