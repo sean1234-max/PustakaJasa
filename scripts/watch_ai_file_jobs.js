@@ -39,7 +39,6 @@ import path from 'node:path';
 const AI_FILE_DIR = process.env.AI_FILE_DIR || '/Users/seanng/Documents/Pustaka Jasa/AI FILE';
 const SEAN_JSX_PATH = process.env.SEAN_JSX_PATH || `${AI_FILE_DIR}/SEAN.jsx`;
 const OUTPUT_ROOT = `${AI_FILE_DIR}/OUTPUT`;
-const LOG_PATH = `${OUTPUT_ROOT}/last_run_log.txt`;
 const POLL_INTERVAL_MS = 15000;
 const TEMP_DIR = path.join(tmpdir(), 'ai-file-jobs');
 
@@ -79,6 +78,14 @@ function outputFolderFor(csvFilename) {
   return path.join(OUTPUT_ROOT, sanitizeFolderName(base));
 }
 
+// One log FILE NAME per job, not the fixed "last_run_log.txt" — AI_FILE_DIR
+// can now be a NAS folder shared by several machines' watchers, and two
+// jobs finishing around the same time on different machines would
+// otherwise overwrite/read each other's result off that one shared name.
+function logFileNameFor(jobId) {
+  return `last_run_log_${jobId}.txt`;
+}
+
 function asQuote(str) {
   return `"${String(str).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
 }
@@ -99,14 +106,16 @@ function asQuote(str) {
 // ponytail: fixed 8s grace period after a cold launch before sending `do
 // javascript` — a real "wait until ready" would poll Illustrator's own
 // state instead; bump the delay if a slower machine still races it.
-function buildAppleScript(csvPath) {
+function buildAppleScript(csvPath, logFileName) {
   return [
     `set csvPath to ${asQuote(csvPath)}`,
     `set templateFolderPath to ${asQuote(AI_FILE_DIR)}`,
+    `set logFileName to ${asQuote(logFileName)}`,
     `set scriptPath to ${asQuote(SEAN_JSX_PATH)}`,
     'set scriptCode to read (POSIX file scriptPath) as «class utf8»',
     'set presetLines to "var PRESET_CSV_PATH = " & quote & csvPath & quote & ";" & return',
     'set presetLines to presetLines & "var PRESET_TEMPLATE_FOLDER_PATH = " & quote & templateFolderPath & quote & ";" & return',
+    'set presetLines to presetLines & "var PRESET_LOG_FILE_NAME = " & quote & logFileName & quote & ";" & return',
     'set fullCode to presetLines & scriptCode',
     'tell application id "com.adobe.illustrator"',
     '    if it is not running then',
@@ -137,21 +146,25 @@ async function processJob(job) {
 
   const outputFolder = outputFolderFor(job.filename);
   const before = listAiFilesWithMtime(outputFolder);
-  rmSync(LOG_PATH, { force: true });
+  const logFileName = logFileNameFor(job.id);
+  const logPath = path.join(OUTPUT_ROOT, logFileName);
+  rmSync(logPath, { force: true });
 
   let resultMessage;
   let status;
   try {
     const appleScriptPath = path.join(TEMP_DIR, `${job.id}.applescript`);
-    writeFileSync(appleScriptPath, buildAppleScript(csvPath), 'utf8');
+    writeFileSync(appleScriptPath, buildAppleScript(csvPath, logFileName), 'utf8');
     // No timeout: this blocks until Illustrator finishes, which includes
     // waiting for a human to answer the name popup — that's expected.
     execFileSync('osascript', [appleScriptPath], { stdio: 'pipe' });
-    resultMessage = existsSync(LOG_PATH) ? readFileSync(LOG_PATH, 'utf8') : '(Illustrator ran, but no log file was written.)';
+    resultMessage = existsSync(logPath) ? readFileSync(logPath, 'utf8') : '(Illustrator ran, but no log file was written.)';
     status = /Cancelled|失败: /.test(resultMessage) && !/存成:/.test(resultMessage) ? 'error' : 'done';
   } catch (err) {
     status = 'error';
     resultMessage = `AppleScript/Illustrator call failed: ${err.stderr?.toString() || err.message}`;
+  } finally {
+    rmSync(logPath, { force: true }); // don't leave a stray per-job log file behind on the (possibly shared) NAS
   }
 
   const outputPaths = [];
