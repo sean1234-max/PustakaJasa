@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import { useAppState } from '../state/useAppState';
 import { STATUS_STAGES, statusPillStyle } from '../data/catalog';
+import { getOrderInvoiceSlices } from '../utils/orderBatches';
 
 const FILTERS = [
   { key: 'Submitted to Sales', label: 'Submitted to Sales', match: (o) => o.status === 'Submitted to Sales' },
@@ -18,8 +19,27 @@ export default function Dashboard() {
   const [filter, setFilter] = useState('Submitted to Sales');
   const [expandedAddOnId, setExpandedAddOnId] = useState(null);
 
+  // A split order (orders.invoice_groups, 0070) shows one card per invoice
+  // it's actually billed under here too — same "split" and "status"), not
+  // one card that only ever showed the order's own (default) invoice/
+  // amount/status and hid the rest. `isPrimarySlice` marks whichever card
+  // carries the order-level actions (Add On/Update Details/Reorder, the
+  // pending add-on banner) — those apply to the WHOLE order, not one
+  // invoice, so they'd otherwise show duplicated on every split card; the
+  // first slice for that order always exists (see getOrderInvoiceSlices)
+  // even when the default slice itself got entirely split away. An
+  // un-split order still comes back as exactly one slice unchanged, so
+  // this is a no-op for the vast majority of orders.
+  const orderSlices = useMemo(() => state.orders.flatMap((ord) => (
+    getOrderInvoiceSlices(ord, state.plakCatalog).map((slice, i) => ({
+      ...ord, invoiceId: slice.invoiceId, totalAmount: slice.totalAmount, totalQty: slice.totalQty,
+      priceAdjusted: slice.priceAdjusted, status: slice.status, isPrimarySlice: i === 0,
+      _sliceKey: `${ord.id}::${slice.invoiceId || 'default'}`,
+    }))
+  )), [state.orders, state.plakCatalog]);
+
   const activeFilter = FILTERS.find((f) => f.key === filter) || FILTERS[0];
-  const filteredOrders = state.orders.filter(activeFilter.match);
+  const filteredOrders = orderSlices.filter(activeFilter.match);
 
   return (
     <div className="screen-wrap">
@@ -48,7 +68,7 @@ export default function Dashboard() {
 
       <div className="tabs" style={{ marginBottom: 'var(--space-4)' }}>
         {FILTERS.map((f) => {
-          const count = state.orders.filter(f.match).length;
+          const count = orderSlices.filter(f.match).length;
           return (
             <button
               key={f.key}
@@ -79,7 +99,7 @@ export default function Dashboard() {
           const canAmend = idx === 0;
 
           return (
-            <div key={ord.id} className="card order-card">
+            <div key={ord._sliceKey} className="card order-card">
               <div className="order-card-top">
                 <div>
                   <div className="order-card-label">Order ID</div>
@@ -102,7 +122,7 @@ export default function Dashboard() {
               <div className="dim" style={{ fontSize: 11 }}>Total Amount</div>
               <div className={`order-card-total${ord.priceAdjusted ? ' amount-adjusted' : ''}`}>RM {ord.totalAmount.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
 
-              {ord.pendingAddonStatus === 'pending' && (
+              {ord.isPrimarySlice && ord.pendingAddonStatus === 'pending' && (
                 <div style={{ background: 'var(--color-accent-100)', color: 'var(--color-accent-900)', fontSize: 12, padding: 'var(--space-2) var(--space-3)', marginTop: 'var(--space-2)' }}>
                   Add-on submitted — waiting for Sales approval.
                   <button type="button" className="btn btn-ghost" style={{ marginLeft: 'var(--space-2)', padding: 0 }} onClick={() => setExpandedAddOnId(expandedAddOnId === ord.id ? null : ord.id)}>
@@ -134,7 +154,7 @@ export default function Dashboard() {
               )}
 
               <div className="order-card-actions">
-                <button type="button" className="btn btn-ghost btn-block" onClick={() => navigate(`/orders/${ord.id}`)}>View Details</button>
+                <button type="button" className="btn btn-ghost btn-block" onClick={() => navigate(`/orders/${ord.id}${ord.invoiceId ? `?invoice=${encodeURIComponent(ord.invoiceId)}` : ''}`)}>View Details</button>
                 {canAmend && <button type="button" className="btn btn-secondary btn-block" onClick={() => { openAmend(ord); navigate(`/amend/${ord.id}`); }}>Update Details</button>}
                 {canAddOn && <button type="button" className="btn btn-secondary btn-block" onClick={() => { openAddOn(ord); navigate(`/addon/${ord.id}`); }}>Add On</button>}
                 {isCompleted && <button type="button" className="btn btn-secondary btn-block" onClick={() => { reorderOrder(ord); navigate('/order/step1'); }}>Reorder</button>}

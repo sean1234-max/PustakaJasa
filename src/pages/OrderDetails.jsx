@@ -1,5 +1,5 @@
-import { useState, useMemo, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import Nav from '../components/Nav';
 import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
@@ -8,7 +8,7 @@ import { useAppState } from '../state/useAppState';
 import { STATUS_STAGES, statusPillStyle, formatDate, formatDateTime, standardUnitPrice } from '../data/catalog';
 import CancelOrderControl from '../components/CancelOrderControl';
 import { reconstructBlocksForCategory } from '../utils/computeBlocks';
-import { splitOrderCategories } from '../utils/exportCsv';
+import { splitOrderCategories, getInvoiceIdForJenisPlak } from '../utils/exportCsv';
 
 const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: false, matrix: false, jenisPlak: false };
 
@@ -16,25 +16,64 @@ export default function OrderDetails() {
   const { state, recordPrint, ensureOrderLoaded } = useAppState();
   const { id } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const order = state.orders.find((o) => o.id === id);
   const [page, setPage] = useState('summary');
 
   useEffect(() => { ensureOrderLoaded(id); }, [id, ensureOrderLoaded]);
 
-  const { anugerah: categories, selempang: selempangCats } = useMemo(
+  // Opened from one specific invoice's card on My Orders (a split order
+  // shows one card per invoice, see Dashboard.jsx/getOrderInvoiceSlices) —
+  // ?invoice= says which one, so this page only shows (and totals) that
+  // invoice's own Jenis Plak instead of mixing every invoice's plaques
+  // into one page no matter which card was opened. Absent, or on an
+  // un-split order (no invoiceGroups to slice by), shows everything — same
+  // as before this existed.
+  const viewInvoiceId = searchParams.get('invoice') || null;
+  const isFiltered = !!viewInvoiceId && !!(order?.invoiceGroups || []).length;
+  const sliceStatus = isFiltered
+    ? (order.invoiceGroups || []).find((g) => g.invoiceId === viewInvoiceId)?.status || order.status
+    : order?.status;
+
+  // Always read-only here (a teacher never edits pricing) — items already
+  // carry their approved (or, before approval, catalog-standard) unitPrice.
+  const priceRows = useMemo(() => {
+    if (!order) return [];
+    if (!isFiltered) return order.items;
+    return order.items.filter((it) => getInvoiceIdForJenisPlak(order, it.jenisPlak) === viewInvoiceId);
+  }, [order, isFiltered, viewInvoiceId]);
+
+  const { anugerah: allCategories, selempang: allSelempangCats } = useMemo(
     () => (order ? splitOrderCategories(order) : { anugerah: [], selempang: [] }),
     [order],
   );
+  // Drops a category entirely once none of ITS items are on this invoice —
+  // no point showing an empty tab. A block within a surviving category
+  // that mixes Jenis Plak across invoices (rare — matrix-style categories
+  // can) is left as-is rather than risk splitting it wrong; only a block
+  // whose own single `jenisPlak` clearly belongs to a different invoice is
+  // dropped below.
+  const categories = useMemo(() => {
+    if (!isFiltered) return allCategories;
+    return allCategories.filter((cat) => priceRows.some((it) => it.categoryKey === cat.key));
+  }, [allCategories, isFiltered, priceRows]);
+  const selempangCats = useMemo(() => {
+    if (!isFiltered) return allSelempangCats;
+    return allSelempangCats.filter((cat) => priceRows.some((it) => it.categoryKey === cat.key));
+  }, [allSelempangCats, isFiltered, priceRows]);
   const [activeCat, setActiveCat] = useState(() => categories[0]?.key || '');
   const currentCat = categories.find((c) => c.key === activeCat) || categories[0];
+  const filterBlocks = useCallback((blocks) => (!isFiltered ? blocks : blocks.filter((blk) => (
+    !blk.jenisPlak || getInvoiceIdForJenisPlak(order, blk.jenisPlak) === viewInvoiceId
+  ))), [isFiltered, order, viewInvoiceId]);
   const selempangBlocks = useMemo(() => {
     if (!order) return [];
-    return selempangCats.flatMap((cat) => reconstructBlocksForCategory(order, cat.key, state.plakCatalog).blocks);
-  }, [order, selempangCats, state.plakCatalog]);
+    return filterBlocks(selempangCats.flatMap((cat) => reconstructBlocksForCategory(order, cat.key, state.plakCatalog).blocks));
+  }, [order, selempangCats, state.plakCatalog, filterBlocks]);
   const catBlocks = useMemo(() => {
     if (!order || !currentCat) return [];
-    return reconstructBlocksForCategory(order, currentCat.key, state.plakCatalog).blocks;
-  }, [order, currentCat, state.plakCatalog]);
+    return filterBlocks(reconstructBlocksForCategory(order, currentCat.key, state.plakCatalog).blocks);
+  }, [order, currentCat, state.plakCatalog, filterBlocks]);
 
   // Printing needs every category's details at once, not just whichever
   // tab happens to be open on screen — same pattern as SalesOrderSummary.
@@ -42,18 +81,15 @@ export default function OrderDetails() {
     if (!order) return [];
     return [...categories, ...selempangCats].map((cat) => ({
       cat,
-      blocks: reconstructBlocksForCategory(order, cat.key, state.plakCatalog).blocks,
+      blocks: filterBlocks(reconstructBlocksForCategory(order, cat.key, state.plakCatalog).blocks),
     }));
-  }, [order, categories, selempangCats, state.plakCatalog]);
+  }, [order, categories, selempangCats, state.plakCatalog, filterBlocks]);
 
   if (!order) return null;
 
-  const idx = STATUS_STAGES.indexOf(order.status);
-  const invoiceIdLabel = idx >= 1 ? (order.invoiceId || `INV-${order.id.replace('ORD-', '')}`) : '-';
+  const idx = STATUS_STAGES.indexOf(sliceStatus);
+  const invoiceIdLabel = idx >= 1 ? (viewInvoiceId || order.invoiceId || `INV-${order.id.replace('ORD-', '')}`) : '-';
 
-  // Always read-only here (a teacher never edits pricing) — items already
-  // carry their approved (or, before approval, catalog-standard) unitPrice.
-  const priceRows = order.items;
   const totalQty = priceRows.reduce((sum, it) => sum + (Number(it.qty) || 0), 0);
   const totalHarga = priceRows.reduce((sum, it) => sum + it.harga, 0);
   const priceAdjusted = order.priceAdjusted || priceRows.some((it) => it.unitPrice !== standardUnitPrice(it.jenisPlak, state.plakCatalog));
@@ -90,7 +126,7 @@ export default function OrderDetails() {
             <div className="card-kicker">{page === 'summary' ? 'Summary' : 'Order Details'}</div>
             <div className="card-title">{order.id}</div>
           </div>
-          <span className="status-pill" style={statusPillStyle(order.status)}>{order.status}</span>
+          <span className="status-pill" style={statusPillStyle(sliceStatus)}>{sliceStatus}</span>
         </div>
 
         <div className="screen-only">
@@ -115,7 +151,7 @@ export default function OrderDetails() {
                 <div><div className="dim">Invoice ID</div><div>{invoiceIdLabel}</div></div>
                 <div><div className="dim">Date Placed</div><div>{order.datePlaced}</div></div>
                 <div><div className="dim">Est. Delivery</div><div>{order.deliveryDate}</div></div>
-                <div><div className="dim">Total Amount</div><div className={order.priceAdjusted ? 'amount-adjusted' : undefined}>RM {order.totalAmount.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div></div>
+                <div><div className="dim">Total Amount</div><div className={priceAdjusted ? 'amount-adjusted' : undefined}>RM {totalHarga.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div></div>
               </div>
 
               <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Function Details</div>
@@ -208,7 +244,7 @@ export default function OrderDetails() {
           <div className="print-summary-section">
             <div className="form-grid-2" style={{ marginTop: 'var(--space-3)' }}>
               <div><div className="dim">Order ID</div><div>{order.id}</div></div>
-              <div><div className="dim">Invoice Number</div><div>{order.invoiceId || '-'}</div></div>
+              <div><div className="dim">Invoice Number</div><div>{viewInvoiceId || order.invoiceId || '-'}</div></div>
               {order.printedAt && <div><div className="dim">Order Printed</div><div>{formatDateTime(order.printedAt)}</div></div>}
               {order.sekolah && <div><div className="dim">Sekolah</div><div>{order.sekolah}</div></div>}
               {order.picName && <div><div className="dim">PIC Name</div><div>{order.picName}{order.phone ? ` / ${order.phone}` : ''}</div></div>}
