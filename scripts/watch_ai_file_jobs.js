@@ -85,9 +85,14 @@ function asQuote(str) {
 
 // Same recipe as trigger_real_script_with_csv.applescript (bundle id
 // addressing + UTF-8 file read) — proven working manually, just with a
-// dynamic csvPath instead of a hardcoded one. Deliberately does NOT set
-// PRESET_OPERATOR_NAME: the Illustrator "enter your name" popup still
-// shows, so whoever is at the machine has to type who actually ran it.
+// dynamic csvPath instead of a hardcoded one. Also presets
+// PRESET_TEMPLATE_FOLDER_PATH to this machine's own AI_FILE_DIR — without
+// it, SEAN.jsx falls back to its own hardcoded TEMPLATE_FOLDER_PATH (Sean's
+// machine) no matter which computer's watcher is actually running it,
+// which would silently break template lookup on anyone else's machine (or
+// a shared NAS path each machine mounts differently). Deliberately does
+// NOT set PRESET_OPERATOR_NAME: the Illustrator "enter your name" popup
+// still shows, so whoever is at the machine has to type who actually ran it.
 // Launches Illustrator itself if it isn't already open — the whole point
 // of a person's own machine running this unattended is that they
 // shouldn't have to remember to open Illustrator first every time.
@@ -97,9 +102,11 @@ function asQuote(str) {
 function buildAppleScript(csvPath) {
   return [
     `set csvPath to ${asQuote(csvPath)}`,
+    `set templateFolderPath to ${asQuote(AI_FILE_DIR)}`,
     `set scriptPath to ${asQuote(SEAN_JSX_PATH)}`,
     'set scriptCode to read (POSIX file scriptPath) as «class utf8»',
     'set presetLines to "var PRESET_CSV_PATH = " & quote & csvPath & quote & ";" & return',
+    'set presetLines to presetLines & "var PRESET_TEMPLATE_FOLDER_PATH = " & quote & templateFolderPath & quote & ";" & return',
     'set fullCode to presetLines & scriptCode',
     'tell application id "com.adobe.illustrator"',
     '    if it is not running then',
