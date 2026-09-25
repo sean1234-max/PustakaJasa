@@ -425,6 +425,24 @@ describe('buildCsvRows — TOKOH_SHEET NAMA MURID / Reserved', () => {
     expect(rows[0][3]).toBe('AHMAD BIN ALI');
   });
 
+  // Reference sample line ③ (the CONTOH box) can demonstrate a two-line
+  // name/class layout via Alt+Enter — when it does, every row's own NAMA
+  // MURID (one line, "name class") follows that same split, name and class
+  // on their own event_line_1 lines.
+  it('follows line ③\'s two-line CONTOH layout, splitting NAMA MURID at name/class', () => {
+    const item = tokohItem('e', { id: 1, desc: '卫生员', qty: 1, namaMurid: '高永乐 3B' });
+    item.detail.lines['TOKOH_SHEET::0::3'] = '高永乐\n3B';
+    const { rows } = buildCsvRows({ ...order, items: [item] }, 'TOKOH_SHEET', [item]);
+    expect(rows[0][3]).toBe('高永乐\n3B');
+  });
+
+  it('a one-line line ③ CONTOH keeps NAMA MURID on one line', () => {
+    const item = tokohItem('f', { id: 1, desc: '卫生员', qty: 1, namaMurid: '高永乐 3B' });
+    item.detail.lines['TOKOH_SHEET::0::3'] = '高永乐 3B';
+    const { rows } = buildCsvRows({ ...order, items: [item] }, 'TOKOH_SHEET', [item]);
+    expect(rows[0][3]).toBe('高永乐 3B');
+  });
+
   it('every case form of "reserved" is treated as a hold', () => {
     ['RESERVED', 'reserved', 'Reserved', '  Reserved  '].forEach((v) => expect(isReservedName(v)).toBe(true));
     ['Reserved for Ali', 'AHMAD', '', undefined].forEach((v) => expect(isReservedName(v)).toBe(false));

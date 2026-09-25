@@ -272,8 +272,24 @@ function buildFixedRows(item, header, year, positionPart1) {
 //     confirmed name — the row is skipped entirely (no engraving row).
 // For LONJAKAN and Main Template, `tokohNames` is falsy: rows have no
 // namaMurid, event_line_1 stays blank, nothing is skipped — same as before.
+//
+// TOKOH_SHEET's own NAMA MURID column comes in as one line ("高永乐 3B" —
+// name, space, class). The reference sample's own line ③ CONTOH box can
+// demonstrate a two-line layout instead (Alt+Enter — "高永乐\n3B"): when it
+// does, every row's NAMA MURID follows that same split onto event_line_1
+// (name / class on their own lines), not just the one worked example — the
+// last space in the name is the name/class boundary. A CONTOH with no line
+// break leaves every row's NAMA MURID as the single line it already is.
+function formatTokohNamaMurid(namaMurid, contohLine3) {
+  const name = (namaMurid || '').trim();
+  if (!name || !contohLine3.includes('\n')) return name;
+  const idx = name.lastIndexOf(' ');
+  return idx === -1 ? name : `${name.slice(0, idx)}\n${name.slice(idx + 1)}`;
+}
+
 function buildRowsFromDescriptionRows(item, header, year, positionPart1, tokohNames) {
   const rows = [];
+  const contohLine3 = tokohNames ? getLine(item, 3) : '';
   (item.detail?.rows || []).forEach((r) => {
     const qty = Number(r.qty) || 0;
     if (qty <= 0) return;
@@ -289,7 +305,7 @@ function buildRowsFromDescriptionRows(item, header, year, positionPart1, tokohNa
     const lonjakanStyle = !tokohNames && !!positionPart1;
     const position = lonjakanStyle ? positionPart1 : (r.desc || '');
     const eventLine1 = tokohNames
-      ? ((r.namaMurid || '').trim() || getLine(item, 3))
+      ? (formatTokohNamaMurid(r.namaMurid, contohLine3) || contohLine3)
       : (lonjakanStyle ? (r.desc || '') : '');
     const row = [header, year, position, eventLine1, ''];
     for (let i = 0; i < qty; i++) rows.push(row);
