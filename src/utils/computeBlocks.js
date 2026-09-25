@@ -908,10 +908,18 @@ function mergeItemDetailIntoMaps(it, key, lineValues, matrixValues, rowsByBlock,
     // SELEMPANG rows carry no `desc` (they're ACARA/WARNA/KUANTITI), so the
     // sum-by-desc path below would collapse every row onto the first
     // (undefined === undefined). Upsert by id instead, like the matrix case.
-    const selempangCat = resolveCategory(it.categoryKey)?.selempang;
+    // TOKOH_SHEET (tokohRowFields, catalog.js) rows share their `desc` too —
+    // it's the award name (e.g. "正班长"), the same for every honouree who
+    // holds it — so sum-by-desc silently merged every honoree sharing an
+    // award into one row, summing their qty and keeping only the first
+    // one's NAMA MURID/Jenis Plak, dropping everyone else. Each honoree is
+    // its own cart item with a unique row id (categoryCartItems.js's
+    // plakPerRow branch), so upsert-by-id here too.
+    const cat = resolveCategory(it.categoryKey);
+    const mergeById = !!(cat?.selempang || cat?.tokohRowFields);
     if (!rowsByBlock[key]) {
       rowsByBlock[key] = it.detail.rows.map((r) => ({ ...r }));
-    } else if (it.detail.matrix || selempangCat) {
+    } else if (it.detail.matrix || mergeById) {
       it.detail.rows.forEach((r) => {
         const existing = rowsByBlock[key].find((er) => er.id === r.id);
         if (existing) Object.assign(existing, r);

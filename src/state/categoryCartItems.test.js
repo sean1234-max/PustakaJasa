@@ -124,6 +124,24 @@ describe('buildCategoryCartItems — TOKOH_SHEET (plakPerRow)', () => {
     ]);
   });
 
+  // Regression: two different honourees can share the same TOKOH award name
+  // (e.g. 正班长 given to one student per class, many classes) — desc is NOT
+  // a unique row identity here the way it is for LONJAKAN/KEHADIRAN's fixed
+  // TAHUN rows. Summing by desc silently merged every honoree sharing an
+  // award into one row (qty summed, every name but the first dropped) —
+  // see computeBlocks.js's mergeItemDetailIntoMaps.
+  it('keeps every honoree as its own row even when they share the same award name', () => {
+    const { items } = buildCategoryCartItems(draftTokoh([
+      { id: 1, desc: '正班长', qty: '1', jenisPlak: 'MP399', namaMurid: 'Ali 1B' },
+      { id: 2, desc: '正班长', qty: '1', jenisPlak: 'MP399', namaMurid: 'Siti 1H' },
+      { id: 3, desc: '正班长', qty: '1', jenisPlak: 'MP399', namaMurid: 'Wei 1J' },
+    ]), 'TOKOH_SHEET');
+    const order = { schoolLanguage: 'SK', items };
+    const { blocks } = reconstructBlocksForCategory(order, 'TOKOH_SHEET', [{ code: 'MP399', price: 12 }]);
+    expect(blocks[0].blockTotalQty).toBe(3);
+    expect(blocks[0].rows.map((r) => r.tokohFields.find((f) => f.key === 'namaMurid').value)).toEqual(['Ali 1B', 'Siti 1H', 'Wei 1J']);
+  });
+
   // A likely typo (src/utils/typoCheck.js) now blocks Add to Cart instead
   // of only showing a hint — a teacher must fix the wording, not just see
   // it flagged, before the order can be submitted.
