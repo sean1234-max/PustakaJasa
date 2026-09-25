@@ -193,24 +193,25 @@ export function matrixCellKey(catKey, rowKey, colKey) {
   return `${catKey}::${rowKey}::${colKey}`;
 }
 
-// Shared reference-sample shape for the four matrix-style categories
-// (MP THP 1/2, PBD/ALIRAN TERBAIK) — TAJUK BESAR / YEAR / ACARA (★, red —
-// the position text that actually gets engraved) / a CONTOH-only "( TAHUN
-// ? )" line, same generic-label style OTHERS uses rather than each
-// category's own worked "e.g. ..." example. The old subject/position
-// second box (e.g. "BAHASA MELAYU") is dropped entirely — it was already
-// only ever a CONTOH (the real per-cell/per-column subject always comes
-// from the fixed subject list or the teacher's own PBD columns, see
-// exportCsv.js's buildMatrixRows/buildPbdMatrixRows — the reference-sample
-// text was never read), so losing it doesn't change what exports — true
-// for PBD/ALIRAN below, which still use this bare 4-line set. PPKI and MP
-// THP 1 add their own `positionLine2Placeholder` back on top of it (same
-// "( SUBJEK/POSITION )" second box Main Template already uses after its own
-// ACARA) — their own imported file's reference box genuinely has this line
-// (a worked example of ACARA + a real subject name), and the teacher should
-// see it, even though what actually gets engraved is still each cell's own
-// real subject, never this preview text (see exportCsv.js's buildMatrixRows).
+// Shared reference-sample shape for PBD/ALIRAN TERBAIK — TAJUK BESAR / YEAR /
+// ACARA (★, red — the position text that actually gets engraved) / a
+// CONTOH-only "( TAHUN ? )" line, same generic-label style OTHERS uses
+// rather than each category's own worked "e.g. ..." example. The real
+// per-cell/per-column subject always comes from the fixed subject list or
+// the teacher's own PBD columns (exportCsv.js's buildPbdMatrixRows) — the
+// reference-sample text itself was never read.
 const STANDARD_REFERENCE_LINES = ['TAJUK BESAR', 'YEAR', 'ACARA', '( TAHUN ? )'];
+
+// PPKI / MP THP 1/2 (and their "Kalau ada kelas" variants) — TAJUK BESAR /
+// YEAR / POSITION (★, red, fixed) / a CONTOH-only "( SUBJEK )" line. Line 3
+// used to be a combined "TAHUN N (SUBJEK)" CONTOH that exportCsv.js's now-
+// removed parseTahunSubjekTemplate parsed apart; the matrix's real per-cell
+// subject and level/Nama-Kelas breakdown (buildMatrixRows) never actually
+// read that combined text, so line 3 is now just its own plain subject
+// example — nothing to parse, and no more `positionLine2Placeholder` second
+// box stacked under POSITION either (that used to carry this same worked
+// example; it's now line 3's own job).
+const MATRIX_SUBJECT_REFERENCE_LINES = ['TAJUK BESAR', 'YEAR', 'POSITION', '( SUBJEK )'];
 
 // TOKOH_SHEET's per-row metadata columns (catalog.js's tokohRowFields).
 // `place` says which side of the KUANTITI/JENIS PLAK columns each renders
@@ -269,8 +270,7 @@ export const CATEGORIES = [
     key: 'PPKI', label: 'PPKI', mode: 'matrix', blocksCount: 1, active: true,
     columnsByLanguage: { SK: PPKI_LEVELS },
     subjectsByLanguage: { SK: SUBJECTS_CORE, SJKC: SUBJECTS_CORE_CN },
-    linePlaceholders: STANDARD_REFERENCE_LINES,
-    positionLine2Placeholder: '( SUBJEK/POSITION )',
+    linePlaceholders: MATRIX_SUBJECT_REFERENCE_LINES,
     requiredLineIndices: [0, 2],
     positionFieldsRedText: true,
     draggableReferenceSample: true,
@@ -287,8 +287,7 @@ export const CATEGORIES = [
     key: 'MP1', label: 'MP THP 1', mode: 'matrix', blocksCount: 1, active: true,
     columnsByLanguage: { SK: MP_THP1_LEVELS_MY, SJKC: MP_THP1_LEVELS_CN },
     subjectsByLanguage: { SK: SUBJECTS_CORE, SJKC: SUBJECTS_CORE_CN },
-    linePlaceholders: STANDARD_REFERENCE_LINES,
-    positionLine2Placeholder: '( SUBJEK/POSITION )',
+    linePlaceholders: MATRIX_SUBJECT_REFERENCE_LINES,
     requiredLineIndices: [0, 2],
     positionFieldsRedText: true,
     draggableReferenceSample: true,
@@ -304,8 +303,7 @@ export const CATEGORIES = [
     key: 'MP1_KELAS', label: 'MP THP 1 (Kalau ada kelas)', mode: 'matrix', blocksCount: 1, active: true,
     columnsByLanguage: { SK: MP_THP1_LEVELS_MY, SJKC: MP_THP1_LEVELS_CN },
     subjectsByLanguage: { SK: SUBJECTS_CORE, SJKC: SUBJECTS_CORE_CN },
-    linePlaceholders: STANDARD_REFERENCE_LINES,
-    positionLine2Placeholder: '( SUBJEK/POSITION )',
+    linePlaceholders: MATRIX_SUBJECT_REFERENCE_LINES,
     requiredLineIndices: [0, 2],
     positionFieldsRedText: true,
     draggableReferenceSample: true,
@@ -322,8 +320,7 @@ export const CATEGORIES = [
       SK: SUBJECTS_MP2,
       SJKC: SUBJECTS_MP2_CN,
     },
-    linePlaceholders: STANDARD_REFERENCE_LINES,
-    positionLine2Placeholder: '( SUBJEK/POSITION )',
+    linePlaceholders: MATRIX_SUBJECT_REFERENCE_LINES,
     requiredLineIndices: [0, 2],
     positionFieldsRedText: true,
     draggableReferenceSample: true,
@@ -338,8 +335,7 @@ export const CATEGORIES = [
       SK: SUBJECTS_MP2,
       SJKC: SUBJECTS_MP2_CN,
     },
-    linePlaceholders: STANDARD_REFERENCE_LINES,
-    positionLine2Placeholder: '( SUBJEK/POSITION )',
+    linePlaceholders: MATRIX_SUBJECT_REFERENCE_LINES,
     requiredLineIndices: [0, 2],
     positionFieldsRedText: true,
     draggableReferenceSample: true,

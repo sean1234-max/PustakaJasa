@@ -34,6 +34,9 @@ describe('CSV export applies the ACARA two-line split', () => {
       },
     };
     const { rows } = buildCsvRows({ schoolLanguage: 'SK', items: [item] }, 'MP1', [item]);
-    expect(rows[0][2]).toBe('ANUGERAH PBD\nMATA PELAJARAN TERBAIK\nBM');
+    // position (index 2) carries only the ACARA split now — the subject
+    // lives on its own event_line_1 (index 3), never appended to position.
+    expect(rows[0][2]).toBe('ANUGERAH PBD\nMATA PELAJARAN TERBAIK');
+    expect(rows[0][3]).toBe('BM');
   });
 });

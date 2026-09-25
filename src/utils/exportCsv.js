@@ -3,6 +3,7 @@ import {
   getCustomMatrixRowIds, customMatrixLabelKey, matrixCellKey,
   flattenPlakCatalog, isCustomPlakCode, MANUAL_MAX_QTY, numToOrdinal,
   resolveCategory, categoriesUsedByItems, distributeQtyOverPositions,
+  MORAL_SUBJECT_BY_LANGUAGE,
 } from '../data/catalog';
 import { breakAcaraLine } from './acaraBreak';
 
@@ -71,46 +72,46 @@ function getTahunField(item) {
   return item.detail?.lines?.[key] || '';
 }
 
-// The teacher's own line 3 decides how the Tahun and subject are engraved —
-// there are two shapes in the wild: "TAHUN 4" alone (the subject sits on its
-// own line above, so it stays on `position`), or a combined line like
-// "TAHUN 1 (BAHASA MELAYU)" / "BAHASA MELAYU - TAHUN 1". For the combined
-// shape this returns the sample with the Tahun swapped for {T} and the subject
-// text for {S}, so each plaque repeats the teacher's exact punctuation/order.
-// null = line 3 has no Tahun, or no subject next to it -> keep the plain
-// layout (subject on position, bare level on event_line_1).
-const TAHUN_TOKEN = /TAHUN\s*\d+|\d+\s*年级|[一二三四五六七八九十]+\s*年级/i;
-export function parseTahunSubjekTemplate(sample) {
-  const text = String(sample || '').trim();
-  if (!TAHUN_TOKEN.test(text)) return null;
-  const withT = text.replace(TAHUN_TOKEN, '{T}');
-  const core = withT.replace('{T}', '').replace(/^[\s()[\]\-–:/,]+|[\s()[\]\-–:/,]+$/g, '');
-  if (!core || !withT.includes(core)) return null;
-  return withT.replace(core, '{S}');
-}
-
-// Matrix categories (MP THP 1/2): the reference sample's second position
-// box and 4th line are only a CONTOH of layout — the real per-plaque data
-// comes from the quantity matrix itself. Each (subject, column) cell with
-// qty > 0 becomes its own row: subject fills in for the sample's second
-// position line, column fills in for event_line_1, repeated `qty` times.
+// Matrix categories (PPKI, MP THP 1/2 and their "Kalau ada kelas" variants):
+// the reference sample's line 3 is only a CONTOH of layout (a worked example
+// of the subject text) — the real per-plaque data comes from the quantity
+// matrix itself. `position` (slot 2, ACARA) is fixed/literal, never combined
+// with the subject any more; each (subject, column) cell with qty > 0
+// becomes event_line_1 = subject, event_line_2 = the column/level (e.g.
+// "TAHUN 1") — or, once a level has a Nama Kelas breakdown (hasLevelBreakdown
+// — PPKI/MP1_KELAS/MP2_KELAS's per-level class list, see computeBlocks.js/
+// draftUpdaters.js), one row per actual class instead: event_line_2 =
+// "<level> <class>". Pendidikan Moral reads the level's own Moral Kelas list
+// instead of the shared Nama Kelas one (same subject match draftUpdaters.js's
+// recomputeLevelBreakdown uses) — every other subject shares the level's one
+// Nama Kelas breakdown, which is also why each of their own KUANTITI cells
+// already equals that breakdown's total (draftUpdaters.js keeps them synced).
 function buildMatrixRows(item, cat, header, year, positionPart1, schoolLanguage) {
   const rows = [];
   const matrix = item.detail?.matrix;
   if (!matrix) return rows;
   const columns = getCategoryColumns(cat, schoolLanguage);
-  const template = parseTahunSubjekTemplate(getLine(item, 3));
+  const breakdown = item.detail?.namaKelasBreakdown || {};
+  const moralSubject = MORAL_SUBJECT_BY_LANGUAGE[schoolLanguage] || MORAL_SUBJECT_BY_LANGUAGE.SK;
 
   const emitRow = (subject, column, qty) => {
     if (qty <= 0) return;
-    const position = template ? positionPart1 : (positionPart1 ? `${positionPart1}\n${subject}` : subject);
     // A synthetic single "KUANTITI"/"KEDUDUKAN" column (PBD — the row IS the
     // Tahun, there is no real class-level axis) is a stand-in, never an
     // engraved line — same filter buildPbdMatrixRows applies to the subject.
     const bareCol = ['KUANTITI', 'KEDUDUKAN'].includes(String(column).trim().toUpperCase()) ? '' : column;
-    const col = template ? template.replace('{T}', bareCol).replace('{S}', subject) : bareCol;
-    const row = [header, year, position, col, ''];
-    for (let i = 0; i < qty; i++) rows.push(row);
+    const listKind = subject.trim().toUpperCase() === moralSubject.toUpperCase() ? 'moral' : 'main';
+    const classes = (breakdown[`${item.categoryKey}::${item.blockIdx}::${column}::${listKind}`] || [])
+      .filter((c) => (c.desc || '').trim());
+    let covered = 0;
+    classes.forEach((c) => {
+      const q = Math.max(0, Number(c.qty) || 0);
+      const eventLine2 = [bareCol, c.desc.trim()].filter(Boolean).join(' ');
+      for (let i = 0; i < q; i++) rows.push([header, year, positionPart1, subject, eventLine2]);
+      covered += q;
+    });
+    const remainder = qty - covered;
+    for (let i = 0; i < remainder; i++) rows.push([header, year, positionPart1, subject, bareCol]);
   };
 
   // `subjectsFromImport` categories keep every subject as an editable

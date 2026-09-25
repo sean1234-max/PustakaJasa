@@ -55,47 +55,35 @@ describe('buildCsvRows — PBD (per-recipient, Nama Kelas split)', () => {
 });
 
 describe('CSV column remap — reference-sample lines -> CSV columns', () => {
-  it('MP THP with a combined line 3 ("TAHUN 1 (BAHASA MELAYU)"): event_line_1 follows the teacher\'s format', () => {
+  it('MP THP: position = ACARA alone, event_line_1 = subject, event_line_2 = bare level (no more combining)', () => {
     const item = {
       id: 'm', jenisPlak: 'DECO LIGHT', qty: 1, categoryKey: 'MP1', blockIdx: 0,
       detail: {
-        lines: { 'MP1::0::0': 'HARI ANUGERAH', 'MP1::0::1': '2026', 'MP1::0::2': 'TERBAIK MATA PELAJARAN', 'MP1::0::3': 'TAHUN 1 (BAHASA MELAYU)' },
+        lines: { 'MP1::0::0': 'HARI ANUGERAH', 'MP1::0::1': '2026', 'MP1::0::2': 'TERBAIK MATA PELAJARAN', 'MP1::0::3': 'BAHASA MELAYU' },
         matrix: { [customMatrixLabelKey('MP1', 9)]: 'BAHASA MELAYU', [matrixCellKey('MP1', 'custom-9', 'TAHUN 1')]: '2' },
       },
     };
     const { rows } = buildCsvRows({ schoolLanguage: 'SK', items: [item] }, 'MP1', [item]);
     expect(rows).toEqual([
-      ['HARI ANUGERAH', '', 'TERBAIK MATA PELAJARAN', 'TAHUN 1 (BAHASA MELAYU)', '', 'DECO LIGHT', 'MP THP 1'],
-      ['HARI ANUGERAH', '', 'TERBAIK MATA PELAJARAN', 'TAHUN 1 (BAHASA MELAYU)', '', 'DECO LIGHT', 'MP THP 1'],
+      ['HARI ANUGERAH', '', 'TERBAIK MATA PELAJARAN', 'BAHASA MELAYU', 'TAHUN 1', 'DECO LIGHT', 'MP THP 1'],
+      ['HARI ANUGERAH', '', 'TERBAIK MATA PELAJARAN', 'BAHASA MELAYU', 'TAHUN 1', 'DECO LIGHT', 'MP THP 1'],
     ]);
   });
 
-  it('MP THP follows whatever punctuation/order the teacher\'s line 3 uses, per Tahun', () => {
-    const mk = (line3, col) => ({
+  it('MP THP: line 3\'s own wording no longer affects the export — event_line_1/2 always come from the subject/column', () => {
+    const mk = (col) => ({
       id: 'm', jenisPlak: 'DECO LIGHT', qty: 1, categoryKey: 'MP2', blockIdx: 0,
       detail: {
-        lines: { 'MP2::0::0': 'H', 'MP2::0::2': 'ACARA', 'MP2::0::3': line3 },
+        lines: { 'MP2::0::0': 'H', 'MP2::0::2': 'ACARA', 'MP2::0::3': 'anything the teacher typed here' },
         matrix: { [customMatrixLabelKey('MP2', 1)]: 'SAINS', [matrixCellKey('MP2', 'custom-1', col)]: '1' },
       },
     });
-    const first = (line3, col) => buildCsvRows({ schoolLanguage: 'SK', items: [mk(line3, col)] }, 'MP2', [mk(line3, col)]).rows[0].slice(2, 4);
-    expect(first('TAHUN 4 (BAHASA MELAYU)', 'TAHUN 5')).toEqual(['ACARA', 'TAHUN 5 (SAINS)']);
-    expect(first('BAHASA MELAYU - TAHUN 4', 'TAHUN 6')).toEqual(['ACARA', 'SAINS - TAHUN 6']);
+    const first = (col) => buildCsvRows({ schoolLanguage: 'SK', items: [mk(col)] }, 'MP2', [mk(col)]).rows[0].slice(2, 5);
+    expect(first('TAHUN 5')).toEqual(['ACARA', 'SAINS', 'TAHUN 5']);
+    expect(first('TAHUN 6')).toEqual(['ACARA', 'SAINS', 'TAHUN 6']);
   });
 
-  it('MP THP with a Tahun-only line 3 keeps the subject on position (subject on its own line)', () => {
-    const item = {
-      id: 'm', jenisPlak: 'DECO LIGHT', qty: 1, categoryKey: 'MP2', blockIdx: 0,
-      detail: {
-        lines: { 'MP2::0::0': 'H', 'MP2::0::2': 'ACARA', 'MP2::0::3': 'TAHUN 4', 'MP2::0::2b': 'BAHASA MELAYU' },
-        matrix: { [customMatrixLabelKey('MP2', 1)]: 'SAINS', [matrixCellKey('MP2', 'custom-1', 'TAHUN 5')]: '1' },
-      },
-    };
-    const { rows } = buildCsvRows({ schoolLanguage: 'SK', items: [item] }, 'MP2', [item]);
-    expect(rows[0].slice(2, 4)).toEqual(['ACARA\nSAINS', 'TAHUN 5']);
-  });
-
-  it('PPKI (matrix) is unchanged: position = ACARA + subject, event_line_1 = bare level', () => {
+  it('PPKI (matrix): position = ACARA alone, event_line_1 = subject, event_line_2 = bare level', () => {
     const item = {
       id: 'k', jenisPlak: 'DECO LIGHT', qty: 1, categoryKey: 'PPKI', blockIdx: 0,
       detail: {
@@ -104,7 +92,38 @@ describe('CSV column remap — reference-sample lines -> CSV columns', () => {
       },
     };
     const { rows } = buildCsvRows({ schoolLanguage: 'SK', items: [item] }, 'PPKI', [item]);
-    expect(rows[0].slice(0, 5)).toEqual(['HARI ANUGERAH', '', 'TERBAIK MATA PELAJARAN\nBAHASA MELAYU', 'PPKI', '']);
+    expect(rows[0].slice(0, 5)).toEqual(['HARI ANUGERAH', '', 'TERBAIK MATA PELAJARAN', 'BAHASA MELAYU', 'PPKI']);
+  });
+
+  it('PPKI (matrix) with a level\'s Nama Kelas breakdown: one row per class, event_line_2 = "<level> <class>"', () => {
+    const item = {
+      id: 'k', jenisPlak: 'DECO LIGHT', qty: 1, categoryKey: 'PPKI', blockIdx: 0,
+      detail: {
+        lines: { 'PPKI::0::0': 'HARI ANUGERAH', 'PPKI::0::2': 'TERBAIK MATA PELAJARAN' },
+        matrix: { [customMatrixLabelKey('PPKI', 9)]: 'BAHASA MELAYU', [matrixCellKey('PPKI', 'custom-9', 'PPKI')]: '3' },
+        namaKelasBreakdown: { 'PPKI::0::PPKI::main': [{ id: 1, desc: 'PPKI A', qty: '2' }, { id: 2, desc: 'PPKI B', qty: '1' }] },
+      },
+    };
+    const { rows } = buildCsvRows({ schoolLanguage: 'SK', items: [item] }, 'PPKI', [item]);
+    expect(rows.map((r) => r[4])).toEqual(['PPKI PPKI A', 'PPKI PPKI A', 'PPKI PPKI B']);
+    expect(rows.every((r) => r[3] === 'BAHASA MELAYU')).toBe(true);
+  });
+
+  it('PPKI (matrix): Pendidikan Moral reads the level\'s Moral Kelas list, not the shared Nama Kelas one', () => {
+    const item = {
+      id: 'k', jenisPlak: 'DECO LIGHT', qty: 1, categoryKey: 'PPKI', blockIdx: 0,
+      detail: {
+        lines: { 'PPKI::0::0': 'HARI ANUGERAH', 'PPKI::0::2': 'TERBAIK MATA PELAJARAN' },
+        matrix: { [customMatrixLabelKey('PPKI', 9)]: 'PENDIDIKAN MORAL', [matrixCellKey('PPKI', 'custom-9', 'PPKI')]: '1' },
+        namaKelasBreakdown: {
+          'PPKI::0::PPKI::main': [{ id: 1, desc: 'PPKI A', qty: '1' }],
+          'PPKI::0::PPKI::moral': [{ id: 2, desc: 'PPKI B', qty: '1' }],
+        },
+      },
+    };
+    const { rows } = buildCsvRows({ schoolLanguage: 'SK', items: [item] }, 'PPKI', [item]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0][4]).toBe('PPKI PPKI B');
   });
 
   it('PBD: the line between 2 and 3 (slot 2b) is appended to position', () => {
