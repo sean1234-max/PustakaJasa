@@ -119,7 +119,10 @@ function CatalogRow({
   const [newPrice, setNewPrice] = useState('');
   const [codeDraft, setCodeDraft] = useState(node.code);
   const [priceDraft, setPriceDraft] = useState(String(node.price ?? 0));
-  const [stockDraft, setStockDraft] = useState(node.stockQty == null ? '' : String(node.stockQty));
+  // STOCK is the editable capital number (stock_baseline) — BALANCE
+  // (stock_qty, what's actually left after deductions) is read-only, shown
+  // straight from `node`, no draft state of its own needed.
+  const [stockDraft, setStockDraft] = useState(node.stockBaseline == null ? '' : String(node.stockBaseline));
   const [groupDraft, setGroupDraft] = useState(node.stockGroupKey || '');
 
   useEffect(() => { setCodeDraft(node.code); }, [node.code]);
@@ -133,8 +136,8 @@ function CatalogRow({
   // count next to a correctly-alarming colour. Re-sync whenever the
   // fetched value actually changes.
   useEffect(() => {
-    setStockDraft(node.stockQty == null ? '' : String(node.stockQty));
-  }, [node.stockQty]);
+    setStockDraft(node.stockBaseline == null ? '' : String(node.stockBaseline));
+  }, [node.stockBaseline]);
 
   useEffect(() => { setGroupDraft(node.stockGroupKey || ''); }, [node.stockGroupKey]);
 
@@ -185,12 +188,12 @@ function CatalogRow({
 
   const commitStock = () => {
     if (stockDraft.trim() === '') {
-      if (node.stockQty != null) onStockChange(node.id, null, node.stockGroupKey);
+      if (node.stockBaseline != null) onStockChange(node.id, null, node.stockGroupKey);
       return;
     }
     const val = Math.round(Number(stockDraft));
-    if (!Number.isNaN(val) && val >= 0 && val !== node.stockQty) onStockChange(node.id, val, node.stockGroupKey);
-    else setStockDraft(node.stockQty == null ? '' : String(node.stockQty));
+    if (!Number.isNaN(val) && val >= 0 && val !== node.stockBaseline) onStockChange(node.id, val, node.stockGroupKey);
+    else setStockDraft(node.stockBaseline == null ? '' : String(node.stockBaseline));
   };
 
   // Same rules as ProductionCatalog.jsx: a brand new name asks for a
@@ -286,12 +289,18 @@ function CatalogRow({
             step="1"
             min="0"
             placeholder="Stock"
-            title="Stock Qty — independent of any child variants beneath this code. Setting a new number resets the 15%/25% warning thresholds against it."
+            title="Stock — the capital total, independent of any child variants beneath this code. Restocking (typing a higher number) keeps whatever's already been used; Balance shows what's actually left."
             value={stockDraft}
-            style={zone !== 'normal' ? { color: STOCK_ZONE_COLOR[zone], fontWeight: 700 } : undefined}
             onChange={(e) => setStockDraft(e.target.value)}
             onBlur={commitStock}
           />
+          <span
+            className="w-16 px-2 text-right text-body-md text-on-surface-variant"
+            title="Balance — Stock minus what's already been used. Read-only; edit Stock to change it."
+            style={zone !== 'normal' ? { color: STOCK_ZONE_COLOR[zone], fontWeight: 700 } : undefined}
+          >
+            {node.stockQty == null ? '—' : node.stockQty}
+          </span>
           <div className="flex flex-col">
             <input
               className="w-32 px-3 py-1 border border-outline-variant rounded text-body-md focus:ring-1 focus:ring-primary outline-none"
@@ -514,7 +523,7 @@ export default function AdminCatalog() {
   return (
     <AdminLayout
       title="Jenis Plak Catalog"
-      subtitle="Add, remove, reprice, or hide a code (or just one of its variants) — changes apply for every teacher immediately. Groups open collapsed to just their top-level code; use the chevron to expand one. Set Stock Qty on a code to start tracking its inventory — it turns orange under 25% and red under 15% of what you last entered, orders are automatically capped once stock runs low, and the code auto-hides at 0 (leave it blank to skip stock tracking). A code with variants beneath it can track its own stock too — ordering any variant checks and deducts every tracked level along the way. Type the same Stock Group name on several codes to make them share one stock count instead of tracking separately. Drag the handle icon (or use the ▲▼ buttons) to reorder within a group."
+      subtitle="Add, remove, reprice, or hide a code (or just one of its variants) — changes apply for every teacher immediately. Groups open collapsed to just their top-level code; use the chevron to expand one. Set Stock on a code to start tracking its inventory — that's the capital total; Balance (Stock minus what's already been used) shows next to it, read-only, and turns orange under 25% / red under 15% of Stock. Orders are automatically capped once Balance runs low, and the code auto-hides at 0 Balance (leave Stock blank to skip stock tracking). Restocking — typing a higher Stock number — moves Balance up by the same amount instead of resetting it. A code with variants beneath it can track its own stock too — ordering any variant checks and deducts every tracked level along the way. Type the same Stock Group name on several codes to make them share one stock count instead of tracking separately. Drag the handle icon (or use the ▲▼ buttons) to reorder within a group."
     >
       <div className="bg-surface-container rounded-lg p-4 border border-outline-variant/50 flex flex-col sm:flex-row gap-4 items-center shadow-sm mb-6">
         <input

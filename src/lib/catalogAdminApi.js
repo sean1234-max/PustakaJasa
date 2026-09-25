@@ -81,17 +81,23 @@ export async function updatePlakNode(id, patch) {
   if (error) throw error;
 }
 
-// Setting a new Stock Qty always resets stock_baseline to the same value —
-// the 15%/25% thresholds are measured against whatever number Production
-// last typed in here (a restock, a correction, or the first-ever count for
-// this code), never a number carried over from before. See
-// 0032_add_plak_stock.sql's header for why NULL (never touched) is kept
-// distinct from 0 (deliberately out of stock).
+// Setting a new STOCK number (stock_baseline) shifts the running BALANCE
+// (stock_qty) by the same delta instead of overwriting it — see
+// 0073_stock_restock_preserves_balance.sql. `stockQty` here is the new
+// STOCK/capital total Production just typed in, not the balance itself.
+// Clearing the field (null) is a plain untrack — no delta to preserve,
+// both columns go back to "not tracked" (see 0032_add_plak_stock.sql's
+// header for why NULL is kept distinct from 0 there).
 export async function updatePlakNodeStock(id, stockQty) {
-  const { error } = await supabase
-    .from('plak_catalog_nodes')
-    .update({ stock_qty: stockQty, stock_baseline: stockQty })
-    .eq('id', id);
+  if (stockQty == null) {
+    const { error } = await supabase
+      .from('plak_catalog_nodes')
+      .update({ stock_qty: null, stock_baseline: null })
+      .eq('id', id);
+    if (error) throw error;
+    return;
+  }
+  const { error } = await supabase.rpc('plak_node_set_stock', { p_id: id, p_new_stock: stockQty });
   if (error) throw error;
 }
 
@@ -134,14 +140,19 @@ export async function unlinkPlakNodeFromStockGroup(nodeId) {
   if (error) throw error;
 }
 
-// Sets a Stock Group's shared count — same reset-the-baseline behavior as
-// updatePlakNodeStock above, just targeting the group row every linked node
-// reads from instead of one node's own columns.
+// Sets a Stock Group's shared STOCK number — same delta-preserving-balance
+// behavior as updatePlakNodeStock above, just targeting the group row every
+// linked node reads from instead of one node's own columns.
 export async function updateStockGroupStock(groupKey, stockQty) {
-  const { error } = await supabase
-    .from('plak_stock_groups')
-    .update({ stock_qty: stockQty, stock_baseline: stockQty })
-    .eq('key', groupKey);
+  if (stockQty == null) {
+    const { error } = await supabase
+      .from('plak_stock_groups')
+      .update({ stock_qty: null, stock_baseline: null })
+      .eq('key', groupKey);
+    if (error) throw error;
+    return;
+  }
+  const { error } = await supabase.rpc('plak_stock_group_set_stock', { p_key: groupKey, p_new_stock: stockQty });
   if (error) throw error;
 }
 

@@ -74,7 +74,10 @@ function CatalogRow({
   const [newPrice, setNewPrice] = useState('');
   const [codeDraft, setCodeDraft] = useState(node.code);
   const [priceDraft, setPriceDraft] = useState(String(node.price ?? 0));
-  const [stockDraft, setStockDraft] = useState(node.stockQty == null ? '' : String(node.stockQty));
+  // STOCK is the editable capital number (stock_baseline) — BALANCE
+  // (stock_qty, what's actually left after deductions) is read-only, shown
+  // straight from `node`, no draft state of its own needed.
+  const [stockDraft, setStockDraft] = useState(node.stockBaseline == null ? '' : String(node.stockBaseline));
   const [groupDraft, setGroupDraft] = useState(node.stockGroupKey || '');
 
   useEffect(() => { setCodeDraft(node.code); }, [node.code]);
@@ -105,8 +108,8 @@ function CatalogRow({
   // count next to a correctly-alarming colour. Re-sync whenever the
   // fetched value actually changes.
   useEffect(() => {
-    setStockDraft(node.stockQty == null ? '' : String(node.stockQty));
-  }, [node.stockQty]);
+    setStockDraft(node.stockBaseline == null ? '' : String(node.stockBaseline));
+  }, [node.stockBaseline]);
 
   useEffect(() => { setGroupDraft(node.stockGroupKey || ''); }, [node.stockGroupKey]);
 
@@ -140,12 +143,12 @@ function CatalogRow({
 
   const commitStock = () => {
     if (stockDraft.trim() === '') {
-      if (node.stockQty != null) onStockChange(node.id, null, node.stockGroupKey);
+      if (node.stockBaseline != null) onStockChange(node.id, null, node.stockGroupKey);
       return;
     }
     const val = Math.round(Number(stockDraft));
-    if (!Number.isNaN(val) && val >= 0 && val !== node.stockQty) onStockChange(node.id, val, node.stockGroupKey);
-    else setStockDraft(node.stockQty == null ? '' : String(node.stockQty));
+    if (!Number.isNaN(val) && val >= 0 && val !== node.stockBaseline) onStockChange(node.id, val, node.stockGroupKey);
+    else setStockDraft(node.stockBaseline == null ? '' : String(node.stockBaseline));
   };
 
   // Typing a brand new name asks for a starting number right away (linking
@@ -239,12 +242,18 @@ function CatalogRow({
           step="1"
           min="0"
           placeholder="Stock"
-          title="Stock Qty — independent of any child variants beneath this code. Setting a new number resets the 15%/25% warning thresholds against it."
+          title="Stock — the capital total, independent of any child variants beneath this code. Restocking (typing a higher number) keeps whatever's already been used; the Balance column shows what's actually left."
           value={stockDraft}
-          style={zone !== 'normal' ? { color: STOCK_ZONE_COLOR[zone], fontWeight: 700 } : undefined}
           onChange={(e) => setStockDraft(e.target.value)}
           onBlur={commitStock}
         />
+        <span
+          className="catalog-admin-balance"
+          title="Balance — Stock minus what's already been used. Read-only; edit Stock to change it."
+          style={zone !== 'normal' ? { color: STOCK_ZONE_COLOR[zone], fontWeight: 700 } : undefined}
+        >
+          {node.stockQty == null ? '—' : node.stockQty}
+        </span>
         <div className="catalog-admin-group-cell">
           <input
             className="input catalog-admin-group"
@@ -487,7 +496,7 @@ export default function ProductionCatalog() {
         <div className="card-title" style={{ marginBottom: 'var(--space-2)' }}>Jenis Plak Catalog</div>
         <p className="hint-text">
           Add, remove, reprice, or hide a code (or just one of its variants) — changes apply for every teacher immediately. Hiding is safer than removing when stock runs out, since it's a one-click undo once restocked.
-          Set Stock Qty on a code to start tracking its inventory — it turns orange under 25% and red under 15% of what you last entered, and orders are automatically capped (and the code auto-hidden at 0) once stock runs low. Leave it blank to skip stock tracking for a code. A code with variants beneath it can track its own stock too — ordering any variant checks and deducts every tracked level along the way (e.g. GOLD's own count AND the specific base variant's, if both track stock).
+          Set Stock on a code to start tracking its inventory — that's the capital total; Balance (Stock minus what's already been used) is shown next to it, read-only. Balance turns orange under 25% and red under 15% of Stock, and orders are automatically capped (and the code auto-hidden at 0 Balance) once stock runs low. Restocking — typing a higher Stock number — moves Balance up by the same amount instead of resetting it, so whatever's already been used stays accounted for. Leave Stock blank to skip stock tracking for a code. A code with variants beneath it can track its own stock too — ordering any variant checks and deducts every tracked level along the way (e.g. GOLD's own count AND the specific base variant's, if both track stock).
           Type the same Stock Group name on several codes to make them share one stock count instead of tracking separately — e.g. the same physical base sold under different colors or designs. A first-time name asks for a starting number; an existing name just joins it.
         </p>
 
@@ -510,20 +519,22 @@ export default function ProductionCatalog() {
           <p className="hint-text">No codes yet — add one above.</p>
         ) : (
           <div className="catalog-admin-list">
-            {/* Price and Stock Qty are two identical-looking plain number
-                boxes side by side once filled in (the "Stock" placeholder
-                only shows while empty) — this header labels the columns so
-                it's obvious at a glance which is which. The invisible
-                actions block mirrors CatalogRow's real one below so its
-                fixed width is subtracted from the flex-1 code column the
-                same way here as in every row — otherwise Code has nothing
-                to compete with, grows wider than the real rows, and pushes
-                the Price/Stock labels off to the right of their columns. */}
+            {/* Price and Stock are two identical-looking plain number boxes
+                side by side once filled in (the "Stock" placeholder only
+                shows while empty) — this header labels the columns so it's
+                obvious at a glance which is which. Balance sits right after
+                Stock, read-only (see CatalogRow's own balance span). The
+                invisible actions block mirrors CatalogRow's real one below
+                so its fixed width is subtracted from the flex-1 code column
+                the same way here as in every row — otherwise Code has
+                nothing to compete with, grows wider than the real rows, and
+                pushes the other labels off to the right of their columns. */}
             <div className="catalog-admin-row catalog-admin-header-row">
               <span style={{ display: 'inline-block', width: 28 }} />
               <span className="catalog-admin-code">Code</span>
               <span className="catalog-admin-price">Price (RM)</span>
-              <span className="catalog-admin-price">Stock Qty</span>
+              <span className="catalog-admin-price">Stock</span>
+              <span className="catalog-admin-balance">Balance</span>
               <span className="catalog-admin-group-cell">Stock Group</span>
               <div className="catalog-admin-actions" style={{ visibility: 'hidden' }} aria-hidden="true">
                 <button type="button" className="btn btn-ghost btn-icon" tabIndex={-1}>⠿</button>

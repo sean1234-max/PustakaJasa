@@ -2441,13 +2441,13 @@ export function AppStateProvider({ children }) {
     }
   }, [refreshPlakCatalog]);
 
-  // Sets a leaf's current stock count — also resets stock_baseline to the
-  // same value (see updatePlakNodeStock), so every time Production/Admin
-  // types a new number here (first count, restock, or correction) the
-  // 15%/25% thresholds recalibrate against it rather than staying pinned
-  // to whatever was entered before. `stockGroupKey` routes the write to the
-  // shared plak_stock_groups row instead of the node's own columns when
-  // this node is linked to one (see linkCatalogNodeStockGroup below).
+  // Sets a leaf's STOCK number (stock_baseline) — the running BALANCE
+  // (stock_qty) shifts by the same delta rather than getting overwritten
+  // (see updatePlakNodeStock / 0073_stock_restock_preserves_balance.sql),
+  // so restocking preserves whatever's already been used instead of
+  // resetting it. `stockGroupKey` routes the write to the shared
+  // plak_stock_groups row instead of the node's own columns when this node
+  // is linked to one (see linkCatalogNodeStockGroup below).
   const updateCatalogNodeStock = useCallback(async (id, stockQty, stockGroupKey) => {
     try {
       if (stockGroupKey) await updateStockGroupStock(stockGroupKey, stockQty);

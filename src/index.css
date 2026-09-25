@@ -520,6 +520,7 @@ a:hover { color: var(--color-accent-900); text-decoration: underline; }
 input.catalog-admin-code { padding: 6px 8px; }
 .catalog-admin-code-hidden { opacity: 0.4; text-decoration: line-through; }
 .catalog-admin-price { width: 90px; flex: none; padding: 6px 8px; font-size: 13px; }
+.catalog-admin-balance { width: 70px; flex: none; padding: 6px 8px; font-size: 13px; text-align: right; }
 .catalog-admin-group-cell { width: 140px; flex: none; }
 .catalog-admin-group { width: 100%; padding: 6px 8px; font-size: 13px; }
 .catalog-admin-header-row {
