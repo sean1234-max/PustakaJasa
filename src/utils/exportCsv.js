@@ -93,6 +93,13 @@ function buildMatrixRows(item, cat, header, year, positionPart1, schoolLanguage)
   const columns = getCategoryColumns(cat, schoolLanguage);
   const breakdown = item.detail?.namaKelasBreakdown || {};
   const moralSubject = MORAL_SUBJECT_BY_LANGUAGE[schoolLanguage] || MORAL_SUBJECT_BY_LANGUAGE.SK;
+  // Line 3's own CONTOH (e.g. "TAHUN 1 CERDIK" vs "1 CERDIK") decides
+  // whether the word "TAHUN" itself is kept in front of the level number on
+  // event_line_2 — same toggle buildOthersRows/buildAliranRows already use
+  // for their own free-typed Tahun labels. PPKI's own levels (PRA PPKI/
+  // PPKI/PRASEKOLAH) never start with "TAHUN " to begin with, so this is a
+  // no-op for them either way.
+  const includeTahunWord = /tahun/i.test(getLine(item, 3));
 
   const emitRow = (subject, column, qty) => {
     if (qty <= 0) return;
@@ -100,18 +107,19 @@ function buildMatrixRows(item, cat, header, year, positionPart1, schoolLanguage)
     // Tahun, there is no real class-level axis) is a stand-in, never an
     // engraved line — same filter buildPbdMatrixRows applies to the subject.
     const bareCol = ['KUANTITI', 'KEDUDUKAN'].includes(String(column).trim().toUpperCase()) ? '' : column;
+    const tahunLabel = includeTahunWord ? bareCol : bareCol.replace(/^TAHUN\s*/i, '');
     const listKind = subject.trim().toUpperCase() === moralSubject.toUpperCase() ? 'moral' : 'main';
     const classes = (breakdown[`${item.categoryKey}::${item.blockIdx}::${column}::${listKind}`] || [])
       .filter((c) => (c.desc || '').trim());
     let covered = 0;
     classes.forEach((c) => {
       const q = Math.max(0, Number(c.qty) || 0);
-      const eventLine2 = [bareCol, c.desc.trim()].filter(Boolean).join(' ');
+      const eventLine2 = [tahunLabel, c.desc.trim()].filter(Boolean).join(' ');
       for (let i = 0; i < q; i++) rows.push([header, year, positionPart1, subject, eventLine2]);
       covered += q;
     });
     const remainder = qty - covered;
-    for (let i = 0; i < remainder; i++) rows.push([header, year, positionPart1, subject, bareCol]);
+    for (let i = 0; i < remainder; i++) rows.push([header, year, positionPart1, subject, tahunLabel]);
   };
 
   // `subjectsFromImport` categories keep every subject as an editable
