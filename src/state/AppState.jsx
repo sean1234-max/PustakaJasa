@@ -44,6 +44,35 @@ function describeStockError(err) {
   return `Could not check stock: ${err?.message || 'unknown error'}. Please try again.`;
 }
 
+// Internal testing account — its orders live in their own ORD-9001+ number
+// range (a separate order_number_counters row, seeded at 9001 via
+// nextOrderSeq — see migration 0009 and submitOrder below) so they never
+// collide with or shift real schools' ORD-0001+ sequence, and never touch
+// real stock (skipped at every deduct/restore call site below). The whole
+// point: this account's orders can be deleted after testing with zero
+// effect on anything else — no counter to "give back", no stock to
+// reconcile.
+// ponytail: one hardcoded email, not a role/flag column — simplest thing
+// that works for a single known test account; promote to a real
+// `profiles.is_test_account` column if more than one is ever needed.
+const TEST_ACCOUNT_EMAIL = 'sktest@pjsb.com';
+async function isTestAccountUser() {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    return (user?.email || '').toLowerCase() === TEST_ACCOUNT_EMAIL;
+  } catch {
+    return false;
+  }
+}
+// Any order whose number landed in the 9000+ range only ever came from the
+// test account above (real orders start at 1 and share one counter that
+// never jumps there) — cheap enough to check from the id alone, no need to
+// also stamp/read a per-order flag at every stock call site.
+function isTestOrderId(id) {
+  const n = parseInt(String(id || '').replace(/^ORD-/, ''), 10);
+  return Number.isFinite(n) && n >= 9000;
+}
+
 // Turns a raw Supabase/Postgres error from an order write into something a
 // non-technical user can act on. Covers the three server-side guards this
 // app now relies on (RLS row ownership, orders_write_guard's status/column
@@ -1313,10 +1342,14 @@ export function AppStateProvider({ children }) {
       return null;
     }
     // One continuous sequence, no year in the id — ORD-0001, ORD-0002, …
+    // — except the test account (see isTestAccountUser above), which gets
+    // its own counter seeded at 9001 so its orders never share a number
+    // with, or shift, anyone real's.
+    const isTestAccount = await isTestAccountUser();
     const prefix = 'ORD-';
     let seq;
     try {
-      seq = await nextOrderSeq(prefix, 1);
+      seq = isTestAccount ? await nextOrderSeq('ORD-TEST-', 9001) : await nextOrderSeq(prefix, 1);
     } catch (err) {
       console.error('Failed to reserve the next order number:', err);
       patch({ cartToast: `Could not submit the order: ${err.message || 'unknown error'}. Please try again.` });
@@ -1351,9 +1384,10 @@ export function AppStateProvider({ children }) {
     // with items it can't actually fulfil. If the insert itself then fails
     // for some other reason, the deduction is compensated (added back)
     // rather than left silently stuck against a school that never got an
-    // order — see the catch block below.
+    // order — see the catch block below. Skipped entirely for the test
+    // account — its orders never touch real stock (see isTestAccountUser).
     try {
-      await deductPlakStock(st.cart.map((ci) => ({ full_path: ci.jenisPlak, qty: ci.qty })));
+      if (!isTestAccount) await deductPlakStock(st.cart.map((ci) => ({ full_path: ci.jenisPlak, qty: ci.qty })));
     } catch (err) {
       console.error('Stock deduction failed for New Order:', err);
       patch({ cartToast: describeStockError(err) });
@@ -1364,8 +1398,10 @@ export function AppStateProvider({ children }) {
       await insertOrder(newOrder);
     } catch (err) {
       console.error('Failed to save order to Supabase:', err);
-      restorePlakStock(st.cart.map((ci) => ({ full_path: ci.jenisPlak, qty: ci.qty })))
-        .catch((restoreErr) => console.error('Failed to restore stock after a failed order insert:', restoreErr));
+      if (!isTestAccount) {
+        restorePlakStock(st.cart.map((ci) => ({ full_path: ci.jenisPlak, qty: ci.qty })))
+          .catch((restoreErr) => console.error('Failed to restore stock after a failed order insert:', restoreErr));
+      }
       // A row-level-security rejection here means the salesman assignment
       // this submission relied on no longer matches the database (e.g.
       // Admin reassigned the school between page load and submit) — the
@@ -1579,13 +1615,15 @@ export function AppStateProvider({ children }) {
     }
 
     const order = addOnOrder;
+    const isTestOrder = isTestOrderId(st.addOnOrderId);
     // A still-'pending' add-on being overwritten by this fresh submission
     // already had its own stock deducted once (below, on its own earlier
     // call) — restore that first so resubmitting can never leave the
     // earlier batch's deduction stranded on top of the new one. A
     // 'rejected' add-on was already restored when it was rejected (see
-    // rejectAddOn), so this only fires for 'pending'.
-    if (order?.pendingAddonStatus === 'pending' && order.pendingAddonItems?.length) {
+    // rejectAddOn), so this only fires for 'pending'. Skipped for the test
+    // account's own orders — their stock was never touched to begin with.
+    if (!isTestOrder && order?.pendingAddonStatus === 'pending' && order.pendingAddonItems?.length) {
       try {
         await restorePlakStock(order.pendingAddonItems.map((it) => ({ full_path: it.jenisPlak, qty: it.qty })));
       } catch (err) {
@@ -1594,7 +1632,7 @@ export function AppStateProvider({ children }) {
     }
 
     try {
-      await deductPlakStock(newItems.map((it) => ({ full_path: it.jenisPlak, qty: it.qty })));
+      if (!isTestOrder) await deductPlakStock(newItems.map((it) => ({ full_path: it.jenisPlak, qty: it.qty })));
     } catch (err) {
       console.error('Stock deduction failed for Add On:', err);
       flashToast('updateToast', describeStockError(err));
@@ -1605,8 +1643,10 @@ export function AppStateProvider({ children }) {
       await updateOrder(st.addOnOrderId, { pendingAddonItems: newItems, pendingAddonStatus: 'pending', pendingAddonRejectReason: null });
     } catch (err) {
       console.error('Failed to submit add-on to Supabase:', err);
-      restorePlakStock(newItems.map((it) => ({ full_path: it.jenisPlak, qty: it.qty })))
-        .catch((restoreErr) => console.error('Failed to restore stock after a failed add-on submit:', restoreErr));
+      if (!isTestOrder) {
+        restorePlakStock(newItems.map((it) => ({ full_path: it.jenisPlak, qty: it.qty })))
+          .catch((restoreErr) => console.error('Failed to restore stock after a failed add-on submit:', restoreErr));
+      }
       flashToast('updateToast', `Could not submit the add-on: ${err.message || 'unknown error'}. Please try again.`);
       return false;
     }
@@ -1640,7 +1680,8 @@ export function AppStateProvider({ children }) {
     // A 'rejected' add-on already had its stock restored when it was
     // rejected (see rejectAddOn) — only a still-'pending' one still has its
     // submission-time deduction outstanding. Best-effort, after the write.
-    if (order.pendingAddonStatus === 'pending' && order.pendingAddonItems?.length) {
+    // Skipped for the test account's own orders (never deducted).
+    if (!isTestOrderId(orderId) && order.pendingAddonStatus === 'pending' && order.pendingAddonItems?.length) {
       try {
         await restorePlakStock(order.pendingAddonItems.map((it) => ({ full_path: it.jenisPlak, qty: it.qty })));
       } catch (err) {
@@ -1671,7 +1712,8 @@ export function AppStateProvider({ children }) {
     patch((st) => ({
       orders: st.orders.map((o) => (o.id === orderId ? { ...o, ...fields } : o)),
     }));
-    if (order.pendingAddonItems?.length) {
+    // Skipped for the test account's own orders (never deducted).
+    if (!isTestOrderId(orderId) && order.pendingAddonItems?.length) {
       try {
         await restorePlakStock(order.pendingAddonItems.map((it) => ({ full_path: it.jenisPlak, qty: it.qty })));
       } catch (err) {
@@ -1731,7 +1773,12 @@ export function AppStateProvider({ children }) {
     // Stock restore is best-effort AFTER the cancel is committed. A failure
     // here leaves the order correctly cancelled but the stock not yet
     // credited back — surfaced clearly so an admin can restock by hand,
-    // rather than silently swallowed.
+    // rather than silently swallowed. Skipped for the test account's own
+    // orders — nothing was ever deducted for them to begin with.
+    if (isTestOrderId(orderId)) {
+      flashToast('updateToast', 'Order cancelled.');
+      return { ok: true, message: 'Order cancelled.' };
+    }
     const toRestore = [
       ...(order.items || []).map((it) => ({ full_path: it.jenisPlak, qty: it.qty })),
       ...(hadPendingAddon ? order.pendingAddonItems.map((it) => ({ full_path: it.jenisPlak, qty: it.qty })) : []),
