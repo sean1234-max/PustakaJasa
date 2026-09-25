@@ -70,7 +70,7 @@ function InvoiceSplitPanel({ order, setJenisPlakInvoiceGroup, updateToast }) {
   if (!expanded) {
     return (
       <div style={{ marginTop: 'var(--space-3)' }}>
-        <button type="button" className="btn btn-ghost" onClick={() => setExpanded(true)}>
+        <button type="button" className="btn btn-secondary" onClick={() => setExpanded(true)}>
           Split Invoice
         </button>
       </div>
@@ -162,7 +162,7 @@ function InvoiceSplitDraft({ order, splitInvoiceId, setSplitInvoiceId, splitSele
   if (!expanded) {
     return (
       <div style={{ marginTop: 'var(--space-3)' }}>
-        <button type="button" className="btn btn-ghost" onClick={() => setExpanded(true)}>
+        <button type="button" className="btn btn-secondary" onClick={() => setExpanded(true)}>
           Split Invoice
         </button>
       </div>
