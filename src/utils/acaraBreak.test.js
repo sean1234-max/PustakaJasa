@@ -15,6 +15,9 @@ describe('breakAcaraLine', () => {
     expect(breakAcaraLine('ANUGERAH KEHADIRAN PENUH')).toBe('ANUGERAH\nKEHADIRAN PENUH');
     expect(breakAcaraLine('ANUGERAH KEHADIRAN TERBAIK')).toBe('ANUGERAH\nKEHADIRAN TERBAIK');
   });
+  it('breaks after TERBAIK for TERBAIK MATA PELAJARAN', () => {
+    expect(breakAcaraLine('TERBAIK MATA PELAJARAN')).toBe('TERBAIK\nMATA PELAJARAN');
+  });
   it('leaves everything else alone, including text that already has a line break', () => {
     expect(breakAcaraLine('ANUGERAH PBD')).toBe('ANUGERAH PBD');
     expect(breakAcaraLine('ANUGERAH KEHADIRAN')).toBe('ANUGERAH KEHADIRAN');

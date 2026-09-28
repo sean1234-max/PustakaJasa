@@ -66,8 +66,8 @@ describe('CSV column remap — reference-sample lines -> CSV columns', () => {
     };
     const { rows } = buildCsvRows({ schoolLanguage: 'SK', items: [item] }, 'MP1', [item]);
     expect(rows).toEqual([
-      ['HARI ANUGERAH', '', 'TERBAIK MATA PELAJARAN', 'BAHASA MELAYU', 'TAHUN 1', 'DECO LIGHT', 'MP THP 1'],
-      ['HARI ANUGERAH', '', 'TERBAIK MATA PELAJARAN', 'BAHASA MELAYU', 'TAHUN 1', 'DECO LIGHT', 'MP THP 1'],
+      ['HARI ANUGERAH', '', 'TERBAIK\nMATA PELAJARAN', 'BAHASA MELAYU', 'TAHUN 1', 'DECO LIGHT', 'MP THP 1'],
+      ['HARI ANUGERAH', '', 'TERBAIK\nMATA PELAJARAN', 'BAHASA MELAYU', 'TAHUN 1', 'DECO LIGHT', 'MP THP 1'],
     ]);
   });
 
@@ -106,7 +106,7 @@ describe('CSV column remap — reference-sample lines -> CSV columns', () => {
       },
     };
     const { rows } = buildCsvRows({ schoolLanguage: 'SK', items: [item] }, 'PPKI', [item]);
-    expect(rows[0].slice(0, 5)).toEqual(['HARI ANUGERAH', '', 'TERBAIK MATA PELAJARAN', 'BAHASA MELAYU', 'PPKI']);
+    expect(rows[0].slice(0, 5)).toEqual(['HARI ANUGERAH', '', 'TERBAIK\nMATA PELAJARAN', 'BAHASA MELAYU', 'PPKI']);
   });
 
   it('PPKI (matrix) with a level\'s Nama Kelas breakdown: one row per class, event_line_2 = "<level> <class>"', () => {
