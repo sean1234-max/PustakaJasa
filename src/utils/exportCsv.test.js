@@ -71,7 +71,7 @@ describe('CSV column remap — reference-sample lines -> CSV columns', () => {
     ]);
   });
 
-  it('MP THP: line 3\'s own punctuation/order no longer affects the export — only whether it contains the word "TAHUN" does', () => {
+  it('MP THP: every plaque follows line 3\'s own subject/Tahun pattern — order, brackets, dashes, line break', () => {
     const mk = (col, line3) => ({
       id: 'm', jenisPlak: 'DECO LIGHT', qty: 1, categoryKey: 'MP2', blockIdx: 0,
       detail: {
@@ -80,9 +80,29 @@ describe('CSV column remap — reference-sample lines -> CSV columns', () => {
       },
     });
     const first = (col, line3) => buildCsvRows({ schoolLanguage: 'SK', items: [mk(col, line3)] }, 'MP2', [mk(col, line3)]).rows[0].slice(2, 5);
-    // Any wording containing "tahun" (case-insensitive) keeps the word.
-    expect(first('TAHUN 5', 'BAHASA MELAYU - TAHUN 4')).toEqual(['ACARA', 'SAINS', 'TAHUN 5']);
-    expect(first('TAHUN 6', 'tahun 4 (bahasa melayu)')).toEqual(['ACARA', 'SAINS', 'TAHUN 6']);
+    expect(first('TAHUN 5', 'TAHUN 1 (BAHASA MELAYU)')).toEqual(['ACARA', 'TAHUN 5 (SAINS)', '']);
+    expect(first('TAHUN 5', 'TAHUN 1(BAHASA MELAYU)')).toEqual(['ACARA', 'TAHUN 5(SAINS)', '']);
+    expect(first('TAHUN 5', 'BAHASA MELAYU - TAHUN 4')).toEqual(['ACARA', 'SAINS - TAHUN 5', '']);
+    expect(first('TAHUN 6', 'tahun 4 (bahasa melayu)')).toEqual(['ACARA', 'TAHUN 6 (SAINS)', '']);
+    // A line break in the CONTOH splits event_line_1 / event_line_2, in its order.
+    expect(first('TAHUN 5', 'BAHASA MELAYU\nTAHUN 1')).toEqual(['ACARA', 'SAINS', 'TAHUN 5']);
+    expect(first('TAHUN 5', 'TAHUN 1\nBAHASA MELAYU')).toEqual(['ACARA', 'TAHUN 5', 'SAINS']);
+    // No recognisable subject + Tahun in the CONTOH: plain subject / Tahun lines.
+    expect(first('TAHUN 5', '')).toEqual(['ACARA', 'SAINS', '5']);
+    expect(first('TAHUN 5', 'BM TAHUN 1')).toEqual(['ACARA', 'SAINS', 'TAHUN 5']);
+  });
+
+  it('MP THP (Kalau ada kelas): a CONTOH with a class after the Tahun carries each plaque\'s own class there', () => {
+    const item = {
+      id: 'm', jenisPlak: 'DECO LIGHT', qty: 1, categoryKey: 'MP1_KELAS', blockIdx: 0,
+      detail: {
+        lines: { 'MP1_KELAS::0::0': 'H', 'MP1_KELAS::0::2': 'ACARA', 'MP1_KELAS::0::3': 'TAHUN 1 CERDIK (BAHASA MELAYU)' },
+        matrix: { [customMatrixLabelKey('MP1_KELAS', 9)]: 'SAINS', [matrixCellKey('MP1_KELAS', 'custom-9', 'TAHUN 2')]: '2' },
+        namaKelasBreakdown: { 'MP1_KELAS::0::TAHUN 2::main': [{ id: 1, desc: 'CERDIK', qty: '1' }, { id: 2, desc: 'BOY', qty: '1' }] },
+      },
+    };
+    const { rows } = buildCsvRows({ schoolLanguage: 'SK', items: [item] }, 'MP1_KELAS', [item]);
+    expect(rows.map((r) => r.slice(3, 5))).toEqual([['TAHUN 2 CERDIK (SAINS)', ''], ['TAHUN 2 BOY (SAINS)', '']]);
   });
 
   it('MP THP: line 3\'s CONTOH with no "TAHUN" word (e.g. "1 CERDIK") strips it from event_line_2 too', () => {

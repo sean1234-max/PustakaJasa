@@ -72,13 +72,68 @@ function getTahunField(item) {
   return item.detail?.lines?.[key] || '';
 }
 
+// Line 3's CONTOH is a worked example of ONE plaque's subject + Tahun text
+// ("TAHUN 1 (BAHASA MELAYU)", "BAHASA MELAYU - TAHUN 1", "BAHASA MELAYU⏎
+// TAHUN 1", ...). Finds that example's own subject and Tahun in it and
+// turns everything around them into a pattern every plaque follows; a line
+// break in the example (Alt+Enter) splits event_line_1 from event_line_2.
+// A Tahun followed by one of the order's Nama Kelas ("TAHUN 1 CERDIK") takes
+// the class along with it. Returns null when the example doesn't clearly
+// contain both a known subject and a Tahun (blank, abbreviated, ...), so
+// the caller keeps the plain subject / Tahun two-line layout.
+export function buildSubjectTahunFormatter(sample, subjects, levels, classNames = []) {
+  const text = String(sample || '').replace(/\r\n?/g, '\n');
+  const upper = text.toUpperCase();
+  const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // Longest whole-word occurrence of any candidate, skipping `avoid`.
+  const findLongest = (candidates, avoid) => {
+    let best = null;
+    candidates.forEach((c) => {
+      const needle = String(c || '').trim().toUpperCase();
+      if (!needle) return;
+      const re = new RegExp(`(?<![A-Z0-9])${escape(needle).replace(/ +/g, '\\s+')}(?![A-Z0-9])`, 'g');
+      for (const m of upper.matchAll(re)) {
+        const span = { start: m.index, end: m.index + m[0].length };
+        if (avoid && span.start < avoid.end && avoid.start < span.end) continue;
+        if (!best || m[0].length > best.end - best.start) best = span;
+      }
+    });
+    return best;
+  };
+  const subjectSpan = findLongest(subjects);
+  if (!subjectSpan) return null;
+  // The example can show any year (MP THP 2's own sample often says
+  // "TAHUN 1"), so every TAHUN 1-6 counts, not just this category's columns.
+  const allLevels = [...levels, ...['1', '2', '3', '4', '5', '6'].map((n) => `TAHUN ${n}`)];
+  const levelCandidates = allLevels.flatMap((l) => [l, String(l).replace(/^TAHUN\s*/i, '')]);
+  const tahunSpan = findLongest(levelCandidates, subjectSpan);
+  if (!tahunSpan) return null;
+  const classAfter = new RegExp(`^\\s+(${classNames.map((c) => escape(String(c).trim().toUpperCase())).filter(Boolean).join('|')})(?![A-Z0-9])`);
+  if (classNames.length) {
+    const m = upper.slice(tahunSpan.end).match(classAfter);
+    if (m && !(tahunSpan.end < subjectSpan.end && subjectSpan.start < tahunSpan.end + m[0].length)) tahunSpan.end += m[0].length;
+  }
+  const spans = [{ ...subjectSpan, key: 'S' }, { ...tahunSpan, key: 'T' }].sort((a, b) => a.start - b.start);
+  const parts = [];
+  let at = 0;
+  spans.forEach((s) => { parts.push(text.slice(at, s.start), s.key); at = s.end; });
+  parts.push(text.slice(at));
+  return (subject, tahun) => {
+    const filled = parts.map((p, i) => (i % 2 === 0 ? p : (p === 'S' ? subject : tahun))).join('').trim();
+    const [first, ...rest] = filled.split('\n');
+    return [first.trim(), rest.join('\n').trim()];
+  };
+}
+
+
 // Matrix categories (PPKI, MP THP 1/2 and their "Kalau ada kelas" variants):
 // the reference sample's line 3 is only a CONTOH of layout (a worked example
 // of the subject text) — the real per-plaque data comes from the quantity
 // matrix itself. `position` (slot 2, ACARA) is fixed/literal, never combined
 // with the subject any more; each (subject, column) cell with qty > 0
 // becomes event_line_1 = subject, event_line_2 = the column/level (e.g.
-// "TAHUN 1") — or, once a level has a Nama Kelas breakdown (hasLevelBreakdown
+// "TAHUN 1") — unless line 3's CONTOH shows its own pattern for the two
+// (buildSubjectTahunFormatter above), which every plaque then follows — — or, once a level has a Nama Kelas breakdown (hasLevelBreakdown
 // — PPKI/MP1_KELAS/MP2_KELAS's per-level class list, see computeBlocks.js/
 // draftUpdaters.js), one row per actual class instead: event_line_2 =
 // "<level> <class>". Pendidikan Moral reads the level's own Moral Kelas list
@@ -101,6 +156,18 @@ function buildMatrixRows(item, cat, header, year, positionPart1, schoolLanguage)
   // no-op for them either way.
   const includeTahunWord = /tahun/i.test(getLine(item, 3));
 
+  // Every subject this order has, plus the catalog's own defaults, so the
+  // CONTOH's subject is recognised even if the order itself never ordered it.
+  const importedSubjects = !!cat.subjectsFromImport && getCustomMatrixRowIds(cat.key, matrix).length > 0;
+  const customSubjects = getCustomMatrixRowIds(cat.key, matrix).map((rowId) => matrix[customMatrixLabelKey(cat.key, rowId)] || '').filter(Boolean);
+  const format = buildSubjectTahunFormatter(
+    getLine(item, 3),
+    [...getCategorySubjects(cat, schoolLanguage), ...customSubjects],
+    columns,
+    Object.values(breakdown).flat().map((c) => c.desc).filter(Boolean),
+  );
+  const lines = (subject, tahun) => (format && tahun ? format(subject, tahun) : [subject, tahun]);
+
   const emitRow = (subject, column, qty) => {
     if (qty <= 0) return;
     // A synthetic single "KUANTITI"/"KEDUDUKAN" column (PBD — the row IS the
@@ -115,17 +182,16 @@ function buildMatrixRows(item, cat, header, year, positionPart1, schoolLanguage)
     classes.forEach((c) => {
       const q = Math.max(0, Number(c.qty) || 0);
       const eventLine2 = [tahunLabel, c.desc.trim()].filter(Boolean).join(' ');
-      for (let i = 0; i < q; i++) rows.push([header, year, positionPart1, subject, eventLine2]);
+      for (let i = 0; i < q; i++) rows.push([header, year, positionPart1, ...lines(subject, eventLine2)]);
       covered += q;
     });
     const remainder = qty - covered;
-    for (let i = 0; i < remainder; i++) rows.push([header, year, positionPart1, subject, tahunLabel]);
+    for (let i = 0; i < remainder; i++) rows.push([header, year, positionPart1, ...lines(subject, tahunLabel)]);
   };
 
   // `subjectsFromImport` categories keep every subject as an editable
   // `custom-<id>` row once imported — the fixed catalog list is then just a
-  // stale default and must not be emitted alongside them.
-  const importedSubjects = !!cat.subjectsFromImport && getCustomMatrixRowIds(cat.key, matrix).length > 0;
+  // stale default and must not be emitted alongside them (importedSubjects).
   if (!importedSubjects) {
     getCategorySubjects(cat, schoolLanguage).forEach((subject) => {
       columns.forEach((column) => {
