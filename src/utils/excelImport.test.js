@@ -482,6 +482,28 @@ describe('parseFormAnugerahExcel — renamed/duplicated template sheet becomes i
     expect(resolveCategory(pbdKey).levelBreakdownAxis).toBe('subject');
   });
 
+  // Real order (SK SIKAMAT): the teacher renamed the first TAHUN row to
+  // "PPKI" but left the class list's printed "TAHUN 1" header — the list
+  // landed on a phantom empty "TAHUN 1" row and every plaque engraved just
+  // "PPKI" instead of "PPKI AMANAH", "PPKI BUDIMAN", ...
+  it('pairs a "TAHUN N" class list with the Nth row when the teacher renamed that row', () => {
+    const rows = [];
+    rows[1] = [null, 'TOLONG ISI DI SINI'];
+    rows[2] = [null, 'MAJLIS APRESIASI PPKI'];
+    rows[3] = [null, 'ANUGERAH PENCAPAIAN TERBAIK'];
+    rows[6] = ['TAHUN', 'KUANTITI', null, null, 'TAHUN 1', null, null, null, 'TAHUN 2'];
+    rows[7] = [null, null, null, null, 'NAMA KELAS', 'QTY', null, null, 'NAMA KELAS', 'QTY'];
+    rows[8] = ['PPKI', 2, null, null, 'AMANAH', 1];
+    rows[9] = ['TAHUN 2', 0, null, null, 'BUDIMAN', 1];
+    rows[10] = ['TOTAL', 2];
+    rows[12] = [null, 'JENIS PLAK', 'QTY', 'HARGA'];
+    rows[13] = [null, 'PKF 266', 2];
+    const parsed = parseFormAnugerahExcel(workbookFromSheets({ 'APRESIASI PPKI': rows.map((r) => r || []) }));
+    const section = (parsed.categorized?.[makeDynamicCategoryKey('PBD', 'APRESIASI PPKI')] || [])[0];
+    expect(section.levelBreakdown.map((lb) => [lb.label, lb.mainRows.map((r) => r.name)])).toEqual([['PPKI', ['AMANAH', 'BUDIMAN']]]);
+    expect(section.tahunRows.map((tr) => tr.tahun)).toEqual(['PPKI', 'TAHUN 2']);
+  });
+
   it('a renamed TAHUN+KUANTITI sheet with NO Nama Kelas breakdown resolves as LONJAKAN, not PBD', () => {
     const parsed = parseFormAnugerahExcel(workbookFromSheets({
       'PENCAPAIAN SUKAN': [

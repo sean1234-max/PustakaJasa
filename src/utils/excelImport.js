@@ -1173,7 +1173,17 @@ function parsePbdSheet(ws) {
         // Attach the breakdown to the main table's OWN row label (which may
         // carry an extra qualifier like "PKB") — matched via normalizeTahun
         // — so computeBlocks/draftUpdaters key it the same way.
-        const rowLabel = tahunRows.find((tr) => tr.norm && tr.norm === blkNorm)?.tahun;
+        let rowLabel = tahunRows.find((tr) => tr.norm && tr.norm === blkNorm)?.tahun;
+        // The teacher renamed the Nth TAHUN row ("TAHUN 1" -> "PPKI") but
+        // left this block's printed "TAHUN N" header alone — the block is
+        // still that row's own list, by position. Only for a row renamed to
+        // something with no Tahun number of its own, so a real TAHUN row is
+        // never re-paired.
+        if (!rowLabel) {
+          const n = Number((blkNorm.match(/^TAHUN (\d)$/) || [])[1]);
+          const slot = n ? tahunRows[n - 1] : null;
+          if (slot && !slot.norm) rowLabel = slot.tahun;
+        }
         return {
           label: rowLabel || blkNorm || b.label,
           mainRows: readPpkiListRows(ws, range, b.nkCol, b.qtyCol, b.headerRow + 1),
