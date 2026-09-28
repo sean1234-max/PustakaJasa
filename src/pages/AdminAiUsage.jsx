@@ -1,6 +1,8 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import AdminLayout from '../components/AdminLayout';
 import { fetchAiExtractionRuns, fetchAiGrammarChecks, fetchAllProfiles } from '../lib/adminApi';
+import { fetchCustomTypoWords, addCustomTypoWord, removeCustomTypoWord } from '../lib/typoWordsApi';
+import { setCustomTypoWords } from '../utils/typoCheck';
 import { loadWithRetry } from '../lib/loadWithRetry';
 
 // Per-user monthly cost caps enforced by the two Edge Functions. Mirrors the
@@ -107,6 +109,121 @@ function UsageByUserTable({ rows, capUsd }) {
   );
 }
 
+// The built-in typo hint (src/utils/typoCheck.js) that pops up while a
+// teacher types a Reference Sample/Description field flags a word only when
+// it's a near-miss (one letter off) of a KNOWN correct word — this section
+// lets Admin add to that known-word list on the fly, no deploy needed. Not
+// the AI-based Engraving Text Check above (that's an LLM call, logged in
+// ai_grammar_checks) — this is the plain word-list dictionary the hint has
+// always used, now editable here instead of only hardcoded.
+function GrammarDictionarySection() {
+  const [words, setWords] = useState(null);
+  const [loadError, setLoadError] = useState('');
+  const [draft, setDraft] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState('');
+
+  const reload = () => {
+    setLoadError('');
+    fetchCustomTypoWords()
+      .then((rows) => {
+        setWords(rows);
+        setCustomTypoWords(rows.map((r) => r.word));
+      })
+      .catch((err) => {
+        console.error('Failed to load custom typo words:', err);
+        setLoadError('Could not load. Check your connection and try again.');
+      });
+  };
+
+  useEffect(() => { reload(); }, []);
+
+  const handleAdd = async () => {
+    if (busy || !draft.trim()) return;
+    setBusy(true);
+    setActionError('');
+    try {
+      await addCustomTypoWord(draft.trim());
+      setDraft('');
+      reload();
+    } catch (err) {
+      setActionError(err.message || 'Failed to add word.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleRemove = async (id) => {
+    if (busy) return;
+    setBusy(true);
+    setActionError('');
+    try {
+      await removeCustomTypoWord(id);
+      reload();
+    } catch (err) {
+      setActionError(err.message || 'Failed to remove word.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="mb-10">
+      <h3 className="text-headline-sm text-on-surface mb-4 uppercase tracking-wider opacity-70">Grammar Check Dictionary</h3>
+      <p className="text-body-md text-on-surface-variant mb-4">
+        Words the typo hint checks against while a teacher types a Reference Sample or Description field — a word one letter off from one of these (e.g. "ANIGERAH" vs "ANUGERAH") gets flagged. Add the correct spelling here; no deploy needed.
+      </p>
+      <div className="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant p-5">
+        <div className="flex gap-2 mb-4">
+          <input
+            className="flex-1 border border-outline-variant rounded-lg px-3 py-2 text-body-md outline-none focus:ring-2 focus:ring-primary uppercase"
+            placeholder="e.g. ANUGERAH"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleAdd(); }}
+          />
+          <button
+            type="button"
+            onClick={handleAdd}
+            disabled={busy || !draft.trim()}
+            className="bg-primary text-on-primary text-label-bold font-semibold px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50"
+          >
+            + Add Word
+          </button>
+        </div>
+        {actionError && <p className="text-error text-body-sm mb-3">{actionError}</p>}
+        {loadError ? (
+          <div>
+            <p className="text-error mb-2">{loadError}</p>
+            <button type="button" onClick={reload} className="text-label-bold font-semibold text-primary hover:underline">Retry</button>
+          </div>
+        ) : words === null ? (
+          <p className="text-body-md text-on-surface-variant">Loading…</p>
+        ) : words.length === 0 ? (
+          <p className="text-body-md text-on-surface-variant">No custom words added yet.</p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {words.map((w) => (
+              <span key={w.id} className="inline-flex items-center gap-2 bg-surface-variant text-on-surface-variant rounded-full pl-3 pr-1 py-1 text-body-sm">
+                {w.word}
+                <button
+                  type="button"
+                  aria-label={`Remove ${w.word}`}
+                  onClick={() => handleRemove(w.id)}
+                  disabled={busy}
+                  className="w-5 h-5 flex items-center justify-center rounded-full hover:bg-surface-container-lowest text-on-surface-variant hover:text-error transition-colors disabled:opacity-50"
+                >
+                  ✕
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
 export default function AdminAiUsage() {
   const [data, setData] = useState(null);
   const [loadError, setLoadError] = useState('');
@@ -195,6 +312,8 @@ export default function AdminAiUsage() {
             </h3>
             <UsageByUserTable rows={derived.grammarByUser} capUsd={GRAMMAR_MONTHLY_CAP_USD} />
           </section>
+
+          <GrammarDictionarySection />
 
           <section>
             <h3 className="text-headline-sm text-on-surface mb-4 uppercase tracking-wider opacity-70">Recent Activity</h3>

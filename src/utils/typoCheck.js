@@ -39,6 +39,21 @@ const EVENT_WORDS = [
 
 export const TYPO_CHECK_DICTIONARY = [...new Set([...SUBJECT_WORDS, ...EVENT_WORDS])];
 
+// Admin-managed additions (supabase/migrations/0074_custom_typo_words.sql,
+// AdminAiUsage.jsx's Grammar Check Dictionary section) — the built-in list
+// above only grows via a deploy, this lets Admin add a "correct" word
+// on the fly. Fetched once per login (AppState.jsx) and stored here so
+// every findPossibleTypo call below picks it up without threading a
+// dictionary through every call site (computeBlocks.js, categoryCartItems.js
+// all just call findPossibleTypo(text) with no explicit dictionary).
+let customWords = [];
+export function setCustomTypoWords(words) {
+  customWords = [...new Set((words || []).map((w) => String(w || '').toUpperCase().trim()).filter(Boolean))];
+}
+export function getTypoDictionary() {
+  return [...new Set([...TYPO_CHECK_DICTIONARY, ...customWords])];
+}
+
 function levenshtein(a, b) {
   const m = a.length;
   const n = b.length;
@@ -67,7 +82,7 @@ function levenshtein(a, b) {
 // (e.g. a school name like "SUBANG" is distance 2 from "SUKAN") as false
 // positives, which is worse than missing an occasional real typo for a
 // hint that's meant to be a light nudge, not an authority.
-export function findPossibleTypo(text, dictionary = TYPO_CHECK_DICTIONARY) {
+export function findPossibleTypo(text, dictionary = getTypoDictionary()) {
   const words = String(text || '').split(/\s+/).filter(Boolean);
   const maxDistance = 1;
   for (const raw of words) {

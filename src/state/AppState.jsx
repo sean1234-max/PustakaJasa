@@ -27,6 +27,8 @@ import { supabase } from '../lib/supabaseClient';
 import { uploadOrderImportFile, removeOrderImportFile, getOrderImportUrl } from '../lib/storageApi';
 import { syncUrgentOrderToSheet } from '../lib/urgentSheetApi';
 import { isUrgentShipment } from '../utils/urgentOrder';
+import { fetchCustomTypoWords } from '../lib/typoWordsApi';
+import { setCustomTypoWords } from '../utils/typoCheck';
 
 // Real "today", normalized to midnight so it compares cleanly against the
 // midnight-constructed dates the calendar cells and date-math use.
@@ -503,6 +505,23 @@ export function AppStateProvider({ children }) {
       });
     return () => { cancelled = true; };
   }, [patch, state.role]);
+
+  // Admin's Grammar Check Dictionary additions (custom_typo_words) — merged
+  // into typoCheck.js's in-memory dictionary so every existing typo hint
+  // (Reference Sample / Kuantiti Description) also checks against them.
+  // No `state` field for this — nothing else reads it, it's purely a side
+  // effect that warms up typoCheck.js's module-level word list. Fetched
+  // once per login, same as the Jenis Plak catalog above; an admin's own
+  // add/remove on AdminAiUsage.jsx additionally calls setCustomTypoWords
+  // directly so that session sees it right away too.
+  useEffect(() => {
+    if (!state.role) return undefined;
+    let cancelled = false;
+    fetchCustomTypoWords()
+      .then((rows) => { if (!cancelled) setCustomTypoWords(rows.map((r) => r.word)); })
+      .catch((err) => console.error('Failed to load custom typo words from Supabase:', err));
+    return () => { cancelled = true; };
+  }, [state.role]);
 
   const initialDraftToastRef = useRef(state.draftRestoredToast);
   useEffect(() => {

@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { findPossibleTypo } from './typoCheck';
+import { describe, it, expect, afterEach } from 'vitest';
+import { findPossibleTypo, setCustomTypoWords } from './typoCheck';
 
 describe('findPossibleTypo', () => {
   it('flags a one-edit near-miss of a known word', () => {
@@ -23,5 +23,22 @@ describe('findPossibleTypo', () => {
   it('does not flag a word that is 2+ edits away (avoids false positives)', () => {
     // "SUBANG" is edit distance 2 from "SUKAN" — must NOT be flagged.
     expect(findPossibleTypo('SUBANG JAYA')).toBeNull();
+  });
+
+  describe('setCustomTypoWords — Admin-added dictionary words', () => {
+    afterEach(() => setCustomTypoWords([]));
+
+    it('flags a near-miss of an admin-added word once set', () => {
+      expect(findPossibleTypo('SELAYENG')).toBeNull();
+      setCustomTypoWords(['selayang']);
+      expect(findPossibleTypo('SELAYENG')).toEqual({ word: 'SELAYENG', suggestion: 'SELAYANG' });
+    });
+
+    it('clearing the custom list stops flagging it again', () => {
+      setCustomTypoWords(['SELAYANG']);
+      expect(findPossibleTypo('SELAYENG')).not.toBeNull();
+      setCustomTypoWords([]);
+      expect(findPossibleTypo('SELAYENG')).toBeNull();
+    });
   });
 });
