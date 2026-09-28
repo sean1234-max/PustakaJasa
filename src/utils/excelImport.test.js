@@ -504,6 +504,39 @@ describe('parseFormAnugerahExcel — renamed/duplicated template sheet becomes i
     ]);
   });
 
+  // Real order (SK TAMAN SERI PAGI.xlsx): a row with KUANTITI 6 / JENIS PLAK
+  // "PKF 266" but a BLANK TAHUN label — the teacher deliberately left it
+  // blank because this row's plaques don't need any TAHUN text at all. The
+  // old code treated a blank label as "unused row" and silently dropped it,
+  // losing 6 real plaques from the order.
+  it('a blank TAHUN label with a real qty/Jenis Plak is kept, not dropped as an empty row', () => {
+    const parsed = parseFormAnugerahExcel(workbookFromSheets({
+      'LONJAKAN SAUJANA': [
+        ['TAHUN', 'KUANTITI', 'JENIS PLAK'],
+        [null, 6, 'PKF 266'],
+      ],
+    }));
+    const section = (parsed.categorized?.LONJAKAN || [])[0];
+    expect(section.isSimpleTahunList).toBe(true);
+    expect(section.tahunRows).toEqual([
+      { tahun: '', label: '', qty: 6, jenisPlak: 'PKF 266' },
+    ]);
+  });
+
+  it('a genuinely blank row (no label, no qty, no Jenis Plak) is still skipped', () => {
+    const parsed = parseFormAnugerahExcel(workbookFromSheets({
+      'LONJAKAN SAUJANA': [
+        ['TAHUN', 'KUANTITI', 'JENIS PLAK'],
+        ['TAHUN 1', 5, 'PKF 266'],
+        [null, null, null],
+      ],
+    }));
+    const section = (parsed.categorized?.LONJAKAN || [])[0];
+    expect(section.tahunRows).toEqual([
+      { tahun: 'TAHUN 1', label: 'TAHUN 1', qty: 5, jenisPlak: 'PKF 266' },
+    ]);
+  });
+
   it('a custom row whose label merely starts with TAHUN ("TAHUN 2026") keeps its exact text instead of landing on TAHUN 2', () => {
     const parsed = parseFormAnugerahExcel(workbookFromSheets({
       'SAHSIAH TERPUJI': [

@@ -1351,9 +1351,13 @@ function parseTahunPlakRowSheet(ws) {
   for (let r = tahunH.row + 1; r <= range.r2; r++) {
     const label = cellText(ws, r, tahunH.col);
     if (isTotalLabel(label)) break;
-    if (!label) continue;
     const qty = cellNum(ws, r, kuantitiH.col);
     const jenisPlak = jpH ? cellText(ws, r, jpH.col) : '';
+    // A blank TAHUN label doesn't mean an unused row — a teacher can leave it
+    // blank on purpose when this row's plaques don't need any TAHUN text at
+    // all (see a real order: TAHUN blank, KUANTITI 6, JENIS PLAK "PKF 266").
+    // A row is only genuinely unused when it has no qty AND no Jenis Plak
+    // either, regardless of whether the label happens to be filled in.
     if (qty <= 0 && !jenisPlak) continue;
     // A row only fills one of the fixed TAHUN 1-6 slots when its label IS
     // exactly "TAHUN 1".."TAHUN 6" — anything else the teacher types on her
