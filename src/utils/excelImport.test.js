@@ -41,6 +41,21 @@ describe('matchJenisPlakPath', () => {
     expect(matchJenisPlakPath('R-100/DESIGN C', tree)).toBe('CRYSTAL / R-100 / DESIGN C');
   });
 
+  // Real order: "MP 393 (GOLD/BASE A)" (spaced) against the catalog's
+  // "MP393" found no root, so the umbrella fallback grabbed FD 251's own
+  // "GOLD" child and silently imported "FD 251 / GOLD".
+  it('matches a code written with a different spacing, and never guesses a product from a shared finish word', () => {
+    const tree = [
+      { code: 'FD 251', children: [{ code: 'GOLD' }, { code: 'SILVER' }] },
+      { code: 'MP393', children: [{ code: 'GOLD', children: [{ code: 'BASE A' }, { code: 'BASE C' }] }] },
+      { code: 'MP399', children: [{ code: 'GOLD', children: [{ code: 'BASE WITH COVER' }, { code: 'BASE WITHOUT COVER' }] }] },
+    ];
+    expect(matchJenisPlakPath('MP 393 (GOLD/BASE A)', tree)).toBe('MP393 / GOLD / BASE A');
+    expect(matchJenisPlakPath('MP 399 (GOLD/BASE WITHOUT COVER)', tree)).toBe('MP399 / GOLD / BASE WITHOUT COVER');
+    expect(matchJenisPlakPath('FD 251 (GOLD)', tree)).toBe('FD 251 / GOLD');
+    expect(matchJenisPlakPath('XYZ 999 (GOLD)', tree)).toBe('');
+  });
+
   it('returns empty when even the fallback level has no matching code', () => {
     const tree = [{ code: 'CRYSTAL', children: [{ code: '00S', children: [{ code: 'DESIGN A' }] }] }];
     expect(matchJenisPlakPath('PKC 266', tree)).toBe('');

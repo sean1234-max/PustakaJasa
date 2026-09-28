@@ -734,6 +734,18 @@ export function AppStateProvider({ children }) {
     const st = stateRef.current;
     let next = st;
 
+    // Jenis Plak text the catalog can't place is left BLANK (never the raw
+    // text — see the populateMatrixSectionBlock note below) and recorded
+    // here, so the page can tell the teacher right after the import which
+    // ones to pick by hand instead of leaving it to Add to Cart.
+    const matchPlakOrWarn = (raw, catKey, label) => {
+      const matched = raw ? matchJenisPlakPath(raw, st.plakCatalog) : '';
+      if (raw && !matched) {
+        warnings.push({ type: 'plakMismatch', blockIdx: 0, catKey, raw, text: `${label}: couldn't match Jenis Plak "${raw}" to anything in the catalog — please choose it manually.` });
+      }
+      return matched;
+    };
+
     // KLAS_MATRIX ("Mata Pelajaran / Klas (Matrix)") is retired from new
     // orders (catalog.js) — every FORM ANUGERAH sheet now has its own
     // category. A generic/legacy sheet that would once have landed there
@@ -818,7 +830,7 @@ export function AppStateProvider({ children }) {
         );
         ({ nextRowId, nextColumnId, nextPlakRowId } = ids);
         if (section.jenisPlak && !matchedPlak) {
-          warnings.push({ type: 'plakMismatch', blockIdx: b, text: `Section ${b + 1}: couldn't match Jenis Plak "${section.jenisPlak}" to anything in the catalog — please choose it manually.` });
+          warnings.push({ type: 'plakMismatch', blockIdx: b, raw: section.jenisPlak, text: `Section ${b + 1}: couldn't match Jenis Plak "${section.jenisPlak}" to anything in the catalog — please choose it manually.` });
         }
         // A PERASMI section's own wording (findPerasmiSections) also goes
         // into the order's Remark, not just its own Reference Sample —
@@ -955,7 +967,7 @@ export function AppStateProvider({ children }) {
             next.plakCatalog,
           );
           if (section.jenisPlak && !matchedPlak) {
-            warnings.push({ type: 'plakMismatch', blockIdx: 0, catKey, text: `${cat.label}: couldn't match Jenis Plak "${section.jenisPlak}" to anything in the catalog — please choose it manually.` });
+            warnings.push({ type: 'plakMismatch', blockIdx: 0, catKey, raw: section.jenisPlak, text: `${cat.label}: couldn't match Jenis Plak "${section.jenisPlak}" to anything in the catalog — please choose it manually.` });
           }
           if (section.remarkNote) remarkNotes.push(section.remarkNote);
           if (applyFilter) applyFilter(catKey, key, { newLineValues, newMatrixValues, newRowsByBlock, newPlakRows: newPlakRowsDyn });
@@ -980,7 +992,7 @@ export function AppStateProvider({ children }) {
           // import warning is raised.
           const fixedRows = ['TAHUN 1', 'TAHUN 2', 'TAHUN 3', 'TAHUN 4', 'TAHUN 5', 'TAHUN 6'].map((tahun) => {
             const tr = byTahun.get(tahun);
-            const matched = tr?.jenisPlak ? matchJenisPlakPath(tr.jenisPlak, next.plakCatalog) : '';
+            const matched = matchPlakOrWarn(tr?.jenisPlak, catKey, cat.label);
             return { id: nextRowId++, desc: tahun, qty: tr && tr.qty ? String(tr.qty) : '', jenisPlak: matched };
           });
           // A row whose own label isn't a plain "TAHUN n" (e.g. "TAHAP 1",
@@ -988,7 +1000,7 @@ export function AppStateProvider({ children }) {
           // same-numbered TAHUN slot — kept as its own row with that exact
           // wording instead of being folded into the fixed 6 above.
           const extraRows = section.tahunRows.filter((tr) => !tr.tahun).map((tr) => {
-            const matched = tr.jenisPlak ? matchJenisPlakPath(tr.jenisPlak, next.plakCatalog) : '';
+            const matched = matchPlakOrWarn(tr.jenisPlak, catKey, cat.label);
             return { id: nextRowId++, desc: tr.label, qty: tr.qty ? String(tr.qty) : '', jenisPlak: matched };
           });
           newRowsByBlock[key] = [...fixedRows, ...extraRows];
@@ -998,7 +1010,7 @@ export function AppStateProvider({ children }) {
           // its own NAMA MURID / GAMBAR / DESIGN metadata + its own Jenis
           // Plak (plakPerRow).
           newRowsByBlock[key] = section.tokohRows.map((tr) => {
-            const matched = tr.jenisPlak ? matchJenisPlakPath(tr.jenisPlak, next.plakCatalog) : '';
+            const matched = matchPlakOrWarn(tr.jenisPlak, catKey, cat.label);
             // Un-matched → blank, picked here; flagged by buildCategoryCartItems.
             return {
               id: nextRowId++, desc: tr.desc, qty: tr.qty ? String(tr.qty) : '',
@@ -1171,7 +1183,7 @@ export function AppStateProvider({ children }) {
           };
           const aliranRows = (section.plakRanges || []).map((pr) => {
             // Un-matched → blank, picked here; flagged by buildCategoryCartItems.
-            const matched = matchJenisPlakPath(pr.jenisPlak, next.plakCatalog);
+            const matched = matchPlakOrWarn(pr.jenisPlak, catKey, cat.label);
             // "Kalau ada kelas" footer QTY is always derived (Nama Kelas ×
             // range), never a teacher override — the sheet's own number, if
             // any, is just the school's arithmetic, not a real override.
@@ -1196,7 +1208,7 @@ export function AppStateProvider({ children }) {
           newPlakRows = { ...next[fields.plakRows], [key]: aliranRows };
         } else {
           // Un-matched → blank, picked here; flagged by buildCategoryCartItems.
-          const matchedPlak = matchJenisPlakPath(section.jenisPlak, next.plakCatalog);
+          const matchedPlak = matchPlakOrWarn(section.jenisPlak, catKey, cat.label);
           newPlakRows = { ...next[fields.plakRows], [key]: [{ id: nextPlakRowId++, jenisPlak: matchedPlak }] };
         }
         if (applyFilter) applyFilter(catKey, key, { newLineValues, newMatrixValues, newRowsByBlock, newPlakRows });

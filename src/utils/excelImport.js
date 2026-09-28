@@ -1652,18 +1652,26 @@ function normalizeForPlakMatch(s) {
 // the cutoff only ever excludes exactly the ambiguous single letters.
 const MIN_INDEPENDENT_CODE_LEN = 2;
 
-function findBestCodeMatch(nodes, normalized) {
-  let best = null;
-  let bestLen = -1;
-  nodes.forEach((node) => {
-    const codeNorm = normalizeForPlakMatch(node.code);
-    if (codeNorm && codeNorm.length >= MIN_INDEPENDENT_CODE_LEN
-      && normalized.includes(codeNorm) && codeNorm.length > bestLen) {
-      best = node;
-      bestLen = codeNorm.length;
-    }
-  });
-  return best;
+// Longest node whose code is mentioned in `normalized`. Tried as written
+// first; only if nothing matches, again with every space removed on both
+// sides — a teacher writing "MP 393" for the catalog's "MP393" (or the
+// reverse) is the same code, but the spaced pass stays first so a code that
+// already matched as written keeps matching exactly as it always did.
+function findBestCodeMatch(nodes, normalized, minLen = MIN_INDEPENDENT_CODE_LEN) {
+  for (const squash of [(s) => s, (s) => s.replace(/ /g, '')]) {
+    const text = squash(normalized);
+    let best = null;
+    let bestLen = -1;
+    nodes.forEach((node) => {
+      const codeNorm = squash(normalizeForPlakMatch(node.code));
+      if (codeNorm && codeNorm.length >= minLen && text.includes(codeNorm) && codeNorm.length > bestLen) {
+        best = node;
+        bestLen = codeNorm.length;
+      }
+    });
+    if (best) return best;
+  }
+  return null;
 }
 
 export function matchJenisPlakPath(rawText, plakTree) {
@@ -1683,24 +1691,28 @@ export function matchJenisPlakPath(rawText, plakTree) {
     // unrelated root families share generic one-letter children, so the
     // right candidate is whichever match is the most specific, not merely
     // the first one found while walking the root list in whatever order.
-    let bestChild = null;
-    let bestGroupCode = '';
+    // A best match found under MORE than one group is a shared finish word
+    // (GOLD sits under FD 251, MP393, SM-13187...), not a product code — it
+    // says nothing about which product was meant, so it's no match at all.
+    // Guessing there once turned "MP 393 (GOLD/BASE A)" into "FD 251 / GOLD".
     let bestChildLen = -1;
+    let candidates = [];
     plakTree.forEach((groupNode) => {
       if (!groupNode.children || groupNode.children.length === 0) return;
       const child = findBestCodeMatch(groupNode.children, normalized);
       if (!child) return;
       const len = normalizeForPlakMatch(child.code).length;
-      if (len > bestChildLen) { bestChild = child; bestGroupCode = groupNode.code; bestChildLen = len; }
+      if (len > bestChildLen) { bestChildLen = len; candidates = [{ child, groupCode: groupNode.code }]; }
+      else if (len === bestChildLen) candidates.push({ child, groupCode: groupNode.code });
     });
-    if (bestChild) { root = bestChild; pathPrefix = [bestGroupCode]; }
+    if (candidates.length === 1) { root = candidates[0].child; pathPrefix = [candidates[0].groupCode]; }
   }
   if (!root) return '';
 
   const pathParts = [...pathPrefix, root.code];
   let current = root;
   while (current.children && current.children.length > 0) {
-    const mentioned = current.children.find((child) => normalized.includes(normalizeForPlakMatch(child.code)));
+    const mentioned = findBestCodeMatch(current.children, normalized, 1);
     const next = mentioned || current.children.find((child) => normalizeForPlakMatch(child.code) === 'NORMAL') || current.children[0];
     pathParts.push(next.code);
     current = next;

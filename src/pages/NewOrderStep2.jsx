@@ -79,6 +79,13 @@ export default function NewOrderStep2() {
       setImporting(false);
     }
     setImportStatus(result);
+    // Said once, up front, right after the upload — those rows came in with
+    // a blank Jenis Plak, and a teacher who only reads the order at Add to
+    // Cart time wouldn't know which ones the file itself didn't resolve.
+    const unmatched = [...new Set((result.warnings || []).filter((w) => w.type === 'plakMismatch').map((w) => w.raw))];
+    if (result.ok && unmatched.length > 0) {
+      window.alert(`Jenis Plak ini tidak dijumpai dalam katalog. Sila pilih sendiri sebelum tambah ke troli:\n\n${unmatched.map((raw) => `• ${raw}`).join('\n')}\n\nThese Jenis Plak couldn't be matched to the catalog — please choose them manually before adding to cart.`);
+    }
   };
 
   // The import's cross-check questions (matrix column vs its own TOTAL row,
