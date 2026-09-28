@@ -54,6 +54,10 @@ describe('matchJenisPlakPath', () => {
     expect(matchJenisPlakPath('MP 399 (GOLD/BASE WITHOUT COVER)', tree)).toBe('MP399 / GOLD / BASE WITHOUT COVER');
     expect(matchJenisPlakPath('FD 251 (GOLD)', tree)).toBe('FD 251 / GOLD');
     expect(matchJenisPlakPath('XYZ 999 (GOLD)', tree)).toBe('');
+    // Spaces and symbols (full-width brackets, dashes, slashes) don't matter.
+    expect(matchJenisPlakPath('mp 393 （GOLD BASE A）', tree)).toBe('MP393 / GOLD / BASE A');
+    expect(matchJenisPlakPath('MP-393/GOLD/BASE C', tree)).toBe('MP393 / GOLD / BASE C');
+    expect(matchJenisPlakPath('MP393GOLDBASEA', tree)).toBe('MP393 / GOLD / BASE A');
   });
 
   it('returns empty when even the fallback level has no matching code', () => {

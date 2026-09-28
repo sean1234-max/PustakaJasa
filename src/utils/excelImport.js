@@ -1653,12 +1653,12 @@ function normalizeForPlakMatch(s) {
 const MIN_INDEPENDENT_CODE_LEN = 2;
 
 // Longest node whose code is mentioned in `normalized`. Tried as written
-// first; only if nothing matches, again with every space removed on both
-// sides — a teacher writing "MP 393" for the catalog's "MP393" (or the
-// reverse) is the same code, but the spaced pass stays first so a code that
-// already matched as written keeps matching exactly as it always did.
+// first; only if nothing matches, again with everything but letters and
+// digits stripped on both sides — "MP 393 (GOLD BASE A)", "MP-393" and
+// "MP393" are all the same code to a teacher. The as-written pass stays
+// first so a code that already matched keeps matching exactly as before.
 function findBestCodeMatch(nodes, normalized, minLen = MIN_INDEPENDENT_CODE_LEN) {
-  for (const squash of [(s) => s, (s) => s.replace(/ /g, '')]) {
+  for (const squash of [(s) => s, (s) => s.replace(/[^A-Z0-9]/g, '')]) {
     const text = squash(normalized);
     let best = null;
     let bestLen = -1;
