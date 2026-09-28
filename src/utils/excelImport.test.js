@@ -58,6 +58,10 @@ describe('matchJenisPlakPath', () => {
     expect(matchJenisPlakPath('mp 393 （GOLD BASE A）', tree)).toBe('MP393 / GOLD / BASE A');
     expect(matchJenisPlakPath('MP-393/GOLD/BASE C', tree)).toBe('MP393 / GOLD / BASE C');
     expect(matchJenisPlakPath('MP393GOLDBASEA', tree)).toBe('MP393 / GOLD / BASE A');
+    // A level left out (no BASE, no finish) is never guessed — the teacher picks.
+    expect(matchJenisPlakPath('MP 393 (GOLD)', tree)).toBe('');
+    expect(matchJenisPlakPath('MP 393 (BASE A)', tree)).toBe('');
+    expect(matchJenisPlakPath('FD 251', tree)).toBe('');
   });
 
   it('returns empty when even the fallback level has no matching code', () => {

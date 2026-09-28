@@ -1636,14 +1636,11 @@ function normalizeForPlakMatch(s) {
 // BASE A" into the exact ' / '-joined path the live catalog tree actually
 // uses (e.g. "SM-13187 / GOLD / NORMAL"), by walking the tree level by
 // level and matching whichever child's own code text is mentioned anywhere
-// in the raw text. A level with no match at all (the teacher wrote a
-// finish but no base, say) doesn't stop the walk — every finish's own
-// catalog entry always has a "NORMAL" child precisely for "no special base
-// requested", so that's the default; failing that, just the first child, so
-// the walk always reaches a genuine leaf instead of stopping short on a
-// non-orderable middle node. Returns '' if even the top-level code (e.g.
-// "SM-13187") can't be found anywhere in the live catalog at all — the
-// teacher then sees the raw text as-typed and can pick correctly by hand.
+// in the raw text. A level with no match (the teacher wrote a finish but no
+// base, say) takes a "NORMAL" child if that level has one, else the whole
+// match is '' — same as when the top-level code (e.g. "SM-13187") isn't in
+// the live catalog at all. The import then alerts with the raw text and the
+// teacher picks the right one by hand, rather than getting a guess.
 // A code shorter than this (a bare finish letter like "A"/"B"/"C"/"D" —
 // several unrelated product families all use these for their own BASE/
 // DESIGN variants) is never trustworthy as an independent match on its
@@ -1712,8 +1709,14 @@ export function matchJenisPlakPath(rawText, plakTree) {
   const pathParts = [...pathPrefix, root.code];
   let current = root;
   while (current.children && current.children.length > 0) {
+    // A level the text doesn't mention (no BASE written, say) is never
+    // guessed — the first child is just whatever sorts first, not what the
+    // teacher meant. Only an explicit "NORMAL" (= no special option) counts
+    // as a default; otherwise no match, so the import alerts and the
+    // teacher picks it.
     const mentioned = findBestCodeMatch(current.children, normalized, 1);
-    const next = mentioned || current.children.find((child) => normalizeForPlakMatch(child.code) === 'NORMAL') || current.children[0];
+    const next = mentioned || current.children.find((child) => normalizeForPlakMatch(child.code) === 'NORMAL');
+    if (!next) return '';
     pathParts.push(next.code);
     current = next;
   }
