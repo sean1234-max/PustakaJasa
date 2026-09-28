@@ -72,6 +72,26 @@ function getTahunField(item) {
   return item.detail?.lines?.[key] || '';
 }
 
+const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// Longest whole-word occurrence of any candidate in `text` (case-insensitive,
+// any run of spaces/line breaks matching a space), skipping `avoid`.
+function findLongestWord(text, candidates, avoid) {
+  const upper = String(text || '').toUpperCase();
+  let best = null;
+  candidates.forEach((c) => {
+    const needle = String(c || '').trim().toUpperCase();
+    if (!needle) return;
+    const re = new RegExp(`(?<![A-Z0-9])${escapeRegExp(needle).replace(/ +/g, '\\s+')}(?![A-Z0-9])`, 'g');
+    for (const m of upper.matchAll(re)) {
+      const span = { start: m.index, end: m.index + m[0].length };
+      if (avoid && span.start < avoid.end && avoid.start < span.end) continue;
+      if (!best || m[0].length > best.end - best.start) best = span;
+    }
+  });
+  return best;
+}
+
 // Line 3's CONTOH is a worked example of ONE plaque's subject + Tahun text
 // ("TAHUN 1 (BAHASA MELAYU)", "BAHASA MELAYU - TAHUN 1", "BAHASA MELAYU⏎
 // TAHUN 1", ...). Finds that example's own subject and Tahun in it and
@@ -84,22 +104,8 @@ function getTahunField(item) {
 export function buildSubjectTahunFormatter(sample, subjects, levels, classNames = []) {
   const text = String(sample || '').replace(/\r\n?/g, '\n');
   const upper = text.toUpperCase();
-  const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  // Longest whole-word occurrence of any candidate, skipping `avoid`.
-  const findLongest = (candidates, avoid) => {
-    let best = null;
-    candidates.forEach((c) => {
-      const needle = String(c || '').trim().toUpperCase();
-      if (!needle) return;
-      const re = new RegExp(`(?<![A-Z0-9])${escape(needle).replace(/ +/g, '\\s+')}(?![A-Z0-9])`, 'g');
-      for (const m of upper.matchAll(re)) {
-        const span = { start: m.index, end: m.index + m[0].length };
-        if (avoid && span.start < avoid.end && avoid.start < span.end) continue;
-        if (!best || m[0].length > best.end - best.start) best = span;
-      }
-    });
-    return best;
-  };
+  const escape = escapeRegExp;
+  const findLongest = (candidates, avoid) => findLongestWord(text, candidates, avoid);
   const subjectSpan = findLongest(subjects);
   if (!subjectSpan) return null;
   // The example can show any year (MP THP 2's own sample often says
@@ -125,15 +131,14 @@ export function buildSubjectTahunFormatter(sample, subjects, levels, classNames 
   };
 }
 
-
 // Matrix categories (PPKI, MP THP 1/2 and their "Kalau ada kelas" variants):
 // the reference sample's line 3 is only a CONTOH of layout (a worked example
 // of the subject text) — the real per-plaque data comes from the quantity
-// matrix itself. `position` (slot 2, ACARA) is fixed/literal, never combined
-// with the subject any more; each (subject, column) cell with qty > 0
+// matrix itself. `position` (slot 2, ACARA) is fixed/literal unless its CONTOH itself
+// names a subject (see positionFor below); each (subject, column) cell with qty > 0
 // becomes event_line_1 = subject, event_line_2 = the column/level (e.g.
 // "TAHUN 1") — unless line 3's CONTOH shows its own pattern for the two
-// (buildSubjectTahunFormatter above), which every plaque then follows — — or, once a level has a Nama Kelas breakdown (hasLevelBreakdown
+// (buildSubjectTahunFormatter above), which every plaque then follows — or, once a level has a Nama Kelas breakdown (hasLevelBreakdown
 // — PPKI/MP1_KELAS/MP2_KELAS's per-level class list, see computeBlocks.js/
 // draftUpdaters.js), one row per actual class instead: event_line_2 =
 // "<level> <class>". Pendidikan Moral reads the level's own Moral Kelas list
@@ -160,13 +165,26 @@ function buildMatrixRows(item, cat, header, year, positionPart1, schoolLanguage)
   // CONTOH's subject is recognised even if the order itself never ordered it.
   const importedSubjects = !!cat.subjectsFromImport && getCustomMatrixRowIds(cat.key, matrix).length > 0;
   const customSubjects = getCustomMatrixRowIds(cat.key, matrix).map((rowId) => matrix[customMatrixLabelKey(cat.key, rowId)] || '').filter(Boolean);
+  const knownSubjects = [...getCategorySubjects(cat, schoolLanguage), ...customSubjects];
   const format = buildSubjectTahunFormatter(
     getLine(item, 3),
-    [...getCategorySubjects(cat, schoolLanguage), ...customSubjects],
+    knownSubjects,
     columns,
     Object.values(breakdown).flat().map((c) => c.desc).filter(Boolean),
   );
-  const lines = (subject, tahun) => (format && tahun ? format(subject, tahun) : [subject, tahun]);
+  // The CONTOH can put its example subject on line 2 instead ("CEMERLANG⏎
+  // BAHASA MELAYU", line 3 just "TAHUN 4"): that spot takes each plaque's
+  // own subject, and the lines below then carry only the Tahun — otherwise
+  // every plaque repeated "BAHASA MELAYU" up there AND printed its real
+  // subject again below.
+  const posSpan = findLongestWord(positionPart1, knownSubjects);
+  const positionFor = (subject) => (posSpan
+    ? positionPart1.slice(0, posSpan.start) + subject + positionPart1.slice(posSpan.end)
+    : positionPart1);
+  const lines = (subject, tahun) => {
+    if (format && tahun) return format(subject, tahun);
+    return posSpan ? [tahun, ''] : [subject, tahun];
+  };
 
   const emitRow = (subject, column, qty) => {
     if (qty <= 0) return;
@@ -182,11 +200,11 @@ function buildMatrixRows(item, cat, header, year, positionPart1, schoolLanguage)
     classes.forEach((c) => {
       const q = Math.max(0, Number(c.qty) || 0);
       const eventLine2 = [tahunLabel, c.desc.trim()].filter(Boolean).join(' ');
-      for (let i = 0; i < q; i++) rows.push([header, year, positionPart1, ...lines(subject, eventLine2)]);
+      for (let i = 0; i < q; i++) rows.push([header, year, positionFor(subject), ...lines(subject, eventLine2)]);
       covered += q;
     });
     const remainder = qty - covered;
-    for (let i = 0; i < remainder; i++) rows.push([header, year, positionPart1, ...lines(subject, tahunLabel)]);
+    for (let i = 0; i < remainder; i++) rows.push([header, year, positionFor(subject), ...lines(subject, tahunLabel)]);
   };
 
   // `subjectsFromImport` categories keep every subject as an editable

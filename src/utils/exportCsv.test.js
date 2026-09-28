@@ -92,6 +92,27 @@ describe('CSV column remap — reference-sample lines -> CSV columns', () => {
     expect(first('TAHUN 5', 'BM TAHUN 1')).toEqual(['ACARA', 'SAINS', 'TAHUN 5']);
   });
 
+  // Real order (SK TAMAN SERI PAGI): line 2 "CEMERLANG⏎BAHASA MELAYU", line 3
+  // "TAHUN 4". Line 2 was copied as-is, so a SAINS plaque read "CEMERLANG
+  // BAHASA MELAYU" with "SAINS" printed again below it.
+  it('MP THP: a subject in line 2\'s CONTOH takes each plaque\'s own subject, and is not printed again below', () => {
+    const item = {
+      id: 'm', jenisPlak: 'PKC 263', qty: 1, categoryKey: 'MP2', blockIdx: 0,
+      detail: {
+        lines: { 'MP2::0::0': 'H', 'MP2::0::2': 'CEMERLANG\nBAHASA MELAYU', 'MP2::0::3': 'TAHUN 4' },
+        matrix: {
+          [customMatrixLabelKey('MP2', 1)]: 'BAHASA MELAYU', [matrixCellKey('MP2', 'custom-1', 'TAHUN 4')]: '1',
+          [customMatrixLabelKey('MP2', 2)]: 'SAINS', [matrixCellKey('MP2', 'custom-2', 'TAHUN 5')]: '1',
+        },
+      },
+    };
+    const { rows } = buildCsvRows({ schoolLanguage: 'SK', items: [item] }, 'MP2', [item]);
+    expect(rows.map((r) => r.slice(2, 5))).toEqual([
+      ['CEMERLANG\nBAHASA MELAYU', 'TAHUN 4', ''],
+      ['CEMERLANG\nSAINS', 'TAHUN 5', ''],
+    ]);
+  });
+
   it('MP THP (Kalau ada kelas): a CONTOH with a class after the Tahun carries each plaque\'s own class there', () => {
     const item = {
       id: 'm', jenisPlak: 'DECO LIGHT', qty: 1, categoryKey: 'MP1_KELAS', blockIdx: 0,
