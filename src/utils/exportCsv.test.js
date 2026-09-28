@@ -422,6 +422,12 @@ describe('buildCsvRows — TOKOH_SHEET NAMA MURID / Reserved', () => {
     expect(rows).toEqual([['HARI ANUGERAH 2026', '', 'TOKOH MURID', 'AHMAD BIN ALI', '', 'CPH / A', 'TOKOH']]);
   });
 
+  it('an ANUGERAH award name puts ANUGERAH alone on the first position line', () => {
+    const item = tokohItem('z', { id: 1, desc: 'ANUGERAH MURID BERPOTENSI', qty: 1, namaMurid: 'HARITH MIRZA BIN ZAINAL ABIDIN' });
+    const { rows } = buildCsvRows({ ...order, items: [item] }, 'TOKOH_SHEET', [item]);
+    expect(rows[0].slice(2, 4)).toEqual(['ANUGERAH\nMURID BERPOTENSI', 'HARITH MIRZA BIN ZAINAL ABIDIN']);
+  });
+
   it('a blank NAMA MURID engraves the TOKOH name qty times, event_line_1 blank', () => {
     const item = tokohItem('b', { id: 2, desc: 'TOKOH NILAM', qty: 3 });
     const { rows } = buildCsvRows({ ...order, items: [item] }, 'TOKOH_SHEET', [item]);
@@ -751,8 +757,8 @@ describe('buildCsvRows — dynamicMatrix with a pre-written roster column (event
     // The `year` column is retired — always blank (the year rides on the
     // two-line TAJUK BESAR now).
     expect(rows).toEqual([
-      ['SMK X\nHEM 2024', '', 'ANUGERAH KEPIMPINAN MURID CEMERLANG', 'KESHVINI A/P MUGAN', 'KETUA PENGAWAS\nLEMBAGA PENGAWAS SEKOLAH', 'OTHER - roster plak', 'Mata Pelajaran / Klas (Matrix)'],
-      ['SMK X\nHEM 2024', '', 'ANUGERAH KEPIMPINAN MURID CEMERLANG', 'LIEW YONG SHIN', 'SETIAUSAHA\nLEMBAGA PENGAWAS SEKOLAH', 'OTHER - roster plak', 'Mata Pelajaran / Klas (Matrix)'],
+      ['SMK X\nHEM 2024', '', 'ANUGERAH\nKEPIMPINAN MURID CEMERLANG', 'KESHVINI A/P MUGAN', 'KETUA PENGAWAS\nLEMBAGA PENGAWAS SEKOLAH', 'OTHER - roster plak', 'Mata Pelajaran / Klas (Matrix)'],
+      ['SMK X\nHEM 2024', '', 'ANUGERAH\nKEPIMPINAN MURID CEMERLANG', 'LIEW YONG SHIN', 'SETIAUSAHA\nLEMBAGA PENGAWAS SEKOLAH', 'OTHER - roster plak', 'Mata Pelajaran / Klas (Matrix)'],
     ]);
   });
 

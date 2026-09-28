@@ -18,9 +18,18 @@ describe('breakAcaraLine', () => {
   it('breaks after TERBAIK for TERBAIK MATA PELAJARAN', () => {
     expect(breakAcaraLine('TERBAIK MATA PELAJARAN')).toBe('TERBAIK\nMATA PELAJARAN');
   });
+  it('puts ANUGERAH alone on the first line for any other ANUGERAH wording', () => {
+    expect(breakAcaraLine('ANUGERAH LONJAKAN SAUJANA')).toBe('ANUGERAH\nLONJAKAN SAUJANA');
+    expect(breakAcaraLine('ANUGERAH MURID BERPOTENSI')).toBe('ANUGERAH\nMURID BERPOTENSI');
+    expect(breakAcaraLine('ANUGERAH SAHSIAH TERPUJI')).toBe('ANUGERAH\nSAHSIAH TERPUJI');
+    expect(breakAcaraLine('ANUGERAH MURID AKTIF')).toBe('ANUGERAH\nMURID AKTIF');
+    expect(breakAcaraLine('ANUGERAH KHAS PROGRAM PENDIDIKAN INKLUSIF')).toBe('ANUGERAH\nKHAS PROGRAM PENDIDIKAN INKLUSIF');
+    expect(breakAcaraLine('ANUGERAH KEHADIRAN')).toBe('ANUGERAH\nKEHADIRAN');
+  });
   it('leaves everything else alone, including text that already has a line break', () => {
     expect(breakAcaraLine('ANUGERAH PBD')).toBe('ANUGERAH PBD');
-    expect(breakAcaraLine('ANUGERAH KEHADIRAN')).toBe('ANUGERAH KEHADIRAN');
+    expect(breakAcaraLine('ANUGERAH MATA PELAJARAN')).toBe('ANUGERAH MATA PELAJARAN');
+    expect(breakAcaraLine('TERBAIK KESELURUHAN')).toBe('TERBAIK KESELURUHAN');
     expect(breakAcaraLine('ANUGERAH PBD\nMATA PELAJARAN TERBAIK')).toBe('ANUGERAH PBD\nMATA PELAJARAN TERBAIK');
     expect(breakAcaraLine('')).toBe('');
     expect(breakAcaraLine(undefined)).toBe('');

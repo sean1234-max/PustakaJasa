@@ -50,13 +50,13 @@ export function getExportableCategories(order) {
 // Reference Sample section is a CONTOH (layout/sizing sample), so most of
 // these are literal fixed text as typed, except where noted in
 // buildMatrixRows below.
-function getLine(item, lineIndex) {
+function getLine(item, lineIndex, generalAnugerah = true) {
   const key = `${item.categoryKey}::${item.blockIdx}::${lineIndex}`;
   const value = item.detail?.lines?.[key] || '';
   // ACARA is force-split onto two lines for "ANUGERAH PBD ..." wordings —
   // applied here too (not just at import) so typed text and older orders
   // export the same way.
-  return lineIndex === 2 ? breakAcaraLine(value) : value;
+  return lineIndex === 2 ? breakAcaraLine(value, generalAnugerah) : value;
 }
 
 function getPositionLine2(item) {
@@ -387,7 +387,9 @@ function buildRowsFromDescriptionRows(item, header, year, positionPart1, tokohNa
     //   Main Template (retired, no positionPart1) -> row desc is the
     //     position, event_line_1 blank — unchanged.
     const lonjakanStyle = !tokohNames && !!positionPart1;
-    const position = lonjakanStyle ? positionPart1 : (r.desc || '');
+    // A TOKOH row's own award name is its position — same two-line split as
+    // the ACARA line ("ANUGERAH MURID BERPOTENSI" -> "ANUGERAH" / the rest).
+    const position = lonjakanStyle ? positionPart1 : breakAcaraLine(r.desc || '');
     const eventLine1 = tokohNames
       ? (formatTokohNamaMurid(r.namaMurid, contohLine3) || contohLine3)
       : (lonjakanStyle ? (r.desc || '') : '');
@@ -627,7 +629,7 @@ export function buildCsvRows(order, categoryKey, items) {
       const posFromKelas = !!getLine(item, 'posFromKelas');
       itemRows = buildPbdMatrixRows(item, header, year, posFromKelas ? '' : getLine(item, 2), posFromKelas);
     } else if (cat?.aliranKedudukan) {
-      itemRows = buildAliranRows(item, header, year, getLine(item, 2));
+      itemRows = buildAliranRows(item, header, year, getLine(item, 2, false));
     } else if (cat?.hasNamaKelasList) {
       itemRows = buildOthersRows(item, header, year, getLine(item, 2));
     } else if (cat?.positionFromRows) {
