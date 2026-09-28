@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useState } from 'react';
 import AdminLayout from '../components/AdminLayout';
 import { fetchAiExtractionRuns, fetchAiGrammarChecks, fetchAllProfiles } from '../lib/adminApi';
 import { fetchCustomTypoWords, addCustomTypoWord, removeCustomTypoWord } from '../lib/typoWordsApi';
-import { setCustomTypoWords } from '../utils/typoCheck';
+import { setCustomTypoWords, TYPO_CHECK_DICTIONARY } from '../utils/typoCheck';
 import { loadWithRetry } from '../lib/loadWithRetry';
 
 // Per-user monthly cost caps enforced by the two Edge Functions. Mirrors the
@@ -173,7 +173,16 @@ function GrammarDictionarySection() {
       <p className="text-body-md text-on-surface-variant mb-4">
         Words the typo hint checks against while a teacher types a Reference Sample or Description field — a word one letter off from one of these (e.g. "ANIGERAH" vs "ANUGERAH") gets flagged. Add the correct spelling here; no deploy needed.
       </p>
+      <div className="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant p-5 mb-4">
+        <h4 className="text-label-bold text-on-surface-variant uppercase tracking-wider mb-3">Built-in words (fixed in code, {TYPO_CHECK_DICTIONARY.length} total)</h4>
+        <div className="flex flex-wrap gap-2">
+          {[...TYPO_CHECK_DICTIONARY].sort().map((w) => (
+            <span key={w} className="inline-flex items-center bg-surface-variant text-on-surface-variant rounded-full px-3 py-1 text-body-sm">{w}</span>
+          ))}
+        </div>
+      </div>
       <div className="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant p-5">
+        <h4 className="text-label-bold text-on-surface-variant uppercase tracking-wider mb-3">Custom words (added by Admin)</h4>
         <div className="flex gap-2 mb-4">
           <input
             className="flex-1 border border-outline-variant rounded-lg px-3 py-2 text-body-md outline-none focus:ring-2 focus:ring-primary uppercase"
