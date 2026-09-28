@@ -186,7 +186,9 @@ async function runJob(job, filename, csv) {
   } finally {
     rmSync(logPath, { force: true });
   }
-  console.log(`[${new Date().toISOString()}] ${filename} -> ${job.status} (${job.files.length} file(s))`);
+  // SEAN.jsx's own summary too — which batches were saved, skipped rows and
+  // why — so a run that "worked but made fewer files" can be read back here.
+  console.log(`[${new Date().toISOString()}] ${filename} -> ${job.status} (${job.files.length} file(s))\n${job.message}\n`);
 }
 
 function runIllustrator(scriptPath) {
