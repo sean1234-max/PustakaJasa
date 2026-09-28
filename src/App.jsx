@@ -32,6 +32,7 @@ import AdminOrders from './pages/AdminOrders';
 import AdminOrderDetail from './pages/AdminOrderDetail';
 import AdminCatalog from './pages/AdminCatalog';
 import AdminAuditLog from './pages/AdminAuditLog';
+import AdminAiUsage from './pages/AdminAiUsage';
 
 // Supabase's session lives in localStorage and survives a refresh on its
 // own, but the app's role/sekolah/etc. state doesn't — AppState restores
@@ -81,6 +82,7 @@ function AppRoutes() {
       <Route path="/admin/orders/:id" element={<RequireRole role="admin"><AdminOrderDetail /></RequireRole>} />
       <Route path="/admin/catalog" element={<RequireRole role="admin"><AdminCatalog /></RequireRole>} />
       <Route path="/admin/audit-log" element={<RequireRole role="admin"><AdminAuditLog /></RequireRole>} />
+      <Route path="/admin/ai-usage" element={<RequireRole role="admin"><AdminAiUsage /></RequireRole>} />
 
       <Route path="*" element={<Navigate to="/login" replace />} />
     </Routes>

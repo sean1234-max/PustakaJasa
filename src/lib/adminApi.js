@@ -122,3 +122,27 @@ export async function fetchAuditLog() {
   if (error) throw error;
   return data;
 }
+
+// AI spend/usage trail (see supabase/migrations/0045, 0051). RLS lets admin
+// read every row (teachers/salesmen see only their own). Capped at 1000 —
+// these tables have no row-deletion sweep yet, only a storage-file one, so
+// this bounds the query as they grow; recent activity is what the page shows.
+export async function fetchAiExtractionRuns() {
+  const { data, error } = await supabase
+    .from('ai_extraction_runs')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(1000);
+  if (error) throw error;
+  return data;
+}
+
+export async function fetchAiGrammarChecks() {
+  const { data, error } = await supabase
+    .from('ai_grammar_checks')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(1000);
+  if (error) throw error;
+  return data;
+}

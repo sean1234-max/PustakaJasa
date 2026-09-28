@@ -22,6 +22,7 @@ const NAV_ITEMS = [
   { to: '/admin/users', icon: 'group', label: 'Users', match: (p) => p === '/admin/users' },
   { to: '/admin/catalog', icon: 'inventory_2', label: 'Products', match: (p) => p === '/admin/catalog' },
   { to: '/admin/audit-log', icon: 'history', label: 'Activity Log', match: (p) => p === '/admin/audit-log' },
+  { to: '/admin/ai-usage', icon: 'monitoring', label: 'AI Usage', match: (p) => p === '/admin/ai-usage' },
 ];
 
 function SidebarLinks({ pathname, onNavigate }) {
