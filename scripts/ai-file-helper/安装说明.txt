@@ -1,0 +1,53 @@
+AI File helper —— 安装说明（每台电脑只需装一次）
+
+作用：装好之后，在这台电脑的网站上点「Generate AI File」，就会直接在这台电脑的
+Illustrator 跑。点的时候网站会先检查这台电脑：
+  - 没装这个 helper          → 跳出提示「这台电脑没有安装 AI File helper」
+  - 连不到 NAS 的 AI FILE 资料夹 → 跳出提示「这台电脑找不到这个 file path」
+  - 两个都 OK                 → 开 Illustrator 跑，跑完自动打开输出资料夹
+
+不需要 Supabase 密码、不需要 .env、不需要打 npm install。
+
+
+【Windows】
+1. 电脑要先装 Node.js（https://nodejs.org 下载 LTS，一直按下一步）。装过就跳过。
+2. 把整个 ai-file-helper 资料夹复制到这台电脑（放哪里都可以，装完可以删）。
+3. 双击 install-windows.bat
+4. 最后看到：
+     Installed. It starts automatically every time you log in.
+     AI FILE folder found: YES
+   就完成了，窗口可以关掉。以后开机会自动在背景跑。
+
+   如果是 AI FILE folder found: NO：
+   代表这台电脑现在连不到
+     \\TEQGO\Artwork\D O U B L E  W I N\#LOGO CUT\(EXCELL) MIMAKI CUTTING PLOT
+   先确认用档案总管打得开这个路径，再重新双击 install-windows.bat 检查一次。
+
+5. 第一次在网站点「Generate AI File」时，Chrome 可能会问「允许这个网站存取这台
+   装置上的其他应用程式和服务吗？」→ 按「允许」。只会问一次。
+
+
+【Mac】
+1. 先装 Node.js（同上）。
+2. Finder → 前往 → 连接服务器 → smb://TEQGO/Artwork，把 NAS 连上。
+3. 右键 install-mac.command → 打开（第一次要用右键打开，双击会被系统挡住）。
+4. 看到 AI FILE folder found: YES 就完成。
+5. 第一次跑时 Mac 可能会问「node 想要控制 Adobe Illustrator」→ 按好。
+
+
+【如果这台电脑的 NAS 路径不一样】
+在 helper 装好的资料夹里建一个 ai-file-dir.txt，里面只写一行正确路径，存档就生效，
+不用重装：
+  Windows：%LOCALAPPDATA%\PustakaJasa-AI-Helper\ai-file-dir.txt
+  Mac：   ~/Library/Application Support/PustakaJasa-AI-Helper/ai-file-dir.txt
+
+
+【出问题时】
+把这个 log 档传给 Sean：
+  Windows：%LOCALAPPDATA%\PustakaJasa-AI-Helper\helper.log
+  Mac：   ~/Library/Application Support/PustakaJasa-AI-Helper/helper.log
+
+
+【移除】
+Windows：删掉 shell:startup 里的 pustakajasa-ai-helper.vbs，再到工作管理员结束 node.exe
+Mac：   launchctl unload ~/Library/LaunchAgents/com.pustakajasa.ai-file-helper.plist

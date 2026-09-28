@@ -11,7 +11,7 @@ import { reconstructOrderDetailGroups, reconstructBlocksForCategory } from '../u
 import { getExportableCategories, splitOrderCategories, getOrderJenisPlakGroups, getPlakProductionMode, summarizeRowsForManual, buildCsvRows, rowsToCsv, buildCategoryCsvFilename, combineCsvRows, buildCombinedCsvFilename, validateExport, getInvoiceIdForJenisPlak } from '../utils/exportCsv';
 import { downloadTextFile } from '../utils/downloadBlob';
 import { getOrderImportUrl } from '../lib/storageApi';
-import { createAiFileJob, getAiFileJob, getLatestAiFileJobForOrder, getAiFileOutputUrl } from '../lib/aiFileJobsApi';
+import { getAiFileHelperStatus, startAiFileHelperJob, getAiFileHelperJob } from '../lib/aiFileHelper';
 import { getOrderChangeStamp } from '../utils/orderStamp';
 
 const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: false, matrix: false, jenisPlak: false };
@@ -104,27 +104,22 @@ export default function ProductionOrderDetail() {
   const [exportNote, setExportNote] = useState('');
   const exportNoteTimer = useRef(null);
   const [aiFileJob, setAiFileJob] = useState(null);
+  const [aiFileChecking, setAiFileChecking] = useState(false);
   const [aiFileErr, setAiFileErr] = useState('');
   const [page, setPage] = useState('summary');
 
-  // Picks up an in-flight/last job for this order on load, so a page
-  // refresh doesn't lose track of "already generating" or the last result.
+  // While this computer's AI File helper is running the job, poll it every
+  // 3s. The job lives only in that helper (no server-side record), so a page
+  // refresh just stops showing progress — the run itself carries on.
+  const activeAiFileJobId = aiFileJob && (aiFileJob.status === 'queued' || aiFileJob.status === 'running') ? aiFileJob.id : null;
   useEffect(() => {
-    if (!order) return;
-    getLatestAiFileJobForOrder(order.id).then((job) => { if (job) setAiFileJob(job); });
-  }, [order?.id]);
-
-  // While a job is pending/processing, poll every 4s for the local
-  // watcher's progress — same idea as any other "background job" status
-  // poll in this app, just simpler (no realtime channel, low volume).
-  useEffect(() => {
-    if (!aiFileJob || (aiFileJob.status !== 'pending' && aiFileJob.status !== 'processing')) return;
+    if (!activeAiFileJobId) return undefined;
     const timer = setInterval(async () => {
-      const updated = await getAiFileJob(aiFileJob.id);
-      if (updated) setAiFileJob(updated);
-    }, 4000);
+      const updated = await getAiFileHelperJob(activeAiFileJobId);
+      setAiFileJob(updated || { id: activeAiFileJobId, status: 'error', message: 'The AI File helper on this computer stopped responding.', files: [] });
+    }, 3000);
     return () => clearInterval(timer);
-  }, [aiFileJob?.id, aiFileJob?.status]);
+  }, [activeAiFileJobId]);
 
   const allCategories = useMemo(() => (effectiveOrder ? getExportableCategories(effectiveOrder) : []), [effectiveOrder]);
   // When viewing one specific invoice (see isFiltered above), drop a
@@ -249,27 +244,31 @@ export default function ProductionOrderDetail() {
     exportNoteTimer.current = setTimeout(() => setExportNote(''), 4000);
   };
 
-  const aiFileJobActive = aiFileJob && (aiFileJob.status === 'pending' || aiFileJob.status === 'processing');
+  // Runs on THIS computer only: first asks its AI File helper whether it can
+  // reach the NAS AI FILE folder, and stops with an alert if there's no
+  // helper or no folder — instead of queuing a job nobody will pick up.
+  const aiFileBusy = aiFileChecking || !!activeAiFileJobId;
   const handleGenerateAiFile = async () => {
-    if (!combinedOk || aiFileJobActive) return;
+    if (!combinedOk || aiFileBusy) return;
     setAiFileErr('');
+    setAiFileChecking(true);
     try {
-      const csv = rowsToCsv(combinedRows);
-      const filename = buildCombinedCsvFilename(order);
-      const id = await createAiFileJob(order.id, filename, csv);
-      setAiFileJob({ id, status: 'pending', result_message: null, output_paths: [] });
+      const status = await getAiFileHelperStatus();
+      if (!status) {
+        window.alert('This computer is not set up to generate AI files (the AI File helper is not running).\n\n这台电脑没有安装或没有开启 AI File helper，不能生成 AI file。');
+        return;
+      }
+      if (!status.nasOk) {
+        window.alert(`This computer can't find the AI FILE folder:\n${status.aiFileDir}\n\n这台电脑找不到这个 file path，不能生成 AI file。`);
+        return;
+      }
+      const id = await startAiFileHelperJob(buildCombinedCsvFilename(order), rowsToCsv(combinedRows));
+      setAiFileJob({ id, status: 'queued', message: '', files: [] });
     } catch (err) {
-      setAiFileErr(err.message || 'Could not queue the AI file job. Please try again.');
+      setAiFileErr(err.message || 'Could not start the AI file run. Please try again.');
+    } finally {
+      setAiFileChecking(false);
     }
-  };
-  const handleDownloadAiFileOutput = async (path) => {
-    const url = await getAiFileOutputUrl(path);
-    if (!url) { setAiFileErr('Could not download that file right now. Please try again.'); return; }
-    const a = document.createElement('a');
-    a.href = url;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
   };
 
   return (
@@ -417,31 +416,19 @@ export default function ProductionOrderDetail() {
                     </p>
                     <button
                       type="button" className="btn" style={{ marginTop: 8 }}
-                      disabled={!combinedOk || aiFileJobActive} onClick={handleGenerateAiFile}
+                      disabled={!combinedOk || aiFileBusy} onClick={handleGenerateAiFile}
                     >
-                      {aiFileJobActive ? '⏳ Generating…' : '🖨 Generate AI File'}
+                      {aiFileChecking ? 'Checking this computer…' : activeAiFileJobId ? '⏳ Generating…' : '🖨 Generate AI File'}
                     </button>
                     <p className="hint-text" style={{ marginTop: 4 }}>
-                      Queues this same combined CSV for the Illustrator machine to pick up — no need to download the CSV and run it by hand. Someone still has to be at that machine to type their name when Illustrator asks.
+                      Runs this same combined CSV in Illustrator on this computer — it needs the AI File helper installed and the NAS AI FILE folder reachable here. Type your name when Illustrator asks.
                     </p>
                     {aiFileJob && (
-                      <p className="hint-text" style={{ marginTop: 4 }}>
-                        {aiFileJob.status === 'pending' && 'Waiting for the Illustrator machine to pick this up…'}
-                        {aiFileJob.status === 'processing' && 'Running in Illustrator now…'}
-                        {aiFileJob.status === 'error' && `Failed: ${aiFileJob.result_message || 'unknown error'}`}
-                        {aiFileJob.status === 'done' && (
-                          <>
-                            Done{aiFileJob.result_message ? ` — ${aiFileJob.result_message}` : ''}.
-                            {(aiFileJob.output_paths || []).map((path) => (
-                              <button
-                                key={path} type="button" className="btn-link" style={{ marginLeft: 8 }}
-                                onClick={() => handleDownloadAiFileOutput(path)}
-                              >
-                                ⬇ {path.split('/').pop()}
-                              </button>
-                            ))}
-                          </>
-                        )}
+                      <p className="hint-text" style={{ marginTop: 4, whiteSpace: 'pre-wrap' }}>
+                        {aiFileJob.status === 'queued' && 'Waiting for Illustrator on this computer…'}
+                        {aiFileJob.status === 'running' && 'Running in Illustrator now…'}
+                        {aiFileJob.status === 'error' && `Failed: ${aiFileJob.message || 'unknown error'}`}
+                        {aiFileJob.status === 'done' && `Done — ${aiFileJob.files.length} file(s) saved to ${aiFileJob.outputFolder} (opened on this computer).`}
                       </p>
                     )}
                     {aiFileErr && <div className="login-error" style={{ marginTop: 4 }}>{aiFileErr}</div>}

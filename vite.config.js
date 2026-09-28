@@ -10,6 +10,6 @@ export default defineConfig({
     // that need `DOMParser` etc. can add `environment: 'jsdom'` per-file with
     // a `// @vitest-environment jsdom` docblock.
     environment: 'node',
-    include: ['src/**/*.test.js'],
+    include: ['src/**/*.test.js', 'scripts/**/*.test.mjs'],
   },
 })
