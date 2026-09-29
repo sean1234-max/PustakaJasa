@@ -67,6 +67,11 @@ function levenshtein(a, b) {
       dp[i][j] = a[i - 1] === b[j - 1]
         ? dp[i - 1][j - 1]
         : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+      // Two neighbouring letters swapped ("THAUN" for "TAHUN") is one typo,
+      // not two edits.
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) {
+        dp[i][j] = Math.min(dp[i][j], dp[i - 2][j - 2] + 1);
+      }
     }
   }
   return dp[m][n];

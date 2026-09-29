@@ -7,6 +7,11 @@ describe('findPossibleTypo', () => {
     expect(findPossibleTypo('BAHESA MELAYU')).toEqual({ word: 'BAHESA', suggestion: 'BAHASA' });
   });
 
+  it('flags two swapped neighbouring letters as a near-miss', () => {
+    expect(findPossibleTypo('THAUN 1')).toEqual({ word: 'THAUN', suggestion: 'TAHUN' });
+    expect(findPossibleTypo('ANUEGRAH KEHADIRAN PENUH')).toEqual({ word: 'ANUEGRAH', suggestion: 'ANUGERAH' });
+  });
+
   it('returns null for an exact match', () => {
     expect(findPossibleTypo('ANUGERAH KECEMERLANGAN MURID')).toBeNull();
   });
