@@ -215,8 +215,7 @@ describe('parseFormAnugerahExcel — ALIRAN TERBAIK (Kalau ada kelas)', () => {
     base[3] = [null, null, null, null, 'TAHUN 4'];
     base[8] = ['TAHUN', 'KEDUDUKAN', null, 'TOTAL', null, null, 'TAHUN 4', null, null, 'TAHUN 5'];
     base[9] = [null, 'DARI', 'HINGGA KE', null, null, null, 'NAMA KELAS', 'QTY', null, 'NAMA KELAS', 'QTY'];
-    // TAHUN 4 ranked PERTAMA–KELIMA (5, irrelevant to the total — each
-    // class's own QTY already IS the total), 3 Nama Kelas × 1 -> total 3.
+    // TAHUN 4 ranked PERTAMA–KELIMA, 3 Nama Kelas × 1 per place -> total 15.
     base[10] = ['TAHUN 4', 'PERTAMA', 'KELIMA', null, null, null, 'ADIL', 1, null, 'ADIL', 1];
     base[11] = ['TAHUN 5', null, null, null, null, null, 'BESTARI', 1, null, 'BESTARI', 1];
     base[12] = ['TAHUN 6', null, null, null, null, null, 'CEKAL', 1];
@@ -226,10 +225,11 @@ describe('parseFormAnugerahExcel — ALIRAN TERBAIK (Kalau ada kelas)', () => {
       r[10][3] = total; // the TOTAL column (right of HINGGA KE)
       return (parseFormAnugerahExcel(workbookFromSheets({ 'ALIRAN TERBAIK Kalau ada kelas': r })).categorized?.ALIRAN_KELAS || [])[0];
     };
-    expect(parseWithTotal(3).tahunRows[0].statedTotal).toBe(3);
-    expect(checkAliranKelasTotals(parseWithTotal(3))).toEqual([]);
-    expect(checkAliranKelasTotals(parseWithTotal(9))).toEqual([
-      { id: 'aliranktot:TAHUN 4', level: 'TAHUN 4', stated: 9, computed: 3, classSum: 3, classCount: 3 },
+    expect(parseWithTotal(15).tahunRows[0].statedTotal).toBe(15);
+    expect(checkAliranKelasTotals(parseWithTotal(15))).toEqual([]);
+    // An old form that typed the class QTY sum as the TOTAL gets flagged.
+    expect(checkAliranKelasTotals(parseWithTotal(3))).toEqual([
+      { id: 'aliranktot:TAHUN 4', level: 'TAHUN 4', stated: 3, computed: 15, classSum: 3, classCount: 3, places: 5 },
     ]);
   });
 });
@@ -237,9 +237,8 @@ describe('parseFormAnugerahExcel — ALIRAN TERBAIK (Kalau ada kelas)', () => {
 describe('ALIRAN TERBAIK (Kalau ada kelas) — import → auto TOTAL → cart → CSV', () => {
   // The "TAHUN 1" breakdown block (col G) lists ADIL/BESTARI/CEKAL — 3
   // classes for the flat TAHUN 1 → TOTAL 3. The "TAHUN 4" block (col J)
-  // lists ADIL/BESTARI/CEKAL/DINAMIK — 4 classes → TOTAL 4 (each class's
-  // own QTY is its total directly — NOT multiplied by the KEDUDUKAN range,
-  // even though TAHUN 4 is ranked PERTAMA–KELIMA). Grand total 7.
+  // lists ADIL/BESTARI/CEKAL/DINAMIK — 4 classes × 1 per place, ranked
+  // PERTAMA–KELIMA → TOTAL 20. Grand total 23.
   const r = [];
   r[0] = [null, null, null, null, 'TOLONG ISI DI SINI'];
   r[1] = [null, null, null, null, 'SEKOLAH KEBANGSAAN CONTOH\nHARI ANUGERAH 2026'];
@@ -292,37 +291,76 @@ describe('ALIRAN TERBAIK (Kalau ada kelas) — import → auto TOTAL → cart �
     return { lineValues, matrixValues: {}, rowsByBlock, plakRows: { [key]: plak }, columnsByBlock: {}, plakCatalog: catalog, schoolLanguage: 'SK' };
   };
 
-  it('each Tahun TOTAL = its own Nama Kelas sum (not multiplied by KEDUDUKAN range); cart + CSV line up', () => {
+  it('a ranked Tahun TOTAL = Nama Kelas QTY sum × KEDUDUKAN range; cart + CSV line up', () => {
     const section = (parseFormAnugerahExcel(workbookFromSheets({ 'ALIRAN TERBAIK Kalau ada kelas': r.map((x) => x || []) })).categorized?.ALIRAN_KELAS || [])[0];
     expect(section.isAliranKelas).toBe(true);
 
     const st = buildDraft(section);
     const blk = computeBlocks('ALIRAN_KELAS', st.lineValues, {}, st.rowsByBlock, st.plakRows, {}, noopUpdaters, catalog, 'SK').blocks[0];
-    expect(blk.rows.map((x) => Number(x.qty) || 0)).toEqual([3, 0, 0, 4, 0, 0]);
+    expect(blk.rows.map((x) => Number(x.qty) || 0)).toEqual([3, 0, 0, 20, 0, 0]);
     expect(blk.rows[0].qtyReadOnly && blk.rows[3].qtyReadOnly).toBe(true);
-    expect(blk.blockTotalQty).toBe(7);
+    expect(blk.blockTotalQty).toBe(23);
 
     const res = buildCategoryCartItems(st, 'ALIRAN_KELAS');
     expect(res.error).toBeUndefined();
-    expect(res.items.map((i) => i.qty).reduce((a, b) => a + b, 0)).toBe(7);
+    expect(res.items.map((i) => i.qty).reduce((a, b) => a + b, 0)).toBe(23);
 
     const { rows, skippedItemIds } = buildCsvRows({ schoolLanguage: 'SK', items: res.items }, 'ALIRAN_KELAS', res.items);
     expect(skippedItemIds).toEqual([]);
-    expect(rows).toHaveLength(7);
+    expect(rows).toHaveLength(23);
     // event_header two-line, year retired, event_line_1 = ACARA for all.
     expect(rows.every((x) => x[0] === 'SEKOLAH KEBANGSAAN CONTOH\nHARI ANUGERAH 2026' && x[1] === '' && x[3] === 'TERBAIK DALAM ALIRAN')).toBe(true);
-    // TAHUN 4 DINAMIK: qty 1, one plaque — its single position falls at
-    // the start of the range (distributeQtyOverPositions' remainder rule).
-    expect(rows.filter((x) => x[4] === 'TAHUN 4 DINAMIK')).toHaveLength(1);
-    expect(new Set(rows.filter((x) => x[4] === 'TAHUN 4 DINAMIK').map((x) => x[2])))
-      .toEqual(new Set(['PERTAMA']));
-    // The Jenis Plak footer covers the Tahun's whole range (DECO LIGHT:
-    // PERTAMA-KELIMA), so its own combined qty still equals the Tahun's
-    // full total (ADIL+BESTARI+CEKAL+DINAMIK = 4), just distributed across
-    // fewer distinct positions than the old (wrong) ×range-size behaviour.
-    expect(rows.filter((x) => x[4]?.startsWith('TAHUN 4 '))).toHaveLength(4);
+    // TAHUN 4 DINAMIK: 1 per place -> PERTAMA..KELIMA, one each.
+    expect(rows.filter((x) => x[4] === 'TAHUN 4 DINAMIK').map((x) => x[2]))
+      .toEqual(['PERTAMA', 'KEDUA', 'KETIGA', 'KEEMPAT', 'KELIMA']);
+    // DECO LIGHT covers TAHUN 4's whole range: 4 classes x 5 places.
+    expect(rows.filter((x) => x[4]?.startsWith('TAHUN 4 '))).toHaveLength(20);
     // Flat Tahuns: blank position, "TAHUN N <class>" in event_line_2.
     expect(rows.filter((x) => x[2] === '' && x[4] === 'TAHUN 1 ADIL')).toHaveLength(1);
+  });
+
+  it('each Jenis Plak\'s cart qty equals its own CSV row count when one rank range is split across plaks (ORD-9002)', () => {
+    // TAHUN 1-3 ranked PERTAMA-KETIGA, classes A/B/C × 1 per place; 1st/2nd/3rd
+    // place each on its own Jenis Plak; TAHUN 4 flat. The old proration gave
+    // the 1st-place plak 9 CSV rows and the other two 0 (blocking Production).
+    const key = 'ALIRAN_KELAS::0';
+    const classes = (id) => ['A', 'B', 'C'].map((d, i) => ({ id: id + i, desc: d, qty: '1' }));
+    const st = {
+      lineValues: { [`${key}::0`]: 'HARI ANUGERAH 2026', [`${key}::2`]: 'TERBAIK DALAM ALIRAN', [`${key}::3`]: 'PERTAMA' },
+      matrixValues: {},
+      rowsByBlock: {
+        [key]: [
+          { id: 1, desc: 'TAHUN 1', qty: '', kedudukanHingga: 3 },
+          { id: 2, desc: 'TAHUN 2', qty: '', kedudukanHingga: 3 },
+          { id: 3, desc: 'TAHUN 3', qty: '', kedudukanHingga: 3 },
+          { id: 4, desc: 'TAHUN 4', qty: '', kedudukanHingga: 0 },
+        ],
+        [`${key}::TAHUN 1::main`]: classes(10),
+        [`${key}::TAHUN 2::main`]: classes(20),
+        [`${key}::TAHUN 3::main`]: classes(30),
+        [`${key}::TAHUN 4::main`]: classes(40),
+      },
+      plakRows: {
+        [key]: [
+          { id: 50, jenisPlak: 'DECO LIGHT', posDari: 1, posHingga: 1, qty: null },
+          { id: 51, jenisPlak: 'H25 FLAT', posDari: 2, posHingga: 2, qty: null },
+          { id: 52, jenisPlak: 'BRONZE', posDari: 3, posHingga: 3, qty: null },
+          { id: 53, jenisPlak: 'FLAT 2', posDari: null, posHingga: null, qty: null },
+        ],
+      },
+      columnsByBlock: {},
+      plakCatalog: [...catalog, { code: 'BRONZE', price: 3, stockQty: 1e6, stockBaseline: 1e6 }, { code: 'FLAT 2', price: 3, stockQty: 1e6, stockBaseline: 1e6 }],
+      schoolLanguage: 'SK',
+    };
+    const res = buildCategoryCartItems(st, 'ALIRAN_KELAS');
+    expect(res.error).toBeUndefined();
+    const perPlak = res.items.map((it) => [it.jenisPlak, it.qty, buildCsvRows({ schoolLanguage: 'SK', items: [it] }, 'ALIRAN_KELAS', [it]).rows.length]);
+    expect(perPlak).toEqual([
+      ['DECO LIGHT', 9, 9], // 3 Tahun × 3 classes × PERTAMA
+      ['H25 FLAT', 9, 9],
+      ['BRONZE', 9, 9],
+      ['FLAT 2', 3, 3], // flat TAHUN 4: 3 classes × 1
+    ]);
   });
 });
 

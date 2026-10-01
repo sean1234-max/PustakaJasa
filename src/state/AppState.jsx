@@ -1034,18 +1034,19 @@ export function AppStateProvider({ children }) {
           (section.levelBreakdown || []).forEach(({ label, mainRows }) => {
             newRowsByBlock[`${key}::${label}::main`] = mainRows.map((r) => ({ id: nextRowId++, desc: r.name, qty: String(r.qty) }));
           });
-          // A Tahun whose typed TOTAL disagrees with its own Nama Kelas sum
-          // — almost always a wrong headcount. Surfaced as a Step-2
-          // question; the website always uses the class-sum figure
-          // regardless of the answer.
+          // A Tahun whose typed TOTAL disagrees with (class QTY sum ×
+          // KEDUDUKAN places) — usually an old form where QTY was typed as
+          // the class's whole total. Surfaced as a Step-2 question; the
+          // website always uses the computed figure regardless of the answer.
           if (section.isAliranKelas) {
             checkAliranKelasTotals(section).forEach((iss) => {
+              const how = iss.places > 1 ? `${iss.classSum} × ${iss.places} kedudukan` : `${iss.classSum}`;
               warnings.push({
                 type: 'choice',
                 id: `${catKey}::${iss.id}`,
                 blockIdx: 0,
                 catKey,
-                text: `${cat.label} · ${iss.level}: TOTAL dalam fail ialah ${iss.stated}, tapi ikut senarai Nama Kelas (${iss.classSum} murid) sepatutnya ${iss.computed}. Sila semak bilangan murid.`,
+                text: `${cat.label} · ${iss.level}: TOTAL dalam fail ialah ${iss.stated}, tapi ikut senarai Nama Kelas sepatutnya ${iss.computed} (${how}). QTY setiap kelas = bilangan plak untuk SETIAP kedudukan (biasanya 1), bukan jumlah. Sila semak.`,
                 options: [{ key: 'keep', label: 'OK, saya semak' }],
                 addPatches: [],
               });

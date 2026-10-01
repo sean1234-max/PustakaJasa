@@ -292,30 +292,28 @@ describe('checkLevelBreakdownMatch', () => {
 });
 
 describe('checkAliranKelasTotals', () => {
-  // Each class's own Nama Kelas QTY is its TOTAL directly — NOT multiplied
-  // by the KEDUDUKAN range size (confirmed against a real order — see
-  // computeBlocks.js's derivedFor / exportCsv.js's buildAliranRows).
-  // TAHUN 1: 6 classes × 5 = 30 pupils total, ranked PERTAMA–KESEPULUH
-  //   (hingga 10, irrelevant to the total) → teacher typed TOTAL 30 → OK.
-  // TAHUN 4: 4 classes × 1 = 4 pupils total, ranked PERTAMA–KELIMA
-  //   (hingga 5, irrelevant to the total) → teacher typed TOTAL 8 → mismatch.
+  // Each class's Nama Kelas QTY = plaques per place, so a ranked Tahun's
+  // total = class QTY sum × KEDUDUKAN range (computeBlocks.js's derivedFor).
+  // TAHUN 1: 6 classes × 1, ranked PERTAMA–KESEPULUH → 60, typed 60 → OK.
+  // TAHUN 4: 4 classes × 1, ranked PERTAMA–KELIMA → 20, but the old form
+  //   typed the class sum (4) as TOTAL → mismatch.
   // TAHUN 2: flat (no KEDUDUKAN), 3 pupils, typed TOTAL 3 → OK.
   const section = {
     tahunRows: [
-      { tahun: 'TAHUN 1', dari: 1, hingga: 10, statedTotal: 30 },
+      { tahun: 'TAHUN 1', dari: 1, hingga: 10, statedTotal: 60 },
       { tahun: 'TAHUN 2', flatQty: 3 },
-      { tahun: 'TAHUN 4', dari: 1, hingga: 5, statedTotal: 8 },
+      { tahun: 'TAHUN 4', dari: 1, hingga: 5, statedTotal: 4 },
     ],
     levelBreakdown: [
-      { label: 'TAHUN 1', mainRows: [{ name: 'S', qty: 5 }, { name: 'A', qty: 5 }, { name: 'V', qty: 5 }, { name: 'C', qty: 5 }, { name: 'D', qty: 5 }, { name: 'X', qty: 5 }] },
+      { label: 'TAHUN 1', mainRows: [{ name: 'S', qty: 1 }, { name: 'A', qty: 1 }, { name: 'V', qty: 1 }, { name: 'C', qty: 1 }, { name: 'D', qty: 1 }, { name: 'X', qty: 1 }] },
       { label: 'TAHUN 2', mainRows: [{ name: 'A', qty: 1 }, { name: 'B', qty: 1 }, { name: 'C', qty: 1 }] },
       { label: 'TAHUN 4', mainRows: [{ name: 'A', qty: 1 }, { name: 'B', qty: 1 }, { name: 'C', qty: 1 }, { name: 'D', qty: 1 }] },
     ],
   };
 
-  it('flags a Tahun whose typed TOTAL differs from its own Nama Kelas sum', () => {
+  it('flags a Tahun whose typed TOTAL differs from class QTY sum × places', () => {
     expect(checkAliranKelasTotals(section)).toEqual([
-      { id: 'aliranktot:TAHUN 4', level: 'TAHUN 4', stated: 8, computed: 4, classSum: 4, classCount: 4 },
+      { id: 'aliranktot:TAHUN 4', level: 'TAHUN 4', stated: 4, computed: 20, classSum: 4, classCount: 4, places: 5 },
     ]);
   });
 

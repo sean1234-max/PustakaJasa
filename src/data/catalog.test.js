@@ -3,37 +3,10 @@ import {
   flattenPlakCatalog, standardUnitPrice, tahunRangeYears,
   stockZoneFor, getStockStatus, statusPillStyle, STATUS_STAGES, ORDER_STATUSES,
   deliveryStageForShipmentDate, resolveSelempangWarna,
-  MALAY_ORDINALS, ordinalToNum, numToOrdinal, distributeQtyOverPositions,
+  MALAY_ORDINALS, ordinalToNum, numToOrdinal,
   CATEGORIES, makeDynamicCategoryKey, isDynamicCategoryKey, resolveCategory, categoriesUsedByItems,
   filterHiddenPlakCatalog, getLowStockAlerts,
 } from './catalog';
-
-describe('distributeQtyOverPositions', () => {
-  it('splits evenly when it divides exactly', () => {
-    expect(distributeQtyOverPositions(6, 3)).toEqual([2, 2, 2]);
-  });
-
-  it('puts the remainder on the earliest positions', () => {
-    expect(distributeQtyOverPositions(7, 3)).toEqual([3, 2, 2]);
-  });
-
-  it('a qty smaller than the position count puts 1 on each of the earliest positions, 0 elsewhere', () => {
-    expect(distributeQtyOverPositions(1, 5)).toEqual([1, 0, 0, 0, 0]);
-    expect(distributeQtyOverPositions(3, 5)).toEqual([1, 1, 1, 0, 0]);
-  });
-
-  it('always sums back to the exact original qty', () => {
-    for (const [qty, positions] of [[180, 20], [4, 5], [9, 4], [0, 5], [23, 1]]) {
-      expect(distributeQtyOverPositions(qty, positions).reduce((a, b) => a + b, 0)).toBe(qty);
-    }
-  });
-
-  it('handles 0 positions / negative or missing input without throwing', () => {
-    expect(distributeQtyOverPositions(5, 0)).toEqual([]);
-    expect(distributeQtyOverPositions(-3, 4)).toEqual([0, 0, 0, 0]);
-    expect(distributeQtyOverPositions(undefined, 3)).toEqual([0, 0, 0]);
-  });
-});
 
 describe('makeDynamicCategoryKey / isDynamicCategoryKey / resolveCategory', () => {
   it('resolves a standard key exactly as before (no dynamic prefix)', () => {

@@ -1015,8 +1015,9 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
           </div>
 
           {/* ALIRAN TERBAIK (Kalau ada kelas) — per-Tahun Nama Kelas list.
-              Each Tahun's TOTAL above is (Nama Kelas QTY sum) × (its
-              KEDUDUKAN range), auto-computed and read-only. While editing,
+              A ranked Tahun's class QTY = plaques per place, so its TOTAL
+              above is (Nama Kelas QTY sum) × (its KEDUDUKAN range),
+              auto-computed and read-only. While editing,
               every Tahun gets a (possibly empty) table so the teacher can
               add classes anywhere; a read-only review shows only the Tahuns
               that actually have a list. */}
@@ -1031,12 +1032,17 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
               {shown.map((lb) => (
                 <div key={lb.level} style={{ marginTop: 'var(--space-3)' }}>
                   <div className="card-kicker">{lb.level}</div>
+                  {lb.places > 0 && (
+                    <p className="hint-text">
+                      QTY = berapa plak untuk SETIAP kedudukan (PERTAMA–{MALAY_ORDINALS[lb.places - 1]}), biasanya 1.
+                    </p>
+                  )}
                   <div className="table-wrap">
                     <table className="table">
                       <thead>
                         <tr>
                           <th>Nama Kelas</th>
-                          <th style={{ width: 90, textAlign: 'center' }}>QTY</th>
+                          <th style={{ width: 90, textAlign: 'center' }}>{lb.places > 0 ? 'QTY SETIAP KEDUDUKAN' : 'QTY'}</th>
                           {editable.addRemoveRows && <th style={{ width: 44 }} />}
                         </tr>
                       </thead>
@@ -1055,8 +1061,8 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
                           </tr>
                         ))}
                         <tr>
-                          <td><strong>BILANGAN KELAS</strong></td>
-                          <td style={{ textAlign: 'center' }}><strong>{lb.mainRows.reduce((s, r) => s + (Number(r.qty) || 0), 0)}</strong></td>
+                          <td><strong>JUMLAH PLAK</strong></td>
+                          <td style={{ textAlign: 'center' }}><strong>{lb.mainRows.reduce((s, r) => s + ((r.desc || '').trim() ? (Number(r.qty) || 0) : 0), 0) * (lb.places || 1)}</strong></td>
                           {editable.addRemoveRows && <td />}
                         </tr>
                       </tbody>

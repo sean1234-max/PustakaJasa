@@ -628,29 +628,28 @@ describe('buildCsvRows — ALIRAN TERBAIK (Kalau ada kelas)', () => {
     posDari, posHingga, detail: rowsByBlockLikeDetail,
   });
 
-  it('ranged plak spanning a Tahun\'s WHOLE own range claims every class\'s full QTY', () => {
+  it('class QTY = plaques per place: a plak spanning a Tahun\'s whole range gives every class QTY at each place', () => {
     const { rows } = buildCsvRows({ schoolLanguage: 'SK', items: [mk('GOLD', 1, 5)] }, 'ALIRAN_KELAS', [mk('GOLD', 1, 5)]);
-    // TAHUN 4 (KEDUDUKAN 1-5): GOLD's 1-5 spans it entirely -> all 3
-    // classes' QTY 1 each = 3 rows, every one landing at PERTAMA (see
-    // distributeQtyOverPositions(1, 5)'s remainder-to-earliest rule).
-    expect(rows).toHaveLength(3);
-    expect(rows.filter((r) => r[2] === 'PERTAMA' && r[4] === 'TAHUN 4 ADIL')).toHaveLength(1);
-    expect(rows.filter((r) => r[4] === 'TAHUN 4 CEKAL')).toHaveLength(1);
+    // TAHUN 4 (KEDUDUKAN 1-5): 3 classes, QTY 1 each = 1 plaque per place
+    // -> 3 classes x 5 places = 15 rows, PERTAMA..KELIMA once per class.
+    expect(rows).toHaveLength(15);
+    expect(rows.filter((r) => r[4] === 'TAHUN 4 ADIL').map((r) => r[2]))
+      .toEqual(['PERTAMA', 'KEDUA', 'KETIGA', 'KEEMPAT', 'KELIMA']);
+    expect(rows.filter((r) => r[4] === 'TAHUN 4 CEKAL')).toHaveLength(5);
     expect(rows.every((r) => r[1] === '' && r[3] === 'TERBAIK DALAM ALIRAN')).toBe(true);
   });
 
-  it('a footer covering only PART of a Tahun\'s own range claims just its prorated share, not the whole class', () => {
+  it('a footer covering only PART of a Tahun\'s own range takes just those places, for every class', () => {
     // A real school's sheet splits a Tahun's own ranked places across
-    // several Jenis Plak (1st place = GOLD, 2nd-5th = SILVER) rather than
-    // one plak per whole Tahun — GOLD's 1-1 here only takes each class's
-    // own "1st place" share of its QTY, same idea as plain ALIRAN's
-    // footer already splitting one Tahun's range this way.
-    const { rows } = buildCsvRows({ schoolLanguage: 'SK', items: [mk('GOLD', 1, 1)] }, 'ALIRAN_KELAS', [mk('GOLD', 1, 1)]);
-    // distributeQtyOverPositions(1, 5) = [1,0,0,0,0] per class (QTY 1 each,
-    // remainder goes to the earliest place) -> position 1 alone gets 1 per
-    // class = 3 rows total (one per TAHUN 4 class), all at PERTAMA.
-    expect(rows).toHaveLength(3);
-    expect(rows.every((r) => r[2] === 'PERTAMA' && r[4]?.startsWith('TAHUN 4 '))).toBe(true);
+    // several Jenis Plak (1st place = GOLD, 2nd-5th = SILVER).
+    const gold = mk('GOLD', 1, 1);
+    const silver = mk('SILVER', 2, 5);
+    const { rows: goldRows } = buildCsvRows({ schoolLanguage: 'SK', items: [gold] }, 'ALIRAN_KELAS', [gold]);
+    const { rows: silverRows } = buildCsvRows({ schoolLanguage: 'SK', items: [silver] }, 'ALIRAN_KELAS', [silver]);
+    expect(goldRows).toHaveLength(3); // 3 classes x PERTAMA
+    expect(goldRows.every((r) => r[2] === 'PERTAMA' && r[4]?.startsWith('TAHUN 4 '))).toBe(true);
+    expect(silverRows).toHaveLength(12); // 3 classes x KEDUA..KELIMA
+    expect(silverRows.some((r) => r[2] === 'PERTAMA')).toBe(false);
   });
 
   it('a footer\'s range wider than a narrower Tahun\'s own KEDUDUKAN still claims that Tahun\'s full QTY (clamped), same as plain ALIRAN', () => {
@@ -669,18 +668,20 @@ describe('buildCsvRows — ALIRAN TERBAIK (Kalau ada kelas)', () => {
       id: jenisPlak, jenisPlak, qty: 0, categoryKey: 'ALIRAN_KELAS', blockIdx: 0, posDari, posHingga, detail,
     });
     const { rows: goldRows } = buildCsvRows({ schoolLanguage: 'SK', items: [item('GOLD', 1, 5)] }, 'ALIRAN_KELAS', [item('GOLD', 1, 5)]);
-    // TAHUN 4's own 3 classes (QTY 1 each) in full, PLUS TAHUN 5's DINAMIK
-    // (QTY 2) in full since 1-5 clamped to TAHUN 5's own 1-3 is its whole range.
-    expect(goldRows.filter((r) => r[4]?.startsWith('TAHUN 4 '))).toHaveLength(3);
-    expect(goldRows.filter((r) => r[4] === 'TAHUN 5 DINAMIK')).toHaveLength(2);
+    // TAHUN 4: 3 classes x 1 per place x 5 places; TAHUN 5: 1-5 clamped to
+    // its own 1-3 -> DINAMIK's 2 per place x 3 places.
+    expect(goldRows.filter((r) => r[4]?.startsWith('TAHUN 4 '))).toHaveLength(15);
+    expect(goldRows.filter((r) => r[4] === 'TAHUN 5 DINAMIK')).toHaveLength(6);
+    expect(goldRows.some((r) => r[4] === 'TAHUN 5 DINAMIK' && r[2] === 'KEEMPAT')).toBe(false);
   });
 
   it('real-school shape: every Tahun ranked 1st-3rd, split into GOLD/SILVER/BRONZE by rank — each footer gets exactly one row per class', () => {
-    // Reported bug: a school's real sheet has every Tahun's own KEDUDUKAN
-    // as PERTAMA-KETIGA (every class has 3 winners), with THREE separate
-    // Jenis Plak footers — PERTAMA-PERTAMA (GOLD), KEDUA-KEDUA (SILVER),
-    // KETIGA-KETIGA (BRONZE) — instead of one plak per whole Tahun. Every
-    // class's QTY 3 must split 1/1/1 across the three footers.
+    // A school's real sheet has every Tahun's own KEDUDUKAN as
+    // PERTAMA-KETIGA (every class has 3 winners), with THREE separate Jenis
+    // Plak footers — PERTAMA-PERTAMA (GOLD), KEDUA-KEDUA (SILVER),
+    // KETIGA-KETIGA (BRONZE). QTY 1 per class = one plaque at each place.
+    // (ORD-9002 regression: the old "QTY = class total" proration gave GOLD
+    // everything and SILVER/BRONZE zero rows, blocking Production's export.)
     const detail = {
       lines: rowsByBlockLikeDetail.lines,
       rows: [
@@ -688,8 +689,8 @@ describe('buildCsvRows — ALIRAN TERBAIK (Kalau ada kelas)', () => {
         { id: 2, desc: 'TAHUN 2', qty: '', kedudukanHingga: 3 },
       ],
       namaKelasBreakdown: {
-        'ALIRAN_KELAS::0::TAHUN 1::main': [{ id: 10, desc: 'ZAMRUB', qty: '3' }, { id: 11, desc: 'DELIMA', qty: '3' }],
-        'ALIRAN_KELAS::0::TAHUN 2::main': [{ id: 12, desc: 'TOPAZ', qty: '3' }],
+        'ALIRAN_KELAS::0::TAHUN 1::main': [{ id: 10, desc: 'ZAMRUB', qty: '1' }, { id: 11, desc: 'DELIMA', qty: '1' }],
+        'ALIRAN_KELAS::0::TAHUN 2::main': [{ id: 12, desc: 'TOPAZ', qty: '1' }],
       },
     };
     const item = (jenisPlak, posDari, posHingga) => ({

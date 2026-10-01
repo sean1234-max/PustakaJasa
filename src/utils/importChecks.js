@@ -145,14 +145,14 @@ export function checkLevelBreakdownMatch(section) {
   return issues;
 }
 
-// ALIRAN TERBAIK (Kalau ada kelas): each Tahun's plaque count IS (sum of
-// its Nama Kelas QTY) directly — the teacher's own QTY there is already
-// that class's final total, not a per-position count, so it is NOT
-// multiplied by the KEDUDUKAN range size (confirmed against a real order —
-// see the matching fix in computeBlocks.js's derivedFor). The website
-// always uses that class-sum figure, but when the sheet's own typed TOTAL
-// is present and disagrees it usually means a wrong class headcount —
-// returned for the teacher to check on Step 2, never auto-changed.
+// ALIRAN TERBAIK (Kalau ada kelas): each class's Nama Kelas QTY is how many
+// plaques EVERY place gets, so a ranked Tahun's plaque count is (sum of its
+// class QTYs) × its KEDUDUKAN range (`hingga` — DARI is always PERTAMA), a
+// flat Tahun's just the sum — same as computeBlocks.js's derivedFor. The
+// website always uses that figure; when the sheet's own typed TOTAL is
+// present and disagrees it's returned for the teacher to check on Step 2,
+// never auto-changed. The usual cause is an old form whose class QTY was
+// typed as the class's whole total (e.g. 5 for PERTAMA–KELIMA, 1 each).
 //
 // `section` is a freshly-parsed ALIRAN_KELAS section (excelImport.js's
 // parseAliranKelasSheet): `tahunRows` carry `hingga` + `statedTotal` (or
@@ -175,7 +175,8 @@ export function checkAliranKelasTotals(section) {
     if (!cs || cs.classSum <= 0) return;
     const stated = tr.statedTotal != null ? tr.statedTotal : (tr.flatQty ?? null);
     if (stated == null) return;
-    const computed = cs.classSum;
+    const places = tr.hingga || 1;
+    const computed = cs.classSum * places;
     if (stated === computed) return;
     issues.push({
       id: `aliranktot:${tr.tahun}`,
@@ -184,6 +185,7 @@ export function checkAliranKelasTotals(section) {
       computed,
       classSum: cs.classSum,
       classCount: cs.classCount,
+      places,
     });
   });
   return issues;

@@ -4,7 +4,7 @@ import {
   getCategoryLinePlaceholders, getCategoryPositionLine2Placeholder,
   getCategoryTahunPlaceholder, getCategoryNamaKelasPlaceholder,
   resolveSelempangWarna, SELEMPANG_CODE, SELEMPANG_UNIT_PRICE, getStockStatus,
-  resolveCategory, categoriesUsedByItems, distributeQtyOverPositions,
+  resolveCategory, categoriesUsedByItems,
 } from '../data/catalog';
 import { findPossibleTypo } from './typoCheck';
 
@@ -571,12 +571,12 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
       if (currentCat.aliranKedudukan) {
         const nk = !!currentCat.aliranNamaKelas;
         // "Kalau ada kelas": each Tahun's own Nama Kelas list (stored the
-        // PPKI way — `${catKey}::${b}::${tahun}::main`). classQty = sum of
-        // its QTY — that sum IS the Tahun's own TOTAL directly (confirmed
-        // against a real order: the teacher already types the class's
-        // final total there, not a per-position count — NOT multiplied by
-        // the KEDUDUKAN range size), auto-computed and read-only. A Tahun
-        // with no list falls back to plain ALIRAN.
+        // PPKI way — `${catKey}::${b}::${tahun}::main`). Each class's QTY is
+        // how many plaques EVERY place gets (usually 1 — "PERTAMA–KELIMA, 1
+        // each" = 5 plaques for that class), so a ranked Tahun's TOTAL =
+        // (sum of its class QTYs) × its KEDUDUKAN range; a flat Tahun's is
+        // just the sum. Auto-computed and read-only. A Tahun with no list
+        // falls back to plain ALIRAN.
         const classQtyFor = (row) => {
           if (!nk) return 0;
           const list = rowsByBlockMap[`${catKey}::${b}::${row.desc}::main`] || [];
@@ -585,7 +585,7 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
         const derivedFor = (row) => {
           const hingga = Number(row.kedudukanHingga) || 0;
           const cq = classQtyFor(row);
-          if (cq > 0) return cq;
+          if (cq > 0) return hingga > 0 ? cq * hingga : cq;
           return hingga > 0 ? hingga : (Number(row.qty) || 0);
         };
         rows = rawRows.map((row) => {
@@ -613,6 +613,7 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
             const listKey = `${catKey}::${b}::${row.desc}::main`;
             return {
               level: row.desc,
+              places: Number(row.kedudukanHingga) || 0,
               mainRows: (rowsByBlockMap[listKey] || []).map((r) => ({
                 id: r.id, desc: r.desc || '', qty: r.qty || '',
                 setDesc: (v) => updaters.onLevelKelasField(listKey, r.id, 'desc', v),
@@ -633,15 +634,11 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
         // (e.g. 1st-3rd = one plak, 4th-10th = another). "Kalau ada kelas"
         // shares that same "footer covers a place sub-range" shape (a real
         // school's sheet splits GOLD/SILVER/BRONZE by 1st/2nd/3rd place
-        // within every class, same as plain ALIRAN) — a Tahun's classQty is
-        // prorated across ITS OWN [1..n] places via distributeQtyOverPositions
-        // (same helper the CSV export side already uses), and the footer's
-        // [d..h] claims whichever of those place-buckets it covers, clamped
-        // to that Tahun's own n. d=1,h=n (the footer spans a Tahun's whole
-        // range) still returns the Tahun's full classQty exactly — the one
-        // real-order-confirmed "one Jenis Plak per whole Tahun" case is a
-        // special case of this, not a separate rule. A footer row with no
-        // range (posDari null) takes the flat-KEDUDUKAN TAHUNs' own totals.
+        // within every class) — each place it covers is worth that Tahun's
+        // class-QTY sum (every class gets QTY plaques per place), clamped to
+        // the Tahun's own n; a Tahun with no class list adds nothing here.
+        // A footer row with no range (posDari null) takes the flat-KEDUDUKAN
+        // TAHUNs' own totals.
         const flatTotal = rawRows.reduce((s, r) => s + ((Number(r.kedudukanHingga) || 0) > 0 ? 0 : derivedFor(r)), 0);
         aliranPlakQty = (pr) => {
           if (!pr.posDari) return flatTotal;
@@ -650,17 +647,8 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
           return rawRows.reduce((sum, r) => {
             const n = Number(r.kedudukanHingga) || 0;
             if (n <= 0) return sum;
-            if (nk) {
-              const cq = classQtyFor(r);
-              if (cq <= 0) return sum;
-              const buckets = distributeQtyOverPositions(cq, n);
-              const hi = Math.min(h, n);
-              let share = 0;
-              for (let p = d; p <= hi; p += 1) share += buckets[p - 1] || 0;
-              return sum + share;
-            }
             const places = Math.max(0, Math.min(h, n) - d + 1);
-            return sum + places;
+            return sum + (nk ? classQtyFor(r) * places : places);
           }, 0);
         };
       }

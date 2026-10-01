@@ -70,30 +70,6 @@ export function numToOrdinal(n) {
   return MALAY_ORDINALS[n - 1] || '';
 }
 
-// Splits `qty` as evenly as possible across `positions` 1-indexed slots,
-// any remainder going to the EARLIEST slots — e.g.
-// distributeQtyOverPositions(7, 3) => [3, 2, 2] (index 0 = position 1).
-// ALIRAN TERBAIK (Kalau ada kelas): a class's own Nama Kelas QTY is its
-// TOTAL for that Tahun (confirmed against a real order — NOT multiplied by
-// the KEDUDUKAN range size), but the JENIS PLAK footer can still split
-// that Tahun's own position range across more than one Jenis Plak (same
-// feature plain ALIRAN's footer already has) — this prorates the class's
-// total across the Tahun's positions so each footer's own sub-range gets
-// its fair, whole-number share, and every footer's shares always sum back
-// to the class's exact total (no double-count, no rounding drift). Shared
-// by computeBlocks.js's aliranPlakQty (the live cart-quantity preview) and
-// exportCsv.js's buildAliranRows (the actual CSV row count) — both MUST
-// stay in agreement, or the cart total and the exported plaque count would
-// silently disagree.
-export function distributeQtyOverPositions(qty, positions) {
-  const n = Math.max(0, Number(positions) || 0);
-  if (n === 0) return [];
-  const total = Math.max(0, Number(qty) || 0);
-  const base = Math.floor(total / n);
-  const remainder = total % n;
-  return Array.from({ length: n }, (_, i) => base + (i < remainder ? 1 : 0));
-}
-
 // Same TODO applies: class-level labels for the MP THP 1/2 matrix columns,
 // only PPKI kept untranslated (national programme name, used as-is).
 // PRA PPKI/PPKI/PRASEKOLAH are their own separate PPKI category below —
@@ -394,9 +370,10 @@ export const CATEGORIES = [
   {
     // ALIRAN TERBAIK (Kalau ada kelas) — same left table + JENIS PLAK footer
     // as ALIRAN above, PLUS a per-Tahun "Nama Kelas / QTY" breakdown (like
-    // PBD's). `aliranNamaKelas` turns each Tahun's TOTAL into an
-    // auto-computed value: (sum of that Tahun's Nama Kelas QTY) × (its
-    // KEDUDUKAN range size, or 1 if no KEDUDUKAN). Each plaque engraves the
+    // PBD's). Each class's QTY = plaques per place (usually 1).
+    // `aliranNamaKelas` turns each Tahun's TOTAL into an auto-computed
+    // value: (sum of that Tahun's Nama Kelas QTY) × (its KEDUDUKAN range
+    // size, or 1 if no KEDUDUKAN). Each plaque engraves the
     // ordinal in `position`, ACARA in event_line_1, and "TAHUN N <Nama
     // Kelas>" in event_line_2. A Tahun with no Nama Kelas list falls back to
     // plain ALIRAN behaviour. A school fills in ONE of the two ALIRAN sheets.
