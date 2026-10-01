@@ -364,6 +364,28 @@ describe('ALIRAN TERBAIK (Kalau ada kelas) — import → auto TOTAL → cart �
   });
 });
 
+describe('parseFormAnugerahExcel — UMUM (万能) sheet (no importer yet)', () => {
+  // Rows shaped like the UMUM template: header row, two grey CONTOH example
+  // rows (with their own example quantities), then the teacher's rows.
+  const umum = (teacherQty) => [
+    ['TOLONG ISI DI SINI'],
+    ['No.', '①', '②', '③', '④', 'KUANTITI', 'JENIS PLAK'],
+    ['CONTOH', null, null, null, null, 5, 'PKC 263'],
+    ['CONTOH', null, 'NAIB JOHAN', null, null, 2, 'PKC 263'],
+    [1, null, null, null, null, teacherQty, null],
+  ];
+
+  it('an untouched UMUM sheet (headings + CONTOH rows only) is not reported as unrecognized', () => {
+    const parsed = parseFormAnugerahExcel(workbookFromSheets({ 'UMUM (万能)': umum(null) }));
+    expect(parsed.unrecognizedSheets || []).toEqual([]);
+  });
+
+  it('a real order typed into the UMUM sheet is reported so it gets keyed in by hand', () => {
+    const parsed = parseFormAnugerahExcel(workbookFromSheets({ 'UMUM (万能)': umum(3) }));
+    expect(parsed.unrecognizedSheets).toEqual(['UMUM (万能)']);
+  });
+});
+
 describe('parseFormAnugerahExcel — renamed/duplicated template sheet becomes its own category', () => {
   // A plain ALIRAN-shaped sheet (TAHUN + KEDUDUKAN + DARI/HINGGA KE + a
   // JENIS PLAK footer), no Nama Kelas breakdown — same shape parseAliranSheet

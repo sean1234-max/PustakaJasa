@@ -116,6 +116,20 @@ function sheetRange(ws) {
 // as always) from one they actually typed something into but whose shape
 // none of the parsers below recognized (worth a warning — see
 // parseFormAnugerahExcel's `unrecognizedSheets`).
+// UMUM (万能) sheet: any KUANTITI (数量) filled in below its header, outside
+// the template's own grey CONTOH (示范) example rows.
+function umumHasOrders(ws) {
+  const range = sheetRange(ws);
+  return findLabelCells(ws, range, ['KUANTITI', '数量']).some((h) => {
+    for (let r = h.row + 1; r <= range.r2; r++) {
+      const tag = cellText(ws, r, range.c1).toUpperCase();
+      if (tag === 'CONTOH' || tag === '示范') continue;
+      if (cellNum(ws, r, h.col) > 0) return true;
+    }
+    return false;
+  });
+}
+
 function sheetHasContent(ws) {
   const range = sheetRange(ws);
   for (let r = range.r1; r <= range.r2; r++) {
@@ -1777,6 +1791,14 @@ export function parseFormAnugerahExcel(arrayBuffer) {
       || upper === 'MP THP 1' || upper === 'MP THP 2' || upper === 'SELEMPANG'
       || upper === 'MP THP 1 (KALAU ADA KELAS)' || upper === 'MP THP 2 (KALAU ADA KELAS)') return;
     const ws = wb.Sheets[name];
+
+    // The UMUM (万能) general-purpose sheet has no importer yet. Its own
+    // headings and grey CONTOH rows mustn't raise "unrecognized" on every
+    // upload, but a real order typed into it still must.
+    if (upper.includes('万能') || upper.startsWith('UMUM')) {
+      if (umumHasOrders(ws)) unrecognizedSheets.push(name);
+      return;
+    }
 
     // A renamed/duplicated copy of an ALIRAN TERBAIK-shaped template (a
     // teacher reusing that layout for a second, differently-named event —
