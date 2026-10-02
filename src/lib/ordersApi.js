@@ -1,8 +1,13 @@
 import { supabase } from './supabaseClient';
+import { malaysiaDayIso } from '../data/catalog';
 
 // Maps between the camelCase order shape used throughout the app
 // (src/state/AppState.jsx, src/data/seedOrders.js) and the snake_case
 // columns of the `orders` table (supabase/migrations/0001_orders.sql).
+
+// A day picked on a date picker (a Date) is saved as that day's Malaysian
+// midnight; an already-stored string is kept as-is.
+const storedDay = (v) => (v instanceof Date ? malaysiaDayIso(v) : v ?? null);
 
 function toDbOrder(order) {
   return {
@@ -27,8 +32,8 @@ function toDbOrder(order) {
     // to null here, not just undefined/null.
     terms: order.terms || null,
     remark: order.remark ?? null,
-    shipment_date: order.shipmentDate ?? null,
-    function_date: order.functionDate ?? null,
+    shipment_date: storedDay(order.shipmentDate),
+    function_date: storedDay(order.functionDate),
     logo_data_url: order.logoDataUrl ?? null,
     logo_file_name: order.logoFileName ?? null,
     logo_remark: order.logoRemark ?? null,

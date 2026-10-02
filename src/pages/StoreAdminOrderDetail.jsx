@@ -6,7 +6,7 @@ import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import PriceTable from '../components/PriceTable';
 import DatePicker from '../components/DatePicker';
 import { useAppState } from '../state/useAppState';
-import { statusPillStyle, formatDate, standardUnitPrice } from '../data/catalog';
+import { statusPillStyle, formatDate, standardUnitPrice, toMalaysiaDay, malaysiaToday } from '../data/catalog';
 import { reconstructBlocksForCategory } from '../utils/computeBlocks';
 import { splitOrderCategories, getInvoiceIdForJenisPlak } from '../utils/exportCsv';
 import { combineByJenisPlak, getInvoiceItems, partialSplitQty } from '../utils/orderBatches';
@@ -344,8 +344,8 @@ export default function StoreAdminOrderDetail() {
   // Production'). A Salesman who's out of office can hand Store Admin the
   // paper hard copy to key the Shipment Date + Invoice Number here,
   // force-approving it straight into Production.
-  const [shipmentDateDraft, setShipmentDateDraft] = useState(() => (order?.shipmentDate ? new Date(order.shipmentDate) : null));
-  const [functionDateDraft, setFunctionDateDraft] = useState(() => (order?.functionDate ? new Date(order.functionDate) : null));
+  const [shipmentDateDraft, setShipmentDateDraft] = useState(() => (order?.shipmentDate ? toMalaysiaDay(order.shipmentDate) : null));
+  const [functionDateDraft, setFunctionDateDraft] = useState(() => (order?.functionDate ? toMalaysiaDay(order.functionDate) : null));
   const [dateError, setDateError] = useState('');
 
   // Same pattern as SalesOrderSummary's own priceDrafts — only meaningful
@@ -507,7 +507,7 @@ export default function StoreAdminOrderDetail() {
                   {dateError && <div className="login-error" style={{ gridColumn: '1 / -1', margin: 0 }}>{dateError}</div>}
                   {/* Same non-blocking heads-up as SalesOrderSummary.jsx — see
                       urgentOrder.js. No override control. */}
-                  {shipmentDateDraft && isUrgentShipment(today, shipmentDateDraft) && (
+                  {shipmentDateDraft && isUrgentShipment(malaysiaToday(), shipmentDateDraft) && (
                     <p className="urgent-hint" style={{ gridColumn: '1 / -1', margin: 0 }}>
                       ⚡ This Shipment Date is less than 5 working days away — the order will be marked Urgent once approved.
                     </p>
@@ -515,8 +515,8 @@ export default function StoreAdminOrderDetail() {
                 </>
               ) : (
                 <>
-                  {order.shipmentDate && <div><div className="dim">Shipment Date</div><div>{formatDate(new Date(order.shipmentDate))}</div></div>}
-                  {order.functionDate && <div><div className="dim">Function Date</div><div>{formatDate(new Date(order.functionDate))}</div></div>}
+                  {order.shipmentDate && <div><div className="dim">Shipment Date</div><div>{formatDate(toMalaysiaDay(order.shipmentDate))}</div></div>}
+                  {order.functionDate && <div><div className="dim">Function Date</div><div>{formatDate(toMalaysiaDay(order.functionDate))}</div></div>}
                 </>
               )}
               <div><div className="dim">Order Date</div><div>{order.datePlaced}</div></div>

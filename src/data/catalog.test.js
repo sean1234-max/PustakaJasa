@@ -6,6 +6,7 @@ import {
   MALAY_ORDINALS, ordinalToNum, numToOrdinal,
   CATEGORIES, makeDynamicCategoryKey, isDynamicCategoryKey, resolveCategory, categoriesUsedByItems,
   filterHiddenPlakCatalog, getLowStockAlerts,
+  parseDisplayDate, defaultShipmentDate, toMalaysiaDay, malaysiaDayIso,
 } from './catalog';
 
 describe('makeDynamicCategoryKey / isDynamicCategoryKey / resolveCategory', () => {
@@ -262,10 +263,10 @@ describe('statusPillStyle', () => {
 
 describe('deliveryStageForShipmentDate', () => {
   const today = new Date(2026, 8, 10); // 10 Sep 2026, local midnight
-  // shipmentDate reaches this function as the ISO string supabase-js produced
-  // from a JS Date; build the fixtures the same way so the test doesn't
-  // depend on the runner's timezone.
-  const shipISO = (y, m, d) => new Date(y, m, d, 12).toISOString();
+  // shipmentDate reaches this function as the stored string — a picked day
+  // saved as its Malaysian midnight (malaysiaDayIso); build the fixtures the
+  // same way so the test doesn't depend on the runner's timezone.
+  const shipISO = (y, m, d) => malaysiaDayIso(new Date(y, m, d));
 
   it('is Waiting for Delivery when the Shipment Date is still ahead', () => {
     expect(deliveryStageForShipmentDate(shipISO(2026, 8, 12), today)).toBe('Waiting for Delivery');
@@ -301,5 +302,53 @@ describe('resolveSelempangWarna', () => {
     expect(resolveSelempangWarna('')).toBeNull();
     expect(resolveSelempangWarna(null)).toBeNull();
     expect(resolveSelempangWarna('9999')).toBeNull();
+  });
+});
+
+describe('defaultShipmentDate — Sales\' Shipment Date starts a week after the order was placed', () => {
+  const day = (y, m, d) => new Date(y, m - 1, d);
+
+  it('reads formatDate\'s own "02 Oct 2026"', () => {
+    expect(parseDisplayDate('02 Oct 2026')).toEqual(day(2026, 10, 2));
+    expect(parseDisplayDate('not a date')).toBeNull();
+  });
+
+  it('placed 2 Oct → 9 Oct', () => {
+    expect(defaultShipmentDate('02 Oct 2026', day(2026, 10, 2), null)).toEqual(day(2026, 10, 9));
+  });
+
+  it('never before today (an order approved long after it was placed)', () => {
+    expect(defaultShipmentDate('02 Oct 2026', day(2026, 10, 20), null)).toEqual(day(2026, 10, 20));
+  });
+
+  it('never after the Function Date', () => {
+    expect(defaultShipmentDate('02 Oct 2026', day(2026, 10, 2), day(2026, 10, 6))).toEqual(day(2026, 10, 6));
+  });
+
+  it('no readable placed date → a week from today', () => {
+    expect(defaultShipmentDate('', day(2026, 10, 2), null)).toEqual(day(2026, 10, 9));
+  });
+});
+
+describe('Malaysia dates — the project always runs on Asia/Kuala_Lumpur', () => {
+  const day = (y, m, d) => new Date(y, m - 1, d);
+
+  it('a stored timestamp reads back as its Malaysian day (old UTC-saved and new +08:00 forms)', () => {
+    expect(toMalaysiaDay('2026-10-08T16:00:00.000Z')).toEqual(day(2026, 10, 9));
+    expect(toMalaysiaDay('2026-10-09T00:00:00+08:00')).toEqual(day(2026, 10, 9));
+    expect(toMalaysiaDay('2026-10-09T15:59:00Z')).toEqual(day(2026, 10, 9));
+    expect(toMalaysiaDay('2026-10-09T16:00:00Z')).toEqual(day(2026, 10, 10));
+    expect(toMalaysiaDay('')).toBeNull();
+  });
+
+  it('a picked day is saved as that day\'s Malaysian midnight, and reads back the same', () => {
+    expect(malaysiaDayIso(day(2026, 10, 9))).toBe('2026-10-09T00:00:00+08:00');
+    expect(toMalaysiaDay(malaysiaDayIso(day(2026, 10, 9)))).toEqual(day(2026, 10, 9));
+  });
+
+  it('Shipped/Completed follow the Malaysian day of the Shipment Date', () => {
+    expect(deliveryStageForShipmentDate('2026-10-08T16:00:00.000Z', day(2026, 10, 9))).toBe('Shipped');
+    expect(deliveryStageForShipmentDate('2026-10-09T00:00:00+08:00', day(2026, 10, 8))).toBe('Waiting for Delivery');
+    expect(deliveryStageForShipmentDate('2026-10-09T00:00:00+08:00', day(2026, 10, 10))).toBe('Completed');
   });
 });

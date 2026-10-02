@@ -3,9 +3,9 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import Nav from '../components/Nav';
 import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
-import PriceTable from '../components/PriceTable';
+import OrderPrintout from '../components/OrderPrintout';
 import { useAppState } from '../state/useAppState';
-import { STATUS_STAGES, statusPillStyle, formatDate, formatDateTime, standardUnitPrice } from '../data/catalog';
+import { STATUS_STAGES, statusPillStyle, formatDate, standardUnitPrice, toMalaysiaDay } from '../data/catalog';
 import CancelOrderControl from '../components/CancelOrderControl';
 import { reconstructBlocksForCategory } from '../utils/computeBlocks';
 import { splitOrderCategories } from '../utils/exportCsv';
@@ -166,8 +166,8 @@ export default function OrderDetails() {
                 {order.phone && <div><div className="dim">Phone Number</div><div>{order.phone}</div></div>}
                 {order.ketuaPanitia && <div><div className="dim">Ketua Panitia</div><div>{order.ketuaPanitia}</div></div>}
                 {order.terms && <div><div className="dim">Terms</div><div>{order.terms}</div></div>}
-                {order.shipmentDate && <div><div className="dim">Shipment Date</div><div>{formatDate(new Date(order.shipmentDate))}</div></div>}
-                {order.functionDate && <div><div className="dim">Function Date</div><div>{formatDate(new Date(order.functionDate))}</div></div>}
+                {order.shipmentDate && <div><div className="dim">Shipment Date</div><div>{formatDate(toMalaysiaDay(order.shipmentDate))}</div></div>}
+                {order.functionDate && <div><div className="dim">Function Date</div><div>{formatDate(toMalaysiaDay(order.functionDate))}</div></div>}
                 {order.schoolType && <div><div className="dim">Logo Type</div><div>{order.schoolType === 'SK' ? 'SK' : 'Others'}</div></div>}
               </div>
               {order.logoDataUrl && (
@@ -245,56 +245,12 @@ export default function OrderDetails() {
           )}
         </div>
 
-        {/* Print-only: combines the function-details summary, the price
-            table, and every category's full details into one printout,
-            regardless of which tab is open on screen — see the "Print
-            Order" button above. Same structure as SalesOrderSummary's
-            print-only section. */}
-        <div className="print-only">
-          {/* Bigger, easier-to-read type just for the Summary half — see
-              SalesOrderSummary.jsx's identical .print-summary-section. */}
-          <div className="print-summary-section">
-            <div className="form-grid-2" style={{ marginTop: 'var(--space-3)' }}>
-              <div><div className="dim">Order ID</div><div>{order.id}</div></div>
-              <div><div className="dim">Invoice Number</div><div>{viewInvoiceId || order.invoiceId || '-'}</div></div>
-              {order.printedAt && <div><div className="dim">Order Printed</div><div>{formatDateTime(order.printedAt)}</div></div>}
-              {order.sekolah && <div><div className="dim">Sekolah</div><div>{order.sekolah}</div></div>}
-              {order.picName && <div><div className="dim">PIC Name</div><div>{order.picName}{order.phone ? ` / ${order.phone}` : ''}</div></div>}
-              {order.ketuaPanitia && <div><div className="dim">Ketua Panitia</div><div>{order.ketuaPanitia}</div></div>}
-              {order.terms && <div><div className="dim">Terms</div><div>{order.terms}</div></div>}
-              {/* Printed with Shipment Date directly above Function Date (one cell),
-                  not side by side across the two-column grid. */}
-              {(order.shipmentDate || order.functionDate) && (
-                <div>
-                  {order.shipmentDate && <><div className="dim">Shipment Date</div><div>{formatDate(new Date(order.shipmentDate))}</div></>}
-                  {order.functionDate && <><div className="dim" style={order.shipmentDate ? { marginTop: 'var(--space-2)' } : undefined}>Function Date</div><div>{formatDate(new Date(order.functionDate))}</div></>}
-                </div>
-              )}
-            </div>
-
-            <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Jenis Plak / Price per Unit / QTY / Harga</div>
-            <PriceTable
-              rows={priceRows} editable={false} priceDrafts={{}} setPrice={() => {}}
-              plakCatalog={state.plakCatalog} totalQty={totalQty} totalHarga={totalHarga} priceAdjusted={priceAdjusted}
-            />
-          </div>
-
-          {catBlockGroups.length > 0 && (
-            <div className="print-details-section">
-              <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Order Details</div>
-              {catBlockGroups.map(({ cat, blocks }, catIdx) => (
-                <div
-                  key={cat.key}
-                  className={`print-category-page${catIdx > 0 ? ' print-category-break' : ''}`}
-                >
-                  {blocks.map((blk, i) => (
-                    <OrderCategoryBlock key={i} blk={blk} editable={READONLY} hideEmptyRows />
-                  ))}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        {/* Print-only — see the "Print Order" button above. */}
+        <OrderPrintout
+          order={order} invoiceId={viewInvoiceId || order.invoiceId} printedAt={order.printedAt}
+          priceTable={{ rows: priceRows, plakCatalog: state.plakCatalog, totalQty, totalHarga, priceAdjusted }}
+          catBlockGroups={catBlockGroups}
+        />
       </div>
     </div>
   );

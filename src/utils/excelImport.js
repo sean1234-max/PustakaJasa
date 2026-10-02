@@ -56,6 +56,7 @@ const SOURCE_SHEET_TO_CATEGORY = {
   'KEHADIRAN PENUH': 'KEHADIRAN',
   TOKOH: 'TOKOH_SHEET',
   SELEMPANG: 'SELEMPANG',
+  'UMUM (万能)': 'UMUM',
 };
 
 function normalizeTahun(raw) {
@@ -1440,6 +1441,76 @@ function parseTahunPlakRowSheet(ws) {
 //     the student's name is known: stock is deducted at submit like any
 //     other row, but the row is kept OUT of the production CSV until a real
 //     name replaces "Reserved".
+// UMUM (万能) — LANGKAH 1's CONTOH box (the ① ② ③ ④ markers, each line's
+// text to its right, an optional MERAH pick under "WARNA MERAH?") and
+// LANGKAH 2's list, whose header row carries ① ② ③ ④ + KUANTITI (+ JENIS
+// PLAK, HARGA PER UNIT). Each list row with a KUANTITI becomes one plak row
+// carrying only the lines it changes (blank = same as the CONTOH, "-" = no
+// such line on this plaque); the grey CONTOH/示范 example rows are skipped.
+// null when the sheet isn't this shape (or has no row with a KUANTITI).
+const UMUM_MARKS = ['①', '②', '③', '④'];
+
+function parseUmumSheet(ws) {
+  const range = sheetRange(ws);
+  const rowRange = (r) => ({ r1: r, r2: r, c1: range.c1, c2: range.c2 });
+  const qtyH = findLabelCells(ws, range, ['KUANTITI', '数量'])
+    .find((h) => findLabelCells(ws, rowRange(h.row), ['①']).length > 0);
+  if (!qtyH) return null;
+  const headerRow = qtyH.row;
+  const onHeader = (labels) => findLabelCells(ws, rowRange(headerRow), labels)[0] || null;
+  const markCols = UMUM_MARKS.map((m) => onHeader([m])?.col ?? null);
+  const plakH = onHeader(['JENIS PLAK']);
+  const hargaH = onHeader(['HARGA PER UNIT', 'HARGA']);
+
+  // CONTOH box, above the list. The MERAH column is the "WARNA MERAH?"
+  // header's; a line's own text sits between its marker and that column.
+  const above = { r1: range.r1, r2: headerRow - 1, c1: range.c1, c2: range.c2 };
+  let merahCol = null;
+  for (let r = above.r1; r <= above.r2 && merahCol == null; r++) {
+    for (let c = range.c1; c <= range.c2; c++) {
+      if (/MERAH/i.test(cellStr(ws, r, c)) && !/LANGKAH/i.test(cellStr(ws, r, c))) { merahCol = c; break; }
+    }
+  }
+  const lines = {};
+  let umumRed = '';
+  UMUM_MARKS.forEach((mark, i) => {
+    const m = findLabelCells(ws, above, [mark])[0];
+    if (!m) return;
+    const lastCol = merahCol != null && merahCol > m.col ? merahCol - 1 : m.col + 4;
+    const parts = [];
+    for (let c = m.col + 1; c <= lastCol; c++) { const v = cellText(ws, m.row, c); if (v) parts.push(v); }
+    if (parts.length) lines[`${i}`] = parts.join(' ');
+    if (merahCol != null && /MERAH|RED|红/i.test(cellStr(ws, m.row, merahCol))) umumRed = `${i}`;
+  });
+
+  // A lone dash is this sheet's "leave this line off" — read raw, since
+  // cellText would blank it (= "same as CONTOH").
+  const lineCell = (r, col) => {
+    if (col == null) return '';
+    const v = cellStr(ws, r, col);
+    return isPlaceholderDash(v) ? (v.trim() ? '-' : '') : v;
+  };
+  const umumRows = [];
+  for (let r = headerRow + 1; r <= range.r2; r++) {
+    const tag = cellText(ws, r, range.c1);
+    if (/^LANGKAH/i.test(tag) || isTotalLabel(tag)) break;
+    if (['CONTOH', '示范'].includes(tag.toUpperCase())) continue;
+    const qty = cellNum(ws, r, qtyH.col);
+    if (qty <= 0) continue;
+    const harga = hargaH ? cellNum(ws, r, hargaH.col) : 0;
+    umumRows.push({
+      no: tag,
+      ...Object.fromEntries(markCols.map((col, i) => [`l${i}`, lineCell(r, col)])),
+      qty,
+      jenisPlak: plakH ? cellText(ws, r, plakH.col) : '',
+      harga: harga > 0 ? String(harga) : '',
+    });
+  }
+  if (umumRows.length === 0) return null;
+  if (umumRed) lines.umumRed = umumRed;
+  return { lines, umumRows, isUmumList: true, skipLineDerivation: true, classes: [] };
+}
+
 function parseTokohAnugerahSheet(ws) {
   const range = sheetRange(ws);
   const tokohH = findLabelCells(ws, range, ['TOKOH'])[0];
@@ -1813,9 +1884,19 @@ export function parseFormAnugerahExcel(arrayBuffer) {
       || upper === 'MP THP 1 (KALAU ADA KELAS)' || upper === 'MP THP 2 (KALAU ADA KELAS)') return;
     const ws = wb.Sheets[name];
 
-    // The UMUM (万能) general-purpose sheet has no importer yet. Its own
-    // headings and grey CONTOH rows mustn't raise "unrecognized" on every
-    // upload, but a real order typed into it still must.
+    // UMUM (万能) — the template's own sheet lands on the UMUM tab; any
+    // other sheet with its shape (a teacher's copy for a second event,
+    // whatever it's renamed to) gets its own tab named after the sheet. An
+    // untouched template (no KUANTITI) is skipped silently; a filled one we
+    // still can't read is reported.
+    const umumLike = parseUmumSheet(ws);
+    if (umumLike) {
+      umumLike.sourceSheet = name;
+      if (!['UMUM (万能)', 'UMUM', '万能'].includes(upper)) umumLike.dynamicCategoryKey = makeDynamicCategoryKey('UMUM', name);
+      else umumLike.sourceSheet = 'UMUM (万能)';
+      allSections.push(umumLike);
+      return;
+    }
     if (upper.includes('万能') || upper.startsWith('UMUM')) {
       if (umumHasOrders(ws)) unrecognizedSheets.push(name);
       return;
@@ -2056,7 +2137,8 @@ export function parseFormAnugerahExcel(arrayBuffer) {
   allSections.forEach((s) => {
     // ACARA (slot 2) / position (slot 2b): force the two-line wording split
     // for "ANUGERAH PBD ..." etc. (see acaraBreak.js).
-    ['2', '2b'].forEach((slot) => { if (s.lines?.[slot]) s.lines[slot] = breakAcaraLine(s.lines[slot]); });
+    // UMUM lines are engraved exactly as typed.
+    if (!s.isUmumList) ['2', '2b'].forEach((slot) => { if (s.lines?.[slot]) s.lines[slot] = breakAcaraLine(s.lines[slot]); });
     // `dynamicCategoryKey` (a renamed/duplicated template sheet — set just
     // above) takes priority over the fixed-name lookup, since its own
     // sourceSheet is never one of SOURCE_SHEET_TO_CATEGORY's literal keys.

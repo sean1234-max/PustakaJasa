@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useState } from 'react';
 import AdminLayout from '../components/AdminLayout';
 import { fetchAuditLog } from '../lib/adminApi';
+import { formatDateTime } from '../data/catalog';
 
 export default function AdminAuditLog() {
   const [rows, setRows] = useState(null);
@@ -38,7 +39,7 @@ export default function AdminAuditLog() {
                 {rows.map((row) => (
                   <Fragment key={row.id}>
                     <tr className="hover:bg-surface-container-low transition-colors">
-                      <td className="py-4 px-6 text-on-surface-variant">{new Date(row.created_at).toLocaleString()}</td>
+                      <td className="py-4 px-6 text-on-surface-variant">{formatDateTime(row.created_at)}</td>
                       <td className="py-4 px-6 font-medium">{row.profiles?.display_name || '—'}</td>
                       <td className="py-4 px-6">{row.action}</td>
                       <td className="py-4 px-6 text-on-surface-variant">{row.target_table ? `${row.target_table} (${row.target_id || '—'})` : '—'}</td>

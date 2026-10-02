@@ -5,8 +5,9 @@ import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import CorrectedExcelControl from '../components/CorrectedExcelControl';
 import PriceTable from '../components/PriceTable';
+import OrderPrintout from '../components/OrderPrintout';
 import { useAppState } from '../state/useAppState';
-import { statusPillStyle, formatDate, MANUAL_MAX_QTY, deliveryStageForShipmentDate } from '../data/catalog';
+import { statusPillStyle, formatDate, MANUAL_MAX_QTY, deliveryStageForShipmentDate, toMalaysiaDay, malaysiaToday } from '../data/catalog';
 import { reconstructOrderDetailGroups, reconstructBlocksForCategory, noopUpdaters } from '../utils/computeBlocks';
 import { getExportableCategories, splitOrderCategories, getOrderJenisPlakGroups, getPlakProductionMode, summarizeRowsForManual, buildCsvRows, rowsToCsv, buildCategoryCsvFilename, combineCsvRows, buildCombinedCsvFilename, validateExport, getInvoiceIdForJenisPlak, getPartialSplitNotes } from '../utils/exportCsv';
 import { downloadTextFile } from '../utils/downloadBlob';
@@ -119,7 +120,7 @@ export default function ProductionOrderDetail() {
   // itself (same calendar rule as the Shipped/Completed status) — a teacher
   // may phone in a change after submitting. Saved on every drop.
   const canReorder = !!order && order.status !== 'Cancelled'
-    && deliveryStageForShipmentDate(order.shipmentDate, new Date()) !== 'Completed';
+    && deliveryStageForShipmentDate(order.shipmentDate, malaysiaToday()) !== 'Completed';
   const [refOrderNote, setRefOrderNote] = useState('');
   const reorderUpdaters = useMemo(() => (canReorder ? {
     ...noopUpdaters,
@@ -222,6 +223,27 @@ export default function ProductionOrderDetail() {
     () => jenisPlakExport.filter((g) => g.mode === 'manual'),
     [jenisPlakExport],
   );
+
+  // Print Order — the same full printout Teacher / Sales get (OrderPrintout):
+  // every category's details at once, cut down to the invoice being viewed
+  // (a partly-split Jenis Plak's block shows on both, as on OrderDetails).
+  // Stamped with when Production printed it, without overwriting the
+  // Teacher/Sales "Order Printed" time (recordPrint).
+  const printCatBlockGroups = useMemo(() => {
+    if (!effectiveOrder) return [];
+    const sliceItems = isFiltered ? getInvoiceItems(effectiveOrder, viewInvoiceId) : effectiveOrder.items;
+    const { anugerah, selempang } = splitOrderCategories(effectiveOrder);
+    return [...anugerah, ...selempang]
+      .filter((cat) => sliceItems.some((it) => it.categoryKey === cat.key))
+      .map((cat) => ({
+        cat,
+        blocks: reconstructBlocksForCategory(effectiveOrder, cat.key, state.plakCatalog).blocks
+          .filter((blk) => !isFiltered || !blk.jenisPlak || sliceItems.some((it) => it.jenisPlak === blk.jenisPlak)),
+      }));
+  }, [effectiveOrder, isFiltered, viewInvoiceId, state.plakCatalog]);
+  const [printedAt, setPrintedAt] = useState(null);
+  // Deferred a tick so the new printedAt is in the print-only DOM first.
+  const handlePrint = () => { setPrintedAt(new Date().toISOString()); setTimeout(() => window.print(), 0); };
 
   if (!order) return null;
 
@@ -333,17 +355,18 @@ export default function ProductionOrderDetail() {
             <div className="card-title">{order.id}</div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
-            {stamp && <span className="order-stamp-inline">{stamp}</span>}
+            {stamp && <span className="order-stamp-inline no-print">{stamp}</span>}
             {/* Corrected Excel present — every export below already reads
                 from it (see effectiveOrder), this just makes that visible
                 at a glance without opening the order. */}
             {order.correctedImportFilePath && (
-              <span className="status-pill" style={{ background: '#fff4ce', color: '#8a6d00' }}>Excel Updated</span>
+              <span className="status-pill no-print" style={{ background: '#fff4ce', color: '#8a6d00' }}>Excel Updated</span>
             )}
             <span className="status-pill" style={statusPillStyle(sliceStatus)}>{sliceStatus}</span>
           </div>
         </div>
 
+        <div className="screen-only">
         {isFiltered && (
           <p className="hint-text" style={{ marginBottom: 'var(--space-3)' }}>
             Showing only the <strong>{viewInvoiceId}</strong> invoice for this order — the Jenis Plak table, category tabs, and exports below all cover just that slice.{' '}
@@ -361,8 +384,8 @@ export default function ProductionOrderDetail() {
               {order.picName && <div><div className="dim">PIC Name</div><div>{order.picName}{order.phone ? ` / ${order.phone}` : ''}</div></div>}
               {order.ketuaPanitia && <div><div className="dim">Ketua Panitia</div><div>{order.ketuaPanitia}</div></div>}
               {order.terms && <div><div className="dim">Terms</div><div>{order.terms}</div></div>}
-              {order.shipmentDate && <div><div className="dim">Shipment Date</div><div>{formatDate(new Date(order.shipmentDate))}</div></div>}
-              {order.functionDate && <div><div className="dim">Function Date</div><div>{formatDate(new Date(order.functionDate))}</div></div>}
+              {order.shipmentDate && <div><div className="dim">Shipment Date</div><div>{formatDate(toMalaysiaDay(order.shipmentDate))}</div></div>}
+              {order.functionDate && <div><div className="dim">Function Date</div><div>{formatDate(toMalaysiaDay(order.functionDate))}</div></div>}
               <div><div className="dim">Date Placed</div><div>{order.datePlaced}</div></div>
               <div><div className="dim">Total Amount</div><div>RM {(isFiltered ? effectiveTotalAmount : order.totalAmount).toFixed(2)}</div></div>
             </div>
@@ -414,7 +437,7 @@ export default function ProductionOrderDetail() {
             {state.productionToast && <p className="hint-text" style={{ marginTop: 'var(--space-2)' }}>{state.productionToast}</p>}
 
             <div className="row-split" style={{ marginTop: 'var(--space-6)' }}>
-              <span />
+              <button type="button" className="btn btn-secondary" onClick={handlePrint}>Print Order</button>
               <button type="button" className="btn btn-primary" onClick={() => setPage('details')}>Next: Order Details →</button>
             </div>
           </>
@@ -609,6 +632,18 @@ export default function ProductionOrderDetail() {
             </div>
           </>
         )}
+        </div>
+
+        {/* Print-only — see "Print Order" on the Summary page. */}
+        <OrderPrintout
+          order={order} invoiceId={isFiltered ? viewInvoiceId : order.invoiceId} printedAt={printedAt}
+          urgent={order.urgent} stamp={stamp} showSales showRemark
+          priceTable={{
+            rows: visibleItems, plakCatalog: state.plakCatalog, totalQty, totalHarga: effectiveTotalAmount,
+            priceAdjusted: false, hideCategory: true, combineJenisPlak: true,
+          }}
+          catBlockGroups={printCatBlockGroups}
+        />
       </div>
     </div>
   );

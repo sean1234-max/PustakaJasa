@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import AdminLayout from '../components/AdminLayout';
 import { useAppState } from '../state/useAppState';
-import { ORDER_STATUSES, statusPillStyle } from '../data/catalog';
+import { ORDER_STATUSES, statusPillStyle, malaysiaToday } from '../data/catalog';
 
 const DATE_OPTIONS = ['All Time', 'Today', 'This Week', 'This Month', 'Custom Range'];
 // Stable empty fallback so the useMemos below don't see a fresh [] every
@@ -63,7 +63,7 @@ export default function AdminOrders() {
     if (dateFilter === 'All Time') return true;
     const placed = parseDatePlaced(order.datePlaced);
     if (!placed) return false;
-    const today = startOfDay(new Date());
+    const today = malaysiaToday();
 
     if (dateFilter === 'Today') return startOfDay(placed).getTime() === today.getTime();
     if (dateFilter === 'This Week') {

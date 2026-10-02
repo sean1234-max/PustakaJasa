@@ -112,7 +112,17 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
   const tokohBefore = (blk.tokohFieldCols || []).filter((f) => f.place === 'beforeQty');
   const tokohAfter = (blk.tokohFieldCols || []).filter((f) => f.place === 'afterPlak');
   const renderTokohField = (f, isEditable) => {
-    if (!isEditable) return f.value || '—';
+    // UMUM's Harga (Excel): shown only, red when the teacher's own price
+    // isn't the website's (the order still uses the website price).
+    if (f.readOnly) {
+      return (
+        <span style={f.alert ? { color: '#c0392b', fontWeight: 700 } : undefined} title={f.alert ? 'Not the website price — the order uses the website price.' : undefined}>
+          {f.display}
+        </span>
+      );
+    }
+    // UMUM's ①–④: blank means "same as the CONTOH line" — shown greyed.
+    if (!isEditable) return f.value || (f.placeholder ? <span className="dim">{f.placeholder}</span> : '—');
     if (f.yesNo) {
       return (
         <select className="input" value={f.value} onChange={(e) => f.onChange(e.target.value)}>
@@ -122,7 +132,7 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
         </select>
       );
     }
-    return <input className="input" value={f.value} onChange={(e) => f.onChange(e.target.value)} />;
+    return <input className="input" placeholder={f.placeholder} value={f.value} onChange={(e) => f.onChange(e.target.value)} />;
   };
   // Dynamic-matrix columns are teacher-added and can end up unused (added,
   // then never filled in) — hide those on print the same way empty subject
@@ -399,6 +409,11 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
                       </div>
                     )}
                   </div>
+                  {ln.umumRed && editable.lines && (
+                    <label style={{ flex: 'none', marginTop: 8, fontSize: 12, color: '#c0392b', whiteSpace: 'nowrap' }}>
+                      <input type="checkbox" checked={ln.umumRed.checked} onChange={ln.umumRed.toggle} /> MERAH
+                    </label>
+                  )}
                   {ln.deletable && editable.lines && (
                     <button
                       type="button"

@@ -4,6 +4,7 @@ import { fetchAiExtractionRuns, fetchAiGrammarChecks, fetchAllProfiles } from '.
 import { fetchCustomTypoWords, addCustomTypoWord, removeCustomTypoWord } from '../lib/typoWordsApi';
 import { setCustomTypoWords, TYPO_CHECK_DICTIONARY } from '../utils/typoCheck';
 import { loadWithRetry } from '../lib/loadWithRetry';
+import { formatDateTime } from '../data/catalog';
 
 // Per-user monthly cost caps enforced by the two Edge Functions. Mirrors the
 // defaults in supabase/functions/{extract-order-file,check-engraving-text}
@@ -350,7 +351,7 @@ export default function AdminAiUsage() {
                         return (
                           <Fragment key={`${r._type}-${r.id}`}>
                             <tr className="hover:bg-surface-container-low transition-colors">
-                              <td className="py-3 px-6 text-on-surface-variant whitespace-nowrap">{new Date(r.created_at).toLocaleString()}</td>
+                              <td className="py-3 px-6 text-on-surface-variant whitespace-nowrap">{formatDateTime(r.created_at)}</td>
                               <td className="py-3 px-6 font-medium">{r._name}</td>
                               <td className="py-3 px-6 text-on-surface-variant">{r._type === 'extract' ? 'File Import' : 'Text Check'}</td>
                               <td className="py-3 px-6"><StatusBadge status={r.status} /></td>

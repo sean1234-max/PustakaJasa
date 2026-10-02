@@ -7,8 +7,46 @@ import {
 } from '../data/catalog';
 import { breakAcaraLine } from './acaraBreak';
 import { partialSplitQty } from './orderBatches';
+import { UMUM_SLOTS, umumSlotFields, umumClassifyText } from './umumLines';
 
 export const CSV_COLUMNS = ['event_header', 'year', 'position', 'event_line_1', 'event_line_2', 'jenis_plak', 'category', 'line_order'];
+
+// UMUM (万能): the CONTOH lines ①–④ (slots 0–3) of this item, which plaque
+// field each one is (utils/umumLines.js), and a raw slot reader (no
+// breakAcaraLine — UMUM lines are engraved exactly as typed).
+function umumParts(item) {
+  const raw = (slot) => item.detail?.lines?.[`${item.categoryKey}::${item.blockIdx}::${slot}`] || '';
+  const contoh = Object.fromEntries(UMUM_SLOTS.map((s) => [s, raw(s)]));
+  const fields = umumSlotFields(umumClassifyText(contoh, item.detail?.rows), raw('umumRed'));
+  return { contoh, fields };
+}
+
+function umumFieldLists(item) {
+  const { fields } = umumParts(item);
+  return Object.fromEntries(Object.entries(fields).map(([slot, f]) => [slot, [f]]));
+}
+
+// One CSV row per plaque: each line is the row's own text (blank = the
+// CONTOH line, "-" = left off this plaque); lines landing on the same field
+// join with a line break (a two-line title / position).
+function buildUmumRows(item) {
+  const { contoh, fields } = umumParts(item);
+  const rows = [];
+  (item.detail?.rows || []).forEach((r) => {
+    const qty = Number(r.qty) || 0;
+    if (qty <= 0) return;
+    const out = { event_header: [], position: [], event_line_1: [], event_line_2: [] };
+    UMUM_SLOTS.forEach((s) => {
+      if (!fields[s]) return;
+      const own = String(r[`l${s}`] || '').trim();
+      const text = own === '-' ? '' : (own || contoh[s]);
+      if (text) out[fields[s]].push(text);
+    });
+    const row = [out.event_header.join('\n'), '', out.position.join('\n'), out.event_line_1.join('\n'), out.event_line_2.join('\n')];
+    for (let i = 0; i < qty; i++) rows.push(row);
+  });
+  return rows;
+}
 
 // line_order — the engraved lines top to bottom ("event_header|position|
 // event_line_1|event_line_2"), taken from the order the Reference Sample
@@ -36,7 +74,7 @@ function slotFieldsFor(cat) {
 // A line with no visible row of its own (a hidden slot, or TOKOH's NAMA
 // MURID with no line-3 CONTOH) keeps its default place at the end.
 export function getLineOrder(item, cat) {
-  const slotFields = slotFieldsFor(cat);
+  const slotFields = cat?.umumRows ? umumFieldLists(item) : slotFieldsFor(cat);
   if (!slotFields) return DEFAULT_LINE_ORDER.join('|');
   const lines = item.detail?.lines || {};
   const prefix = `${item.categoryKey}::${item.blockIdx}::`;
@@ -663,6 +701,8 @@ export function buildCsvRows(order, categoryKey, items) {
       itemRows = buildAliranRows(item, header, year, getLine(item, 2, false));
     } else if (cat?.hasNamaKelasList) {
       itemRows = buildOthersRows(item, header, year, getLine(item, 2));
+    } else if (cat?.umumRows) {
+      itemRows = buildUmumRows(item);
     } else if (cat?.positionFromRows) {
       if (cat.tokohRowFields) {
         (item.detail?.rows || []).forEach((r) => {

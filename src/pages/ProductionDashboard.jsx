@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import { useAppState } from '../state/useAppState';
-import { statusPillStyle, formatDate, deliveryStageForShipmentDate, getLowStockAlerts } from '../data/catalog';
+import { statusPillStyle, formatDate, deliveryStageForShipmentDate, getLowStockAlerts, toMalaysiaDay, malaysiaToday } from '../data/catalog';
 import { getOrderChangeStamp } from '../utils/orderStamp';
 import { getOrderInvoiceSlices } from '../utils/orderBatches';
 
@@ -23,10 +23,8 @@ import { getOrderInvoiceSlices } from '../utils/orderBatches';
 // Whole days from an order's Shipment Date to `today` (0 = due today,
 // positive = in the past). null when there's no parseable Shipment Date.
 function daysSinceShipmentDate(shipmentDate, today) {
-  if (!shipmentDate) return null;
-  const d = new Date(shipmentDate);
-  if (Number.isNaN(d.getTime())) return null;
-  const ship = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const ship = toMalaysiaDay(shipmentDate);
+  if (!ship) return null;
   const now = new Date(today.getFullYear(), today.getMonth(), today.getDate());
   return Math.round((now - ship) / 86400000);
 }
@@ -61,15 +59,13 @@ const TABS = [
 ];
 
 // order.shipmentDate is stored as free-form text (see supabase/migrations/0001,
-// 0002, 0065) but every order-creation/approval path writes it from a JS Date —
-// re-parsing with `new Date(...)` and reading local y/m/d back out gives
-// the same plain calendar date `formatDate` shows elsewhere, so the
-// shipment-date filter below compares like for like with the <input
-// type="date"> value (always "YYYY-MM-DD").
+// 0002, 0065) as a timestamp — its Malaysian calendar day (toMalaysiaDay,
+// the same day `formatDate` shows elsewhere) is what the shipment-date
+// filter below compares, like for like with the <input type="date"> value
+// (always "YYYY-MM-DD").
 function shipmentDateKey(shipmentDate) {
-  if (!shipmentDate) return '';
-  const d = new Date(shipmentDate);
-  if (Number.isNaN(d.getTime())) return '';
+  const d = toMalaysiaDay(shipmentDate);
+  if (!d) return '';
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
@@ -83,7 +79,7 @@ export default function ProductionDashboard() {
   const [shipmentDateFilter, setShipmentDateFilter] = useState('');
 
   const handleMarkDone = (ord) => {
-    const nextStatus = deliveryStageForShipmentDate(ord.shipmentDate, today);
+    const nextStatus = deliveryStageForShipmentDate(ord.shipmentDate, malaysiaToday());
     if (!window.confirm(`Mark order ${ord.id} as done? Its status will change to "${nextStatus}".`)) return;
     markProductionDone(ord.id, ord.invoiceId);
   };
@@ -191,7 +187,7 @@ export default function ProductionDashboard() {
         >
           <option value="">All dates ({ordersInTab.length})</option>
           {shipmentDateOptions.map(([key, rawDate]) => (
-            <option key={key} value={key}>{formatDate(new Date(rawDate))}</option>
+            <option key={key} value={key}>{formatDate(toMalaysiaDay(rawDate))}</option>
           ))}
         </select>
       </div>
@@ -226,7 +222,7 @@ export default function ProductionDashboard() {
               <div className="order-card-meta">
                 <div><div className="dim">Date Placed</div><div>{ord.datePlaced}</div></div>
                 <div><div className="dim">Sales</div><div>{ord.sales || '—'}</div></div>
-                <div><div className="dim">Shipment Date</div><div>{ord.shipmentDate ? formatDate(new Date(ord.shipmentDate)) : '—'}</div></div>
+                <div><div className="dim">Shipment Date</div><div>{ord.shipmentDate ? formatDate(toMalaysiaDay(ord.shipmentDate)) : '—'}</div></div>
                 <div>
                   <div className="dim">Total QTY</div>
                   <div className="order-card-qty">{ord.totalQty}</div>

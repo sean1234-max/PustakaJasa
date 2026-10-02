@@ -4,9 +4,10 @@ import Nav from '../components/Nav';
 import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import PriceTable from '../components/PriceTable';
+import OrderPrintout from '../components/OrderPrintout';
 import DatePicker from '../components/DatePicker';
 import { useAppState } from '../state/useAppState';
-import { statusPillStyle, standardUnitPrice, formatDate, formatDateTime } from '../data/catalog';
+import { statusPillStyle, standardUnitPrice, formatDate, defaultShipmentDate, toMalaysiaDay, malaysiaToday } from '../data/catalog';
 import CancelOrderControl from '../components/CancelOrderControl';
 import ReassignSalesmanControl from '../components/ReassignSalesmanControl';
 import { reconstructBlocksForCategory } from '../utils/computeBlocks';
@@ -63,9 +64,13 @@ export default function SalesOrderSummary() {
   // Shipment Date (shipmentDate) / Function Date stay editable right up to the moment of
   // approval — the same "Sales can still adjust it" window the price
   // fields already had — then get folded into the approval update below.
-  const [shipmentDateDraft, setShipmentDateDraft] = useState(() => (order?.shipmentDate ? new Date(order.shipmentDate) : null));
-  const [functionDateDraft, setFunctionDateDraft] = useState(() => (order?.functionDate ? new Date(order.functionDate) : null));
+  const [shipmentDateDraft, setShipmentDateDraft] = useState(() => (order?.shipmentDate ? toMalaysiaDay(order.shipmentDate) : null));
+  const [functionDateDraft, setFunctionDateDraft] = useState(() => (order?.functionDate ? toMalaysiaDay(order.functionDate) : null));
   const [dateError, setDateError] = useState('');
+  // An order with no Shipment Date yet starts at a week after it was placed
+  // (defaultShipmentDate) — saved on Approve like a date Sales picked.
+  const shipmentDate = shipmentDateDraft
+    || (order && editable ? defaultShipmentDate(order.datePlaced, malaysiaToday(), functionDateDraft) : null);
 
   // Keyed by item.id — pre-filled from the item's current unit price (falls
   // back to the standard catalog rate for items that never had one, e.g.
@@ -160,8 +165,8 @@ export default function SalesOrderSummary() {
   // button takes its place where Approve was.
   const handleApprove = async () => {
     if (busy) return;
-    if (shipmentDateDraft && functionDateDraft
-      && new Date(shipmentDateDraft.getFullYear(), shipmentDateDraft.getMonth(), shipmentDateDraft.getDate())
+    if (shipmentDate && functionDateDraft
+      && new Date(shipmentDate.getFullYear(), shipmentDate.getMonth(), shipmentDate.getDate())
        > new Date(functionDateDraft.getFullYear(), functionDateDraft.getMonth(), functionDateDraft.getDate())) {
       setDateError('Shipment Date can’t be after the Function Date. Adjust one of them before approving.');
       return;
@@ -172,7 +177,7 @@ export default function SalesOrderSummary() {
     // existing shipment/function date just because the draft state happened
     // to start empty (e.g. a legacy order that predates these fields).
     const overrides = {};
-    if (shipmentDateDraft) overrides.shipmentDate = shipmentDateDraft;
+    if (shipmentDate) overrides.shipmentDate = shipmentDate;
     if (functionDateDraft) overrides.functionDate = functionDateDraft;
     setBusy(true);
     await approveOrder(order.id, updatedItems, overrides);
@@ -264,14 +269,14 @@ export default function SalesOrderSummary() {
                         dates aren't a real shipment option) or after the
                         Function Date (the event itself), so the picker caps
                         at both and Approve re-checks. */}
-                    <DatePicker label="Shipment Date" id="salesShipmentDate" selected={shipmentDateDraft} today={today} onSelect={setShipmentDateDraft} minDate={today} maxDate={functionDateDraft} />
-                    <DatePicker label="Function Date" id="salesFunctionDate" selected={functionDateDraft} today={today} onSelect={setFunctionDateDraft} minDate={shipmentDateDraft || today} />
+                    <DatePicker label="Shipment Date" id="salesShipmentDate" selected={shipmentDate} today={today} onSelect={setShipmentDateDraft} minDate={today} maxDate={functionDateDraft} />
+                    <DatePicker label="Function Date" id="salesFunctionDate" selected={functionDateDraft} today={today} onSelect={setFunctionDateDraft} minDate={shipmentDate || today} />
                     {dateError && <div className="login-error" style={{ gridColumn: '1 / -1', margin: 0 }}>{dateError}</div>}
                     {/* Informational only — never blocks Approve, no way to
                         override the urgent determination itself. Purely a
                         heads-up before the "urgent" flag gets snapshotted
                         on Approve (see urgentOrder.js). */}
-                    {shipmentDateDraft && isUrgentShipment(today, shipmentDateDraft) && (
+                    {shipmentDate && isUrgentShipment(malaysiaToday(), shipmentDate) && (
                       <p className="urgent-hint" style={{ gridColumn: '1 / -1', margin: 0 }}>
                         ⚡ This Shipment Date is less than 5 working days away — the order will be marked Urgent once approved.
                       </p>
@@ -279,8 +284,8 @@ export default function SalesOrderSummary() {
                   </>
                 ) : (
                   <>
-                    {order.shipmentDate && <div><div className="dim">Shipment Date</div><div>{formatDate(new Date(order.shipmentDate))}</div></div>}
-                    {order.functionDate && <div><div className="dim">Function Date</div><div>{formatDate(new Date(order.functionDate))}</div></div>}
+                    {order.shipmentDate && <div><div className="dim">Shipment Date</div><div>{formatDate(toMalaysiaDay(order.shipmentDate))}</div></div>}
+                    {order.functionDate && <div><div className="dim">Function Date</div><div>{formatDate(toMalaysiaDay(order.functionDate))}</div></div>}
                   </>
                 )}
               </div>
@@ -431,76 +436,16 @@ export default function SalesOrderSummary() {
           )}
         </div>
 
-        {/* Print-only: combines the summary price table and every category's
-            full details into one printout, regardless of which tab is open
-            on screen — see the "Print Order" button, only shown once approved. */}
-        <div className="print-only">
-          {/* Bigger, easier-to-read type just for the Summary half — the
-              Order Details half below (every category's full block, PBD's
-              Nama Kelas breakdown especially) keeps the smaller compact
-              print sizing (see .print-only's own font-size) since that
-              sizing is load-bearing for fitting a large category on one
-              printed page; the short Summary section has no such
-              constraint. */}
-          <div className="print-summary-section">
-            {(order.urgent || stamp) && (
-              <div className="order-stamp-corner">
-                {order.urgent && <div className="order-stamp order-stamp-urgent">URGENT</div>}
-                {stamp && <div className="order-stamp">{stamp}</div>}
-              </div>
-            )}
-            <div className="form-grid-2" style={{ marginTop: 'var(--space-3)' }}>
-              <div><div className="dim">Order ID</div><div>{order.id}</div></div>
-              <div><div className="dim">Invoice Number</div><div>{order.invoiceId || '-'}</div></div>
-              {order.printedAt && <div><div className="dim">Order Printed</div><div>{formatDateTime(order.printedAt)}</div></div>}
-              {order.sekolah && <div><div className="dim">Sekolah</div><div>{order.sekolah}</div></div>}
-              {order.sales && <div><div className="dim">Sales</div><div>{order.sales}</div></div>}
-              {order.picName && <div><div className="dim">PIC Name</div><div>{order.picName}{order.phone ? ` / ${order.phone}` : ''}</div></div>}
-              {order.ketuaPanitia && <div><div className="dim">Ketua Panitia</div><div>{order.ketuaPanitia}</div></div>}
-              {order.terms && <div><div className="dim">Terms</div><div>{order.terms}</div></div>}
-              {/* Printed with Shipment Date directly above Function Date (one cell),
-                  not side by side across the two-column grid. */}
-              {(order.shipmentDate || order.functionDate) && (
-                <div>
-                  {order.shipmentDate && <><div className="dim">Shipment Date</div><div>{formatDate(new Date(order.shipmentDate))}</div></>}
-                  {order.functionDate && <><div className="dim" style={order.shipmentDate ? { marginTop: 'var(--space-2)' } : undefined}>Function Date</div><div>{formatDate(new Date(order.functionDate))}</div></>}
-                </div>
-              )}
-            </div>
-            {/* Printed too, not just shown on screen — a KIV/pending note (see
-                AppState.jsx's importFormAnugerahExcel) needs to physically
-                travel with the printed order, not just live in the app. */}
-            {order.remark && (
-              <div style={{ marginTop: 'var(--space-4)' }}>
-                <div className="dim">Remark</div>
-                <div>{order.remark}</div>
-              </div>
-            )}
-
-            <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Jenis Plak / Price per Unit / QTY / Harga</div>
-            <PriceTable
-              rows={rows} editable={false} priceDrafts={priceDrafts} setPrice={setPrice}
-              plakCatalog={state.plakCatalog} totalQty={totalQty} totalHarga={totalHarga} priceAdjusted={priceAdjusted}
-              hideCategory combineJenisPlak
-            />
-          </div>
-
-          {catBlockGroups.length > 0 && (
-            <div className="print-details-section">
-              <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Order Details</div>
-              {catBlockGroups.map(({ cat, blocks }, catIdx) => (
-                <div
-                  key={cat.key}
-                  className={`print-category-page${catIdx > 0 ? ' print-category-break' : ''}`}
-                >
-                  {blocks.map((blk, i) => (
-                    <OrderCategoryBlock key={i} blk={blk} editable={READONLY} hideEmptyRows />
-                  ))}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        {/* Print-only — see the "Print Order" button, only shown once approved. */}
+        <OrderPrintout
+          order={order} invoiceId={order.invoiceId} printedAt={order.printedAt}
+          urgent={order.urgent} stamp={stamp} showSales showRemark
+          priceTable={{
+            rows, priceDrafts, setPrice, plakCatalog: state.plakCatalog, totalQty, totalHarga, priceAdjusted,
+            hideCategory: true, combineJenisPlak: true,
+          }}
+          catBlockGroups={catBlockGroups}
+        />
       </div>
     </div>
   );

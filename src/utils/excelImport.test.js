@@ -395,25 +395,103 @@ describe('ALIRAN TERBAIK — PERTAMA row can sit second (current form) or last (
   });
 });
 
-describe('parseFormAnugerahExcel — UMUM (万能) sheet (no importer yet)', () => {
-  // Rows shaped like the UMUM template: header row, two grey CONTOH example
-  // rows (with their own example quantities), then the teacher's rows.
-  const umum = (teacherQty) => [
-    ['TOLONG ISI DI SINI'],
-    ['No.', '①', '②', '③', '④', 'KUANTITI', 'JENIS PLAK'],
-    ['CONTOH', null, null, null, null, 5, 'PKC 263'],
-    ['CONTOH', null, 'NAIB JOHAN', null, null, 2, 'PKC 263'],
-    [1, null, null, null, null, teacherQty, null],
-  ];
+describe('UMUM (万能) — import → cart → CSV', () => {
+  // Same layout as the real template (FORM ANUGERAH 2026 (BARU).xlsx):
+  // LANGKAH 1 CONTOH box (markers in A, text in B, MERAH pick in F), the
+  // list header with ① ② ③ ④ / KUANTITI / JENIS PLAK / HARGA PER UNIT, two
+  // grey CONTOH example rows, then numbered teacher rows.
+  const umum = ({ red = null, rows = [] } = {}) => {
+    const r = [];
+    r[0] = ['TOLONG ISI DI SINI  ·  BORANG PLAK UMUM'];
+    r[3] = ['LANGKAH 1 · CONTOH PLAK', null, null, null, null, 'WARNA MERAH?', 'PANDUAN'];
+    r[4] = ['①', 'SK TAMAN SEGAR\nKARNIVAL KOKURIKULUM 2026', null, null, null, red === '0' ? 'MERAH' : null];
+    r[5] = ['②', 'PENGAKAP', null, null, null, red === '1' ? 'MERAH' : null];
+    r[6] = ['③', 'JOHAN TAHUN 4', null, null, null, red === '2' ? 'MERAH' : null];
+    r[7] = ['④'];
+    r[10] = ['No.', '①', '②', '③', '④', 'KUANTITI', 'JENIS PLAK', 'HARGA PER UNIT', 'TOTAL HARGA', 'PLAK AKAN JADI'];
+    r[11] = ['CONTOH', null, null, null, null, 5, 'PKC 263'];
+    r[12] = ['CONTOH', null, 'NAIB JOHAN', null, null, 2, 'PKC 263'];
+    rows.forEach((row, i) => { r[13 + i] = [i + 1, ...row]; });
+    r[13 + 40] = ['LANGKAH 3 · JUMLAH PLAK  →'];
+    return r.map((x) => x || []);
+  };
+  const catalog = [{ code: 'PKC 263', price: 10, stockQty: 1e6, stockBaseline: 1e6 }];
+  const parse = (sheets) => parseFormAnugerahExcel(workbookFromSheets(sheets));
+  const toDraft = (catKey, section) => {
+    const key = `${catKey}::0`;
+    let id = 1;
+    const lineValues = Object.fromEntries(Object.entries(section.lines).map(([k, v]) => [`${key}::${k}`, v]));
+    const rows = section.umumRows.map((ur) => ({
+      id: id++, desc: ur.no, qty: String(ur.qty), jenisPlak: matchJenisPlakPath(ur.jenisPlak, catalog) || '',
+      l0: ur.l0, l1: ur.l1, l2: ur.l2, l3: ur.l3, hargaExcel: ur.harga,
+    }));
+    return { lineValues, matrixValues: {}, rowsByBlock: { [key]: rows }, plakRows: { [key]: [] }, columnsByBlock: {}, plakCatalog: catalog, schoolLanguage: 'SK' };
+  };
 
-  it('an untouched UMUM sheet (headings + CONTOH rows only) is not reported as unrecognized', () => {
-    const parsed = parseFormAnugerahExcel(workbookFromSheets({ 'UMUM (万能)': umum(null) }));
+  it('an untouched sheet (headings + grey CONTOH rows only) is skipped, not reported', () => {
+    const parsed = parse({ 'UMUM (万能)': umum() });
     expect(parsed.unrecognizedSheets || []).toEqual([]);
+    expect(parsed.categorized?.UMUM).toBeUndefined();
   });
 
-  it('a real order typed into the UMUM sheet is reported so it gets keyed in by hand', () => {
-    const parsed = parseFormAnugerahExcel(workbookFromSheets({ 'UMUM (万能)': umum(3) }));
-    expect(parsed.unrecognizedSheets).toEqual(['UMUM (万能)']);
+  it('reads the CONTOH, the MERAH pick and each row\'s own changes ("-" kept, CONTOH rows skipped)', () => {
+    const parsed = parse({ 'UMUM (万能)': umum({ red: '2', rows: [
+      [null, null, null, null, 3, 'PKC 263', 10],
+      [null, 'KADET POLIS', 'NAIB JOHAN', '-', 2, 'PKC 263', 8],
+      [null, null, null, null, null, 'PKC 263'],
+    ] }) });
+    expect(parsed.unrecognizedSheets).toEqual([]);
+    const section = parsed.categorized.UMUM[0];
+    expect(section.lines).toEqual({ 0: 'SK TAMAN SEGAR\nKARNIVAL KOKURIKULUM 2026', 1: 'PENGAKAP', 2: 'JOHAN TAHUN 4', umumRed: '2' });
+    expect(section.umumRows).toEqual([
+      { no: '1', l0: '', l1: '', l2: '', l3: '', qty: 3, jenisPlak: 'PKC 263', harga: '10' },
+      { no: '2', l0: '', l1: 'KADET POLIS', l2: 'NAIB JOHAN', l3: '-', qty: 2, jenisPlak: 'PKC 263', harga: '8' },
+    ]);
+  });
+
+  it('cart + CSV: each plaque = CONTOH with the row\'s changes; MERAH line = position; line_order follows ① ② ③', () => {
+    const section = parse({ 'UMUM (万能)': umum({ red: '2', rows: [
+      [null, null, null, null, 3, 'PKC 263', 10],
+      [null, 'KADET POLIS', 'NAIB JOHAN', null, 2, 'PKC 263', 8],
+    ] }) }).categorized.UMUM[0];
+    const st = toDraft('UMUM', section);
+    const blk = computeBlocks('UMUM', st.lineValues, {}, st.rowsByBlock, st.plakRows, {}, noopUpdaters, catalog, 'SK').blocks[0];
+    expect(blk.lines.map((ln) => [ln.value, ln.redText])).toEqual([
+      ['SK TAMAN SEGAR\nKARNIVAL KOKURIKULUM 2026', false], ['PENGAKAP', false], ['JOHAN TAHUN 4', true], ['', false],
+    ]);
+    // the sheet's own price: 10 = website price (plain), 8 ≠ website (flagged red)
+    expect(blk.rows.map((r) => r.tokohFields.find((f) => f.key === 'hargaExcel').alert)).toEqual([false, true]);
+
+    const res = buildCategoryCartItems(st, 'UMUM');
+    expect(res.error).toBeUndefined();
+    expect(res.items.map((i) => [i.qty, i.unitPrice])).toEqual([['3', 10], ['2', 10]]);
+
+    const { rows } = buildCsvRows({ schoolLanguage: 'SK', items: res.items }, 'UMUM', res.items);
+    const H = 'SK TAMAN SEGAR\nKARNIVAL KOKURIKULUM 2026';
+    const order = 'event_header|event_line_1|position|event_line_2';
+    expect(rows).toEqual([
+      ...Array(3).fill([H, '', 'JOHAN TAHUN 4', 'PENGAKAP', '', 'PKC 263', 'UMUM (万能)', order]),
+      ...Array(2).fill([H, '', 'NAIB JOHAN', 'KADET POLIS', '', 'PKC 263', 'UMUM (万能)', order]),
+    ]);
+  });
+
+  it('no MERAH: keywords decide — and "-" leaves a line off one plaque', () => {
+    const section = parse({ 'UMUM (万能)': umum({ rows: [[null, '-', null, null, 1, 'PKC 263']] }) }).categorized.UMUM[0];
+    const st = toDraft('UMUM', section);
+    const res = buildCategoryCartItems(st, 'UMUM');
+    const { rows } = buildCsvRows({ schoolLanguage: 'SK', items: res.items }, 'UMUM', res.items);
+    expect(rows).toEqual([['SK TAMAN SEGAR\nKARNIVAL KOKURIKULUM 2026', '', 'JOHAN TAHUN 4', '', '', 'PKC 263', 'UMUM (万能)', 'event_header|event_line_1|position|event_line_2']]);
+  });
+
+  it('a renamed copy of the sheet (second event) is its own tab', () => {
+    const parsed = parse({
+      'UMUM (万能)': umum({ rows: [[null, null, null, null, 1, 'PKC 263']] }),
+      'HARI SUKAN': umum({ rows: [[null, null, null, null, 4, 'PKC 263']] }),
+    });
+    const dynKey = makeDynamicCategoryKey('UMUM', 'HARI SUKAN');
+    expect(Object.keys(parsed.categorized).sort()).toEqual([dynKey, 'UMUM'].sort());
+    expect(resolveCategory(dynKey).label).toBe('HARI SUKAN');
+    expect(parsed.categorized[dynKey][0].umumRows[0].qty).toBe(4);
   });
 });
 

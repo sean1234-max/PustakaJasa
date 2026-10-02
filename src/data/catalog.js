@@ -209,6 +209,19 @@ export const TOKOH_ROW_FIELDS = [
   { key: 'design', label: 'DESIGN', place: 'afterPlak' },
 ];
 
+// UMUM (万能)'s per-row columns: the row's own ①–④ (blank = the CONTOH
+// line, "-" = leave that line off this plaque — `contohSlot` is the
+// Reference Sample slot it overrides) and the HARGA PER UNIT the teacher
+// typed on the sheet — shown only (red when it differs from the website's
+// own price); the order is always priced from the website.
+export const UMUM_ROW_FIELDS = [
+  { key: 'l0', label: '①', place: 'beforeQty', contohSlot: '0' },
+  { key: 'l1', label: '②', place: 'beforeQty', contohSlot: '1' },
+  { key: 'l2', label: '③', place: 'beforeQty', contohSlot: '2' },
+  { key: 'l3', label: '④', place: 'beforeQty', contohSlot: '3' },
+  { key: 'hargaExcel', label: 'Harga (Excel)', place: 'afterPlak', readOnly: true },
+];
+
 // PPKI / MP THP 1 / MP THP 2 (and their "Kalau ada kelas" variants) — the
 // subject rows aren't a fixed engraving list: the teacher can rename a
 // subject on the source sheet ("PENDIDIKAN JASMANI" -> "PENDIDIKAN JASMANI &
@@ -458,6 +471,21 @@ export const CATEGORIES = [
     positionFieldsRedText: true,
     draggableReferenceSample: true,
     positionFromRows: true,
+  },
+  {
+    // UMUM (万能) — the general-purpose sheet: a 4-line CONTOH (①–④, one
+    // optionally marked MERAH) and a list of plak rows, each with its own
+    // ①–④ changes, KUANTITI and Jenis Plak (plakPerRow). Which line lands
+    // on which plaque field: utils/umumLines.js. A renamed copy of the sheet
+    // (a second event) becomes its own DYN::UMUM::<sheet> tab.
+    key: 'UMUM', label: 'UMUM (万能)', mode: 'list', blocksCount: 1, active: true,
+    descColumnLabel: 'No.',
+    hideQtyLabelSuffix: true,
+    plakPerRow: true,
+    umumRows: true,
+    linePlaceholders: ['BARIS ①', 'BARIS ②', 'BARIS ③', 'BARIS ④'],
+    requiredLineIndices: [0],
+    draggableReferenceSample: true,
   },
   {
     // SELEMPANG (sash) — ACARA / WARNA / KUANTITI rows, no engraving. Its
@@ -993,8 +1021,58 @@ export function formatDate(d) {
   return `${String(d.getDate()).padStart(2, '0')} ${MONTHS[d.getMonth()].slice(0, 3)} ${d.getFullYear()}`;
 }
 
+// This project always runs on Malaysia's calendar and clock (Sean,
+// 2026-10-02), whatever timezone the device is set to. Calendar dates are
+// handled as local-midnight Date objects (what the date pickers and the
+// date math here compare); these three convert at the edges.
+const MALAYSIA_TZ = 'Asia/Kuala_Lumpur';
+const malaysiaYmd = new Intl.DateTimeFormat('en-CA', { timeZone: MALAYSIA_TZ, year: 'numeric', month: '2-digit', day: '2-digit' });
+
+// A stored date / timestamp (ISO string or Date instant) → the Malaysian
+// calendar day it falls on. null when missing or unreadable.
+export function toMalaysiaDay(value) {
+  if (!value) return null;
+  const instant = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(instant.getTime())) return null;
+  const [y, m, d] = malaysiaYmd.format(instant).split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+
+// Today's date in Malaysia — call it at the moment it's needed (a page
+// left open past midnight must not keep yesterday's date).
+export function malaysiaToday() {
+  return toMalaysiaDay(new Date());
+}
+
+// A picked calendar day → stored as that day's Malaysian midnight, so it
+// reads back as the same day on any device (and in the SQL sweep, which
+// also uses Asia/Kuala_Lumpur).
+export function malaysiaDayIso(day) {
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${day.getFullYear()}-${pad(day.getMonth() + 1)}-${pad(day.getDate())}T00:00:00+08:00`;
+}
+
 export function addDays(d, days) {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate() + days);
+}
+
+// formatDate's own "02 Oct 2026" back to a (local midnight) Date — null if
+// it isn't one (order.datePlaced is stored as that display string).
+export function parseDisplayDate(str) {
+  const m = /^(\d{1,2}) ([A-Za-z]{3}) (\d{4})$/.exec(String(str || '').trim());
+  if (!m) return null;
+  const month = MONTHS.findIndex((name) => name.slice(0, 3).toLowerCase() === m[2].toLowerCase());
+  return month === -1 ? null : new Date(Number(m[3]), month, Number(m[1]));
+}
+
+// What Sales' Shipment Date starts at when the order has none yet: a week
+// after the order was placed (Sean, 2026-10-02 — placed 2 Oct → 9 Oct), but
+// never before today or after the Function Date (the picker's own limits).
+export function defaultShipmentDate(datePlaced, today, functionDate) {
+  let d = addDays(parseDisplayDate(datePlaced) || today, 7);
+  if (d < today) d = today;
+  if (functionDate && d > functionDate) d = functionDate;
+  return d;
 }
 
 // The calendar-driven part of the pipeline. Given an order's Shipment Date
@@ -1008,10 +1086,8 @@ export function addDays(d, days) {
 // apart. A missing/unparseable date falls back to 'Waiting for Delivery' —
 // nothing should auto-ship an order with no real Shipment Date on record.
 export function deliveryStageForShipmentDate(shipmentDate, today) {
-  if (!shipmentDate) return 'Waiting for Delivery';
-  const parsed = new Date(shipmentDate);
-  if (Number.isNaN(parsed.getTime())) return 'Waiting for Delivery';
-  const ship = new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+  const ship = toMalaysiaDay(shipmentDate);
+  if (!ship) return 'Waiting for Delivery';
   const now = new Date(today.getFullYear(), today.getMonth(), today.getDate());
   if (ship > now) return 'Waiting for Delivery';
   if (ship.getTime() === now.getTime()) return 'Shipped';

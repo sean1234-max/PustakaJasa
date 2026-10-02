@@ -4,7 +4,7 @@ import AdminLayout from '../components/AdminLayout';
 import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import { useAppState } from '../state/useAppState';
-import { statusPillStyle, formatDate } from '../data/catalog';
+import { statusPillStyle, formatDate, toMalaysiaDay } from '../data/catalog';
 import CancelOrderControl from '../components/CancelOrderControl';
 import { reconstructOrderDetailGroups, reconstructBlocksForCategory } from '../utils/computeBlocks';
 import { getExportableCategories, splitOrderCategories, getOrderJenisPlakGroups, buildCsvRows, rowsToCsv, buildCategoryCsvFilename, combineCsvRows, buildCombinedCsvFilename, validateExport } from '../utils/exportCsv';
@@ -179,8 +179,8 @@ export default function AdminOrderDetail() {
               {order.picName && <div><span className="text-body-sm text-on-surface-variant block mb-0.5">PIC Name</span><span className="text-body-md text-on-surface">{order.picName}{order.phone ? ` / ${order.phone}` : ''}</span></div>}
               {order.ketuaPanitia && <div><span className="text-body-sm text-on-surface-variant block mb-0.5">Ketua Panitia</span><span className="text-body-md text-on-surface">{order.ketuaPanitia}</span></div>}
               {order.terms && <div><span className="text-body-sm text-on-surface-variant block mb-0.5">Terms</span><span className="text-body-md text-on-surface">{order.terms}</span></div>}
-              {order.shipmentDate && <div><span className="text-body-sm text-on-surface-variant block mb-0.5">Shipment Date</span><span className="text-body-md text-on-surface">{formatDate(new Date(order.shipmentDate))}</span></div>}
-              {order.functionDate && <div><span className="text-body-sm text-on-surface-variant block mb-0.5">Function Date</span><span className="text-body-md text-on-surface">{formatDate(new Date(order.functionDate))}</span></div>}
+              {order.shipmentDate && <div><span className="text-body-sm text-on-surface-variant block mb-0.5">Shipment Date</span><span className="text-body-md text-on-surface">{formatDate(toMalaysiaDay(order.shipmentDate))}</span></div>}
+              {order.functionDate && <div><span className="text-body-sm text-on-surface-variant block mb-0.5">Function Date</span><span className="text-body-md text-on-surface">{formatDate(toMalaysiaDay(order.functionDate))}</span></div>}
               <div><span className="text-body-sm text-on-surface-variant block mb-0.5">Date Placed</span><span className="text-body-md text-on-surface">{order.datePlaced}</span></div>
               <div><span className="text-body-sm text-on-surface-variant block mb-0.5">Total Amount</span><span className="text-body-md text-on-surface">RM {order.totalAmount.toFixed(2)}</span></div>
             </div>

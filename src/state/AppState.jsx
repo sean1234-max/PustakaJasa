@@ -2,7 +2,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import {
   CATEGORIES, ACTIVE_CATEGORIES, formatDate, standardUnitPrice, getCategorySubjects, matrixCellKey, customMatrixLabelKey,
   deliveryStageForShipmentDate, SELEMPANG_CODE,
-  resolveCategory, categoriesUsedByItems, isDynamicCategoryKey,
+  resolveCategory, categoriesUsedByItems, isDynamicCategoryKey, malaysiaToday, malaysiaDayIso,
 } from '../data/catalog';
 import { buildInitialRowsByBlock, buildInitialColumnsByBlock, buildInitialPlakRows } from '../data/formDefaults';
 import {
@@ -31,10 +31,20 @@ import { fetchCustomTypoWords } from '../lib/typoWordsApi';
 import { setCustomTypoWords } from '../utils/typoCheck';
 import { normalizeSplitQty } from '../utils/orderBatches';
 
-// Real "today", normalized to midnight so it compares cleanly against the
-// midnight-constructed dates the calendar cells and date-math use.
-const now = new Date();
-const TODAY = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+// Malaysia's "today" (catalog.js's malaysiaToday — the project always runs
+// on Malaysian dates), normalized to midnight so it compares cleanly against
+// the midnight-constructed dates the calendar cells and date-math use. This
+// one is for the calendars; anything that's stamped or decided at the moment
+// of an action calls malaysiaToday() then, so a page left open past midnight
+// doesn't keep yesterday's date.
+const TODAY = malaysiaToday();
+
+// Days picked on a date picker (Date objects) → their stored form, each
+// day's Malaysian midnight (catalog.js's malaysiaDayIso) — the same value
+// ordersApi saves, so local state and Supabase never disagree on the day.
+const storedDays = (fields) => Object.fromEntries(
+  Object.entries(fields).map(([k, v]) => [k, v instanceof Date ? malaysiaDayIso(v) : v]),
+);
 
 // plak_stock_deduct (supabase/migrations/0032_add_plak_stock.sql) raises a
 // plain-text exception shaped 'INSUFFICIENT_STOCK:<full path>:<max
@@ -1046,6 +1056,16 @@ export function AppStateProvider({ children }) {
               jenisPlak: matched, namaMurid: tr.namaMurid || '', gambar: tr.gambar || '', design: tr.design || '',
             };
           });
+        } else if (section.isUmumList) {
+          // UMUM (万能) (excelImport.js's parseUmumSheet) — one row per plak
+          // row of the sheet: its own ①–④ changes (l0–l3), KUANTITI, Jenis
+          // Plak (plakPerRow) and the sheet's HARGA PER UNIT, kept only to
+          // show it (catalog.js's UMUM_ROW_FIELDS).
+          newRowsByBlock[key] = section.umumRows.map((ur) => ({
+            id: nextRowId++, desc: ur.no, qty: ur.qty ? String(ur.qty) : '',
+            jenisPlak: matchPlakOrWarn(ur.jenisPlak, catKey, cat.label),
+            l0: ur.l0, l1: ur.l1, l2: ur.l2, l3: ur.l3, hargaExcel: ur.harga,
+          }));
         } else if (section.isAliran || section.isAliranKelas) {
           // ALIRAN TERBAIK (excelImport.js's parseAliranSheet) — six fixed
           // TAHUN rows, each carrying a KEDUDUKAN "hingga" place or a flat
@@ -1190,7 +1210,7 @@ export function AppStateProvider({ children }) {
 
         let nextPlakRowId = next[fields.nextPlakRowId];
         let newPlakRows;
-        if (section.isSimpleTahunList || section.isTokohList || section.isSelempangList) {
+        if (section.isSimpleTahunList || section.isTokohList || section.isSelempangList || section.isUmumList) {
           // LONJAKAN / TOKOH — Jenis Plak lives per row (plakPerRow); SELEMPANG
           // has one implicit shared code. Either way, no block-level plak row.
           newPlakRows = { ...next[fields.plakRows], [key]: [] };
@@ -1430,12 +1450,12 @@ export function AppStateProvider({ children }) {
       columnsByBlock: JSON.parse(JSON.stringify(st.columnsByBlock)),
     };
     const newOrder = {
-      id: newId, invoiceId: null, datePlaced: formatDate(TODAY), deliveryDate: 'TBD',
+      id: newId, invoiceId: null, datePlaced: formatDate(malaysiaToday()), deliveryDate: 'TBD',
       totalAmount: totalAmt, status: 'Submitted to Sales', priceAdjusted: false,
       createdBy: st.userAuthId,
       salesmanId: selectedSalesman.id,
       sekolah: st.sekolah, schoolLanguage: st.schoolLanguage, sales: selectedSalesman.name, picName: st.picName, phone: st.phone, ketuaPanitia: st.ketuaPanitia, terms: st.terms, remark: st.remark,
-      shipmentDate: st.shipmentDateSelected, functionDate: st.funcSelected,
+      ...storedDays({ shipmentDate: st.shipmentDateSelected, functionDate: st.funcSelected }),
       logoDataUrl: st.logoDataUrl, logoFileName: st.logoFileName, logoRemark: st.logoRemark, schoolType: st.schoolType,
       importFilePath: st.importFilePath, importFileName: st.importFileName,
       snapshot, items: st.cart.map((ci) => ({ ...ci })),
@@ -2076,8 +2096,8 @@ export function AppStateProvider({ children }) {
     // and it's never recomputed after this. overrides.shipmentDate is
     // absent only if Sales approved without touching the date picker, in
     // which case priorOrder.urgent (false from insert) just carries through.
-    const urgent = overrides.shipmentDate ? isUrgentShipment(TODAY, overrides.shipmentDate) : priorOrder.urgent;
-    const fields = { items: itemsWithOriginalPrice, totalAmount, priceAdjusted, status: 'In Production', ...overrides, urgent };
+    const urgent = overrides.shipmentDate ? isUrgentShipment(malaysiaToday(), overrides.shipmentDate) : priorOrder.urgent;
+    const fields = { items: itemsWithOriginalPrice, totalAmount, priceAdjusted, status: 'In Production', ...storedDays(overrides), urgent };
     try {
       await updateOrder(orderId, fields);
     } catch (err) {
@@ -2379,9 +2399,9 @@ export function AppStateProvider({ children }) {
     // Shipment Date is first set right here too (same as approveOrder) —
     // see urgentOrder.js. overrides.shipmentDate is placed after ...overrides
     // and urgent placed after that, so urgent stays authoritative.
-    const urgent = overrides.shipmentDate ? isUrgentShipment(TODAY, overrides.shipmentDate) : order.urgent;
+    const urgent = overrides.shipmentDate ? isUrgentShipment(malaysiaToday(), overrides.shipmentDate) : order.urgent;
     const fields = {
-      items: itemsWithOriginalPrice, totalAmount, priceAdjusted, status: 'In Production', invoiceId: normalized, invoiceGroups: normalizedGroups, ...overrides, urgent,
+      items: itemsWithOriginalPrice, totalAmount, priceAdjusted, status: 'In Production', invoiceId: normalized, invoiceGroups: normalizedGroups, ...storedDays(overrides), urgent,
     };
     try {
       await updateOrder(orderId, fields);
@@ -2471,7 +2491,7 @@ export function AppStateProvider({ children }) {
       // Date has already arrived (or passed) by the time Production finishes,
       // the calendar rule sends it straight to 'Shipped' / 'Completed', the
       // same as the daily sweep_shipped_orders job would on its next run.
-      const nextStatus = deliveryStageForShipmentDate(order.shipmentDate, TODAY);
+      const nextStatus = deliveryStageForShipmentDate(order.shipmentDate, malaysiaToday());
       const toastForStatus = {
         'Waiting for Delivery': 'Production completed. Order is now waiting for delivery.',
         Shipped: 'Production completed. Shipment Date has arrived — order is now Shipped.',

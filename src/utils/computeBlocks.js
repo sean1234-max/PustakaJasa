@@ -1,12 +1,13 @@
 import {
   CATEGORIES, flattenPlakCatalog, getCategorySubjects, getCategoryColumns, tahunRangeYears,
-  getCustomMatrixRowIds, customMatrixLabelKey, matrixCellKey, CUSTOM_MATRIX_LABEL_SUFFIX, TOKOH_ROW_FIELDS,
+  getCustomMatrixRowIds, customMatrixLabelKey, matrixCellKey, CUSTOM_MATRIX_LABEL_SUFFIX, TOKOH_ROW_FIELDS, UMUM_ROW_FIELDS,
   getCategoryLinePlaceholders, getCategoryPositionLine2Placeholder,
   getCategoryTahunPlaceholder, getCategoryNamaKelasPlaceholder,
   resolveSelempangWarna, SELEMPANG_CODE, SELEMPANG_UNIT_PRICE, getStockStatus,
   resolveCategory, categoriesUsedByItems,
 } from '../data/catalog';
 import { findPossibleTypo } from './typoCheck';
+import { umumSlotFields } from './umumLines';
 
 // Assigns each Reference Sample line its displayed number, 1..N — except
 // TAJUK BESAR's own continuation line (slot 0b), which always takes slot
@@ -165,6 +166,14 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
     // right after its own first box) and numbered sequentially, so plain
     // categories (no second box) end up numbered 1..N exactly as before.
     const refOrderKey = `${catKey}::${b}::refOrder`;
+    // UMUM (万能): which CONTOH line is the red position (the MERAH one, or
+    // by keyword) — see utils/umumLines.js. `umumRedKey` stores the slot the
+    // teacher marked MERAH ('' = none, keywords decide).
+    const umumRedKey = `${catKey}::${b}::umumRed`;
+    const umumContoh = currentCat.umumRows
+      ? Object.fromEntries(['0', '1', '2', '3'].map((s) => [s, lineValues[`${catKey}::${b}::${s}`] || '']))
+      : null;
+    const umumFields = umumContoh ? umumSlotFields(umumContoh, lineValues[umumRedKey]) : null;
     const rawLines = catLinePlaceholders.map((placeholder, i) => {
       const key = `${catKey}::${b}::${i}`;
       const slotId = `${i}`;
@@ -180,7 +189,12 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
         // Line 3's own text renders red on some categories (OTHERS — see
         // catalog.js's positionFieldsRedText) since it's the position text
         // that actually gets engraved; every other line stays plain.
-        redText: i === 2 && !!currentCat.positionFieldsRedText,
+        redText: umumFields ? umumFields[`${i}`] === 'position' : i === 2 && !!currentCat.positionFieldsRedText,
+        // UMUM's own per-line MERAH toggle (the sheet's WARNA MERAH? column).
+        umumRed: umumFields ? {
+          checked: lineValues[umumRedKey] === `${i}`,
+          toggle: () => updaters.onLine(umumRedKey, lineValues[umumRedKey] === `${i}` ? '' : `${i}`),
+        } : null,
         onChange: (val) => updaters.onLine(key, val),
         // Flags a likely typo (e.g. "ANIGERAH" for "ANUGERAH") against a
         // small curated word list — see src/utils/typoCheck.js. Shown near
@@ -528,6 +542,25 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
             onChange: (v) => updaters.onRowField(rowsKey, row.id, f.key, v),
           }))
           : null;
+        // UMUM (万能): the row's own ①–④ (placeholder = the CONTOH line it
+        // replaces) + the sheet's own HARGA PER UNIT, flagged when it isn't
+        // the website price (the order still uses the website price).
+        const umumRowFields = currentCat.umumRows
+          ? UMUM_ROW_FIELDS.map((f) => {
+            if (f.key !== 'hargaExcel') {
+              return {
+                ...f, value: row[f.key] || '', placeholder: umumContoh[f.contohSlot] || '',
+                onChange: (v) => updaters.onRowField(rowsKey, row.id, f.key, v),
+              };
+            }
+            const typed = row.hargaExcel === '' || row.hargaExcel == null ? null : Number(row.hargaExcel);
+            return {
+              ...f, value: row.hargaExcel ?? '',
+              display: typed == null || Number.isNaN(typed) ? '—' : `RM ${typed.toFixed(2)}`,
+              alert: typed != null && plakFields.unitPrice != null && Math.abs(typed - plakFields.unitPrice) > 0.005,
+            };
+          })
+          : null;
         // SELEMPANG (catalog.js's `selempang`) — each row is ACARA + WARNA +
         // KUANTITI, no Jenis Plak picker. The colour is free text resolved
         // to a canonical WARNA/code (resolveSelempangWarna); price is the
@@ -565,7 +598,7 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
             key: col.key, value: row[col.key] || '',
             onChange: (v) => updaters.onRowField(rowsKey, row.id, col.key, v),
           })),
-          tokohFields,
+          tokohFields: tokohFields || umumRowFields,
           ...plakFields,
           ...(selempangFields || {}),
         };
@@ -747,7 +780,7 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
       hasNamaKelasList: !!currentCat.hasNamaKelasList,
       plakPerRow: !!currentCat.plakPerRow,
       tokohRowFields: !!currentCat.tokohRowFields,
-      tokohFieldCols: currentCat.tokohRowFields ? TOKOH_ROW_FIELDS : [],
+      tokohFieldCols: currentCat.tokohRowFields ? TOKOH_ROW_FIELDS : (currentCat.umumRows ? UMUM_ROW_FIELDS : []),
       aliranKedudukan: !!currentCat.aliranKedudukan,
       addAliranPlak: () => updaters.onAliranAddPlak(`${catKey}::${b}`),
       namaKelasRows, namaKelasCount, tahun: tahunField,
@@ -914,7 +947,7 @@ function mergeItemDetailIntoMaps(it, key, lineValues, matrixValues, rowsByBlock,
     // its own cart item with a unique row id (categoryCartItems.js's
     // plakPerRow branch), so upsert-by-id here too.
     const cat = resolveCategory(it.categoryKey);
-    const mergeById = !!(cat?.selempang || cat?.tokohRowFields);
+    const mergeById = !!(cat?.selempang || cat?.tokohRowFields || cat?.umumRows);
     if (!rowsByBlock[key]) {
       rowsByBlock[key] = it.detail.rows.map((r) => ({ ...r }));
     } else if (it.detail.matrix || mergeById) {
