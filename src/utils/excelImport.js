@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import { ordinalToNum, resolveSelempangWarna, makeDynamicCategoryKey } from '../data/catalog';
+import { ordinalToNum, resolveSelempangWarna, makeDynamicCategoryKey, DEFAULT_REF_ORDER, ALIRAN_REF_ORDER } from '../data/catalog';
 import { breakAcaraLine } from './acaraBreak';
 
 // Reads a teacher's own filled-in copy of the FORM ANUGERAH Excel template —
@@ -1254,6 +1254,27 @@ function parsePbdSheet(ws) {
 // (a range's own size, ranges crossed with the TAHUNs that ordered them)
 // so the sheet's own typed TOTAL/QTY figures are ignored — the website
 // recomputes them (catalog.js's ALIRAN entry, computeBlocks.js).
+// ALIRAN's position is the ordinal line ("PERTAMA" / "TEMPAT PERTAMA") —
+// slot 3, wherever the teacher wrote it: the old form's CONTOH put it last
+// (TAJUK / ACARA / TAHUN / PERTAMA), the current one second (TAJUK /
+// PERTAMA / ACARA / TAHUN). readRefLinesInBand maps by row count only, so
+// pull the ordinal out to slot 3 and give the other rows, still in row
+// order, TAJUK BESAR (0) / ACARA (2) / the TAHUN line (2b).
+function isOrdinalLine(text) {
+  const s = String(text || '').trim().replace(/^TEMPAT\s+/i, '');
+  return !!ordinalToNum(s) && !/^\d+$/.test(s);
+}
+
+function aliranSlotsByContent(lines) {
+  const rows = ['0', '2', '2b', '3'].filter((slot) => lines[slot] !== undefined).map((slot) => lines[slot]);
+  const ordIdx = rows.findIndex(isOrdinalLine);
+  if (ordIdx === -1) return lines;
+  const rest = rows.filter((_, i) => i !== ordIdx);
+  const out = { '3': rows[ordIdx] };
+  ['0', '2', '2b'].forEach((slot, i) => { if (rest[i] !== undefined) out[slot] = rest[i]; });
+  return out;
+}
+
 function parseAliranSheet(ws) {
   const range = sheetRange(ws);
   const tahunH = findLabelCells(ws, range, ['TAHUN'])[0];
@@ -1323,9 +1344,9 @@ function parseAliranSheet(ws) {
   )[0];
   const titleCol = instructionCell ? instructionCell.col : range.c1;
   const linesStart = (instructionCell?.row || 0) + 1;
-  const lines = readRefLinesInBand(
+  const lines = aliranSlotsByContent(readRefLinesInBand(
     ws, { r1: linesStart, r2: tahunH.row - 1, c1: titleCol, c2: titleCol }, linesStart, tahunH.row - 1,
-  );
+  ));
 
   return { lines, tahunRows, plakRanges, isAliran: true, classes: [], jenisPlak: '' };
 }
@@ -2103,7 +2124,8 @@ export function deriveKlasMatrixSectionLines(section) {
   // slot on a draggableReferenceSample category (PPKI, MP THP 1/1 (Kalau
   // ada kelas)) — a teacher would see the derived line first and an empty,
   // easy-to-miss TAJUK BESAR pushed to the back.
-  lines.refOrder = ['0', '0b', '1', '2', '2b', '3'].filter((slot) => slot === '0' || lines[slot]).join(',');
+  const baseOrder = section.isAliran || section.isAliranKelas ? ALIRAN_REF_ORDER : DEFAULT_REF_ORDER;
+  lines.refOrder = baseOrder.filter((slot) => slot === '0' || lines[slot]).join(',');
   return lines;
 }
 

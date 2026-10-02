@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import * as XLSX from 'xlsx';
-import { parseFormAnugerahExcel, matchJenisPlakPath } from './excelImport';
+import { parseFormAnugerahExcel, matchJenisPlakPath, deriveKlasMatrixSectionLines } from './excelImport';
 import { computeBlocks, noopUpdaters } from './computeBlocks';
 import { buildCategoryCartItems } from '../state/categoryCartItems';
 import { buildCsvRows } from './exportCsv';
@@ -360,6 +360,37 @@ describe('ALIRAN TERBAIK (Kalau ada kelas) — import → auto TOTAL → cart �
       ['H25 FLAT', 9, 9],
       ['BRONZE', 9, 9],
       ['FLAT 2', 3, 3], // flat TAHUN 4: 3 classes × 1
+    ]);
+  });
+});
+
+describe('ALIRAN TERBAIK — PERTAMA row can sit second (current form) or last (old form)', () => {
+  // Same sheet, two CONTOH layouts. The ordinal is found by its wording, so
+  // both land on the same slots, and the default row order puts it second.
+  const sheet = (contoh) => {
+    const r = [];
+    r[0] = [null, null, null, null, 'TOLONG ISI DI SINI'];
+    contoh.forEach((text, i) => { r[1 + i] = [null, null, null, null, text]; });
+    r[6] = ['TAHUN', 'KEDUDUKAN', null, 'TOTAL'];
+    r[7] = [null, 'DARI', 'HINGGA KE'];
+    r[8] = ['TAHUN 1', 'PERTAMA', 'KETIGA'];
+    r[9] = ['TOTAL:'];
+    return (parseFormAnugerahExcel(workbookFromSheets({ 'ALIRAN TERBAIK': r.map((x) => x || []) })).categorized?.ALIRAN || [])[0];
+  };
+  const expected = { 0: 'HARI ANUGERAH 2026', 2: 'TERBAIK DALAM ALIRAN', '2b': 'TAHUN 1', 3: 'TEMPAT PERTAMA' };
+
+  it('reads the same slots from either layout', () => {
+    expect(sheet(['HARI ANUGERAH 2026', 'TEMPAT PERTAMA', 'TERBAIK DALAM ALIRAN', 'TAHUN 1']).lines).toEqual(expected);
+    expect(sheet(['HARI ANUGERAH 2026', 'TERBAIK DALAM ALIRAN', 'TAHUN 1', 'TEMPAT PERTAMA']).lines).toEqual(expected);
+  });
+
+  it('defaults the row order to TAJUK → PERTAMA → ACARA → TAHUN, numbered 1-4 on screen', () => {
+    const lines = deriveKlasMatrixSectionLines(sheet(['HARI ANUGERAH 2026', 'TERBAIK DALAM ALIRAN', 'TAHUN 1', 'PERTAMA']));
+    expect(lines.refOrder).toBe('0,3,2,2b');
+    const lineValues = Object.fromEntries(Object.entries(lines).map(([k, v]) => [`ALIRAN::0::${k}`, v]));
+    const blk = computeBlocks('ALIRAN', lineValues, {}, {}, {}, {}, noopUpdaters, [], 'SK').blocks[0];
+    expect(blk.lines.map((ln) => [ln.num, ln.value])).toEqual([
+      [1, 'HARI ANUGERAH 2026'], [2, 'PERTAMA'], [3, 'TERBAIK DALAM ALIRAN'], [4, 'TAHUN 1'],
     ]);
   });
 });

@@ -2501,6 +2501,30 @@ export function AppStateProvider({ children }) {
     productionToastTimer.current = setTimeout(() => patch({ productionToast: '' }), 2500);
   }, [patch]);
 
+  // Production: re-orders one category block's Reference Sample rows after
+  // the order is submitted (ProductionOrderDetail gates this until the
+  // Shipment Date). Only that block's refOrder line changes — on every item
+  // sharing the block, since each Jenis Plak item carries its own copy of
+  // the block's lines — so every CSV / AI file for the category follows it.
+  const updateReferenceOrder = useCallback(async (orderId, refOrderKey, value) => {
+    const order = stateRef.current.orders.find((o) => o.id === orderId);
+    if (!order || !refOrderKey.endsWith('::refOrder')) return false;
+    const blockPrefix = refOrderKey.slice(0, -'refOrder'.length);
+    const items = (order.items || []).map((it) => (
+      it.detail && `${it.categoryKey}::${it.blockIdx ?? 0}::` === blockPrefix
+        ? { ...it, detail: { ...it.detail, lines: { ...(it.detail.lines || {}), [refOrderKey]: value } } }
+        : it
+    ));
+    try {
+      await updateOrder(orderId, { items });
+      patch((st) => ({ orders: st.orders.map((o) => (o.id === orderId ? { ...o, items } : o)) }));
+      return true;
+    } catch (err) {
+      console.error('Failed to save the Reference Sample row order:', err);
+      return false;
+    }
+  }, [patch]);
+
   // Production catalog admin: add/remove/edit-price/hide all change the
   // source of truth in Supabase, then refetch the whole (small, ~150-node)
   // tree and rebuild it client-side — simpler and less error-prone than
@@ -2669,6 +2693,7 @@ export function AppStateProvider({ children }) {
     recordPrint,
     ensureOrderLoaded,
     markProductionDone,
+    updateReferenceOrder,
     addCatalogNode, removeCatalogNode, updateCatalogNodePrice, renameCatalogNode, updateCatalogNodeStock, setCatalogNodeHidden, moveCatalogNode,
     linkCatalogNodeStockGroup, unlinkCatalogNodeStockGroup,
     reorderCatalogSiblings,

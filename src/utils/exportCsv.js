@@ -3,12 +3,52 @@ import {
   getCustomMatrixRowIds, customMatrixLabelKey, matrixCellKey,
   flattenPlakCatalog, isCustomPlakCode, MANUAL_MAX_QTY, numToOrdinal,
   resolveCategory, categoriesUsedByItems,
-  MORAL_SUBJECT_BY_LANGUAGE,
+  MORAL_SUBJECT_BY_LANGUAGE, DEFAULT_REF_ORDER,
 } from '../data/catalog';
 import { breakAcaraLine } from './acaraBreak';
 import { partialSplitQty } from './orderBatches';
 
-export const CSV_COLUMNS = ['event_header', 'year', 'position', 'event_line_1', 'event_line_2', 'jenis_plak', 'category'];
+export const CSV_COLUMNS = ['event_header', 'year', 'position', 'event_line_1', 'event_line_2', 'jenis_plak', 'category', 'line_order'];
+
+// line_order — the engraved lines top to bottom ("event_header|position|
+// event_line_1|event_line_2"), taken from the order the Reference Sample
+// rows are in on screen (the teacher's drag, or Production's later one —
+// computeBlocks.js's refOrder). SEAN.jsx stacks the plaque in this order.
+const DEFAULT_LINE_ORDER = ['event_header', 'position', 'event_line_1', 'event_line_2'];
+
+// Which engraved field(s) each Reference Sample row (slotId) ends up on —
+// mirrors the build*Rows mapping below. null = no draggable sample, always
+// the default order.
+function slotFieldsFor(cat) {
+  const header = { 0: ['event_header'], '0b': ['event_header'] };
+  // ALIRAN: ordinal (slot 3) -> position, ACARA -> line 1, TAHUN -> line 2.
+  if (cat?.aliranKedudukan) return { ...header, 3: ['position'], 2: ['event_line_1'], '2b': ['event_line_2'] };
+  // PBD: ACARA (+ its second box) -> position, "TAHUN 1 <kelas>" -> line 1.
+  if (cat?.mode === 'matrix' && cat.levelBreakdownAxis === 'subject') return { ...header, 2: ['position'], '2b': ['position'], 3: ['event_line_1'] };
+  // PPKI / MP THP: line 3's CONTOH lays out the subject + Tahun lines
+  // together (buildMatrixRows), so they move as one block.
+  if (cat?.mode === 'matrix') return { ...header, 2: ['position'], 3: ['event_line_1', 'event_line_2'] };
+  // LONJAKAN / KEHADIRAN (TAHUN) and TOKOH (NAMA MURID) -> line 1.
+  if (cat?.positionFromRows) return { ...header, 2: ['position'], '2b': ['position'], 3: ['event_line_1'] };
+  return null;
+}
+
+// A line with no visible row of its own (a hidden slot, or TOKOH's NAMA
+// MURID with no line-3 CONTOH) keeps its default place at the end.
+export function getLineOrder(item, cat) {
+  const slotFields = slotFieldsFor(cat);
+  if (!slotFields) return DEFAULT_LINE_ORDER.join('|');
+  const lines = item.detail?.lines || {};
+  const prefix = `${item.categoryKey}::${item.blockIdx}::`;
+  const hidden = new Set((lines[`${prefix}hiddenLines`] || '').split(',').filter(Boolean));
+  const stored = (lines[`${prefix}refOrder`] || '').split(',').filter(Boolean);
+  const order = [];
+  [...stored, ...(cat.defaultRefOrder || DEFAULT_REF_ORDER)]
+    .filter((slot) => !hidden.has(slot))
+    .forEach((slot) => (slotFields[slot] || []).forEach((f) => { if (!order.includes(f)) order.push(f); }));
+  DEFAULT_LINE_ORDER.forEach((f) => { if (!order.includes(f)) order.push(f); });
+  return order.join('|');
+}
 
 // TOKOH_SHEET only: a NAMA MURID of "Reserved" (any case — the three forms
 // teachers use are RESERVED / reserved / Reserved) means the teacher has
@@ -637,7 +677,7 @@ export function buildCsvRows(order, categoryKey, items) {
     } else {
       itemRows = buildFixedRows(item, header, year, getLine(item, 2));
     }
-    // The CSV's last two columns: every row from this item engraves for the
+    // The CSV's last three columns: every row from this item engraves for the
     // same Jenis Plak and category the item itself was assigned (a CSV
     // export is always pre-scoped to one (category, Jenis Plak) pair per
     // file — getOrderJenisPlakGroups), so both are stamped on here rather
@@ -648,7 +688,8 @@ export function buildCsvRows(order, categoryKey, items) {
     // different categories can still be told apart once merged into one
     // file.
     const categoryLabel = cat?.label || item.categoryKey;
-    itemRows.forEach((r) => rows.push([...r, item.jenisPlak || '', categoryLabel]));
+    const lineOrder = getLineOrder(item, cat);
+    itemRows.forEach((r) => rows.push([...r, item.jenisPlak || '', categoryLabel, lineOrder]));
   });
 
   return { rows, skippedItemIds, reservedCount };

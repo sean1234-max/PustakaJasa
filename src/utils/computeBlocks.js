@@ -253,6 +253,16 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
     // simply not confusing the teacher by having a box they know as
     // "Row 4" suddenly relabel itself "Row 2" just because they dragged
     // it earlier in the list.
+    // A category whose default row order isn't plain slot order (ALIRAN —
+    // catalog.js's defaultRefOrder) is put in that order BEFORE numbering,
+    // so its rows read 1, 2, 3, 4 top to bottom like every other sheet.
+    if (currentCat.defaultRefOrder) {
+      const rank = (ln) => {
+        const i = currentCat.defaultRefOrder.indexOf(ln.slotId);
+        return i === -1 ? Infinity : i;
+      };
+      flatLines = [...flatLines].sort((a, b) => rank(a) - rank(b));
+    }
     flatLines = numberLines(flatLines);
     // Draggable categories (Main Template, OTHERS): the teacher can freely
     // reorder these rows on screen — purely a display-ORDER convenience so
@@ -1081,7 +1091,10 @@ export function buildDraftFromOrder(order) {
 // CSV's text gets dropped into (e.g. an MP399 file vs a VB/A file) — two
 // Jenis Plak rows sitting in one combined export would mix text meant for
 // two different files with no way to tell which rows belong to which.
-export function reconstructOrderDetailGroups(order, catKey, plakCatalog) {
+// `updaters` defaults to read-only; Production's order page passes one whose
+// onLine saves a dragged Reference Sample row order (refOrder) — nothing
+// else on that page is editable.
+export function reconstructOrderDetailGroups(order, catKey, plakCatalog, updaters = noopUpdaters) {
   const schoolLanguage = order.schoolLanguage === 'SJKC' ? 'SJKC' : 'SK';
   const items = (order.items || []).filter((it) => it.categoryKey === catKey);
 
@@ -1102,7 +1115,7 @@ export function reconstructOrderDetailGroups(order, catKey, plakCatalog) {
     }
     plakRows[key] = [{ id: item.id, jenisPlak: item.jenisPlak, unitPrice: item.unitPrice, posDari: item.posDari, posHingga: item.posHingga, qty: item.qty }];
 
-    const result = computeBlocks(catKey, lineValues, matrixValues, rowsByBlock, plakRows, columnsByBlock, noopUpdaters, plakCatalog, schoolLanguage);
+    const result = computeBlocks(catKey, lineValues, matrixValues, rowsByBlock, plakRows, columnsByBlock, updaters, plakCatalog, schoolLanguage);
     return {
       blockIdx, batch, jenisPlak: item.jenisPlak, items: [item],
       label: batch === 0 ? 'Original Order' : `Tambahan #${batch}`,

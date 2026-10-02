@@ -6,8 +6,8 @@ import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import CorrectedExcelControl from '../components/CorrectedExcelControl';
 import PriceTable from '../components/PriceTable';
 import { useAppState } from '../state/useAppState';
-import { statusPillStyle, formatDate, MANUAL_MAX_QTY } from '../data/catalog';
-import { reconstructOrderDetailGroups, reconstructBlocksForCategory } from '../utils/computeBlocks';
+import { statusPillStyle, formatDate, MANUAL_MAX_QTY, deliveryStageForShipmentDate } from '../data/catalog';
+import { reconstructOrderDetailGroups, reconstructBlocksForCategory, noopUpdaters } from '../utils/computeBlocks';
 import { getExportableCategories, splitOrderCategories, getOrderJenisPlakGroups, getPlakProductionMode, summarizeRowsForManual, buildCsvRows, rowsToCsv, buildCategoryCsvFilename, combineCsvRows, buildCombinedCsvFilename, validateExport, getInvoiceIdForJenisPlak, getPartialSplitNotes } from '../utils/exportCsv';
 import { downloadTextFile } from '../utils/downloadBlob';
 import { getInvoiceItems } from '../utils/orderBatches';
@@ -16,6 +16,8 @@ import { getAiFileHelperStatus, startAiFileHelperJob, getAiFileHelperJob } from 
 import { getOrderChangeStamp } from '../utils/orderStamp';
 
 const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: false, matrix: false, jenisPlak: false };
+// Production may still drag the Reference Sample rows into a new order — nothing else.
+const REORDER_ONLY = { ...READONLY, lineOrder: true };
 
 // Downloads the teacher's original FORM ANUGERAH upload (0055) via a
 // short-lived signed URL — for cross-checking the order against the file.
@@ -32,7 +34,7 @@ async function downloadOrderImport(order, setErr) {
 }
 
 export default function ProductionOrderDetail() {
-  const { state, ensureOrderLoaded, loadCorrectedExcelPreview } = useAppState();
+  const { state, ensureOrderLoaded, loadCorrectedExcelPreview, updateReferenceOrder } = useAppState();
   const [importErr, setImportErr] = useState('');
   const { id } = useParams();
   const navigate = useNavigate();
@@ -97,10 +99,37 @@ export default function ProductionOrderDetail() {
   // Jenis Plak table); order.totalAmount/status/pricing/stock are
   // untouched regardless, since the Summary tab and Nav still read `order`
   // itself.
-  const effectiveOrder = useMemo(
-    () => (correctedItems ? { ...order, items: correctedItems } : order),
-    [order, correctedItems],
-  );
+  // Production's own Reference Sample row order (updateReferenceOrder) is
+  // saved on the order's items, so it's carried over onto the re-read file.
+  const effectiveOrder = useMemo(() => {
+    if (!correctedItems) return order;
+    const savedRefOrders = Object.fromEntries((order.items || []).flatMap((it) => (
+      Object.entries(it.detail?.lines || {}).filter(([k]) => k.endsWith('::refOrder'))
+    )));
+    const items = correctedItems.map((it) => {
+      const key = `${it.categoryKey}::${it.blockIdx ?? 0}::refOrder`;
+      return it.detail && savedRefOrders[key]
+        ? { ...it, detail: { ...it.detail, lines: { ...(it.detail.lines || {}), [key]: savedRefOrders[key] } } }
+        : it;
+    });
+    return { ...order, items };
+  }, [order, correctedItems]);
+
+  // The row order stays changeable from submit until the Shipment Date
+  // itself (same calendar rule as the Shipped/Completed status) — a teacher
+  // may phone in a change after submitting. Saved on every drop.
+  const canReorder = !!order && order.status !== 'Cancelled'
+    && deliveryStageForShipmentDate(order.shipmentDate, new Date()) !== 'Completed';
+  const [refOrderNote, setRefOrderNote] = useState('');
+  const reorderUpdaters = useMemo(() => (canReorder ? {
+    ...noopUpdaters,
+    onLine: async (key, value) => {
+      const ok = await updateReferenceOrder(order.id, key, value);
+      setRefOrderNote(ok
+        ? 'New row order saved — export the CSV / Generate AI File again to use it. 顺序已保存，请重新 export / generate。'
+        : 'Could not save the new row order. Please try again. 顺序没有保存，请再试一次。');
+    },
+  } : noopUpdaters), [canReorder, order?.id, updateReferenceOrder]);
 
   const [exportNote, setExportNote] = useState('');
   const exportNoteTimer = useRef(null);
@@ -155,10 +184,10 @@ export default function ProductionOrderDetail() {
   // reconstruction would require.
   const detailGroups = useMemo(() => {
     if (!effectiveOrder || !currentCat) return [];
-    const groups = reconstructOrderDetailGroups(effectiveOrder, currentCat.key, state.plakCatalog);
+    const groups = reconstructOrderDetailGroups(effectiveOrder, currentCat.key, state.plakCatalog, reorderUpdaters);
     if (!isFiltered) return groups;
     return groups.filter((g) => getInvoiceIdForJenisPlak(effectiveOrder, g.jenisPlak) === viewInvoiceId);
-  }, [effectiveOrder, currentCat, state.plakCatalog, isFiltered, viewInvoiceId]);
+  }, [effectiveOrder, currentCat, state.plakCatalog, isFiltered, viewInvoiceId, reorderUpdaters]);
 
   // Scoped to (category, Jenis Plak) — never combined across categories,
   // since two categories can share a Jenis Plak (same physical AI file)
@@ -521,6 +550,12 @@ export default function ProductionOrderDetail() {
                 {exportNote && <p className="hint-text">{exportNote}</p>}
 
                 <div className="hint-text" style={{ marginTop: 'var(--space-6)', fontWeight: 600, opacity: 0.8 }}>Export by Category (for review)</div>
+                {canReorder && (
+                  <p className="hint-text">
+                    Drag a Reference Sample row number to change the line order on the plaque (allowed until the Shipment Date). 拖 Reference Sample 的号码可以换上下顺序（到 Shipment Date 当天为止）。
+                  </p>
+                )}
+                {refOrderNote && <p className="hint-text" style={{ fontWeight: 600 }}>{refOrderNote}</p>}
                 {categories.length === 0 ? (
                   <p className="hint-text">No exportable categories found for this order.</p>
                 ) : (
@@ -542,7 +577,7 @@ export default function ProductionOrderDetail() {
                           <div className="card-kicker">
                             {group.blk.qtyLabel}{group.batch !== 0 ? ` — ${group.label}` : ''} — {group.jenisPlak}
                           </div>
-                          <OrderCategoryBlock blk={group.blk} editable={READONLY} />
+                          <OrderCategoryBlock blk={group.blk} editable={canReorder ? REORDER_ONLY : READONLY} />
 
                           {check.errors.map((e) => (
                             <p key={e} className="hint-text" style={{ color: '#b0392e', fontWeight: 600 }}>⚠ {e}</p>

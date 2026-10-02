@@ -178,6 +178,15 @@ export function matrixCellKey(catKey, rowKey, colKey) {
 // reference-sample text itself was never read.
 const STANDARD_REFERENCE_LINES = ['TAJUK BESAR', 'YEAR', 'ACARA', '( TAHUN ? )'];
 
+// Reference Sample row order before any drag (slotIds, top to bottom) —
+// the plaque is engraved in this same order (exportCsv.js's line_order
+// column → SEAN.jsx), so the default must be TAJUK BESAR → position →
+// event_line_1 → event_line_2 on every sheet. ALIRAN's position is the
+// ordinal on slot 3 (ACARA on slot 2 is its event_line_1), so it needs its
+// own default to put that row second.
+export const DEFAULT_REF_ORDER = ['0', '0b', '1', '2', '2b', '3'];
+export const ALIRAN_REF_ORDER = ['0', '0b', '1', '3', '2', '2b'];
+
 // PPKI / MP THP 1/2 (and their "Kalau ada kelas" variants) — TAJUK BESAR /
 // YEAR / POSITION (★, red, fixed) / a CONTOH-only "( SUBJEK )" line. Line 3
 // used to be a combined "TAHUN N (SUBJEK)" CONTOH that exportCsv.js's now-
@@ -366,6 +375,7 @@ export const CATEGORIES = [
     requiredLineIndices: [0, 2],
     positionFieldsRedText: true,
     draggableReferenceSample: true,
+    defaultRefOrder: ALIRAN_REF_ORDER,
   },
   {
     // ALIRAN TERBAIK (Kalau ada kelas) — same left table + JENIS PLAK footer
@@ -388,6 +398,7 @@ export const CATEGORIES = [
     requiredLineIndices: [0, 2],
     positionFieldsRedText: true,
     draggableReferenceSample: true,
+    defaultRefOrder: ALIRAN_REF_ORDER,
   },
   {
     // LONJAKAN SAUJANA — six fixed TAHUN rows, each with its OWN KUANTITI

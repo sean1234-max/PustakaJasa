@@ -62,11 +62,12 @@ function handleRefLineAltEnter(e, onChange) {
 export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmptyRows, isLastBlock, flashJenisPlak }) {
   // Drag-and-drop reordering of Reference Sample rows (OTHERS — see
   // catalog.js's draggableReferenceSample / computeBlocks.js's
-  // reorderReferenceSample). Only offered when actually editable (never on
-  // read-only review screens) — dragSlotId tracks which row is mid-drag so
-  // it can be visually dimmed while dragging.
+  // reorderReferenceSample). Only offered when actually editable — or, on
+  // Production's otherwise read-only order page, `editable.lineOrder` (the
+  // row order is all they may change) — dragSlotId tracks which row is
+  // mid-drag so it can be visually dimmed while dragging.
   const [dragSlotId, setDragSlotId] = useState(null);
-  const referenceSampleDraggable = !!blk.reorderReferenceSample && editable.lines;
+  const referenceSampleDraggable = !!blk.reorderReferenceSample && (editable.lines || editable.lineOrder);
 
   // Reference Sample layout: preview + numbered inputs sit side by side, but
   // if the longest line (usually the Tajuk Besar) is wide enough that BOTH
