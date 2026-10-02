@@ -462,8 +462,14 @@ export default function SalesOrderSummary() {
               {order.picName && <div><div className="dim">PIC Name</div><div>{order.picName}{order.phone ? ` / ${order.phone}` : ''}</div></div>}
               {order.ketuaPanitia && <div><div className="dim">Ketua Panitia</div><div>{order.ketuaPanitia}</div></div>}
               {order.terms && <div><div className="dim">Terms</div><div>{order.terms}</div></div>}
-              {order.shipmentDate && <div><div className="dim">Shipment Date</div><div>{formatDate(new Date(order.shipmentDate))}</div></div>}
-              {order.functionDate && <div><div className="dim">Function Date</div><div>{formatDate(new Date(order.functionDate))}</div></div>}
+              {/* Printed with Shipment Date directly above Function Date (one cell),
+                  not side by side across the two-column grid. */}
+              {(order.shipmentDate || order.functionDate) && (
+                <div>
+                  {order.shipmentDate && <><div className="dim">Shipment Date</div><div>{formatDate(new Date(order.shipmentDate))}</div></>}
+                  {order.functionDate && <><div className="dim" style={order.shipmentDate ? { marginTop: 'var(--space-2)' } : undefined}>Function Date</div><div>{formatDate(new Date(order.functionDate))}</div></>}
+                </div>
+              )}
             </div>
             {/* Printed too, not just shown on screen — a KIV/pending note (see
                 AppState.jsx's importFormAnugerahExcel) needs to physically

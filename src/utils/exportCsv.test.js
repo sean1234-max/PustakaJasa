@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  CSV_COLUMNS, rowsToCsv, buildCsvRows, validateExport, buildCategoryCsvFilename, getInvoiceIdForJenisPlak, isReservedName,
+  CSV_COLUMNS, rowsToCsv, buildCsvRows, validateExport, buildCategoryCsvFilename, getInvoiceIdForJenisPlak, getPartialSplitNotes, isReservedName,
   getOrderJenisPlakGroups, getExportableCategories, splitOrderCategories,
   combineCsvRows, buildCombinedCsvFilename,
 } from './exportCsv';
@@ -886,5 +886,16 @@ describe('getInvoiceIdForJenisPlak', () => {
   it("falls back to the order's invoiceId when no jenisPlak is passed", () => {
     const order = { id: 'ORD-1', invoiceId: 'INV-100', invoiceGroups: [{ invoiceId: 'INV-200', jenisPlakList: ['PKC 263'] }] };
     expect(getInvoiceIdForJenisPlak(order)).toBe('INV-100');
+  });
+  it('partial split notes: the group invoice points at the home CSV, the home invoice mentions the moved QTY', () => {
+    const order = { id: 'ORD-1', invoiceId: 'INV-100', invoiceGroups: [{ invoiceId: 'INV-200', jenisPlakList: ['PKC 263', 'PKF 266'], qtyByJenisPlak: { 'PKC 263': 5 } }] };
+    expect(getPartialSplitNotes(order, 'INV-200')).toEqual(["PKC 263: these 5 are made in invoice INV-100's CSV / AI file."]);
+    expect(getPartialSplitNotes(order, 'INV-100')).toEqual(['PKC 263: the CSV / AI file here makes all of them, including the 5 billed on invoice INV-200.']);
+    expect(getPartialSplitNotes(order, 'INV-999')).toEqual([]);
+  });
+  it('a Jenis Plak only partly moved to a group keeps its CSV/AI-file home on the default invoice', () => {
+    const order = { id: 'ORD-1', invoiceId: 'INV-100', invoiceGroups: [{ invoiceId: 'INV-200', jenisPlakList: ['PKC 263', 'PKF 266'], qtyByJenisPlak: { 'PKC 263': 5 } }] };
+    expect(getInvoiceIdForJenisPlak(order, 'PKC 263')).toBe('INV-100');
+    expect(getInvoiceIdForJenisPlak(order, 'PKF 266')).toBe('INV-200');
   });
 });

@@ -8,8 +8,9 @@ import PriceTable from '../components/PriceTable';
 import { useAppState } from '../state/useAppState';
 import { statusPillStyle, formatDate, MANUAL_MAX_QTY } from '../data/catalog';
 import { reconstructOrderDetailGroups, reconstructBlocksForCategory } from '../utils/computeBlocks';
-import { getExportableCategories, splitOrderCategories, getOrderJenisPlakGroups, getPlakProductionMode, summarizeRowsForManual, buildCsvRows, rowsToCsv, buildCategoryCsvFilename, combineCsvRows, buildCombinedCsvFilename, validateExport, getInvoiceIdForJenisPlak } from '../utils/exportCsv';
+import { getExportableCategories, splitOrderCategories, getOrderJenisPlakGroups, getPlakProductionMode, summarizeRowsForManual, buildCsvRows, rowsToCsv, buildCategoryCsvFilename, combineCsvRows, buildCombinedCsvFilename, validateExport, getInvoiceIdForJenisPlak, getPartialSplitNotes } from '../utils/exportCsv';
 import { downloadTextFile } from '../utils/downloadBlob';
+import { getInvoiceItems } from '../utils/orderBatches';
 import { getOrderImportUrl } from '../lib/storageApi';
 import { getAiFileHelperStatus, startAiFileHelperJob, getAiFileHelperJob } from '../lib/aiFileHelper';
 import { getOrderChangeStamp } from '../utils/orderStamp';
@@ -198,9 +199,9 @@ export default function ProductionOrderDetail() {
   const stamp = getOrderChangeStamp(order);
   // Only this invoice's items when filtered — feeds the "Jenis Plak / QTY /
   // Harga" overview table at the top of Order Details and its two totals.
-  const visibleItems = isFiltered
-    ? effectiveOrder.items.filter((it) => getInvoiceIdForJenisPlak(effectiveOrder, it.jenisPlak) === viewInvoiceId)
-    : effectiveOrder.items;
+  // getInvoiceItems cuts a partly-split Jenis Plak down to this invoice's QTY.
+  const visibleItems = isFiltered ? getInvoiceItems(effectiveOrder, viewInvoiceId) : effectiveOrder.items;
+  const partialSplitNotes = isFiltered ? getPartialSplitNotes(effectiveOrder, viewInvoiceId) : [];
   const totalQty = visibleItems.reduce((sum, it) => sum + (Number(it.qty) || 0), 0);
   const effectiveTotalAmount = visibleItems.reduce((sum, it) => sum + it.harga, 0);
 
@@ -391,6 +392,9 @@ export default function ProductionOrderDetail() {
               plakCatalog={state.plakCatalog} totalQty={totalQty} totalHarga={effectiveTotalAmount} priceAdjusted={false}
               hideCategory combineJenisPlak
             />
+            {partialSplitNotes.map((note) => (
+              <p key={note} className="hint-text" style={{ color: '#b45309', marginTop: 'var(--space-2)' }}>{note}</p>
+            ))}
 
             {selempangBlocks.length > 0 && (
               <div style={{ marginTop: 'var(--space-6)' }}>

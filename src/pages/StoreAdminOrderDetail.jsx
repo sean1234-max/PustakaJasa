@@ -9,7 +9,7 @@ import { useAppState } from '../state/useAppState';
 import { statusPillStyle, formatDate, standardUnitPrice } from '../data/catalog';
 import { reconstructBlocksForCategory } from '../utils/computeBlocks';
 import { splitOrderCategories, getInvoiceIdForJenisPlak } from '../utils/exportCsv';
-import { combineByJenisPlak } from '../utils/orderBatches';
+import { combineByJenisPlak, getInvoiceItems, partialSplitQty } from '../utils/orderBatches';
 import { getOrderImportUrl } from '../lib/storageApi';
 import { getOrderChangeStamp } from '../utils/orderStamp';
 import { isUrgentShipment } from '../utils/urgentOrder';
@@ -29,6 +29,76 @@ async function downloadOrderImport(order, setErr) {
 }
 
 const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: false, matrix: false, jenisPlak: false };
+
+// One Jenis Plak line in either split panel: tick it, and (once ticked)
+// optionally lower the QTY to move only part of it — e.g. 5 of 15 PKC 263
+// onto the new invoice, the other 10 staying where they are. Left at the
+// full QTY (or blank) = move all of it.
+function SplitRow({ row, checked, onToggle, qty, onQty, note }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+        <input type="checkbox" checked={checked} onChange={onToggle} />
+        <span>{row.jenisPlak}</span>
+      </label>
+      {checked && (
+        <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-1)' }}>
+          <span className="dim">QTY</span>
+          <input
+            className="input"
+            type="number"
+            min={1}
+            max={row.qty}
+            step={1}
+            style={{ width: 80 }}
+            value={qty ?? String(row.qty)}
+            onChange={(e) => onQty(e.target.value)}
+            aria-label={`QTY of ${row.jenisPlak} to move`}
+          />
+          <span className="dim">/ {row.qty}</span>
+        </label>
+      )}
+      {note && <span className="dim">— {note}</span>}
+    </div>
+  );
+}
+
+// Invoice numbers already on record, each with Edit — billing re-issues a
+// new number when an invoiced order is amended / gets a Tambahan the next
+// month, so Store Admin can swap it at any status (renameInvoiceNumber).
+function InvoiceNumberList({ order, invoiceIds, renameInvoiceNumber, onRenamed }) {
+  const [editing, setEditing] = useState(null);
+  const [draft, setDraft] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const handleSave = async () => {
+    if (busy) return;
+    setBusy(true);
+    const res = await renameInvoiceNumber(order.id, editing, draft);
+    setBusy(false);
+    if (res?.ok) {
+      onRenamed(editing, res.invoiceId);
+      setEditing(null);
+    }
+  };
+
+  return invoiceIds.map((inv) => (
+    <div key={inv} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginTop: 'var(--space-1)' }}>
+      {editing === inv ? (
+        <>
+          <input className="input" style={{ maxWidth: 240 }} value={draft} onChange={(e) => setDraft(e.target.value)} aria-label={`New invoice number for ${inv}`} />
+          <button type="button" className="btn btn-primary" onClick={handleSave} disabled={busy || !draft.trim()}>{busy ? 'Saving…' : 'Save'}</button>
+          <button type="button" className="btn btn-ghost" onClick={() => setEditing(null)} disabled={busy}>Cancel</button>
+        </>
+      ) : (
+        <>
+          <span>{inv}</span>
+          <button type="button" className="btn btn-ghost" onClick={() => { setEditing(inv); setDraft(inv); }}>Edit</button>
+        </>
+      )}
+    </div>
+  ));
+}
 
 // Lets Store Admin split ONE order across several invoice numbers when
 // different Jenis Plak codes bill separately (orders.invoice_groups, 0070)
@@ -62,10 +132,11 @@ function InvoiceSplitPanel({ order, setJenisPlakInvoiceGroup, updateToast }) {
   const jenisPlakRows = useMemo(() => combineByJenisPlak(order.items), [order.items]);
   const [expanded, setExpanded] = useState(false);
   const [selected, setSelected] = useState(() => new Set());
+  const [qtyDrafts, setQtyDrafts] = useState({});
   const [invoiceDraft, setInvoiceDraft] = useState('');
   const [busy, setBusy] = useState(false);
 
-  if (jenisPlakRows.length < 2) return null;
+  if (jenisPlakRows.length === 0) return null;
 
   if (!expanded) {
     return (
@@ -86,10 +157,11 @@ function InvoiceSplitPanel({ order, setJenisPlakInvoiceGroup, updateToast }) {
   const handleAssign = async () => {
     if (busy || selected.size === 0 || !invoiceDraft.trim()) return;
     setBusy(true);
-    const res = await setJenisPlakInvoiceGroup(order.id, invoiceDraft, [...selected]);
+    const res = await setJenisPlakInvoiceGroup(order.id, invoiceDraft, [...selected], qtyDrafts);
     setBusy(false);
     if (res?.ok) {
       setSelected(new Set());
+      setQtyDrafts({});
       setInvoiceDraft('');
     }
   };
@@ -100,24 +172,30 @@ function InvoiceSplitPanel({ order, setJenisPlakInvoiceGroup, updateToast }) {
     <div style={{ marginTop: 'var(--space-4)' }}>
       <div className="card-kicker">Split Across Invoices</div>
       <p className="hint-text" style={{ marginTop: 0 }}>
-        Tick the Jenis Plak that belong on a different invoice, type that invoice number, then assign. Jenis Plak left unticked stay on {defaultLabel}.
+        Tick the Jenis Plak that belong on a different invoice (lower the QTY to move only part of it), type that invoice number, then assign. Jenis Plak left unticked stay on {defaultLabel}.
       </p>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)', marginTop: 'var(--space-2)' }}>
         {jenisPlakRows.map((row) => {
-          const current = getInvoiceIdForJenisPlak(order, row.jenisPlak);
+          const group = (order.invoiceGroups || []).find((g) => (g.jenisPlakList || []).includes(row.jenisPlak));
+          const part = partialSplitQty(group, row.jenisPlak);
+          // getInvoiceIdForJenisPlak falls back to order.invoiceId, then
+          // order.id — before approval, order.invoiceId is still null, so an
+          // un-split Jenis Plak would otherwise show the ORDER ID here and
+          // look like a real invoice number. Only show it once it's a real
+          // group override or the order actually has one.
+          let note = null;
+          if (part != null) note = `currently ${Math.min(part, row.qty)} on ${group.invoiceId}, ${Math.max(row.qty - part, 0)} on ${order.invoiceId || 'the main invoice'}`;
+          else if (order.invoiceId || group) note = `currently ${getInvoiceIdForJenisPlak(order, row.jenisPlak)}`;
           return (
-            <label key={row.jenisPlak} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-              <input type="checkbox" checked={selected.has(row.jenisPlak)} onChange={() => toggle(row.jenisPlak)} />
-              <span>{row.jenisPlak}</span>
-              {/* getInvoiceIdForJenisPlak falls back to order.invoiceId, then
-                  order.id — before approval, order.invoiceId is still null,
-                  so an un-split Jenis Plak would otherwise show the ORDER ID
-                  here and look like a real invoice number. Only show it once
-                  it's a real group override or the order actually has one. */}
-              {(order.invoiceId || (order.invoiceGroups || []).some((g) => (g.jenisPlakList || []).includes(row.jenisPlak))) && (
-                <span className="dim">— currently {current}</span>
-              )}
-            </label>
+            <SplitRow
+              key={row.jenisPlak}
+              row={row}
+              checked={selected.has(row.jenisPlak)}
+              onToggle={() => toggle(row.jenisPlak)}
+              qty={qtyDrafts[row.jenisPlak]}
+              onQty={(v) => setQtyDrafts((prev) => ({ ...prev, [row.jenisPlak]: v }))}
+              note={note}
+            />
           );
         })}
       </div>
@@ -153,11 +231,11 @@ function InvoiceSplitPanel({ order, setJenisPlakInvoiceGroup, updateToast }) {
 // piggyback on, since the main invoice is already committed by then).
 // Collapsed to a single "Split Invoice" button by default, same reasoning
 // as InvoiceSplitPanel — most orders never need this.
-function InvoiceSplitDraft({ order, splitInvoiceId, setSplitInvoiceId, splitSelected, setSplitSelected }) {
+function InvoiceSplitDraft({ order, splitInvoiceId, setSplitInvoiceId, splitSelected, setSplitSelected, splitQty, setSplitQty }) {
   const jenisPlakRows = useMemo(() => combineByJenisPlak(order.items), [order.items]);
   const [expanded, setExpanded] = useState(false);
 
-  if (jenisPlakRows.length < 2) return null;
+  if (jenisPlakRows.length === 0) return null;
 
   if (!expanded) {
     return (
@@ -189,14 +267,18 @@ function InvoiceSplitDraft({ order, splitInvoiceId, setSplitInvoiceId, splitSele
         />
       </div>
       <p className="hint-text" style={{ marginTop: 'var(--space-2)' }}>
-        Tick the Jenis Plak that go on this new invoice. Everything else stays on the Invoice Number above once you Approve.
+        Tick the Jenis Plak that go on this new invoice (lower the QTY to move only part of it). Everything else stays on the Invoice Number above once you Approve.
       </p>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)', marginTop: 'var(--space-2)' }}>
         {jenisPlakRows.map((row) => (
-          <label key={row.jenisPlak} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-            <input type="checkbox" checked={splitSelected.has(row.jenisPlak)} onChange={() => toggle(row.jenisPlak)} />
-            <span>{row.jenisPlak}</span>
-          </label>
+          <SplitRow
+            key={row.jenisPlak}
+            row={row}
+            checked={splitSelected.has(row.jenisPlak)}
+            onToggle={() => toggle(row.jenisPlak)}
+            qty={splitQty[row.jenisPlak]}
+            onQty={(v) => setSplitQty((prev) => ({ ...prev, [row.jenisPlak]: v }))}
+          />
         ))}
       </div>
     </div>
@@ -220,7 +302,7 @@ function InvoiceSplitDraft({ order, splitInvoiceId, setSplitInvoiceId, splitSele
 // falls back to the simple invoice-only entry (setInvoiceId), same as before.
 export default function StoreAdminOrderDetail() {
   const {
-    state, today, setInvoiceId, approveAndSetInvoiceId, setJenisPlakInvoiceGroup, retryUrgentSheetSync, ensureOrderLoaded,
+    state, today, setInvoiceId, approveAndSetInvoiceId, setJenisPlakInvoiceGroup, renameInvoiceNumber, retryUrgentSheetSync, ensureOrderLoaded,
   } = useAppState();
   const { id } = useParams();
   const navigate = useNavigate();
@@ -254,6 +336,7 @@ export default function StoreAdminOrderDetail() {
   // when building the single approveAndSetInvoiceId call.
   const [splitInvoiceId, setSplitInvoiceId] = useState('');
   const [splitSelected, setSplitSelected] = useState(() => new Set());
+  const [splitQty, setSplitQty] = useState({});
 
   // Shipment Date (shipmentDate) / Function Date — editable only while the
   // order is still awaiting approval, the same window Sales has (guard 0038
@@ -280,7 +363,7 @@ export default function StoreAdminOrderDetail() {
   const visibleItems = useMemo(() => {
     const items = order?.items || [];
     if (!isFiltered) return items;
-    return items.filter((it) => getInvoiceIdForJenisPlak(order, it.jenisPlak) === viewInvoiceId);
+    return getInvoiceItems(order, viewInvoiceId);
   }, [order, isFiltered, viewInvoiceId]);
   const rows = useMemo(() => visibleItems.map((it) => {
     const unitPrice = Number(priceDrafts[it.id] ?? it.unitPrice ?? 0);
@@ -340,7 +423,7 @@ export default function StoreAdminOrderDetail() {
     // Bundles whatever's ticked in InvoiceSplitDraft into this SAME write —
     // empty if Store Admin never opened/used that panel, same as before.
     const invoiceGroups = splitSelected.size > 0 && splitInvoiceId.trim()
-      ? [{ invoiceId: splitInvoiceId, jenisPlakList: [...splitSelected] }]
+      ? [{ invoiceId: splitInvoiceId, jenisPlakList: [...splitSelected], qtyByJenisPlak: splitQty }]
       : [];
     setBusy(true);
     const res = await approveAndSetInvoiceId(order.id, updatedItems, invoiceDraft, overrides, invoiceGroups);
@@ -349,6 +432,14 @@ export default function StoreAdminOrderDetail() {
       setInvoiceDraft('');
       setSplitInvoiceId('');
       setSplitSelected(new Set());
+      setSplitQty({});
+    }
+  };
+
+  // The ?invoice= being viewed was just renamed — follow it to the new number.
+  const handleInvoiceRenamed = (oldId, newId) => {
+    if (isFiltered && viewInvoiceId === oldId) {
+      navigate(`/store-admin/orders/${order.id}?invoice=${encodeURIComponent(newId)}`, { replace: true });
     }
   };
 
@@ -484,6 +575,8 @@ export default function StoreAdminOrderDetail() {
                   setSplitInvoiceId={setSplitInvoiceId}
                   splitSelected={splitSelected}
                   setSplitSelected={setSplitSelected}
+                  splitQty={splitQty}
+                  setSplitQty={setSplitQty}
                 />
 
                 <div className="row-split" style={{ marginTop: 'var(--space-4)' }}>
@@ -503,7 +596,12 @@ export default function StoreAdminOrderDetail() {
                 <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Invoice Number</div>
                 {order.invoiceId ? (
                   <div style={{ marginTop: 'var(--space-2)' }}>
-                    <div>{isFiltered ? viewInvoiceId : order.invoiceId}</div>
+                    <InvoiceNumberList
+                      order={order}
+                      invoiceIds={isFiltered ? [viewInvoiceId] : [order.invoiceId, ...(order.invoiceGroups || []).map((g) => g.invoiceId)]}
+                      renameInvoiceNumber={renameInvoiceNumber}
+                      onRenamed={handleInvoiceRenamed}
+                    />
                     {/* Gated on the PERSISTED urgentSheetSyncedAt flag (not
                         just this session's sheetSyncErrors), so it reappears
                         correctly after a page refresh too — see

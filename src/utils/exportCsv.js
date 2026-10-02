@@ -6,6 +6,7 @@ import {
   MORAL_SUBJECT_BY_LANGUAGE,
 } from '../data/catalog';
 import { breakAcaraLine } from './acaraBreak';
+import { partialSplitQty } from './orderBatches';
 
 export const CSV_COLUMNS = ['event_header', 'year', 'position', 'event_line_1', 'event_line_2', 'jenis_plak', 'category'];
 
@@ -784,10 +785,30 @@ function sanitizeFilenamePart(part) {
 // under two categories is already ONE line for pricing), so that's also the
 // natural unit for "which invoice does this bill under". Falls back through
 // order.invoiceId, then order.id, same as the un-split case always did.
+// A Jenis Plak only PARTLY moved to a group (qtyByJenisPlak — e.g. 5 of 15
+// PKC 263 billed on a second invoice) still has its home here on the
+// default invoice: it's one AI file whose plaque rows can't be told apart
+// by invoice, so its CSV/AI file stays with the default invoice's export.
+// Billing totals use getInvoiceItems (orderBatches.js) instead.
 export function getInvoiceIdForJenisPlak(order, jenisPlak) {
   const groups = order.invoiceGroups || [];
-  const match = jenisPlak ? groups.find((g) => (g.jenisPlakList || []).includes(jenisPlak)) : null;
+  const match = jenisPlak
+    ? groups.find((g) => (g.jenisPlakList || []).includes(jenisPlak) && partialSplitQty(g, jenisPlak) == null)
+    : null;
   return (match && match.invoiceId) || order.invoiceId || order.id;
+}
+
+// Production's per-invoice page: one note per Jenis Plak that's only PARTLY
+// moved to another invoice — it's still one AI file, made by its home
+// invoice's CSV (getInvoiceIdForJenisPlak), so say so on both invoices.
+export function getPartialSplitNotes(order, viewInvoiceId) {
+  return (order.invoiceGroups || []).flatMap((g) => Object.keys(g.qtyByJenisPlak || {}).map((jp) => {
+    const home = getInvoiceIdForJenisPlak(order, jp);
+    const qty = g.qtyByJenisPlak[jp];
+    if (viewInvoiceId === g.invoiceId) return `${jp}: these ${qty} are made in invoice ${home}'s CSV / AI file.`;
+    if (viewInvoiceId === home) return `${jp}: the CSV / AI file here makes all of them, including the ${qty} billed on invoice ${g.invoiceId}.`;
+    return null;
+  }).filter(Boolean));
 }
 
 // `jenisPlak` is optional — omit it (or pass one with no invoice_groups

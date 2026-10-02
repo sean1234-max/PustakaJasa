@@ -8,7 +8,8 @@ import { useAppState } from '../state/useAppState';
 import { STATUS_STAGES, statusPillStyle, formatDate, formatDateTime, standardUnitPrice } from '../data/catalog';
 import CancelOrderControl from '../components/CancelOrderControl';
 import { reconstructBlocksForCategory } from '../utils/computeBlocks';
-import { splitOrderCategories, getInvoiceIdForJenisPlak } from '../utils/exportCsv';
+import { splitOrderCategories } from '../utils/exportCsv';
+import { getInvoiceItems } from '../utils/orderBatches';
 
 const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: false, matrix: false, jenisPlak: false };
 
@@ -37,10 +38,12 @@ export default function OrderDetails() {
 
   // Always read-only here (a teacher never edits pricing) — items already
   // carry their approved (or, before approval, catalog-standard) unitPrice.
+  // getInvoiceItems cuts a partly-split Jenis Plak (e.g. 5 of 15 PKC 263 on
+  // a second invoice) down to just this invoice's QTY / Harga.
   const priceRows = useMemo(() => {
     if (!order) return [];
     if (!isFiltered) return order.items;
-    return order.items.filter((it) => getInvoiceIdForJenisPlak(order, it.jenisPlak) === viewInvoiceId);
+    return getInvoiceItems(order, viewInvoiceId);
   }, [order, isFiltered, viewInvoiceId]);
 
   const { anugerah: allCategories, selempang: allSelempangCats } = useMemo(
@@ -63,9 +66,10 @@ export default function OrderDetails() {
   }, [allSelempangCats, isFiltered, priceRows]);
   const [activeCat, setActiveCat] = useState(() => categories[0]?.key || '');
   const currentCat = categories.find((c) => c.key === activeCat) || categories[0];
+  // A partly-split Jenis Plak has items on both invoices, so its block shows on both.
   const filterBlocks = useCallback((blocks) => (!isFiltered ? blocks : blocks.filter((blk) => (
-    !blk.jenisPlak || getInvoiceIdForJenisPlak(order, blk.jenisPlak) === viewInvoiceId
-  ))), [isFiltered, order, viewInvoiceId]);
+    !blk.jenisPlak || priceRows.some((it) => it.jenisPlak === blk.jenisPlak)
+  ))), [isFiltered, priceRows]);
   const selempangBlocks = useMemo(() => {
     if (!order) return [];
     return filterBlocks(selempangCats.flatMap((cat) => reconstructBlocksForCategory(order, cat.key, state.plakCatalog).blocks));
@@ -250,8 +254,14 @@ export default function OrderDetails() {
               {order.picName && <div><div className="dim">PIC Name</div><div>{order.picName}{order.phone ? ` / ${order.phone}` : ''}</div></div>}
               {order.ketuaPanitia && <div><div className="dim">Ketua Panitia</div><div>{order.ketuaPanitia}</div></div>}
               {order.terms && <div><div className="dim">Terms</div><div>{order.terms}</div></div>}
-              {order.shipmentDate && <div><div className="dim">Shipment Date</div><div>{formatDate(new Date(order.shipmentDate))}</div></div>}
-              {order.functionDate && <div><div className="dim">Function Date</div><div>{formatDate(new Date(order.functionDate))}</div></div>}
+              {/* Printed with Shipment Date directly above Function Date (one cell),
+                  not side by side across the two-column grid. */}
+              {(order.shipmentDate || order.functionDate) && (
+                <div>
+                  {order.shipmentDate && <><div className="dim">Shipment Date</div><div>{formatDate(new Date(order.shipmentDate))}</div></>}
+                  {order.functionDate && <><div className="dim" style={order.shipmentDate ? { marginTop: 'var(--space-2)' } : undefined}>Function Date</div><div>{formatDate(new Date(order.functionDate))}</div></>}
+                </div>
+              )}
             </div>
 
             <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Jenis Plak / Price per Unit / QTY / Harga</div>

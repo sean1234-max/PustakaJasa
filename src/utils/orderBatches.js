@@ -66,9 +66,9 @@ export function combineByJenisPlak(items) {
 // invoiceId/totalAmount/totalQty UNCHANGED — no Jenis Plak scan needed, so
 // there's zero behavior change for every normal order.
 //
-// A split order's slices are computed by summing each Jenis Plak's
-// harga/qty (via combineByJenisPlak, same combining the price table/split
-// panel already use) into whichever invoice it belongs to — the order's own
+// A split order's slices are computed by summing each invoice's own items
+// (getInvoiceItems below — a partially-moved Jenis Plak counts its moved
+// QTY on the group and the rest on the default) — the order's own
 // invoiceId for anything not listed in any group, each group's own
 // invoiceId otherwise. A slice with zero Jenis Plak in it (can happen if
 // every single one got split away, leaving nothing on the default) is
@@ -103,40 +103,74 @@ export function getOrderInvoiceSlices(order, plakCatalog) {
     const priceAdjusted = priceAdjustedOf(combineByJenisPlak(order.items));
     return [{ invoiceId: order.invoiceId || null, totalAmount: order.totalAmount, totalQty, priceAdjusted, status: order.status }];
   }
-  const totalsByInvoice = new Map();
-  const qtyByInvoice = new Map();
-  const rowsByInvoice = new Map();
+  // Default slice first, then each group in the order Store Admin created
+  // them — keeps card order stable/predictable.
+  const keys = [order.invoiceId || null, ...groups.map((g) => g.invoiceId)];
+  return keys.flatMap((key, i) => {
+    const items = getInvoiceItems(order, key);
+    if (items.length === 0) return [];
+    return [{
+      invoiceId: key,
+      totalAmount: items.reduce((sum, it) => sum + (Number(it.harga) || 0), 0),
+      totalQty: items.reduce((sum, it) => sum + (Number(it.qty) || 0), 0),
+      priceAdjusted: priceAdjustedOf(combineByJenisPlak(items)),
+      status: i === 0 ? order.status : groups[i - 1].status || order.status,
+    }];
+  });
+}
+
+// How many pieces of `jenisPlak` a group bills, when Store Admin moved only
+// PART of that Jenis Plak onto it (e.g. 5 of the 15 PKC 263 go on a new
+// invoice, the other 10 stay on the order's own invoice). null = the whole
+// Jenis Plak moved, which is also every group saved before partial splits
+// existed (no `qtyByJenisPlak` at all).
+export function partialSplitQty(group, jenisPlak) {
+  const q = group?.qtyByJenisPlak?.[jenisPlak];
+  return q == null ? null : Number(q) || 0;
+}
+
+// The items (with qty/harga cut down to just this invoice's share) billed
+// under `invoiceId` — the order's own invoiceId (or null before it has one)
+// for the default invoice, a group's invoiceId otherwise. A Jenis Plak moved
+// whole sits on exactly one invoice; a partially-moved one shows up on both,
+// the group's `qtyByJenisPlak` count on the group and the rest on the
+// default. When one Jenis Plak spans several items (ordered from two
+// categories), the group's count is taken from the first items first.
+export function getInvoiceItems(order, invoiceId) {
+  const groups = order.invoiceGroups || [];
   const defaultKey = order.invoiceId || null;
-  combineByJenisPlak(order.items).forEach((row) => {
-    const match = groups.find((g) => (g.jenisPlakList || []).includes(row.jenisPlak));
-    const key = match ? match.invoiceId : defaultKey;
-    totalsByInvoice.set(key, (totalsByInvoice.get(key) || 0) + row.harga);
-    qtyByInvoice.set(key, (qtyByInvoice.get(key) || 0) + row.qty);
-    if (!rowsByInvoice.has(key)) rowsByInvoice.set(key, []);
-    rowsByInvoice.get(key).push(row);
+  const leftForGroup = new Map();
+  return (order.items || []).flatMap((it) => {
+    const group = groups.find((g) => (g.jenisPlakList || []).includes(it.jenisPlak));
+    const q = partialSplitQty(group, it.jenisPlak);
+    if (q == null) return (group ? group.invoiceId : defaultKey) === invoiceId ? [it] : [];
+    const qty = Number(it.qty) || 0;
+    const left = leftForGroup.has(it.jenisPlak) ? leftForGroup.get(it.jenisPlak) : q;
+    const toGroup = Math.min(left, qty);
+    leftForGroup.set(it.jenisPlak, left - toGroup);
+    let share = 0;
+    if (invoiceId === group.invoiceId) share = toGroup;
+    else if (invoiceId === defaultKey) share = qty - toGroup;
+    if (share <= 0) return [];
+    return [{ ...it, qty: share, harga: qty > 0 ? ((Number(it.harga) || 0) * share) / qty : 0 }];
   });
-  // Default slice first (even though it's just been computed into the same
-  // map), then each group in the order Store Admin created them — keeps
-  // card order stable/predictable rather than following Map insertion order
-  // (which follows whichever Jenis Plak happened to appear first).
-  const slices = [];
-  if (totalsByInvoice.has(defaultKey)) {
-    slices.push({
-      invoiceId: defaultKey, totalAmount: totalsByInvoice.get(defaultKey), totalQty: qtyByInvoice.get(defaultKey),
-      priceAdjusted: priceAdjustedOf(rowsByInvoice.get(defaultKey) || []),
-      status: order.status,
-    });
+}
+
+// Validates the per-Jenis-Plak QTY Store Admin typed for a partial split
+// against the order's `items`. A blank QTY, or one covering the whole Jenis
+// Plak, means "move all of it" and gets no entry (same as before partial
+// splits existed). Returns { qtyByJenisPlak } or { error }.
+export function normalizeSplitQty(items, jenisPlakList, qtyDrafts) {
+  const out = {};
+  for (const key of jenisPlakList) {
+    const raw = qtyDrafts?.[key];
+    if (raw == null || raw === '') continue;
+    const total = (items || []).filter((it) => it.jenisPlak === key).reduce((sum, it) => sum + (Number(it.qty) || 0), 0);
+    const q = Number(raw);
+    if (!Number.isInteger(q) || q < 1 || q > total) return { error: `${key}: QTY must be a whole number from 1 to ${total}.` };
+    if (q < total) out[key] = q;
   }
-  groups.forEach((g) => {
-    if (totalsByInvoice.has(g.invoiceId)) {
-      slices.push({
-        invoiceId: g.invoiceId, totalAmount: totalsByInvoice.get(g.invoiceId), totalQty: qtyByInvoice.get(g.invoiceId),
-        priceAdjusted: priceAdjustedOf(rowsByInvoice.get(g.invoiceId) || []),
-        status: g.status || order.status,
-      });
-    }
-  });
-  return slices;
+  return { qtyByJenisPlak: out };
 }
 
 export function groupItemsByBatch(items) {

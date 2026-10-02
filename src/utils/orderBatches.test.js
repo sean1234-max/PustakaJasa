@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getOrderInvoiceSlices } from './orderBatches';
+import { getOrderInvoiceSlices, getInvoiceItems, normalizeSplitQty } from './orderBatches';
 
 describe('getOrderInvoiceSlices', () => {
   it('un-split order: one slice, using the order\'s own invoiceId/totalAmount/status unchanged, totalQty summed from items', () => {
@@ -111,5 +111,44 @@ describe('getOrderInvoiceSlices', () => {
       { invoiceId: 'INV-200', totalAmount: 300, totalQty: 40, priceAdjusted: false, status: 'Waiting for Delivery' },
       { invoiceId: 'INV-300', totalAmount: 200, totalQty: 20, priceAdjusted: false, status: 'In Production' },
     ]);
+  });
+});
+
+describe('partial Jenis Plak split (qtyByJenisPlak)', () => {
+  const order = {
+    invoiceId: 'INV-100', totalAmount: 1150, status: 'In Production',
+    invoiceGroups: [{ invoiceId: 'INV-200', jenisPlakList: ['PKC 263'], qtyByJenisPlak: { 'PKC 263': 5 } }],
+    items: [
+      { id: 'a', jenisPlak: 'PKC 263', qty: 3, harga: 150, unitPrice: 50 },
+      { id: 'b', jenisPlak: 'PKC 263', qty: 12, harga: 600, unitPrice: 50 },
+      { id: 'c', jenisPlak: 'PKF 266', qty: 40, harga: 400, unitPrice: 10 },
+    ],
+  };
+
+  it('the group gets only its QTY (taken from the first items first); the rest stays on the default invoice', () => {
+    expect(getInvoiceItems(order, 'INV-200')).toEqual([
+      { id: 'a', jenisPlak: 'PKC 263', qty: 3, harga: 150, unitPrice: 50 },
+      { id: 'b', jenisPlak: 'PKC 263', qty: 2, harga: 100, unitPrice: 50 },
+    ]);
+    expect(getInvoiceItems(order, 'INV-100')).toEqual([
+      { id: 'b', jenisPlak: 'PKC 263', qty: 10, harga: 500, unitPrice: 50 },
+      { id: 'c', jenisPlak: 'PKF 266', qty: 40, harga: 400, unitPrice: 10 },
+    ]);
+  });
+
+  it('slices bill 5 PKC 263 on the new invoice and the other 10 + PKF 266 on the original', () => {
+    expect(getOrderInvoiceSlices(order)).toEqual([
+      { invoiceId: 'INV-100', totalAmount: 900, totalQty: 50, priceAdjusted: false, status: 'In Production' },
+      { invoiceId: 'INV-200', totalAmount: 250, totalQty: 5, priceAdjusted: false, status: 'In Production' },
+    ]);
+  });
+
+  it('normalizeSplitQty: blank or whole-QTY means a full move (no entry); out-of-range is an error', () => {
+    const items = order.items;
+    expect(normalizeSplitQty(items, ['PKC 263', 'PKF 266'], { 'PKC 263': '5', 'PKF 266': 40 })).toEqual({ qtyByJenisPlak: { 'PKC 263': 5 } });
+    expect(normalizeSplitQty(items, ['PKC 263'], {})).toEqual({ qtyByJenisPlak: {} });
+    expect(normalizeSplitQty(items, ['PKC 263'], { 'PKC 263': 16 }).error).toMatch(/1 to 15/);
+    expect(normalizeSplitQty(items, ['PKC 263'], { 'PKC 263': 0 }).error).toBeTruthy();
+    expect(normalizeSplitQty(items, ['PKC 263'], { 'PKC 263': 2.5 }).error).toBeTruthy();
   });
 });

@@ -29,6 +29,7 @@ import { syncUrgentOrderToSheet } from '../lib/urgentSheetApi';
 import { isUrgentShipment } from '../utils/urgentOrder';
 import { fetchCustomTypoWords } from '../lib/typoWordsApi';
 import { setCustomTypoWords } from '../utils/typoCheck';
+import { normalizeSplitQty } from '../utils/orderBatches';
 
 // Real "today", normalized to midnight so it compares cleanly against the
 // midnight-constructed dates the calendar cells and date-math use.
@@ -92,6 +93,34 @@ function describeOrderWriteError(err, verb = 'save') {
     return `You're not allowed to ${verb} this order right now — it may have moved to a later stage, or your session changed. Please refresh and try again.`;
   }
   return `Could not ${verb} this order: ${m || 'unknown error'}. Please try again.`;
+}
+
+// Invoice numbers are compared with every space stripped. Taken = already
+// used by ANOTHER order, as its own invoice or one of its split invoices.
+function invoiceNumberTaken(orders, orderId, normalized) {
+  const strip = (v) => (v || '').replace(/\s+/g, '');
+  return orders.some((o) => o.id !== orderId && (
+    strip(o.invoiceId) === normalized || (o.invoiceGroups || []).some((g) => strip(g.invoiceId) === normalized)
+  ));
+}
+
+// An invoice_groups entry with `keys` pulled out (both from jenisPlakList and
+// any partial-split QTY for them).
+function withoutJenisPlak(group, keys) {
+  const { qtyByJenisPlak, ...rest } = group;
+  const jenisPlakList = (group.jenisPlakList || []).filter((k) => !keys.includes(k));
+  return withSplitQty({ ...rest, jenisPlakList }, Object.fromEntries(
+    Object.entries(qtyByJenisPlak || {}).filter(([k]) => !keys.includes(k)),
+  ));
+}
+
+// Adds partial-split QTYs to a group; only stores `qtyByJenisPlak` when
+// there is at least one, so a whole-Jenis-Plak group looks exactly like
+// one saved before partial splits existed.
+function withSplitQty(group, qtyByJenisPlak) {
+  const merged = { ...(group.qtyByJenisPlak || {}), ...qtyByJenisPlak };
+  const { qtyByJenisPlak: _drop, ...rest } = group;
+  return Object.keys(merged).length ? { ...rest, qtyByJenisPlak: merged } : rest;
 }
 
 // Finds a catalog node by id anywhere in the tree, along with the sibling
@@ -2125,10 +2154,7 @@ export function AppStateProvider({ children }) {
       flashToast('productionToast', 'Enter a valid Invoice ID.');
       return { ok: false };
     }
-    const isDuplicate = st.orders.some((o) => (
-      o.id !== orderId && o.invoiceId && o.invoiceId.replace(/\s+/g, '') === normalized
-    ));
-    if (isDuplicate) {
+    if (invoiceNumberTaken(st.orders, orderId, normalized)) {
       flashToast('productionToast', 'Invoice ID invalid because repeated, please try again.');
       return { ok: false };
     }
@@ -2165,7 +2191,12 @@ export function AppStateProvider({ children }) {
   // exceptions. A Jenis Plak can only belong to one invoice at a time, so
   // it's first pulled out of whichever OTHER group already held it before
   // being (re)placed.
-  const setJenisPlakInvoiceGroup = useCallback(async (orderId, invoiceId, jenisPlakList) => {
+  //
+  // `qtyDrafts` ({ [jenisPlak]: qty }, optional) moves only PART of a Jenis
+  // Plak — e.g. 5 of 15 PKC 263 on the new invoice, the other 10 staying on
+  // the order's own one (stored as the group's qtyByJenisPlak; see
+  // getInvoiceItems, src/utils/orderBatches.js). Blank / full QTY = move all.
+  const setJenisPlakInvoiceGroup = useCallback(async (orderId, invoiceId, jenisPlakList, qtyDrafts = {}) => {
     const normalized = (invoiceId || '').replace(/\s+/g, '');
     const keys = (jenisPlakList || []).filter(Boolean);
     const st = stateRef.current;
@@ -2179,16 +2210,17 @@ export function AppStateProvider({ children }) {
       flashToast('updateToast', 'Tick at least one Jenis Plak to assign.');
       return { ok: false };
     }
-    const isDuplicate = normalized !== (order.invoiceId || '').replace(/\s+/g, '')
-      && st.orders.some((o) => (
-        o.id !== orderId && o.invoiceId && o.invoiceId.replace(/\s+/g, '') === normalized
-      ));
-    if (isDuplicate) {
+    if (invoiceNumberTaken(st.orders, orderId, normalized)) {
       flashToast('updateToast', 'Invoice ID invalid because repeated, please try again.');
       return { ok: false };
     }
+    const { qtyByJenisPlak, error: qtyError } = normalizeSplitQty(order.items, keys, qtyDrafts);
+    if (qtyError) {
+      flashToast('updateToast', qtyError);
+      return { ok: false };
+    }
     const withoutKeys = (order.invoiceGroups || [])
-      .map((g) => ({ ...g, jenisPlakList: (g.jenisPlakList || []).filter((k) => !keys.includes(k)) }))
+      .map((g) => withoutJenisPlak(g, keys))
       .filter((g) => g.jenisPlakList.length > 0);
     // Assigning back to the order's own (default) invoice number just
     // removes the exception entirely — no group needed to say "use the
@@ -2198,12 +2230,14 @@ export function AppStateProvider({ children }) {
       : (() => {
         const existing = withoutKeys.find((g) => g.invoiceId.replace(/\s+/g, '') === normalized);
         if (existing) {
-          return withoutKeys.map((g) => (g === existing ? { ...g, jenisPlakList: [...g.jenisPlakList, ...keys] } : g));
+          return withoutKeys.map((g) => (g === existing
+            ? withSplitQty({ ...g, jenisPlakList: [...g.jenisPlakList, ...keys] }, qtyByJenisPlak)
+            : g));
         }
         // Stamped with the order's current status (same reasoning as
         // approveAndSetInvoiceId above) so this newly-split-off invoice
         // starts tracking its own production/delivery status right away.
-        return [...withoutKeys, { invoiceId: normalized, jenisPlakList: keys, status: order.status }];
+        return [...withoutKeys, withSplitQty({ invoiceId: normalized, jenisPlakList: keys, status: order.status }, qtyByJenisPlak)];
       })();
     try {
       await updateOrder(orderId, { invoiceGroups: newGroups });
@@ -2217,6 +2251,52 @@ export function AppStateProvider({ children }) {
     }));
     flashToast('updateToast', 'Invoice split saved.');
     return { ok: true };
+  }, [patch, flashToast]);
+
+  // Store Admin: replaces an invoice number that's ALREADY on record — the
+  // order's own invoiceId or one split group's — at any status. Billing
+  // re-issues a new number when an order gets amended / a Tambahan lands in
+  // the following month, so the old number must be swappable. The guard
+  // (0070) lets store_admin write invoice_id / invoice_groups at any time.
+  const renameInvoiceNumber = useCallback(async (orderId, oldInvoiceId, newInvoiceId) => {
+    const normalized = (newInvoiceId || '').replace(/\s+/g, '');
+    const st = stateRef.current;
+    const order = st.orders.find((o) => o.id === orderId);
+    const groups = order?.invoiceGroups || [];
+    const isMain = !!order && !!oldInvoiceId && order.invoiceId === oldInvoiceId;
+    if (!order || (!isMain && !groups.some((g) => g.invoiceId === oldInvoiceId))) {
+      flashToast('productionToast', 'That invoice number is no longer on this order. Please refresh.');
+      return { ok: false };
+    }
+    if (!normalized) {
+      flashToast('productionToast', 'Enter a valid Invoice ID.');
+      return { ok: false };
+    }
+    if (normalized === oldInvoiceId) return { ok: true, invoiceId: normalized };
+    const ownOthers = [order.invoiceId, ...groups.map((g) => g.invoiceId)].filter((v) => v && v !== oldInvoiceId);
+    if (ownOthers.includes(normalized)) {
+      flashToast('productionToast', 'Invoice numbers must be different from each other.');
+      return { ok: false };
+    }
+    if (invoiceNumberTaken(st.orders, orderId, normalized)) {
+      flashToast('productionToast', 'Invoice ID invalid because repeated, please try again.');
+      return { ok: false };
+    }
+    const fields = isMain
+      ? { invoiceId: normalized }
+      : { invoiceGroups: groups.map((g) => (g.invoiceId === oldInvoiceId ? { ...g, invoiceId: normalized } : g)) };
+    try {
+      await updateOrder(orderId, fields);
+    } catch (err) {
+      console.error('Failed to rename invoice number in Supabase:', err);
+      flashToast('productionToast', describeOrderWriteError(err, 'change the invoice number for'));
+      return { ok: false };
+    }
+    patch((latest) => ({
+      orders: latest.orders.map((o) => (o.id === orderId ? { ...o, ...fields } : o)),
+    }));
+    flashToast('productionToast', `Invoice number changed to ${normalized}.`);
+    return { ok: true, invoiceId: normalized };
   }, [patch, flashToast]);
 
   // Store Admin: approves a still-"Submitted to Sales" order and
@@ -2257,10 +2337,13 @@ export function AppStateProvider({ children }) {
     // OTHER order's invoiceId, same rule setInvoiceId/setJenisPlakInvoiceGroup
     // already enforce individually.
     const normalizedGroups = [];
+    let qtyError = null;
     (invoiceGroups || []).forEach((g) => {
       const gNorm = (g.invoiceId || '').replace(/\s+/g, '');
       const keys = (g.jenisPlakList || []).filter(Boolean);
       if (!gNorm || keys.length === 0 || gNorm === normalized) return;
+      const split = normalizeSplitQty(updatedItems, keys, g.qtyByJenisPlak);
+      if (split.error) { qtyError = split.error; return; }
       // Stamped with the status the order is being approved into (below) so
       // this group tracks its OWN production/delivery status from the
       // start (markProductionDone, per-invoice — 0072) instead of quietly
@@ -2268,17 +2351,18 @@ export function AppStateProvider({ children }) {
       // marks it done independently — see getOrderInvoiceSlices's fallback
       // (src/utils/orderBatches.js), which only exists for groups created
       // before this existed.
-      normalizedGroups.push({ invoiceId: gNorm, jenisPlakList: keys, status: 'In Production' });
+      normalizedGroups.push(withSplitQty({ invoiceId: gNorm, jenisPlakList: keys, status: 'In Production' }, split.qtyByJenisPlak));
     });
+    if (qtyError) {
+      flashToast('productionToast', qtyError);
+      return { ok: false };
+    }
     const allInvoiceNumbers = [normalized, ...normalizedGroups.map((g) => g.invoiceId)];
     if (new Set(allInvoiceNumbers).size !== allInvoiceNumbers.length) {
       flashToast('productionToast', 'Invoice numbers must be different from each other.');
       return { ok: false };
     }
-    const isDuplicate = allInvoiceNumbers.some((num) => st.orders.some((o) => (
-      o.id !== orderId && o.invoiceId && o.invoiceId.replace(/\s+/g, '') === num
-    )));
-    if (isDuplicate) {
+    if (allInvoiceNumbers.some((num) => invoiceNumberTaken(st.orders, orderId, num))) {
       flashToast('productionToast', 'Invoice ID invalid because repeated, please try again.');
       return { ok: false };
     }
@@ -2577,7 +2661,7 @@ export function AppStateProvider({ children }) {
     importFormAnugerahExcel, importFormAnugerahExcelInto,
     openAmend, updateAmend,
     openAddOn, submitPendingAddOn, cancelPendingAddOn, rejectAddOn, approveAddOn, approveOrder, setInvoiceId, approveAndSetInvoiceId,
-    setJenisPlakInvoiceGroup,
+    setJenisPlakInvoiceGroup, renameInvoiceNumber,
     retryUrgentSheetSync,
     cancelOrder,
     reassignSalesman,
