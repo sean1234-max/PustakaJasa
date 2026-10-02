@@ -218,6 +218,14 @@ export default function AdminOrderDetail() {
             )}
             {state.productionToast && <p className="text-body-sm text-on-surface-variant mt-2">{state.productionToast}</p>}
 
+            {/* SELEMPANG's rows (ACARA / WARNA / QTY) also show right here on the
+                Summary — the only category that does (Sean); every category's full
+                details stay on the Order Details tab. */}
+            {selempangBlocks.map((blk) => (
+              <div key={`sum-sel-${blk.idx}`} style={{ marginTop: 'var(--space-6)' }}>
+                <OrderCategoryBlock blk={blk} editable={READONLY} />
+              </div>
+            ))}
             <h3 className="text-label-bold text-on-surface-variant uppercase tracking-widest mt-8 mb-2">Cancel</h3>
             <CancelOrderControl order={order} onCancelled={() => navigate('/admin/orders')} />
             {state.updateToast && <p className="text-body-sm text-on-surface-variant mt-2">{state.updateToast}</p>}

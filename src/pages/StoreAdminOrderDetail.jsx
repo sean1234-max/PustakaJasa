@@ -555,6 +555,14 @@ export default function StoreAdminOrderDetail() {
                   plakCatalog={state.plakCatalog} totalQty={totalQty} totalHarga={totalHarga} priceAdjusted={priceAdjusted}
                   hideCategory combineJenisPlak
                 />
+                {/* SELEMPANG's rows (ACARA / WARNA / QTY) also show right here on the
+                    Summary — the only category that does (Sean); every category's full
+                    details stay on the Order Details tab. */}
+                {selempangBlocks.map((blk) => (
+                  <div key={`sum-sel-${blk.idx}`} style={{ marginTop: 'var(--space-6)' }}>
+                    <OrderCategoryBlock blk={blk} editable={READONLY} />
+                  </div>
+                ))}
 
                 <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Approve &amp; Invoice Number</div>
                 <div className="field" style={{ maxWidth: 340, marginTop: 'var(--space-2)' }}>
@@ -642,6 +650,14 @@ export default function StoreAdminOrderDetail() {
                   plakCatalog={state.plakCatalog} totalQty={totalQty} totalHarga={totalHarga} priceAdjusted={priceAdjusted}
                   hideCategory combineJenisPlak
                 />
+                {/* SELEMPANG's rows (ACARA / WARNA / QTY) also show right here on the
+                    Summary — the only category that does (Sean); every category's full
+                    details stay on the Order Details tab. */}
+                {selempangBlocks.map((blk) => (
+                  <div key={`sum-sel-${blk.idx}`} style={{ marginTop: 'var(--space-6)' }}>
+                    <OrderCategoryBlock blk={blk} editable={READONLY} />
+                  </div>
+                ))}
               </>
             )}
 

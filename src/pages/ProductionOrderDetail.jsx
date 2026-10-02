@@ -369,6 +369,14 @@ export default function ProductionOrderDetail() {
               <p key={w} className="hint-text" style={{ color: '#b45309', marginTop: 'var(--space-2)' }}>⚠ {w}</p>
             ))}
 
+            {/* SELEMPANG's rows (ACARA / WARNA / QTY) also show right here on the
+                Summary — the only category that does (Sean); every category's full
+                details stay on the Order Details tab. */}
+            {selempangBlocks.map((blk) => (
+              <div key={`sum-sel-${blk.idx}`} style={{ marginTop: 'var(--space-6)' }}>
+                <OrderCategoryBlock blk={blk} editable={READONLY} />
+              </div>
+            ))}
             <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Invoice</div>
             <div style={{ marginTop: 'var(--space-2)' }}>
               <div className="dim">Invoice Number</div>

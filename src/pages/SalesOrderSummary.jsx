@@ -314,6 +314,14 @@ export default function SalesOrderSummary() {
                 hideCategory combineJenisPlak
               />
               <TokohDetailsTable tokohBlocks={tokohBlocks} />
+              {/* SELEMPANG's rows (ACARA / WARNA / QTY) also show right here on the
+                  Summary — the only category that does (Sean); every category's full
+                  details stay on the Order Details tab. */}
+              {selempangBlocks.map((blk) => (
+                <div key={`sum-sel-${blk.idx}`} style={{ marginTop: 'var(--space-6)' }}>
+                  <OrderCategoryBlock blk={blk} editable={READONLY} />
+                </div>
+              ))}
 
               {order.pendingAddonStatus === 'pending' && isOwn && (
                 <>
