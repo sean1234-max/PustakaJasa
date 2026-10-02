@@ -4,7 +4,6 @@ import Nav from '../components/Nav';
 import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import PriceTable from '../components/PriceTable';
-import TokohDetailsTable from '../components/TokohDetailsTable';
 import DatePicker from '../components/DatePicker';
 import { useAppState } from '../state/useAppState';
 import { statusPillStyle, standardUnitPrice, formatDate, formatDateTime } from '../data/catalog';
@@ -119,16 +118,6 @@ export default function SalesOrderSummary() {
     if (!effectiveOrder) return [];
     return selempangCats.flatMap((cat) => reconstructBlocksForCategory(effectiveOrder, cat.key, state.plakCatalog).blocks);
   }, [effectiveOrder, selempangCats, state.plakCatalog]);
-  // TOKOH's own per-honoree detail (Nama Murid) — surfaced on the Summary
-  // page too (see TokohDetailsTable), not just the category's own Details
-  // tab, since the Summary page's PriceTable combines same-Jenis-Plak rows
-  // and never had a name column at all. Covers a renamed/duplicated TOKOH
-  // sheet (TOKOH (2)/(3)) too, not just the canonical TOKOH_SHEET key.
-  const tokohCats = useMemo(() => categories.filter((c) => c.tokohRowFields), [categories]);
-  const tokohBlocks = useMemo(() => {
-    if (!effectiveOrder) return [];
-    return tokohCats.flatMap((cat) => reconstructBlocksForCategory(effectiveOrder, cat.key, state.plakCatalog).blocks);
-  }, [effectiveOrder, tokohCats, state.plakCatalog]);
 
   // Printing needs every category's details at once, not just whichever
   // tab happens to be open on screen — the tab UI is for browsing, the
@@ -313,7 +302,6 @@ export default function SalesOrderSummary() {
                 plakCatalog={state.plakCatalog} totalQty={totalQty} totalHarga={totalHarga} priceAdjusted={priceAdjusted}
                 hideCategory combineJenisPlak
               />
-              <TokohDetailsTable tokohBlocks={tokohBlocks} />
               {/* SELEMPANG's rows (ACARA / WARNA / QTY) also show right here on the
                   Summary — the only category that does (Sean); every category's full
                   details stay on the Order Details tab. */}
