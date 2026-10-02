@@ -50,7 +50,7 @@ export default function Amend() {
         <div className="card-kicker">Update Details — {order.id}</div>
         <div className="card-title" style={{ marginBottom: 'var(--space-2)' }}>Adjust Order Details</div>
         <p className="hint-text" style={{ margin: '0 0 var(--space-6)' }}>
-          Only the categories included in this order are shown. Quantities and reference sample text can be adjusted while this order is still Submitted to Sales — Jenis Plak / Harga recalculate automatically.
+          Only the categories included in this order are shown. Quantities and reference sample text can be adjusted until Production finishes reviewing this order — Jenis Plak / Harga recalculate automatically.
         </p>
 
         <div className="card-kicker">Jenis Anugerah (Category)</div>

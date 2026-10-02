@@ -92,7 +92,7 @@ export default function OrderDetails() {
   if (!order) return null;
 
   const idx = STATUS_STAGES.indexOf(sliceStatus);
-  const invoiceIdLabel = idx >= 1 ? (viewInvoiceId || order.invoiceId || `INV-${order.id.replace('ORD-', '')}`) : '-';
+  const invoiceIdLabel = idx >= 2 ? (viewInvoiceId || order.invoiceId || `INV-${order.id.replace('ORD-', '')}`) : '-';
 
   const totalQty = priceRows.reduce((sum, it) => sum + (Number(it.qty) || 0), 0);
   const totalHarga = priceRows.reduce((sum, it) => sum + it.harga, 0);
@@ -197,10 +197,10 @@ export default function OrderDetails() {
                   <OrderCategoryBlock blk={blk} editable={READONLY} />
                 </div>
               ))}
-              {order.status === 'Submitted to Sales' && (
+              {order.status === 'Reviewing Order' && (
                 <div style={{ marginTop: 'var(--space-6)' }}>
                   <div className="card-kicker">Cancel</div>
-                  <p className="hint-text" style={{ marginTop: 0 }}>You can cancel this order yourself only while it is still awaiting Sales review.</p>
+                  <p className="hint-text" style={{ marginTop: 0 }}>You can cancel this order yourself only while it is still being reviewed (before Sales approves it).</p>
                   <CancelOrderControl order={order} onCancelled={() => navigate('/dashboard')} />
                 </div>
               )}

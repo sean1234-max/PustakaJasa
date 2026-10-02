@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getOrderInvoiceSlices, getInvoiceItems, normalizeSplitQty } from './orderBatches';
+import { getOrderInvoiceSlices, getInvoiceItems, normalizeSplitQty, stockDiff } from './orderBatches';
 
 describe('getOrderInvoiceSlices', () => {
   it('un-split order: one slice, using the order\'s own invoiceId/totalAmount/status unchanged, totalQty summed from items', () => {
@@ -11,8 +11,8 @@ describe('getOrderInvoiceSlices', () => {
   });
 
   it('waiting-for-invoice order (invoiceId still null) with no groups: one slice with a null invoiceId', () => {
-    const order = { invoiceId: null, totalAmount: 500, invoiceGroups: [], items: [], status: 'Submitted to Sales' };
-    expect(getOrderInvoiceSlices(order)).toEqual([{ invoiceId: null, totalAmount: 500, totalQty: 0, priceAdjusted: false, status: 'Submitted to Sales' }]);
+    const order = { invoiceId: null, totalAmount: 500, invoiceGroups: [], items: [], status: 'Reviewing Order' };
+    expect(getOrderInvoiceSlices(order)).toEqual([{ invoiceId: null, totalAmount: 500, totalQty: 0, priceAdjusted: false, status: 'Reviewing Order' }]);
   });
 
   it('split order: one slice per invoice, summed from each Jenis Plak\'s own harga/qty, both following the order\'s status', () => {
@@ -97,7 +97,7 @@ describe('getOrderInvoiceSlices', () => {
     const order = {
       invoiceId: 'INV-100', totalAmount: 900, status: 'In Production',
       invoiceGroups: [
-        { invoiceId: 'INV-200', jenisPlakList: ['PKF 266'], status: 'Waiting for Delivery' },
+        { invoiceId: 'INV-200', jenisPlakList: ['PKF 266'], status: 'Waiting for Shipment' },
         { invoiceId: 'INV-300', jenisPlakList: ['18093 GOLD'] },
       ],
       items: [
@@ -108,7 +108,7 @@ describe('getOrderInvoiceSlices', () => {
     };
     expect(getOrderInvoiceSlices(order)).toEqual([
       { invoiceId: 'INV-100', totalAmount: 500, totalQty: 10, priceAdjusted: false, status: 'In Production' },
-      { invoiceId: 'INV-200', totalAmount: 300, totalQty: 40, priceAdjusted: false, status: 'Waiting for Delivery' },
+      { invoiceId: 'INV-200', totalAmount: 300, totalQty: 40, priceAdjusted: false, status: 'Waiting for Shipment' },
       { invoiceId: 'INV-300', totalAmount: 200, totalQty: 20, priceAdjusted: false, status: 'In Production' },
     ]);
   });
@@ -150,5 +150,21 @@ describe('partial Jenis Plak split (qtyByJenisPlak)', () => {
     expect(normalizeSplitQty(items, ['PKC 263'], { 'PKC 263': 16 }).error).toMatch(/1 to 15/);
     expect(normalizeSplitQty(items, ['PKC 263'], { 'PKC 263': 0 }).error).toBeTruthy();
     expect(normalizeSplitQty(items, ['PKC 263'], { 'PKC 263': 2.5 }).error).toBeTruthy();
+  });
+});
+
+describe('stockDiff — stock follows a Production edit', () => {
+  it('takes the extra, gives back the cut, ignores what didn\'t change', () => {
+    const before = [{ jenisPlak: 'PKC 263', qty: 11 }, { jenisPlak: 'DECO LIGHT', qty: '3' }, { jenisPlak: '18059', qty: 2 }];
+    const after = [{ jenisPlak: 'PKC 263', qty: 10 }, { jenisPlak: 'DECO LIGHT', qty: 3 }, { jenisPlak: 'PK 261 / C', qty: 4 }];
+    expect(stockDiff(before, after)).toEqual({
+      deduct: [{ full_path: 'PK 261 / C', qty: 4 }],
+      restore: [{ full_path: 'PKC 263', qty: 1 }, { full_path: '18059', qty: 2 }],
+    });
+  });
+
+  it('adds up items sharing a Jenis Plak', () => {
+    expect(stockDiff([{ jenisPlak: 'A', qty: 2 }, { jenisPlak: 'A', qty: 3 }], [{ jenisPlak: 'A', qty: 6 }]))
+      .toEqual({ deduct: [{ full_path: 'A', qty: 1 }], restore: [] });
   });
 });

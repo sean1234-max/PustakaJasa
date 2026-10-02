@@ -988,23 +988,30 @@ export function getLowStockAlerts(nodes) {
   return alerts.sort((a, b) => (a.stockQty / a.stockBaseline) - (b.stockQty / b.stockBaseline));
 }
 
-// 'Shipped' and 'Completed' are both reached purely from the calendar, not
-// a button: the day an order's Shipment Date (order.shipmentDate) arrives it
-// becomes 'Shipped', and the day after it becomes 'Completed'. Production's
-// "Mark as Done" (markProductionDone in src/state/AppState.jsx) applies the
-// same rule at click time, and a daily job (sweep_shipped_orders, see
-// supabase/migrations/0056) advances orders already past those dates.
+// The order pipeline (Sean, 2026-10-02 — supabase/migrations/0077):
+//   Reviewing Order   — submitted; Production checks it (Done Review sets
+//                       order.reviewedAt, the status stays) and may edit it
+//   Salesman Approved — Sales approved a reviewed order (Shipment Date, price)
+//   In Production     — Store Admin entered the Invoice Number
+//   Waiting for Shipment → Shipped → Completed — Production's Done, then the
+//                       calendar: the day the Shipment Date arrives it becomes
+//                       'Shipped', the day after 'Completed' (markProductionDone
+//                       in AppState.jsx at click time, and the daily
+//                       sweep_shipped_orders job).
 export const STATUS_STAGES = [
-  'Submitted to Sales', 'In Production', 'Waiting for Delivery', 'Shipped', 'Completed',
+  'Reviewing Order', 'Salesman Approved', 'In Production', 'Waiting for Shipment', 'Shipped', 'Completed',
 ];
+
+// Sales / Store Admin may approve only after Production's Done Review.
+export const isReviewed = (order) => !!order?.reviewedAt;
 
 // 'Cancelled' is a terminal OFF-RAMP, not a pipeline stage — kept out of
 // STATUS_STAGES (which drives the progress steppers and the
 // stage-tab dashboards) but included here for status filter dropdowns.
 export const ORDER_STATUSES = [...STATUS_STAGES, 'Cancelled'];
 
-export const STATUS_BG = ['#e4ecf2', '#5980a6', '#2f5878', '#2f6b4f', '#1d1f20'];
-export const STATUS_TEXT = ['#1d1f20', '#fff', '#fff', '#fff', '#fff'];
+export const STATUS_BG = ['#e4ecf2', '#c9daea', '#5980a6', '#2f5878', '#2f6b4f', '#1d1f20'];
+export const STATUS_TEXT = ['#1d1f20', '#1d1f20', '#fff', '#fff', '#fff', '#fff'];
 
 // Inline style object for an order-status pill. Handles the pipeline
 // stages plus 'Cancelled' (STATUS_STAGES.indexOf returns -1 for it, which
@@ -1078,18 +1085,18 @@ export function defaultShipmentDate(datePlaced, today, functionDate) {
 // The calendar-driven part of the pipeline. Given an order's Shipment Date
 // (order.shipmentDate, stored as an ISO string) and today, returns which of the
 // three post-production stages the order belongs in:
-//   Shipment Date in the future -> 'Waiting for Delivery'
+//   Shipment Date in the future -> 'Waiting for Shipment'
 //   Shipment Date is today       -> 'Shipped'
 //   Shipment Date has passed     -> 'Completed'
 // Kept in one place so markProductionDone (the "Mark as Done" click) and
 // the daily sweep_shipped_orders job (supabase/migrations/0056) can't drift
-// apart. A missing/unparseable date falls back to 'Waiting for Delivery' —
+// apart. A missing/unparseable date falls back to 'Waiting for Shipment' —
 // nothing should auto-ship an order with no real Shipment Date on record.
 export function deliveryStageForShipmentDate(shipmentDate, today) {
   const ship = toMalaysiaDay(shipmentDate);
-  if (!ship) return 'Waiting for Delivery';
+  if (!ship) return 'Waiting for Shipment';
   const now = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  if (ship > now) return 'Waiting for Delivery';
+  if (ship > now) return 'Waiting for Shipment';
   if (ship.getTime() === now.getTime()) return 'Shipped';
   return 'Completed';
 }

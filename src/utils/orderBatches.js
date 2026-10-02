@@ -89,7 +89,7 @@ export function combineByJenisPlak(items) {
 // `status` is per-slice too: each invoice_groups entry can carry its own
 // `status` (set independently by markProductionDone — AppState.jsx — once
 // Production marks THAT invoice done) so a split order's invoices move
-// through Waiting for Delivery/Shipped/Completed on their own instead of
+// through Waiting for Shipment/Shipped/Completed on their own instead of
 // jumping together. A group with no `status` of its own yet (never marked
 // done independently) just follows the order's own `status`, same as
 // before this existed.
@@ -188,4 +188,24 @@ export function groupItemsByBatch(items) {
       label: batch === 0 ? 'Original Order' : (addOnBatchCount > 1 ? `Tambahan #${batch}` : 'Tambahan'),
       items: groupItems,
     }));
+}
+
+// How an edit changes stock: per-Jenis-Plak quantity before → after, as
+// what to take from stock (`deduct`) and what to give back (`restore`) —
+// the { full_path, qty } shape deductPlakStock / restorePlakStock take.
+export function stockDiff(beforeItems, afterItems) {
+  const totals = (items) => (items || []).reduce(
+    (map, it) => (it.jenisPlak ? map.set(it.jenisPlak, (map.get(it.jenisPlak) || 0) + (Number(it.qty) || 0)) : map),
+    new Map(),
+  );
+  const before = totals(beforeItems);
+  const after = totals(afterItems);
+  const deduct = [];
+  const restore = [];
+  new Set([...before.keys(), ...after.keys()]).forEach((plak) => {
+    const change = (after.get(plak) || 0) - (before.get(plak) || 0);
+    if (change > 0) deduct.push({ full_path: plak, qty: change });
+    if (change < 0) restore.push({ full_path: plak, qty: -change });
+  });
+  return { deduct, restore };
 }

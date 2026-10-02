@@ -29,14 +29,16 @@ function daysSinceShipmentDate(shipmentDate, today) {
   return Math.round((now - ship) / 86400000);
 }
 
-// 'submitted' is view-only for Production: the order is still awaiting
-// Sales/Store Admin approval, but Production can already open it and export
-// its CSVs to get the AI file ready (ProductionOrderDetail has no
-// status-gated actions, and there's no Done button outside the 'active' tab).
+// 'reviewing' is Production's own job first (0077): open the order, fix it
+// (Edit Order) and click Done Review — Sales can only approve after that.
+// 'approved' waits for Store Admin's Invoice Number; Production can already
+// export its CSVs to get the AI file ready. The Done button is only on the
+// 'active' tab.
 const TABS = [
-  { key: 'submitted', label: 'Submitted to Sales', match: (o) => o.status === 'Submitted to Sales' },
+  { key: 'reviewing', label: 'Reviewing Order', match: (o) => o.status === 'Reviewing Order' },
+  { key: 'approved', label: 'Salesman Approved', match: (o) => o.status === 'Salesman Approved' },
   { key: 'active', label: 'In Production', match: (o) => o.status === 'In Production' },
-  { key: 'waiting', label: 'Waiting for Shipment', match: (o) => o.status === 'Waiting for Delivery' },
+  { key: 'waiting', label: 'Waiting for Shipment', match: (o) => o.status === 'Waiting for Shipment' },
   { key: 'shipped', label: 'Shipped', match: (o) => o.status === 'Shipped' },
   {
     key: 'completed',
@@ -212,6 +214,9 @@ export default function ProductionDashboard() {
                     <span className="status-pill" style={{ background: '#fff4ce', color: '#8a6d00' }}>Excel Updated</span>
                   )}
                   <span className="status-pill" style={statusPillStyle(ord.status)}>{ord.status}</span>
+                  {ord.status === 'Reviewing Order' && ord.reviewedAt && (
+                    <span className="status-pill" style={{ background: '#dcefe3', color: '#2f6b4f' }}>✓ Review Done</span>
+                  )}
                 </div>
               </div>
               {stamp && <div className="order-stamp-inline" style={{ marginTop: 'var(--space-1)' }}>{stamp}</div>}

@@ -165,7 +165,7 @@ export default function AdminSalesmanDetail() {
           <h3 className="text-label-bold text-secondary uppercase tracking-wider">Order Performance</h3>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <StatCard value={salesmanOrders.length} label="Total Orders" icon="shopping_bag" />
-            <StatCard value={salesmanOrders.filter((o) => o.status === 'Submitted to Sales').length} label="Pending" icon="pending_actions" />
+            <StatCard value={salesmanOrders.filter((o) => o.status === 'Reviewing Order').length} label="Pending" icon="pending_actions" />
             <StatCard value={salesmanOrders.filter((o) => o.status === 'Completed').length} label="Completed" icon="check_circle" />
           </div>
         </section>

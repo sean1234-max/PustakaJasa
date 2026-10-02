@@ -55,6 +55,7 @@ function toDbOrder(order) {
     cancelled_by: order.cancelledBy ?? null,
     urgent: !!order.urgent,
     urgent_sheet_synced_at: order.urgentSheetSyncedAt ?? null,
+    reviewed_at: order.reviewedAt ?? null,
   };
 }
 
@@ -100,6 +101,7 @@ function fromDbOrder(row) {
     cancelledBy: row.cancelled_by || null,
     urgent: !!row.urgent,
     urgentSheetSyncedAt: row.urgent_sheet_synced_at || null,
+    reviewedAt: row.reviewed_at || null,
   };
 }
 

@@ -189,7 +189,7 @@ export default function AdminStoreAdmins() {
                 {filtered.map((s) => {
                   const salesmanIds = assignedByStoreAdmin[s.id] || new Set();
                   const orders = (state.orders || []).filter((o) => salesmanIds.has(o.salesmanId));
-                  const pending = orders.filter((o) => o.status === 'Submitted to Sales').length;
+                  const pending = orders.filter((o) => o.status === 'Reviewing Order').length;
                   return (
                     <tr key={s.id} className="hover:bg-surface-container-low transition-colors">
                       <td className="py-4 px-6 text-headline-sm text-primary">{s.display_name || '—'}</td>

@@ -2,16 +2,16 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import { useAppState } from '../state/useAppState';
-import { STATUS_STAGES, statusPillStyle } from '../data/catalog';
+import { STATUS_STAGES, statusPillStyle, isReviewed } from '../data/catalog';
 import { getOrderChangeStamp } from '../utils/orderStamp';
 import { getOrderInvoiceSlices } from '../utils/orderBatches';
 import { fetchMyAssignedSalesmen, fetchAllSalesmen } from '../lib/ordersApi';
 
 // Store Admin (formerly "Invoicing Department" — role renamed 0047) can see
-// and act on every order, including ones still 'Submitted to Sales' — a
+// and act on every order, including ones still 'Reviewing Order' — a
 // Salesman sometimes hands over a paper hard copy before ever clicking
-// Approve in the system, and opening one of those here lets Store Admin
-// approve it (with pricing) and save its Invoice Number in one action (see
+// Approve in the system, and opening one of those here (after Production's
+// Done Review) lets Store Admin approve it (with pricing) and save its Invoice Number in one action (see
 // StoreAdminOrderDetail.jsx's approveAndSetInvoiceId,
 // supabase/migrations/0038_invoicing_can_approve.sql). Split by whether an
 // Invoice Number has been assigned yet — the exact responsibility
@@ -205,7 +205,7 @@ export default function StoreAdminDashboard() {
                   // whenever there's an invoice number to pass at all.
                   onClick={() => navigate(`/store-admin/orders/${ord.id}${ord.invoiceId ? `?invoice=${encodeURIComponent(ord.invoiceId)}` : ''}`)}
                 >
-                  {ord.invoiceId ? 'View Order' : ord.status === 'Submitted to Sales' ? 'Approve & Invoice' : 'Assign Invoice'}
+                  {ord.invoiceId ? 'View Order' : ord.status !== 'Reviewing Order' ? 'Assign Invoice' : isReviewed(ord) ? 'Approve & Invoice' : 'View (Production reviewing)'}
                 </button>
               </div>
             </div>

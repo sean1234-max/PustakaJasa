@@ -4,18 +4,19 @@ import Nav from '../components/Nav';
 import { useAppState } from '../state/useAppState';
 import { statusPillStyle } from '../data/catalog';
 
-// Sales works one stage at a time — filter tabs map 1:1 to STATUS_STAGES,
-// except the first stage is relabeled "Waiting for Approve" since that's
-// the action Sales actually takes on it. The add-on tab is separate from
+// Sales works one stage at a time — filter tabs map 1:1 to STATUS_STAGES.
+// A 'Reviewing Order' order can only be approved once Production has
+// clicked Done Review (order.reviewedAt — shown on the card). The add-on tab is separate from
 // the order's main status pipeline — an add-on can be submitted while the
 // order is already "In Production" or later, so it's filtered on
 // pendingAddonStatus instead of ord.status.
 const ADDON_FILTER = 'PENDING_ADDON';
 const FILTERS = [
-  { status: 'Submitted to Sales', label: 'Waiting for Approve' },
+  { status: 'Reviewing Order', label: 'Reviewing Order' },
   { status: ADDON_FILTER, label: 'Add-On Pending Approval' },
+  { status: 'Salesman Approved', label: 'Salesman Approved' },
   { status: 'In Production', label: 'In Production' },
-  { status: 'Waiting for Delivery', label: 'Waiting for Delivery' },
+  { status: 'Waiting for Shipment', label: 'Waiting for Shipment' },
   { status: 'Shipped', label: 'Shipped' },
   { status: 'Completed', label: 'Completed' },
 ];
@@ -92,7 +93,8 @@ export default function SalesDashboard() {
       {filteredOrders.length === 0 && <p className="hint-text">No orders in this stage.</p>}
       <div className="order-grid">
         {filteredOrders.map((ord) => {
-          const pendingReview = ord.status === 'Submitted to Sales' || (filter === ADDON_FILTER && ord.pendingAddonStatus === 'pending');
+          const readyToApprove = ord.status === 'Reviewing Order' && !!ord.reviewedAt;
+          const pendingReview = readyToApprove || (filter === ADDON_FILTER && ord.pendingAddonStatus === 'pending');
 
           return (
             <div key={ord.id} className="card order-card">
@@ -103,6 +105,11 @@ export default function SalesDashboard() {
                 </div>
                 <span className="status-pill" style={statusPillStyle(ord.status)}>{ord.status}</span>
               </div>
+              {ord.status === 'Reviewing Order' && (
+                <span className="status-pill" style={{ ...(readyToApprove ? { background: '#dcefe3', color: '#2f6b4f' } : { background: '#f1f1f1', color: '#555' }), marginTop: 'var(--space-2)' }}>
+                  {readyToApprove ? '✓ Review Done — ready to approve' : 'Production is reviewing'}
+                </span>
+              )}
               {/* Production uploaded a corrected copy of the teacher's file
                   (see ProductionOrderDetail's CorrectedExcelControl) — Order
                   Details on this order's own page already reads from it. */}
@@ -129,7 +136,7 @@ export default function SalesDashboard() {
 
               <div className="order-card-actions">
                 <button type="button" className="btn btn-primary btn-block" onClick={() => navigate(`/sales/orders/${ord.id}`)}>
-                  {filter === ADDON_FILTER ? 'Review Add-On' : pendingReview ? 'Review Order' : 'View Summary'}
+                  {filter === ADDON_FILTER ? 'Review Add-On' : pendingReview ? 'Approve Order' : 'View Summary'}
                 </button>
               </div>
             </div>

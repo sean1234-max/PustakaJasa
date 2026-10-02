@@ -174,7 +174,7 @@ export default function AdminStoreAdminDetail() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <StatCard value={assignedSalesmen.length} label="Assigned Salesmen" icon="badge" />
             <StatCard value={orders.length} label="Orders In Scope" icon="shopping_bag" />
-            <StatCard value={orders.filter((o) => o.status === 'Submitted to Sales').length} label="Awaiting Approval" icon="pending_actions" />
+            <StatCard value={orders.filter((o) => o.status === 'Reviewing Order').length} label="Awaiting Approval" icon="pending_actions" />
           </div>
           <div className="max-w-xl">
             <h4 className="text-label-bold text-on-surface-variant uppercase tracking-wider mb-3">Assigned Salesmen</h4>

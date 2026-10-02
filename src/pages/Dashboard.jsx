@@ -2,13 +2,14 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import { useAppState } from '../state/useAppState';
-import { STATUS_STAGES, statusPillStyle } from '../data/catalog';
+import { STATUS_STAGES, statusPillStyle, isReviewed } from '../data/catalog';
 import { getOrderInvoiceSlices } from '../utils/orderBatches';
 
 const FILTERS = [
-  { key: 'Submitted to Sales', label: 'Submitted to Sales', match: (o) => o.status === 'Submitted to Sales' },
+  { key: 'Reviewing Order', label: 'Reviewing Order', match: (o) => o.status === 'Reviewing Order' },
+  { key: 'Salesman Approved', label: 'Salesman Approved', match: (o) => o.status === 'Salesman Approved' },
   { key: 'In Production', label: 'In Production', match: (o) => o.status === 'In Production' },
-  { key: 'Waiting for Delivery', label: 'Waiting for Delivery', match: (o) => o.status === 'Waiting for Delivery' },
+  { key: 'Waiting for Shipment', label: 'Waiting for Shipment', match: (o) => o.status === 'Waiting for Shipment' },
   { key: 'Shipped', label: 'Shipped', match: (o) => o.status === 'Shipped' },
   { key: 'Delivered', label: 'Delivered', match: (o) => o.status === 'Completed' },
 ];
@@ -16,7 +17,7 @@ const FILTERS = [
 export default function Dashboard() {
   const { state, openAddOn, openAmend, reorderOrder, cancelPendingAddOn } = useAppState();
   const navigate = useNavigate();
-  const [filter, setFilter] = useState('Submitted to Sales');
+  const [filter, setFilter] = useState('Reviewing Order');
   const [expandedAddOnId, setExpandedAddOnId] = useState(null);
 
   // A split order (orders.invoice_groups, 0070) shows one card per invoice
@@ -89,14 +90,14 @@ export default function Dashboard() {
       <div className="order-grid">
         {filteredOrders.map((ord) => {
           const idx = STATUS_STAGES.indexOf(ord.status);
-          const invoiceIdLabel = idx >= 1 ? (ord.invoiceId || `INV-${ord.id.replace('ORD-', '')}`) : '-';
-          const canAddOn = idx === 1 && ord.pendingAddonStatus !== 'pending';
+          const invoiceIdLabel = idx >= 2 ? (ord.invoiceId || `INV-${ord.id.replace('ORD-', '')}`) : '-';
+          const canAddOn = (idx === 1 || idx === 2) && ord.pendingAddonStatus !== 'pending';
           const isCompleted = ord.status === 'Completed';
           // Restored 2026-08-25 — teacher can still update permitted order
-          // details while the order hasn't been reviewed by Sales yet (see
-          // AppState.jsx's openAmend/updateAmend). Locked the moment Sales
-          // approves (status moves past idx 0), same as before removal.
-          const canAmend = idx === 0;
+          // details until Production's Done Review (see AppState.jsx's
+          // openAmend/updateAmend; orders_write_guard enforces it, 0077).
+          const canAmend = idx === 0 && !isReviewed(ord);
+          const reviewedLocked = idx === 0 && isReviewed(ord);
 
           return (
             <div key={ord._sliceKey} className="card order-card">
@@ -156,6 +157,7 @@ export default function Dashboard() {
               <div className="order-card-actions">
                 <button type="button" className="btn btn-ghost btn-block" onClick={() => navigate(`/orders/${ord.id}${ord.invoiceId ? `?invoice=${encodeURIComponent(ord.invoiceId)}` : ''}`)}>View Details</button>
                 {canAmend && <button type="button" className="btn btn-secondary btn-block" onClick={() => { openAmend(ord); navigate(`/amend/${ord.id}`); }}>Update Details</button>}
+                {reviewedLocked && <p className="hint-text" style={{ margin: 0 }}>✓ Checked by Production — to change anything, please contact your salesman.</p>}
                 {canAddOn && <button type="button" className="btn btn-secondary btn-block" onClick={() => { openAddOn(ord); navigate(`/addon/${ord.id}`); }}>Add On</button>}
                 {isCompleted && <button type="button" className="btn btn-secondary btn-block" onClick={() => { reorderOrder(ord); navigate('/order/step1'); }}>Reorder</button>}
               </div>

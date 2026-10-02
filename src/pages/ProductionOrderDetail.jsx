@@ -7,7 +7,7 @@ import CorrectedExcelControl from '../components/CorrectedExcelControl';
 import PriceTable from '../components/PriceTable';
 import OrderPrintout from '../components/OrderPrintout';
 import { useAppState } from '../state/useAppState';
-import { statusPillStyle, formatDate, MANUAL_MAX_QTY, deliveryStageForShipmentDate, toMalaysiaDay, malaysiaToday } from '../data/catalog';
+import { statusPillStyle, formatDate, MANUAL_MAX_QTY, deliveryStageForShipmentDate, toMalaysiaDay, malaysiaToday, isReviewed } from '../data/catalog';
 import { reconstructOrderDetailGroups, reconstructBlocksForCategory, noopUpdaters } from '../utils/computeBlocks';
 import { getExportableCategories, splitOrderCategories, getOrderJenisPlakGroups, getPlakProductionMode, summarizeRowsForManual, buildCsvRows, rowsToCsv, buildCategoryCsvFilename, combineCsvRows, buildCombinedCsvFilename, validateExport, getInvoiceIdForJenisPlak, getPartialSplitNotes } from '../utils/exportCsv';
 import { downloadTextFile } from '../utils/downloadBlob';
@@ -35,7 +35,7 @@ async function downloadOrderImport(order, setErr) {
 }
 
 export default function ProductionOrderDetail() {
-  const { state, ensureOrderLoaded, loadCorrectedExcelPreview, updateReferenceOrder } = useAppState();
+  const { state, ensureOrderLoaded, loadCorrectedExcelPreview, updateReferenceOrder, markReviewDone } = useAppState();
   const [importErr, setImportErr] = useState('');
   const { id } = useParams();
   const navigate = useNavigate();
@@ -247,6 +247,12 @@ export default function ProductionOrderDetail() {
 
   if (!order) return null;
 
+  const reviewing = order.status === 'Reviewing Order';
+  const handleDoneReview = () => {
+    if (!window.confirm(`Done reviewing ${order.id}? The salesman can approve it after this. 确定 review 好了吗？`)) return;
+    markReviewDone(order.id);
+  };
+
   const stamp = getOrderChangeStamp(order);
   // Only this invoice's items when filtered — feeds the "Jenis Plak / QTY /
   // Harga" overview table at the top of Order Details and its two totals.
@@ -363,10 +369,26 @@ export default function ProductionOrderDetail() {
               <span className="status-pill no-print" style={{ background: '#fff4ce', color: '#8a6d00' }}>Excel Updated</span>
             )}
             <span className="status-pill" style={statusPillStyle(sliceStatus)}>{sliceStatus}</span>
+            {reviewing && isReviewed(order) && <span className="status-pill no-print" style={{ background: '#dcefe3', color: '#2f6b4f' }}>✓ Review Done</span>}
           </div>
         </div>
 
         <div className="screen-only">
+        {/* Production review (supabase/migrations/0077): check the order, fix
+            it in the editor if needed, then Done Review so Sales can approve. */}
+        {reviewing && (
+          <div className="confirm-panel" style={{ marginBottom: 'var(--space-4)' }}>
+            <p className="hint-text" style={{ margin: '0 0 var(--space-3)', fontWeight: 600 }}>
+              {isReviewed(order)
+                ? 'Review done — waiting for the salesman to approve. You can still edit the order until then. 已 review，等 Salesman approve。'
+                : 'Check this order — wording, line order, quantities, Jenis Plak. Fix anything with Edit Order, then click Done Review so Sales can approve it. 检查好了按 Done Review，Salesman 才可以 approve。'}
+            </p>
+            <div style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
+              <button type="button" className="btn btn-secondary" onClick={() => navigate(`/production/orders/${order.id}/edit`)}>Edit Order</button>
+              {!isReviewed(order) && <button type="button" className="btn btn-primary" onClick={handleDoneReview}>Done Review</button>}
+            </div>
+          </div>
+        )}
         {isFiltered && (
           <p className="hint-text" style={{ marginBottom: 'var(--space-3)' }}>
             Showing only the <strong>{viewInvoiceId}</strong> invoice for this order — the Jenis Plak table, category tabs, and exports below all cover just that slice.{' '}
@@ -411,10 +433,10 @@ export default function ProductionOrderDetail() {
               </div>
             )}
 
-            <CorrectedExcelControl
+            {!reviewing && <CorrectedExcelControl
               order={order}
               onUploaded={(items, warnings) => { setCorrectedItems(items); setCorrectedWarnings(warnings || []); setCorrectedError(''); }}
-            />
+            />}
             {correctedLoading && <p className="hint-text" style={{ marginTop: 'var(--space-2)' }}>Re-reading the corrected file…</p>}
             {correctedError && <p className="hint-text" style={{ color: '#b0392e', fontWeight: 600, marginTop: 'var(--space-2)' }}>⚠ {correctedError} — export is showing the original data instead.</p>}
             {correctedWarnings.length > 0 && correctedWarnings.map((w) => (

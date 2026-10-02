@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import {
   CATEGORIES, ACTIVE_CATEGORIES, formatDate, standardUnitPrice, getCategorySubjects, matrixCellKey, customMatrixLabelKey,
-  deliveryStageForShipmentDate, SELEMPANG_CODE,
+  deliveryStageForShipmentDate, SELEMPANG_CODE, isReviewed,
   resolveCategory, categoriesUsedByItems, isDynamicCategoryKey, malaysiaToday, malaysiaDayIso,
 } from '../data/catalog';
 import { buildInitialRowsByBlock, buildInitialColumnsByBlock, buildInitialPlakRows } from '../data/formDefaults';
@@ -29,7 +29,7 @@ import { syncUrgentOrderToSheet } from '../lib/urgentSheetApi';
 import { isUrgentShipment } from '../utils/urgentOrder';
 import { fetchCustomTypoWords } from '../lib/typoWordsApi';
 import { setCustomTypoWords } from '../utils/typoCheck';
-import { normalizeSplitQty } from '../utils/orderBatches';
+import { normalizeSplitQty, stockDiff } from '../utils/orderBatches';
 
 // Malaysia's "today" (catalog.js's malaysiaToday — the project always runs
 // on Malaysian dates), normalized to midnight so it compares cleanly against
@@ -96,7 +96,7 @@ function describeOrderWriteError(err, verb = 'save') {
   if (/does not match the sum of its items|check_violation|order total \(/i.test(m)) {
     return "The order total didn't add up on the server and the change was rejected. Please refresh the page and re-check the prices before trying again.";
   }
-  if (/already in production|submit an Add-On|can no longer be edited|awaiting approval|only move an order|has been cancelled/i.test(m)) {
+  if (/already in production|submit an Add-On|can no longer be edited|awaiting approval|only move an order|has been cancelled|already reviewed|already approved|after Production has reviewed|Only Production can/i.test(m)) {
     return `This order can't be changed that way anymore: ${m}`;
   }
   if (/row-level security|not authorized|account is not active/i.test(m)) {
@@ -294,7 +294,7 @@ function initialState() {
     addOnNextColumnId: 1000,
     addOnVisibleBlocksByCategory: {},
 
-    // Teacher editing under Submitted to Sales (see openAmend/updateAmend
+    // Teacher editing under Reviewing Order (until Done Review) (see openAmend/updateAmend
     // below) — same draft-namespace-per-flow pattern as addOn* above.
     amendOrderId: null,
     amendCategory: '',
@@ -1451,7 +1451,7 @@ export function AppStateProvider({ children }) {
     };
     const newOrder = {
       id: newId, invoiceId: null, datePlaced: formatDate(malaysiaToday()), deliveryDate: 'TBD',
-      totalAmount: totalAmt, status: 'Submitted to Sales', priceAdjusted: false,
+      totalAmount: totalAmt, status: 'Reviewing Order', priceAdjusted: false,
       createdBy: st.userAuthId,
       salesmanId: selectedSalesman.id,
       sekolah: st.sekolah, schoolLanguage: st.schoolLanguage, sales: selectedSalesman.name, picName: st.picName, phone: st.phone, ketuaPanitia: st.ketuaPanitia, terms: st.terms, remark: st.remark,
@@ -1535,7 +1535,7 @@ export function AppStateProvider({ children }) {
     }));
   }, [patch]);
 
-  // Teacher editing under "Submitted to Sales" — restored 2026-08-25 after
+  // Teacher editing under "Reviewing Order" (until Done Review) — restored 2026-08-25 after
   // being removed in commit 6c03f9b ("Amend ('Update Details') is removed
   // entirely"); re-derived against the CURRENT computeBlocks/
   // buildDraftFromOrder shape rather than the old (PBD-variant-based) one,
@@ -1565,13 +1565,17 @@ export function AppStateProvider({ children }) {
   // plakRows with the ORIGINAL item ids, and Amend's EDITABLE never allows
   // adding/removing a plakRow or changing its Jenis Plak — see Amend.jsx —
   // so every plakRow here still corresponds 1:1 to a real original item).
-  // Only reachable while status is 'Submitted to Sales' (Dashboard.jsx's
+  // Only reachable while status is 'Reviewing Order' and not yet reviewed (Dashboard.jsx's
   // canAmend gate), so every item is still batch 0 — nothing here needs to
   // handle an already-approved Tambahan round.
   const updateAmend = useCallback(async () => {
     const st = stateRef.current;
     const order = st.orders.find((o) => o.id === st.amendOrderId);
     if (!order) return { ok: false, message: 'Order not found.' };
+    if (order.status !== 'Reviewing Order' || isReviewed(order)) {
+      flashToast('updateToast', 'Production has already checked this order — please contact your salesman to change it.');
+      return { ok: false };
+    }
     const originalById = new Map((order.items || []).map((it) => [it.id, it]));
     const categoriesUsed = categoriesUsedByItems(order.items);
     const newItems = [];
@@ -2067,8 +2071,9 @@ export function AppStateProvider({ children }) {
   // true whenever any item's unit price no longer matches the standard
   // catalog rate — that's the flag that turns the order's total red
   // downstream, so production knows to double-check it against the catalog.
-  // Approving sends the order straight into production — there's no
-  // separate "approved but not yet in production" holding stage.
+  // Only once Production has reviewed it (Done Review, order.reviewedAt);
+  // the order then waits as 'Salesman Approved' until Store Admin enters
+  // the Invoice Number (setInvoiceId / approveAndSetInvoiceId → In Production).
   // `overrides` lets Sales adjust Shipment Date (shipmentDate) / Function Date (in addition to
   // per-item price, already folded into updatedItems) at the same moment
   // they approve — the only point before production where those dates are
@@ -2077,6 +2082,10 @@ export function AppStateProvider({ children }) {
     const st = stateRef.current;
     const priorOrder = st.orders.find((o) => o.id === orderId);
     if (!priorOrder) return { ok: false, message: 'Order not found.' };
+    if (priorOrder.status !== 'Reviewing Order' || !isReviewed(priorOrder)) {
+      flashToast('updateToast', 'Production hasn’t finished reviewing this order yet.');
+      return { ok: false };
+    }
     // Stamps `originalUnitPrice` the first time Sales changes an item's
     // price away from what the teacher's own cart had — compared against
     // the order as it stood before THIS approval, not the live catalog rate
@@ -2097,7 +2106,7 @@ export function AppStateProvider({ children }) {
     // absent only if Sales approved without touching the date picker, in
     // which case priorOrder.urgent (false from insert) just carries through.
     const urgent = overrides.shipmentDate ? isUrgentShipment(malaysiaToday(), overrides.shipmentDate) : priorOrder.urgent;
-    const fields = { items: itemsWithOriginalPrice, totalAmount, priceAdjusted, status: 'In Production', ...storedDays(overrides), urgent };
+    const fields = { items: itemsWithOriginalPrice, totalAmount, priceAdjusted, status: 'Salesman Approved', ...storedDays(overrides), urgent };
     try {
       await updateOrder(orderId, fields);
     } catch (err) {
@@ -2162,7 +2171,7 @@ export function AppStateProvider({ children }) {
     const normalized = (invoiceId || '').replace(/\s+/g, '');
     const st = stateRef.current;
     const order = st.orders.find((o) => o.id === orderId);
-    if (!order || order.status !== 'In Production') {
+    if (!order || order.status !== 'Salesman Approved') {
       flashToast('productionToast', 'This order is not ready for invoice entry.');
       return { ok: false };
     }
@@ -2179,14 +2188,14 @@ export function AppStateProvider({ children }) {
       return { ok: false };
     }
     try {
-      await updateOrder(orderId, { invoiceId: normalized });
+      await updateOrder(orderId, { invoiceId: normalized, status: 'In Production' });
     } catch (err) {
       console.error('Failed to save invoice ID to Supabase:', err);
       flashToast('productionToast', describeOrderWriteError(err, 'save the invoice number for'));
       return { ok: false };
     }
     patch((latest) => ({
-      orders: latest.orders.map((o) => (o.id === orderId ? { ...o, invoiceId: normalized } : o)),
+      orders: latest.orders.map((o) => (o.id === orderId ? { ...o, invoiceId: normalized, status: 'In Production' } : o)),
     }));
     flashToast('productionToast', 'Invoice ID saved — order is ready for export.');
     // `urgent` was already snapshotted earlier by approveOrder/
@@ -2319,7 +2328,7 @@ export function AppStateProvider({ children }) {
     return { ok: true, invoiceId: normalized };
   }, [patch, flashToast]);
 
-  // Store Admin: approves a still-"Submitted to Sales" order and
+  // Store Admin: approves a reviewed, still-"Reviewing Order" order (or a Salesman Approved one) and
   // assigns its Invoice Number in the same action — for orders a Salesman
   // hands over as a paper hard copy before ever clicking Approve
   // themselves (receiving the hard copy already means they've agreed to
@@ -2342,8 +2351,15 @@ export function AppStateProvider({ children }) {
     const normalized = (invoiceId || '').replace(/\s+/g, '');
     const st = stateRef.current;
     const order = st.orders.find((o) => o.id === orderId);
-    if (!order || order.status !== 'Submitted to Sales') {
-      flashToast('productionToast', 'This order is not awaiting approval.');
+    const salesApproved = order?.status === 'Salesman Approved';
+    if (!order || !(salesApproved || (order.status === 'Reviewing Order' && isReviewed(order)))) {
+      flashToast('productionToast', order?.status === 'Reviewing Order'
+        ? 'Production hasn’t finished reviewing this order yet.'
+        : 'This order is not ready for invoice entry.');
+      return { ok: false };
+    }
+    if (salesApproved && order.invoiceId) {
+      flashToast('productionToast', 'Invoice ID is already set for this order.');
       return { ok: false };
     }
     if (!normalized) {
@@ -2400,9 +2416,13 @@ export function AppStateProvider({ children }) {
     // see urgentOrder.js. overrides.shipmentDate is placed after ...overrides
     // and urgent placed after that, so urgent stays authoritative.
     const urgent = overrides.shipmentDate ? isUrgentShipment(malaysiaToday(), overrides.shipmentDate) : order.urgent;
-    const fields = {
-      items: itemsWithOriginalPrice, totalAmount, priceAdjusted, status: 'In Production', invoiceId: normalized, invoiceGroups: normalizedGroups, ...storedDays(overrides), urgent,
-    };
+    // Already approved by Sales: prices / dates are settled — only the
+    // Invoice Number (and any split) lands now.
+    const fields = salesApproved
+      ? { status: 'In Production', invoiceId: normalized, invoiceGroups: normalizedGroups }
+      : {
+        items: itemsWithOriginalPrice, totalAmount, priceAdjusted, status: 'In Production', invoiceId: normalized, invoiceGroups: normalizedGroups, ...storedDays(overrides), urgent,
+      };
     try {
       await updateOrder(orderId, fields);
     } catch (err) {
@@ -2413,11 +2433,11 @@ export function AppStateProvider({ children }) {
     patch((latest) => ({
       orders: latest.orders.map((o) => (o.id === orderId ? { ...o, ...fields } : o)),
     }));
-    flashToast('productionToast', 'Order approved and Invoice Number saved.');
+    flashToast('productionToast', salesApproved ? 'Invoice Number saved — order is now In Production.' : 'Order approved and Invoice Number saved.');
     // Invoice Number and `urgent` both land in this same write — this is
     // the other trigger point for the one-time Sheets sync (setInvoiceId
     // above is the other). Fire-and-forget, same reasoning as there.
-    if (urgent && !order.urgentSheetSyncedAt) {
+    if ((salesApproved ? order.urgent : urgent) && !order.urgentSheetSyncedAt) {
       attemptUrgentSheetSync({ ...order, ...fields }, fields);
     }
     return { ok: true };
@@ -2487,13 +2507,13 @@ export function AppStateProvider({ children }) {
     } else if (isDefaultSlice && !order.invoiceId) {
       patch({ productionToast: 'Waiting for Store Admin to assign an Invoice Number before this can be marked done.' });
     } else {
-      // Status isn't always 'Waiting for Delivery': if this order's Shipment
+      // Status isn't always 'Waiting for Shipment': if this order's Shipment
       // Date has already arrived (or passed) by the time Production finishes,
       // the calendar rule sends it straight to 'Shipped' / 'Completed', the
       // same as the daily sweep_shipped_orders job would on its next run.
       const nextStatus = deliveryStageForShipmentDate(order.shipmentDate, malaysiaToday());
       const toastForStatus = {
-        'Waiting for Delivery': 'Production completed. Order is now waiting for delivery.',
+        'Waiting for Shipment': 'Production completed. Order is now waiting for shipment.',
         Shipped: 'Production completed. Shipment Date has arrived — order is now Shipped.',
         Completed: 'Production completed. Shipment Date has passed — order is now Completed.',
       };
@@ -2520,6 +2540,111 @@ export function AppStateProvider({ children }) {
     clearTimeout(productionToastTimer.current);
     productionToastTimer.current = setTimeout(() => patch({ productionToast: '' }), 2500);
   }, [patch]);
+
+  // Production's editor (ProductionEditOrder.jsx) while an order is being
+  // reviewed — the order re-opened as a draft in Production's own scratch
+  // fields (prodExcel*, the same ones the corrected-Excel parse fills), every
+  // field editable.
+  const openProductionEdit = useCallback((ord) => {
+    const restored = buildDraftFromOrder(ord);
+    const language = ord.schoolLanguage || 'SK';
+    patch({
+      schoolLanguage: language,
+      prodExcelCategory: restored.category || '',
+      prodExcelLineValues: restored.lineValues, prodExcelMatrixValues: restored.matrixValues,
+      prodExcelRowsByBlock: { ...buildInitialRowsByBlock(language), ...restored.rowsByBlock },
+      prodExcelColumnsByBlock: { ...buildInitialColumnsByBlock(), ...restored.columnsByBlock },
+      prodExcelPlakRows: { ...buildInitialPlakRows(), ...restored.plakRows },
+      prodExcelNextRowId: Math.max(1000, restored.nextId), prodExcelNextPlakRowId: Math.max(1000, restored.nextId), prodExcelNextColumnId: Math.max(1000, restored.nextId),
+      prodExcelVisibleBlocksByCategory: restored.visibleBlocksByCategory,
+    });
+  }, [patch]);
+
+  // Fills that editor from a corrected Excel instead (Production downloads
+  // the teacher's file, fixes it, uploads it here) — Production checks the
+  // result on screen and only Save changes the order.
+  const loadExcelIntoProductionEdit = useCallback(async (ord, file) => {
+    const language = ord.schoolLanguage || 'SK';
+    patch({
+      schoolLanguage: language,
+      prodExcelCategory: '', prodExcelLineValues: {}, prodExcelMatrixValues: {},
+      prodExcelRowsByBlock: buildInitialRowsByBlock(language),
+      prodExcelColumnsByBlock: buildInitialColumnsByBlock(), prodExcelPlakRows: buildInitialPlakRows(),
+      prodExcelNextRowId: 1000, prodExcelNextPlakRowId: 1000, prodExcelNextColumnId: 1000,
+      prodExcelVisibleBlocksByCategory: {},
+    });
+    return importFormAnugerahExcelInto(file, PROD_EXCEL_IMPORT_FIELDS);
+  }, [patch, importFormAnugerahExcelInto]);
+
+  // Saves that editor over the order (still 'Reviewing Order' — nothing is
+  // approved or invoiced yet): lines, quantities, Jenis Plak, website prices
+  // and total are rebuilt with the same blocks → items conversion a teacher's
+  // Submit uses (buildCategoryCartItems), and stock follows the difference
+  // (stockDiff). Every role's pages show the result straight away. A
+  // corrected-Excel overlay left from before is dropped — the order itself
+  // is now the corrected version.
+  const saveProductionEdit = useCallback(async (orderId) => {
+    const st = stateRef.current;
+    const order = st.orders.find((o) => o.id === orderId);
+    if (!order || order.status !== 'Reviewing Order') {
+      return { ok: false, message: 'Only an order that is still being reviewed can be edited here.' };
+    }
+    const f = PROD_EXCEL_IMPORT_FIELDS;
+    const draft = {
+      lineValues: st[f.lineValues], matrixValues: st[f.matrixValues], rowsByBlock: st[f.rowsByBlock],
+      plakRows: st[f.plakRows], columnsByBlock: st[f.columnsByBlock], plakCatalog: st.plakCatalog, schoolLanguage: st.schoolLanguage,
+    };
+    const catKeys = new Set([...CATEGORIES.map((c) => c.key), ...Object.keys(st[f.visibleBlocksByCategory] || {})]);
+    const items = [];
+    for (const catKey of catKeys) {
+      const built = buildCategoryCartItems(draft, catKey);
+      if (built.error) return { ok: false, message: `${resolveCategory(catKey)?.label || catKey}: ${built.error}` };
+      if (built.items) items.push(...built.items);
+    }
+    if (items.length === 0) return { ok: false, message: 'Nothing to save — the order would have no plaques left.' };
+    const totalAmount = items.reduce((sum, it) => sum + it.harga, 0);
+    const { deduct, restore } = stockDiff(order.items, items);
+    const realStock = !isTestOrderId(order.id);
+    try {
+      if (realStock) await deductPlakStock(deduct);
+    } catch (err) {
+      console.error('Failed to take stock for a Production edit:', err);
+      return { ok: false, message: describeStockError(err) };
+    }
+    const fields = {
+      items, totalAmount, priceAdjusted: false,
+      correctedImportFilePath: null, correctedImportFileName: null, correctedImportUploadedAt: null,
+    };
+    try {
+      await updateOrder(orderId, fields);
+    } catch (err) {
+      console.error('Failed to save a Production edit:', err);
+      if (realStock) restorePlakStock(deduct).catch((e) => console.error('Failed to give stock back after a failed edit:', e));
+      return { ok: false, message: describeOrderWriteError(err, 'save') };
+    }
+    if (realStock) restorePlakStock(restore).catch((err) => console.error('Failed to give back stock after a Production edit:', err));
+    patch((latest) => ({ orders: latest.orders.map((o) => (o.id === orderId ? { ...o, ...fields } : o)) }));
+    return { ok: true };
+  }, [patch]);
+
+  // Production: "Done Review" — the order has been checked (and fixed if
+  // needed, see saveProductionEdit); Sales / Store Admin can approve it now.
+  // The status stays 'Reviewing Order' — reviewedAt is the mark.
+  const markReviewDone = useCallback(async (orderId) => {
+    const order = stateRef.current.orders.find((o) => o.id === orderId);
+    if (!order || order.status !== 'Reviewing Order' || isReviewed(order)) return { ok: false };
+    const reviewedAt = new Date().toISOString();
+    try {
+      await updateOrder(orderId, { reviewedAt });
+    } catch (err) {
+      console.error('Failed to save Done Review:', err);
+      flashToast('productionToast', describeOrderWriteError(err, 'mark as reviewed'));
+      return { ok: false };
+    }
+    patch((st) => ({ orders: st.orders.map((o) => (o.id === orderId ? { ...o, reviewedAt } : o)) }));
+    flashToast('productionToast', 'Review done — Sales can approve this order now.');
+    return { ok: true };
+  }, [patch, flashToast]);
 
   // Production: re-orders one category block's Reference Sample rows after
   // the order is submitted (ProductionOrderDetail gates this until the
@@ -2714,6 +2839,10 @@ export function AppStateProvider({ children }) {
     ensureOrderLoaded,
     markProductionDone,
     updateReferenceOrder,
+    markReviewDone,
+    openProductionEdit,
+    loadExcelIntoProductionEdit,
+    saveProductionEdit,
     addCatalogNode, removeCatalogNode, updateCatalogNodePrice, renameCatalogNode, updateCatalogNodeStock, setCatalogNodeHidden, moveCatalogNode,
     linkCatalogNodeStockGroup, unlinkCatalogNodeStockGroup,
     reorderCatalogSiblings,

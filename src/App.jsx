@@ -17,6 +17,7 @@ import SalesDashboard from './pages/SalesDashboard';
 import SalesOrderSummary from './pages/SalesOrderSummary';
 import ProductionDashboard from './pages/ProductionDashboard';
 import ProductionOrderDetail from './pages/ProductionOrderDetail';
+import ProductionEditOrder from './pages/ProductionEditOrder';
 import ProductionCatalog from './pages/ProductionCatalog';
 import StoreAdminDashboard from './pages/StoreAdminDashboard';
 import StoreAdminOrderDetail from './pages/StoreAdminOrderDetail';
@@ -65,6 +66,7 @@ function AppRoutes() {
 
       <Route path="/production/dashboard" element={<RequireRole role="production"><ProductionDashboard /></RequireRole>} />
       <Route path="/production/orders/:id" element={<RequireRole role="production"><ProductionOrderDetail /></RequireRole>} />
+      <Route path="/production/orders/:id/edit" element={<RequireRole role="production"><ProductionEditOrder /></RequireRole>} />
       <Route path="/production/catalog" element={<RequireRole role="production"><ProductionCatalog /></RequireRole>} />
 
       <Route path="/store-admin/dashboard" element={<RequireRole role="store_admin"><StoreAdminDashboard /></RequireRole>} />

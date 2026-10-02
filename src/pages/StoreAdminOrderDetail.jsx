@@ -6,7 +6,7 @@ import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import PriceTable from '../components/PriceTable';
 import DatePicker from '../components/DatePicker';
 import { useAppState } from '../state/useAppState';
-import { statusPillStyle, formatDate, standardUnitPrice, toMalaysiaDay, malaysiaToday } from '../data/catalog';
+import { statusPillStyle, formatDate, standardUnitPrice, toMalaysiaDay, malaysiaToday, isReviewed } from '../data/catalog';
 import { reconstructBlocksForCategory } from '../utils/computeBlocks';
 import { splitOrderCategories, getInvoiceIdForJenisPlak } from '../utils/exportCsv';
 import { combineByJenisPlak, getInvoiceItems, partialSplitQty } from '../utils/orderBatches';
@@ -292,14 +292,15 @@ function InvoiceSplitDraft({ order, splitInvoiceId, setSplitInvoiceId, splitSele
 //
 // A Salesman sometimes hands Store Admin a paper hard copy of an order
 // before ever clicking Approve in the system — receiving that hard copy
-// already means they've agreed to it. So while an order is still
-// "Submitted to Sales", this page lets Store Admin adjust pricing and the
+// already means they've agreed to it. So once Production has reviewed an
+// order (still "Reviewing Order", ✓ Review Done), this page lets Store Admin adjust pricing and the
 // Shipment / Function dates (same capability Sales would have had) and
 // Approve + save the Invoice Number in one action (approveAndSetInvoiceId,
 // src/state/AppState.jsx) — no separate Sales click needed, the order goes
-// straight into Production. Once an order is already "In Production"
-// (approved via either path), pricing and dates are frozen and this page
-// falls back to the simple invoice-only entry (setInvoiceId), same as before.
+// straight into Production. Once Sales has approved it ("Salesman Approved"),
+// pricing and dates are frozen and this page falls back to the simple
+// invoice-only entry (setInvoiceId), which moves it to "In Production".
+// Before Production's Done Review there is nothing to do here yet.
 export default function StoreAdminOrderDetail() {
   const {
     state, today, setInvoiceId, approveAndSetInvoiceId, setJenisPlakInvoiceGroup, renameInvoiceNumber, retryUrgentSheetSync, ensureOrderLoaded,
@@ -308,7 +309,8 @@ export default function StoreAdminOrderDetail() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const order = state.orders.find((o) => o.id === id);
-  const awaitingApproval = order?.status === 'Submitted to Sales';
+  const reviewing = order?.status === 'Reviewing Order';
+  const awaitingApproval = reviewing && isReviewed(order);
   useEffect(() => { ensureOrderLoaded(id); }, [id, ensureOrderLoaded]);
 
   // Opened from one specific invoice's card on the dashboard (a split order
@@ -622,6 +624,10 @@ export default function StoreAdminOrderDetail() {
                       </p>
                     )}
                   </div>
+                ) : reviewing ? (
+                  <p className="hint-text" style={{ marginTop: 'var(--space-2)' }}>
+                    Production is still reviewing this order — the Invoice Number opens after their Done Review.
+                  </p>
                 ) : (
                   <div className="field" style={{ maxWidth: 340, marginTop: 'var(--space-2)' }}>
                     <label htmlFor="invoiceId">Invoice Number</label>
@@ -639,7 +645,7 @@ export default function StoreAdminOrderDetail() {
                 )}
                 {state.productionToast && <p className="hint-text" style={{ marginTop: 'var(--space-2)' }}>{state.productionToast}</p>}
 
-                <InvoiceSplitPanel order={order} setJenisPlakInvoiceGroup={setJenisPlakInvoiceGroup} updateToast={state.updateToast} />
+                {!reviewing && <InvoiceSplitPanel order={order} setJenisPlakInvoiceGroup={setJenisPlakInvoiceGroup} updateToast={state.updateToast} />}
 
                 <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Original vs Tambahan</div>
                 <p className="hint-text" style={{ marginTop: 0 }}>

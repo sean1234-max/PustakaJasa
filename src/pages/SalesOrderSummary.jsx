@@ -7,7 +7,7 @@ import PriceTable from '../components/PriceTable';
 import OrderPrintout from '../components/OrderPrintout';
 import DatePicker from '../components/DatePicker';
 import { useAppState } from '../state/useAppState';
-import { statusPillStyle, standardUnitPrice, formatDate, defaultShipmentDate, toMalaysiaDay, malaysiaToday } from '../data/catalog';
+import { statusPillStyle, standardUnitPrice, formatDate, defaultShipmentDate, toMalaysiaDay, malaysiaToday, isReviewed } from '../data/catalog';
 import CancelOrderControl from '../components/CancelOrderControl';
 import ReassignSalesmanControl from '../components/ReassignSalesmanControl';
 import { reconstructBlocksForCategory } from '../utils/computeBlocks';
@@ -59,7 +59,11 @@ export default function SalesOrderSummary() {
   // for someone else's order every write control is hidden (the server would
   // reject the write anyway via "salesman updates own orders").
   const isOwn = !state.isSalesManager || !order || order.salesmanId === state.userAuthId;
-  const editable = order?.status === 'Submitted to Sales' && isOwn;
+  // Approve (Shipment Date, prices) only after Production's Done Review
+  // (0077); before that the order is shown read-only, waiting.
+  const reviewing = order?.status === 'Reviewing Order';
+  const awaitingReview = reviewing && !isReviewed(order);
+  const editable = reviewing && isReviewed(order) && isOwn;
 
   // Shipment Date (shipmentDate) / Function Date stay editable right up to the moment of
   // approval — the same "Sales can still adjust it" window the price
@@ -245,6 +249,16 @@ export default function SalesOrderSummary() {
         </div>
 
         <div className="screen-only">
+          {awaitingReview && (
+            <p className="hint-text" style={{ margin: '0 0 var(--space-3)', fontWeight: 600, color: '#8a6d00' }}>
+              Production is still reviewing this order — you can set the Shipment Date and approve it once they click Done Review. Production 还在 review，review 好了才可以 approve。
+            </p>
+          )}
+          {reviewing && !awaitingReview && (
+            <p className="hint-text" style={{ margin: '0 0 var(--space-3)', fontWeight: 600, color: '#2f6b4f' }}>
+              ✓ Production has reviewed this order — ready to approve.
+            </p>
+          )}
           {!isOwn && (
             <p className="hint-text" style={{ margin: '0 0 var(--space-3)', fontWeight: 600 }}>
               Viewing {order.sales || 'another salesman'}’s order — read-only. Only {order.sales || 'the assigned salesman'} can approve or edit it.
@@ -370,7 +384,7 @@ export default function SalesOrderSummary() {
                 </div>
               )}
 
-              {editable && (
+              {reviewing && isOwn && (
                 <div style={{ marginTop: 'var(--space-6)' }}>
                   <div className="card-kicker">Cancel</div>
                   <CancelOrderControl order={order} onCancelled={() => navigate('/sales/dashboard')} />
@@ -391,9 +405,9 @@ export default function SalesOrderSummary() {
               {state.updateToast && <p className="toast-inline" style={{ display: 'block', marginTop: 'var(--space-4)' }}>{state.updateToast}</p>}
               <div className="row-split" style={{ marginTop: 'var(--space-6)' }}>
                 <button type="button" className="btn btn-ghost" onClick={() => setPage('details')}>View Order Details →</button>
-                {editable
-                  ? <button type="button" className="btn btn-primary" onClick={handleApprove} disabled={busy}>{busy ? 'Approving…' : 'Approve'}</button>
-                  : <button type="button" className="btn btn-primary" onClick={handlePrint}>Print Order</button>}
+                {editable && <button type="button" className="btn btn-primary" onClick={handleApprove} disabled={busy}>{busy ? 'Approving…' : 'Approve'}</button>}
+                {awaitingReview && <button type="button" className="btn btn-primary" disabled>Waiting for Production review</button>}
+                {!reviewing && <button type="button" className="btn btn-primary" onClick={handlePrint}>Print Order</button>}
               </div>
             </>
           ) : (

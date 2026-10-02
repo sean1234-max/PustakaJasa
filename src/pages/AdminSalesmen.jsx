@@ -172,7 +172,7 @@ export default function AdminSalesmen() {
               <tbody className="divide-y divide-outline-variant">
                 {filtered.map((s) => {
                   const salesmanOrders = (state.orders || []).filter((o) => o.salesmanId === s.id);
-                  const pending = salesmanOrders.filter((o) => o.status === 'Submitted to Sales').length;
+                  const pending = salesmanOrders.filter((o) => o.status === 'Reviewing Order').length;
                   const completed = salesmanOrders.filter((o) => o.status === 'Completed').length;
                   return (
                     <tr key={s.id} className="hover:bg-surface-container-low transition-colors">
