@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { umumSlotFields } from './umumLines';
+import { umumSlotFields, umumRedSlots, UMUM_NO_RED } from './umumLines';
 
 const lines = (...texts) => Object.fromEntries(texts.map((t, i) => [`${i}`, t]).filter(([, t]) => t));
 
@@ -51,5 +51,26 @@ describe('umumSlotFields — which CONTOH line goes on which plaque field', () =
 
   it('empty slots are skipped', () => {
     expect(umumSlotFields({ 0: 'MAJLIS X', 2: 'JOHAN' })).toEqual({ 0: 'event_header', 2: 'position' });
+  });
+});
+
+describe('umumRedSlots — which CONTOH line prints red', () => {
+  it('the MERAH line', () => {
+    expect(umumRedSlots(lines('SK X', 'TAHUN 1', 'ALI'), '2')).toEqual(['2']);
+  });
+
+  it('nothing ticked: only a line found by a position keyword', () => {
+    expect(umumRedSlots(lines('SK X', 'JOHAN TAHUN 4', 'ALI'))).toEqual(['1']);
+    expect(umumRedSlots(lines('SK X', 'ANUGERAH', 'TOKOH MURID'))).toEqual(['1', '2']);
+  });
+
+  it('a guessed position (no keyword) is black', () => {
+    expect(umumRedSlots(lines('SK SEREMBAN JAYA', 'TAHUN 1'))).toEqual([]);
+    expect(umumRedSlots(lines('KARNIVAL', 'PENGAKAP', 'ROVER'))).toEqual([]);
+  });
+
+  it('unticked: black, though the line is still the position', () => {
+    expect(umumRedSlots(lines('SK X', 'JOHAN TAHUN 4'), UMUM_NO_RED)).toEqual([]);
+    expect(umumSlotFields(lines('SK X', 'JOHAN TAHUN 4'), UMUM_NO_RED)).toEqual({ 0: 'event_header', 1: 'position' });
   });
 });

@@ -3,7 +3,7 @@ import * as XLSX from 'xlsx';
 import { parseFormAnugerahExcel, matchJenisPlakPath, deriveKlasMatrixSectionLines } from './excelImport';
 import { computeBlocks, noopUpdaters } from './computeBlocks';
 import { buildCategoryCartItems } from '../state/categoryCartItems';
-import { buildCsvRows } from './exportCsv';
+import { buildCsvRows, CSV_COLUMNS } from './exportCsv';
 import { checkAliranKelasTotals } from './importChecks';
 import { makeDynamicCategoryKey, resolveCategory } from '../data/catalog';
 
@@ -470,8 +470,8 @@ describe('UMUM (万能) — import → cart → CSV', () => {
     const H = 'SK TAMAN SEGAR\nKARNIVAL KOKURIKULUM 2026';
     const order = 'event_header|event_line_1|position|event_line_2';
     expect(rows).toEqual([
-      ...Array(3).fill([H, '', 'JOHAN TAHUN 4', 'PENGAKAP', '', 'PKC 263', 'UMUM (万能)', order]),
-      ...Array(2).fill([H, '', 'NAIB JOHAN', 'KADET POLIS', '', 'PKC 263', 'UMUM (万能)', order]),
+      ...Array(3).fill([H, '', 'JOHAN TAHUN 4', 'PENGAKAP', '', 'PKC 263', 'UMUM (万能)', order, '']),
+      ...Array(2).fill([H, '', 'NAIB JOHAN', 'KADET POLIS', '', 'PKC 263', 'UMUM (万能)', order, '']),
     ]);
   });
 
@@ -480,7 +480,21 @@ describe('UMUM (万能) — import → cart → CSV', () => {
     const st = toDraft('UMUM', section);
     const res = buildCategoryCartItems(st, 'UMUM');
     const { rows } = buildCsvRows({ schoolLanguage: 'SK', items: res.items }, 'UMUM', res.items);
-    expect(rows).toEqual([['SK TAMAN SEGAR\nKARNIVAL KOKURIKULUM 2026', '', 'JOHAN TAHUN 4', '', '', 'PKC 263', 'UMUM (万能)', 'event_header|event_line_1|position|event_line_2']]);
+    expect(rows).toEqual([['SK TAMAN SEGAR\nKARNIVAL KOKURIKULUM 2026', '', 'JOHAN TAHUN 4', '', '', 'PKC 263', 'UMUM (万能)', 'event_header|event_line_1|position|event_line_2', '']]);
+  });
+
+  it('a keyword position starts ticked red; unticking it keeps it the position but prints black', () => {
+    const section = parse({ 'UMUM (万能)': umum({ rows: [[null, null, null, null, 1, 'PKC 263']] }) }).categorized.UMUM[0];
+    const st = toDraft('UMUM', section);
+    const lines = (lv) => computeBlocks('UMUM', lv, {}, st.rowsByBlock, st.plakRows, {}, noopUpdaters, catalog, 'SK').blocks[0].lines;
+    expect(lines(st.lineValues).map((ln) => [ln.redText, ln.umumRed.checked])).toEqual([[false, false], [false, false], [true, true], [false, false]]);
+
+    const unticked = { ...st, lineValues: { ...st.lineValues, 'UMUM::0::umumRed': 'none' } };
+    expect(lines(unticked.lineValues).some((ln) => ln.redText || ln.umumRed.checked)).toBe(false);
+    const res = buildCategoryCartItems(unticked, 'UMUM');
+    const { rows } = buildCsvRows({ schoolLanguage: 'SK', items: res.items }, 'UMUM', res.items);
+    expect(rows[0][2]).toBe('JOHAN TAHUN 4');
+    expect(rows[0][CSV_COLUMNS.indexOf('position_black')]).toBe('1');
   });
 
   it('a renamed copy of the sheet (second event) is its own tab', () => {

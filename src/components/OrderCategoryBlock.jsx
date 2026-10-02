@@ -1207,7 +1207,7 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
           <table className="table">
             <thead>
               <tr>
-                <th>{blk.descColumnLabel || 'Description'}</th>
+                {!blk.hideDescColumn && <th>{blk.descColumnLabel || 'Description'}</th>}
                 {blk.extraRefColumns.map((col) => <th key={col.key}>{col.label}</th>)}
                 {tokohBefore.map((f) => <th key={f.key}>{f.label}</th>)}
                 <th style={{ width: blk.plakPerRow ? 90 : 140, textAlign: blk.plakPerRow ? 'center' : undefined }}>{blk.qtyColHeader}</th>
@@ -1220,16 +1220,18 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
             <tbody>
               {listRows.map((row) => (
                 <tr key={row.id}>
-                  <td>
-                    {editable.rowDesc
-                      ? <input className="input" placeholder="e.g. TAHUN 1" value={row.desc} onChange={(e) => row.setDesc(e.target.value)} />
-                      : row.desc}
-                    {row.typoHint && (
-                      <div className="typo-hint">
-                        Possible typo: "{row.typoHint.word}" — did you mean "{row.typoHint.suggestion}"?
-                      </div>
-                    )}
-                  </td>
+                  {!blk.hideDescColumn && (
+                    <td>
+                      {editable.rowDesc
+                        ? <input className="input" placeholder="e.g. TAHUN 1" value={row.desc} onChange={(e) => row.setDesc(e.target.value)} />
+                        : row.desc}
+                      {row.typoHint && (
+                        <div className="typo-hint">
+                          Possible typo: "{row.typoHint.word}" — did you mean "{row.typoHint.suggestion}"?
+                        </div>
+                      )}
+                    </td>
+                  )}
                   {row.extraRefValues.map((rv) => (
                     <td key={rv.key}>
                       {editable.rowDesc
@@ -1278,7 +1280,8 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
               <tr>
                 <td><strong>TOTAL</strong></td>
                 {blk.extraRefColumns.map((col) => <td key={col.key} />)}
-                {tokohBefore.map((f) => <td key={f.key} />)}
+                {/* No desc column: TOTAL already sits in the first of these. */}
+                {tokohBefore.slice(blk.hideDescColumn ? 1 : 0).map((f) => <td key={f.key} />)}
                 <td style={blk.plakPerRow ? { textAlign: 'center' } : undefined}><strong>{blk.blockTotalQty}</strong></td>
                 {blk.plakPerRow && <td />}
                 {tokohAfter.map((f) => <td key={f.key} />)}

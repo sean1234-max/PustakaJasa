@@ -7,7 +7,7 @@ import {
   resolveCategory, categoriesUsedByItems,
 } from '../data/catalog';
 import { findPossibleTypo } from './typoCheck';
-import { umumSlotFields } from './umumLines';
+import { umumSlotFields, umumRedSlots, UMUM_NO_RED } from './umumLines';
 
 // Assigns each Reference Sample line its displayed number, 1..N — except
 // TAJUK BESAR's own continuation line (slot 0b), which always takes slot
@@ -166,14 +166,15 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
     // right after its own first box) and numbered sequentially, so plain
     // categories (no second box) end up numbered 1..N exactly as before.
     const refOrderKey = `${catKey}::${b}::refOrder`;
-    // UMUM (万能): which CONTOH line is the red position (the MERAH one, or
-    // by keyword) — see utils/umumLines.js. `umumRedKey` stores the slot the
-    // teacher marked MERAH ('' = none, keywords decide).
+    // UMUM (万能): which CONTOH line is the position and which prints red
+    // — see utils/umumLines.js. `umumRedKey` stores the slot the teacher
+    // marked MERAH ('' = untouched, keywords decide; UMUM_NO_RED = unticked).
     const umumRedKey = `${catKey}::${b}::umumRed`;
     const umumContoh = currentCat.umumRows
       ? Object.fromEntries(['0', '1', '2', '3'].map((s) => [s, lineValues[`${catKey}::${b}::${s}`] || '']))
       : null;
     const umumFields = umumContoh ? umumSlotFields(umumContoh, lineValues[umumRedKey]) : null;
+    const umumRed = umumContoh ? umumRedSlots(umumContoh, lineValues[umumRedKey]) : [];
     const rawLines = catLinePlaceholders.map((placeholder, i) => {
       const key = `${catKey}::${b}::${i}`;
       const slotId = `${i}`;
@@ -189,11 +190,12 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
         // Line 3's own text renders red on some categories (OTHERS — see
         // catalog.js's positionFieldsRedText) since it's the position text
         // that actually gets engraved; every other line stays plain.
-        redText: umumFields ? umumFields[`${i}`] === 'position' : i === 2 && !!currentCat.positionFieldsRedText,
-        // UMUM's own per-line MERAH toggle (the sheet's WARNA MERAH? column).
+        redText: umumFields ? umumRed.includes(`${i}`) : i === 2 && !!currentCat.positionFieldsRedText,
+        // UMUM's own per-line MERAH toggle (the sheet's WARNA MERAH? column):
+        // ticked = red; unticking the red line makes it black.
         umumRed: umumFields ? {
-          checked: lineValues[umumRedKey] === `${i}`,
-          toggle: () => updaters.onLine(umumRedKey, lineValues[umumRedKey] === `${i}` ? '' : `${i}`),
+          checked: umumRed.includes(`${i}`),
+          toggle: () => updaters.onLine(umumRedKey, umumRed.includes(`${i}`) ? UMUM_NO_RED : `${i}`),
         } : null,
         onChange: (val) => updaters.onLine(key, val),
         // Flags a likely typo (e.g. "ANIGERAH" for "ANUGERAH") against a
@@ -769,6 +771,7 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
         ? () => updaters.onLine(`${catKey}::${b}::0b`, '') : null,
       plakPerBlock: !!currentCat.plakPerBlock,
       descColumnLabel: currentCat.descColumnLabel,
+      hideDescColumn: !!currentCat.hideDescColumn,
       extraRefColumns,
       canAddRow: !currentCat.capRowsAt5 || rows.length < 5,
       columns, matrixRows, levelBreakdown,

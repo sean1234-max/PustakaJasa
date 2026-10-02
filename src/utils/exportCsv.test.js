@@ -38,8 +38,8 @@ describe('buildCsvRows — PBD (per-recipient, Nama Kelas split)', () => {
     }, {});
     const { rows } = buildCsvRows({ schoolLanguage: 'SK', items: [it] }, 'PBD', [it]);
     expect(rows).toEqual([
-      ['HARI ANUGERAH 2026', '', 'ANUGERAH PBD', 'TAHUN 4', '', 'DECO LIGHT', 'PBD TERBAIK', DEF],
-      ['HARI ANUGERAH 2026', '', 'ANUGERAH PBD', 'TAHUN 4', '', 'DECO LIGHT', 'PBD TERBAIK', DEF],
+      ['HARI ANUGERAH 2026', '', 'ANUGERAH PBD', 'TAHUN 4', '', 'DECO LIGHT', 'PBD TERBAIK', DEF, ''],
+      ['HARI ANUGERAH 2026', '', 'ANUGERAH PBD', 'TAHUN 4', '', 'DECO LIGHT', 'PBD TERBAIK', DEF, ''],
     ]);
   });
 
@@ -69,8 +69,8 @@ describe('CSV column remap — reference-sample lines -> CSV columns', () => {
     };
     const { rows } = buildCsvRows({ schoolLanguage: 'SK', items: [item] }, 'MP1', [item]);
     expect(rows).toEqual([
-      ['HARI ANUGERAH', '', 'TERBAIK\nMATA PELAJARAN', 'BAHASA MELAYU', 'TAHUN 1', 'DECO LIGHT', 'MP THP 1', DEF],
-      ['HARI ANUGERAH', '', 'TERBAIK\nMATA PELAJARAN', 'BAHASA MELAYU', 'TAHUN 1', 'DECO LIGHT', 'MP THP 1', DEF],
+      ['HARI ANUGERAH', '', 'TERBAIK\nMATA PELAJARAN', 'BAHASA MELAYU', 'TAHUN 1', 'DECO LIGHT', 'MP THP 1', DEF, ''],
+      ['HARI ANUGERAH', '', 'TERBAIK\nMATA PELAJARAN', 'BAHASA MELAYU', 'TAHUN 1', 'DECO LIGHT', 'MP THP 1', DEF, ''],
     ]);
   });
 
@@ -207,7 +207,7 @@ describe('CSV column remap — reference-sample lines -> CSV columns', () => {
       },
     };
     const { rows } = buildCsvRows({ schoolLanguage: 'SK', items: [item] }, 'PBD', [item]);
-    expect(rows).toEqual([['HARI ANUGERAH', '', 'ANUGERAH PBD\nTERBAIK KESELURUHAN', 'TAHUN 5', '', 'DECO LIGHT', 'PBD TERBAIK', DEF]]);
+    expect(rows).toEqual([['HARI ANUGERAH', '', 'ANUGERAH PBD\nTERBAIK KESELURUHAN', 'TAHUN 5', '', 'DECO LIGHT', 'PBD TERBAIK', DEF, '']]);
   });
 
   it('LONJAKAN: line 2 -> position, each row TAHUN -> event_line_1', () => {
@@ -220,9 +220,9 @@ describe('CSV column remap — reference-sample lines -> CSV columns', () => {
     };
     const { rows } = buildCsvRows({ schoolLanguage: 'SK', items: [item] }, 'LONJAKAN', [item]);
     expect(rows).toEqual([
-      ['HARI ANUGERAH', '', 'LONJAKAN SAUJANA', 'TAHUN 3', '', 'DECO LIGHT', 'LONJAKAN SAUJANA', DEF],
-      ['HARI ANUGERAH', '', 'LONJAKAN SAUJANA', 'TAHUN 3', '', 'DECO LIGHT', 'LONJAKAN SAUJANA', DEF],
-      ['HARI ANUGERAH', '', 'LONJAKAN SAUJANA', 'TAHUN 4', '', 'DECO LIGHT', 'LONJAKAN SAUJANA', DEF],
+      ['HARI ANUGERAH', '', 'LONJAKAN SAUJANA', 'TAHUN 3', '', 'DECO LIGHT', 'LONJAKAN SAUJANA', DEF, ''],
+      ['HARI ANUGERAH', '', 'LONJAKAN SAUJANA', 'TAHUN 3', '', 'DECO LIGHT', 'LONJAKAN SAUJANA', DEF, ''],
+      ['HARI ANUGERAH', '', 'LONJAKAN SAUJANA', 'TAHUN 4', '', 'DECO LIGHT', 'LONJAKAN SAUJANA', DEF, ''],
     ]);
   });
 });
@@ -422,7 +422,7 @@ describe('buildCsvRows — TOKOH_SHEET NAMA MURID / Reserved', () => {
     const item = tokohItem('a', { id: 1, desc: 'TOKOH MURID', qty: 1, namaMurid: 'AHMAD BIN ALI' });
     const { rows, reservedCount } = buildCsvRows({ ...order, items: [item] }, 'TOKOH_SHEET', [item]);
     expect(reservedCount).toBe(0);
-    expect(rows).toEqual([['HARI ANUGERAH 2026', '', 'TOKOH MURID', 'AHMAD BIN ALI', '', 'CPH / A', 'TOKOH', DEF]]);
+    expect(rows).toEqual([['HARI ANUGERAH 2026', '', 'TOKOH MURID', 'AHMAD BIN ALI', '', 'CPH / A', 'TOKOH', DEF, '']]);
   });
 
   it('an ANUGERAH award name puts ANUGERAH alone on the first position line', () => {
@@ -443,7 +443,7 @@ describe('buildCsvRows — TOKOH_SHEET NAMA MURID / Reserved', () => {
     const reserved = tokohItem('r', { id: 2, desc: 'TOKOH AKADEMIK', qty: 2, namaMurid: 'Reserved' });
     const items = [named, reserved];
     const csv = buildCsvRows({ ...order, items }, 'TOKOH_SHEET', items);
-    expect(csv.rows).toEqual([['HARI ANUGERAH 2026', '', 'TOKOH MURID', 'SITI', '', 'CPH / A', 'TOKOH', DEF]]);
+    expect(csv.rows).toEqual([['HARI ANUGERAH 2026', '', 'TOKOH MURID', 'SITI', '', 'CPH / A', 'TOKOH', DEF, '']]);
     expect(csv.reservedCount).toBe(2);
 
     const res = validateExport(order, items, [], csv);
@@ -460,7 +460,7 @@ describe('buildCsvRows — TOKOH_SHEET NAMA MURID / Reserved', () => {
       },
     };
     const { rows } = buildCsvRows({ ...order, items: [item] }, 'TOKOH_SHEET', [item]);
-    expect(rows).toEqual([['HARI ANUGERAH 2026', '', 'PENGAWAS SEKOLAH', 'TAHUN 2026', '', '18093 GOLD', 'TOKOH', DEF]]);
+    expect(rows).toEqual([['HARI ANUGERAH 2026', '', 'PENGAWAS SEKOLAH', 'TAHUN 2026', '', '18093 GOLD', 'TOKOH', DEF, '']]);
   });
 
   it('a filled NAMA MURID wins over line ③ — it never mixes with it', () => {
@@ -717,8 +717,8 @@ describe('buildCsvRows — ALIRAN TERBAIK (Kalau ada kelas)', () => {
     const { rows } = buildCsvRows({ schoolLanguage: 'SK', items: [mk('FLAT', null, null)] }, 'ALIRAN_KELAS', [mk('FLAT', null, null)]);
     // TAHUN 1 (flat): 2 classes → 2 rows
     expect(rows).toEqual([
-      ['HARI ANUGERAH', '', '', 'TERBAIK DALAM ALIRAN', 'TAHUN 1 ADIL', 'FLAT', 'ALIRAN TERBAIK (Kalau ada kelas)', DEF],
-      ['HARI ANUGERAH', '', '', 'TERBAIK DALAM ALIRAN', 'TAHUN 1 BESTARI', 'FLAT', 'ALIRAN TERBAIK (Kalau ada kelas)', DEF],
+      ['HARI ANUGERAH', '', '', 'TERBAIK DALAM ALIRAN', 'TAHUN 1 ADIL', 'FLAT', 'ALIRAN TERBAIK (Kalau ada kelas)', DEF, ''],
+      ['HARI ANUGERAH', '', '', 'TERBAIK DALAM ALIRAN', 'TAHUN 1 BESTARI', 'FLAT', 'ALIRAN TERBAIK (Kalau ada kelas)', DEF, ''],
     ]);
   });
 
@@ -761,8 +761,8 @@ describe('buildCsvRows — dynamicMatrix with a pre-written roster column (event
     // The `year` column is retired — always blank (the year rides on the
     // two-line TAJUK BESAR now).
     expect(rows).toEqual([
-      ['SMK X\nHEM 2024', '', 'ANUGERAH\nKEPIMPINAN MURID CEMERLANG', 'KESHVINI A/P MUGAN', 'KETUA PENGAWAS\nLEMBAGA PENGAWAS SEKOLAH', 'OTHER - roster plak', 'Mata Pelajaran / Klas (Matrix)', DEF],
-      ['SMK X\nHEM 2024', '', 'ANUGERAH\nKEPIMPINAN MURID CEMERLANG', 'LIEW YONG SHIN', 'SETIAUSAHA\nLEMBAGA PENGAWAS SEKOLAH', 'OTHER - roster plak', 'Mata Pelajaran / Klas (Matrix)', DEF],
+      ['SMK X\nHEM 2024', '', 'ANUGERAH\nKEPIMPINAN MURID CEMERLANG', 'KESHVINI A/P MUGAN', 'KETUA PENGAWAS\nLEMBAGA PENGAWAS SEKOLAH', 'OTHER - roster plak', 'Mata Pelajaran / Klas (Matrix)', DEF, ''],
+      ['SMK X\nHEM 2024', '', 'ANUGERAH\nKEPIMPINAN MURID CEMERLANG', 'LIEW YONG SHIN', 'SETIAUSAHA\nLEMBAGA PENGAWAS SEKOLAH', 'OTHER - roster plak', 'Mata Pelajaran / Klas (Matrix)', DEF, ''],
     ]);
   });
 
@@ -787,9 +787,9 @@ describe('buildCsvRows — dynamicMatrix with a pre-written roster column (event
     };
     const { rows } = buildCsvRows({ id: 'O', items: [tokoh], schoolLanguage: 'SK' }, 'KLAS_MATRIX', [tokoh]);
     expect(rows).toEqual([
-      ['MAJLIS X', '', 'TOKOH MURID', '', '', 'M1902B', 'Mata Pelajaran / Klas (Matrix)', DEF],
-      ['MAJLIS X', '', 'TOKOH NILAM', '', '', 'M1902B', 'Mata Pelajaran / Klas (Matrix)', DEF],
-      ['MAJLIS X', '', 'TOKOH NILAM', '', '', 'M1902B', 'Mata Pelajaran / Klas (Matrix)', DEF],
+      ['MAJLIS X', '', 'TOKOH MURID', '', '', 'M1902B', 'Mata Pelajaran / Klas (Matrix)', DEF, ''],
+      ['MAJLIS X', '', 'TOKOH NILAM', '', '', 'M1902B', 'Mata Pelajaran / Klas (Matrix)', DEF, ''],
+      ['MAJLIS X', '', 'TOKOH NILAM', '', '', 'M1902B', 'Mata Pelajaran / Klas (Matrix)', DEF, ''],
     ]);
   });
 });

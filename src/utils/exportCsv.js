@@ -7,9 +7,9 @@ import {
 } from '../data/catalog';
 import { breakAcaraLine } from './acaraBreak';
 import { partialSplitQty } from './orderBatches';
-import { UMUM_SLOTS, umumSlotFields, umumClassifyText } from './umumLines';
+import { UMUM_SLOTS, umumSlotFields, umumClassifyText, umumRedSlots } from './umumLines';
 
-export const CSV_COLUMNS = ['event_header', 'year', 'position', 'event_line_1', 'event_line_2', 'jenis_plak', 'category', 'line_order'];
+export const CSV_COLUMNS = ['event_header', 'year', 'position', 'event_line_1', 'event_line_2', 'jenis_plak', 'category', 'line_order', 'position_black'];
 
 // UMUM (万能): the CONTOH lines ①–④ (slots 0–3) of this item, which plaque
 // field each one is (utils/umumLines.js), and a raw slot reader (no
@@ -17,8 +17,9 @@ export const CSV_COLUMNS = ['event_header', 'year', 'position', 'event_line_1', 
 function umumParts(item) {
   const raw = (slot) => item.detail?.lines?.[`${item.categoryKey}::${item.blockIdx}::${slot}`] || '';
   const contoh = Object.fromEntries(UMUM_SLOTS.map((s) => [s, raw(s)]));
-  const fields = umumSlotFields(umumClassifyText(contoh, item.detail?.rows), raw('umumRed'));
-  return { contoh, fields };
+  const classifyText = umumClassifyText(contoh, item.detail?.rows);
+  const fields = umumSlotFields(classifyText, raw('umumRed'));
+  return { contoh, fields, black: umumRedSlots(classifyText, raw('umumRed')).length === 0 };
 }
 
 function umumFieldLists(item) {
@@ -729,7 +730,10 @@ export function buildCsvRows(order, categoryKey, items) {
     // file.
     const categoryLabel = cat?.label || item.categoryKey;
     const lineOrder = getLineOrder(item, cat);
-    itemRows.forEach((r) => rows.push([...r, item.jenisPlak || '', categoryLabel, lineOrder]));
+    // position_black = "1": SEAN.jsx prints the position in black instead
+    // of red (UMUM with no red line — umumLines.js).
+    const positionBlack = cat?.umumRows && umumParts(item).black ? '1' : '';
+    itemRows.forEach((r) => rows.push([...r, item.jenisPlak || '', categoryLabel, lineOrder, positionBlack]));
   });
 
   return { rows, skippedItemIds, reservedCount };

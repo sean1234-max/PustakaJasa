@@ -14,8 +14,14 @@
 //     event_line_2 (any in between join line 1). Every AI template has a
 //     position, so with none found the first leftover line becomes it; with
 //     no keyword at all it's simply ① ② ③ ④.
+//   - Red (Sean, 2026-10-02): only the MERAH line, or — nothing ticked yet —
+//     a line found by a position keyword (its MERAH box shows ticked). A
+//     guessed position, or one the teacher unticked (UMUM_NO_RED), still
+//     sits in the position spot but prints black (CSV position_black).
 
 export const UMUM_SLOTS = ['0', '1', '2', '3'];
+// Stored in the umumRed line when the teacher unticks the red line.
+export const UMUM_NO_RED = 'none';
 
 const HEADER_RE = /\b(MAJLIS|HARI|SEKOLAH|SK|SJK|SJKC|SJKT|SMK|SMJK|SMKA|KOLEJ|(19|20)\d{2})\b|学校|典礼|颁奖|华小/i;
 const POSITION_RE = /\b(ANUGERAH|TOKOH|JOHAN|NAIB|TEMPAT|PERTAMA|KEDUA|KETIGA|JUARA|TERBAIK)\b|冠军|亚军|季军|第.{1,3}名|奖/i;
@@ -64,6 +70,15 @@ export function umumSlotFields(contoh, redSlot) {
   const rest = slots.filter((s) => !taken.has(s));
   rest.forEach((s, i) => { out[s] = i === rest.length - 1 && i > 0 ? 'event_line_2' : 'event_line_1'; });
   return out;
+}
+
+// The slot(s) printed red — see the header note. `redSetting` is the stored
+// umumRed value: a slot, UMUM_NO_RED, or '' (not touched: keywords decide).
+export function umumRedSlots(contoh, redSetting) {
+  if (redSetting === UMUM_NO_RED) return [];
+  const fields = umumSlotFields(contoh, redSetting);
+  if (redSetting && fields[redSetting] === 'position') return [redSetting];
+  return UMUM_SLOTS.filter((s) => fields[s] === 'position' && kindOf(String(contoh[s] || '')) === 'position');
 }
 
 // The text each slot is classified by: the CONTOH line, or — when the
