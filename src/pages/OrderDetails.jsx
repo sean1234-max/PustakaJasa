@@ -1,7 +1,6 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import Nav from '../components/Nav';
-import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import PriceTable from '../components/PriceTable';
 import { useAppState } from '../state/useAppState';
@@ -64,8 +63,6 @@ export default function OrderDetails() {
     if (!isFiltered) return allSelempangCats;
     return allSelempangCats.filter((cat) => priceRows.some((it) => it.categoryKey === cat.key));
   }, [allSelempangCats, isFiltered, priceRows]);
-  const [activeCat, setActiveCat] = useState(() => categories[0]?.key || '');
-  const currentCat = categories.find((c) => c.key === activeCat) || categories[0];
   // A partly-split Jenis Plak has items on both invoices, so its block shows on both.
   const filterBlocks = useCallback((blocks) => (!isFiltered ? blocks : blocks.filter((blk) => (
     !blk.jenisPlak || priceRows.some((it) => it.jenisPlak === blk.jenisPlak)
@@ -74,10 +71,6 @@ export default function OrderDetails() {
     if (!order) return [];
     return filterBlocks(selempangCats.flatMap((cat) => reconstructBlocksForCategory(order, cat.key, state.plakCatalog).blocks));
   }, [order, selempangCats, state.plakCatalog, filterBlocks]);
-  const catBlocks = useMemo(() => {
-    if (!order || !currentCat) return [];
-    return filterBlocks(reconstructBlocksForCategory(order, currentCat.key, state.plakCatalog).blocks);
-  }, [order, currentCat, state.plakCatalog, filterBlocks]);
 
   // Printing needs every category's details at once, not just whichever
   // tab happens to be open on screen — same pattern as SalesOrderSummary.
@@ -204,30 +197,13 @@ export default function OrderDetails() {
             </>
           ) : (
             <>
-              {categories.length === 0 && selempangBlocks.length === 0 ? (
-                <p className="hint-text" style={{ marginTop: 'var(--space-3)' }}>No category details found for this order.</p>
-              ) : (
-                <>
-                  {categories.length > 0 && (
-                    <>
-                      <div className="card-kicker" style={{ marginBottom: 'var(--space-2)' }}>Anugerah</div>
-                      <div style={{ margin: 'var(--space-1) 0 var(--space-3)' }}>
-                        <CategoryTabs categories={categories} active={currentCat?.key} onSelect={setActiveCat} />
-                      </div>
-                      {catBlocks.map((blk) => (
-                        <OrderCategoryBlock key={blk.idx} blk={blk} editable={READONLY} />
-                      ))}
-                    </>
-                  )}
-                  {selempangBlocks.length > 0 && (
-                    <div style={{ marginTop: categories.length > 0 ? 'var(--space-8)' : 0 }}>
-                      {selempangBlocks.map((blk) => (
-                        <OrderCategoryBlock key={`sel-${blk.idx}`} blk={blk} editable={READONLY} />
-                      ))}
-                    </div>
-                  )}
-                </>
-              )}
+              {/* Only SELEMPANG shows its rows in Order Details — Sean's rule for every
+                  role; other categories' details stay off this screen. */}
+              {selempangBlocks.length === 0 ? (
+                <p className="hint-text" style={{ marginTop: 'var(--space-3)' }}>Only SELEMPANG orders show order details.</p>
+              ) : selempangBlocks.map((blk) => (
+                <OrderCategoryBlock key={`sel-${blk.idx}`} blk={blk} editable={READONLY} />
+              ))}
 
               <div className="row-split" style={{ marginTop: 'var(--space-6)' }}>
                 <button type="button" className="btn btn-ghost" onClick={() => setPage('summary')}>← Back to Summary</button>

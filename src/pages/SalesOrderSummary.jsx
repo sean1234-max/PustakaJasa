@@ -1,7 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
-import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import PriceTable from '../components/PriceTable';
 import TokohDetailsTable from '../components/TokohDetailsTable';
@@ -109,12 +108,6 @@ export default function SalesOrderSummary() {
     () => (effectiveOrder ? splitOrderCategories(effectiveOrder) : { anugerah: [], selempang: [] }),
     [effectiveOrder],
   );
-  const [activeCat, setActiveCat] = useState(() => categories[0]?.key || '');
-  const currentCat = categories.find((c) => c.key === activeCat) || categories[0];
-  const catBlocks = useMemo(() => {
-    if (!effectiveOrder || !currentCat) return [];
-    return reconstructBlocksForCategory(effectiveOrder, currentCat.key, state.plakCatalog).blocks;
-  }, [effectiveOrder, currentCat, state.plakCatalog]);
   const selempangBlocks = useMemo(() => {
     if (!effectiveOrder) return [];
     return selempangCats.flatMap((cat) => reconstructBlocksForCategory(effectiveOrder, cat.key, state.plakCatalog).blocks);
@@ -402,30 +395,13 @@ export default function SalesOrderSummary() {
                   {correctedError ? `⚠ ${correctedError} — showing the original data instead.` : 'Production uploaded a corrected Excel — showing that version below, not the teacher\'s original.'}
                 </p>
               )}
-              {categories.length === 0 && selempangBlocks.length === 0 ? (
-                <p className="hint-text" style={{ marginTop: 'var(--space-3)' }}>No category details found for this order.</p>
-              ) : (
-                <>
-                  {categories.length > 0 && (
-                    <>
-                      <div className="card-kicker" style={{ marginBottom: 'var(--space-2)' }}>Anugerah</div>
-                      <div style={{ margin: 'var(--space-1) 0 var(--space-3)' }}>
-                        <CategoryTabs categories={categories} active={currentCat?.key} onSelect={setActiveCat} />
-                      </div>
-                      {catBlocks.map((blk) => (
-                        <OrderCategoryBlock key={blk.idx} blk={blk} editable={READONLY} />
-                      ))}
-                    </>
-                  )}
-                  {selempangBlocks.length > 0 && (
-                    <div style={{ marginTop: categories.length > 0 ? 'var(--space-8)' : 0 }}>
-                      {selempangBlocks.map((blk) => (
-                        <OrderCategoryBlock key={`sel-${blk.idx}`} blk={blk} editable={READONLY} />
-                      ))}
-                    </div>
-                  )}
-                </>
-              )}
+              {/* Only SELEMPANG shows its rows in Order Details — Sean's rule for every
+                  role; other categories' details stay off this screen. */}
+              {selempangBlocks.length === 0 ? (
+                <p className="hint-text" style={{ marginTop: 'var(--space-3)' }}>Only SELEMPANG orders show order details.</p>
+              ) : selempangBlocks.map((blk) => (
+                <OrderCategoryBlock key={`sel-${blk.idx}`} blk={blk} editable={READONLY} />
+              ))}
 
               <div className="row-split" style={{ marginTop: 'var(--space-6)' }}>
                 <button type="button" className="btn btn-ghost" onClick={() => setPage('summary')}>← Back to Summary</button>
