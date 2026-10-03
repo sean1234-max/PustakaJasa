@@ -26,4 +26,26 @@ describe('checkEngravingText', () => {
     const res = await checkEngravingText([{ id: 'k', label: '', text: 'A' }]);
     expect(res.issues).toEqual([]);
   });
+
+  it('sends a repeated text once and gives its issue to every line that has it', async () => {
+    invoke.mockResolvedValue({
+      data: { checked: true, issues: [{ lineId: 'L1', original: 'BALAHA', suggestion: 'BAHASA', kind: 'spelling', note: 'x' }] },
+      error: null,
+    });
+    const res = await checkEngravingText([
+      { id: 'a', label: '', text: 'BALAHA MELAYU' },
+      { id: 'b', label: '', text: 'BALAHA MELAYU' },
+    ]);
+    expect(invoke.mock.calls[0][1].body.lines).toHaveLength(1);
+    expect(res.issues.map((i) => i.lineId)).toEqual(['a', 'b']);
+  });
+
+  it('splits more than 40 lines into batches (the function reads 40 at most)', async () => {
+    invoke.mockResolvedValue({ data: { checked: true, issues: [] }, error: null });
+    const lines = Array.from({ length: 85 }, (_, i) => ({ id: `k${i}`, label: '', text: `LINE ${i}` }));
+    const res = await checkEngravingText(lines);
+    expect(invoke.mock.calls.map((c) => c[1].body.lines.length)).toEqual([40, 40, 5]);
+    expect(invoke.mock.calls[1][1].body.lines[0].id).toBe('L41');
+    expect(res.checked).toBe(true);
+  });
 });

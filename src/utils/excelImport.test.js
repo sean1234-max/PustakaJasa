@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import * as XLSX from 'xlsx';
 import { parseFormAnugerahExcel, matchJenisPlakPath, deriveKlasMatrixSectionLines } from './excelImport';
-import { computeBlocks, noopUpdaters } from './computeBlocks';
+import { computeBlocks, noopUpdaters, reconstructOrderDetailGroups } from './computeBlocks';
 import { buildCategoryCartItems } from '../state/categoryCartItems';
 import { buildCsvRows, CSV_COLUMNS } from './exportCsv';
 import { checkAliranKelasTotals } from './importChecks';
@@ -495,6 +495,54 @@ describe('UMUM (万能) — import → cart → CSV', () => {
     const { rows } = buildCsvRows({ schoolLanguage: 'SK', items: res.items }, 'UMUM', res.items);
     expect(rows[0][2]).toBe('JOHAN TAHUN 4');
     expect(rows[0][CSV_COLUMNS.indexOf('position_black')]).toBe('1');
+  });
+
+  it('Production\'s Order Details shows the sheet\'s rows as one table, not one block per row', () => {
+    const section = parse({ 'UMUM (万能)': umum({ red: '2', rows: [
+      [null, null, 'JOHAN', null, 1, 'PKC 263'],
+      [null, null, 'NAIB JOHAN', null, 1, 'PKC 263'],
+      [null, null, 'KETIGA', null, 3, 'PKC 263'],
+    ] }) }).categorized.UMUM[0];
+    const { items } = buildCategoryCartItems(toDraft('UMUM', section), 'UMUM');
+    const groups = reconstructOrderDetailGroups({ items }, 'UMUM', catalog);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].items).toHaveLength(3);
+    expect(groups[0].jenisPlak).toBe('PKC 263');
+    expect(groups[0].blk.rows.map((r) => [r.tokohFields.find((f) => f.key === 'l2').value, r.qty])).toEqual([['JOHAN', '1'], ['NAIB JOHAN', '1'], ['KETIGA', '3']]);
+    expect(buildCsvRows({ schoolLanguage: 'SK', items }, 'UMUM', groups[0].items).rows).toHaveLength(5);
+  });
+
+  it('a row\'s own line: a word-list typo blocks Add to Cart; a line the CONTOH leaves blank is flagged', () => {
+    const section = parse({ 'UMUM (万能)': umum({ rows: [
+      [null, null, 'KETIGA AHUN 1', null, 3, 'PKC 263'],
+      [null, null, null, '`', 1, 'PKC 263'],
+    ] }) }).categorized.UMUM[0];
+    const st = toDraft('UMUM', section);
+    const blk = computeBlocks('UMUM', st.lineValues, {}, st.rowsByBlock, st.plakRows, {}, noopUpdaters, catalog, 'SK').blocks[0];
+    const field = (ri, key) => blk.rows[ri].tokohFields.find((f) => f.key === key);
+    expect(field(0, 'l2').typoHint).toEqual({ word: 'AHUN', suggestion: 'TAHUN' });
+    expect(field(0, 'l2').extraLine).toBe(false);
+    expect(field(1, 'l3').extraLine).toBe(true);
+    expect(buildCategoryCartItems(st, 'UMUM').error).toMatch(/AHUN.*TAHUN/);
+  });
+
+  it('words the teacher confirmed correct travel with the block', () => {
+    const section = parse({ 'UMUM (万能)': umum({ rows: [[null, null, null, null, 1, 'PKC 263']] }) }).categorized.UMUM[0];
+    const st = toDraft('UMUM', section);
+    const lineValues = { ...st.lineValues, 'UMUM::0::wordsOk': 'BALAHA' };
+    const blk = computeBlocks('UMUM', lineValues, {}, st.rowsByBlock, st.plakRows, {}, noopUpdaters, catalog, 'SK').blocks[0];
+    expect(blk.wordsOk).toEqual(['BALAHA']);
+    const { items } = buildCategoryCartItems({ ...st, lineValues }, 'UMUM');
+    expect(items[0].detail.lines['UMUM::0::wordsOk']).toBe('BALAHA');
+  });
+
+  it('the hidden SENARAI PLAK price list is not read as an order section', () => {
+    const parsed = parse({
+      'UMUM (万能)': umum({ rows: [[null, null, null, null, 1, 'PKC 263']] }),
+      'SENARAI PLAK': [['JENIS PLAK', 'HARGA'], ['DECO LIGHT', 30], ['PKC 263', 10]],
+    });
+    expect(parsed.klasMatrix?.sections || []).toEqual([]);
+    expect(parsed.unrecognizedSheets).toEqual([]);
   });
 
   it('a renamed copy of the sheet (second event) is its own tab', () => {

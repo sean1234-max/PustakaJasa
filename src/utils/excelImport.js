@@ -1881,7 +1881,9 @@ export function parseFormAnugerahExcel(arrayBuffer) {
       || upper === 'ALIRAN TERBAIK' || upper === 'ALIRAN TERBAIK KALAU ADA KELAS'
       || upper === 'LONJAKAN SAUJANA' || upper === 'KEHADIRAN PENUH'
       || upper === 'MP THP 1' || upper === 'MP THP 2' || upper === 'SELEMPANG'
-      || upper === 'MP THP 1 (KALAU ADA KELAS)' || upper === 'MP THP 2 (KALAU ADA KELAS)') return;
+      || upper === 'MP THP 1 (KALAU ADA KELAS)' || upper === 'MP THP 2 (KALAU ADA KELAS)'
+      // The template's hidden Jenis Plak / price list behind UMUM's dropdown.
+      || upper === 'SENARAI PLAK') return;
     const ws = wb.Sheets[name];
 
     // UMUM (万能) — the template's own sheet lands on the UMUM tab; any

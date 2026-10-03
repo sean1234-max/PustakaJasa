@@ -550,8 +550,15 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
         const umumRowFields = currentCat.umumRows
           ? UMUM_ROW_FIELDS.map((f) => {
             if (f.key !== 'hargaExcel') {
+              const own = String(row[f.key] || '').trim();
+              const typed = !!own && own !== '-';
               return {
                 ...f, value: row[f.key] || '', placeholder: umumContoh[f.contohSlot] || '',
+                // Same word-list typo hint as the Reference Sample (blocks Add to Cart).
+                typoHint: typed ? findPossibleTypo(own) : null,
+                // A line the CONTOH leaves blank: Add to Cart asks the teacher
+                // to confirm it (NewOrderStep2); Production sees it flagged.
+                extraLine: typed && !String(umumContoh[f.contohSlot] || '').trim(),
                 onChange: (v) => updaters.onRowField(rowsKey, row.id, f.key, v),
               };
             }
@@ -592,7 +599,7 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
           qtyMismatch: namaKelasCount > 0 && Number(row.qty) > 0 && Number(row.qty) !== namaKelasCount,
           // See Reference Sample's own typoHint above — same word-list hint,
           // just for the Description field (subject names in particular).
-          typoHint: findPossibleTypo(row.desc),
+          typoHint: findPossibleTypo(row.desc) || (umumRowFields || []).find((f) => f.typoHint)?.typoHint || null,
           setDesc: (v) => updaters.onRowField(rowsKey, row.id, 'desc', v),
           setQty: (v) => updaters.onRowField(rowsKey, row.id, 'qty', v),
           remove: () => updaters.onRowRemove(rowsKey, row.id),
@@ -772,6 +779,9 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
       plakPerBlock: !!currentCat.plakPerBlock,
       descColumnLabel: currentCat.descColumnLabel,
       hideDescColumn: !!currentCat.hideDescColumn,
+      // Words the AI spelling check flagged that the teacher confirmed are
+      // right (NewOrderStep2) — shown to Production at review.
+      wordsOk: (lineValues[`${catKey}::${b}::wordsOk`] || '').split(',').filter(Boolean),
       extraRefColumns,
       canAddRow: !currentCat.capRowsAt5 || rows.length < 5,
       columns, matrixRows, levelBreakdown,
@@ -1133,8 +1143,20 @@ export function buildDraftFromOrder(order) {
 export function reconstructOrderDetailGroups(order, catKey, plakCatalog, updaters = noopUpdaters) {
   const schoolLanguage = order.schoolLanguage === 'SJKC' ? 'SJKC' : 'SK';
   const items = (order.items || []).filter((it) => it.categoryKey === catKey);
+  // One item per row (UMUM, TOKOH, LONJAKAN, KEHADIRAN — catalog.js's
+  // plakPerRow): a sheet's rows show together in one table, as on the
+  // Excel (Sean, 2026-10-03) — one group per (batch, block). Its CSV can
+  // mix Jenis Plak; SEAN.jsx routes each row by its jenis_plak column.
+  const perRow = !!resolveCategory(catKey)?.plakPerRow;
+  const itemGroups = perRow
+    ? Object.values(items.reduce((acc, it) => {
+      const k = `${it.batch || 0}::${it.blockIdx ?? 0}`;
+      return { ...acc, [k]: [...(acc[k] || []), it] };
+    }, {}))
+    : items.map((it) => [it]);
 
-  return items.map((item) => {
+  return itemGroups.map((groupItems) => {
+    const item = groupItems[0];
     const blockIdx = item.blockIdx ?? 0;
     const batch = item.batch || 0;
     const lineValues = {};
@@ -1143,17 +1165,19 @@ export function reconstructOrderDetailGroups(order, catKey, plakCatalog, updater
     const columnsByBlock = {};
     const plakRows = {};
     const key = `${catKey}::${blockIdx}`;
-    if (item.detail) {
+    if (perRow) {
+      groupItems.forEach((it) => mergeItemDetailIntoMaps(it, key, lineValues, matrixValues, rowsByBlock, columnsByBlock));
+    } else if (item.detail) {
       Object.assign(lineValues, item.detail.lines || {});
       if (item.detail.matrix) Object.assign(matrixValues, item.detail.matrix);
       if (item.detail.rows) rowsByBlock[key] = item.detail.rows;
       if (item.detail.columns) columnsByBlock[key] = item.detail.columns;
     }
-    plakRows[key] = [{ id: item.id, jenisPlak: item.jenisPlak, unitPrice: item.unitPrice, posDari: item.posDari, posHingga: item.posHingga, qty: item.qty }];
+    plakRows[key] = groupItems.map((it) => ({ id: it.id, jenisPlak: it.jenisPlak, unitPrice: it.unitPrice, posDari: it.posDari, posHingga: it.posHingga, qty: it.qty }));
 
     const result = computeBlocks(catKey, lineValues, matrixValues, rowsByBlock, plakRows, columnsByBlock, updaters, plakCatalog, schoolLanguage);
     return {
-      blockIdx, batch, jenisPlak: item.jenisPlak, items: [item],
+      blockIdx, batch, jenisPlak: [...new Set(groupItems.map((it) => it.jenisPlak))].join(', '), items: groupItems,
       label: batch === 0 ? 'Original Order' : `Tambahan #${batch}`,
       // computeBlocks computes every one of the category's `blocksCount`
       // slots (up to 6 for OTHERS), not just this item's own blockIdx — pick

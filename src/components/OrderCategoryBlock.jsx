@@ -228,6 +228,12 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
 
   return (
     <div>
+      {blk.wordsOk?.length > 0 && (
+        <p className="typo-hint" style={{ marginBottom: 'var(--space-3)' }}>
+          The teacher confirmed these words are correct (the AI spelling check flagged them): {blk.wordsOk.join(', ')}.
+          老师确认这些字是对的，请再检查。
+        </p>
+      )}
       {showSharedSections && (
         <>
           {/* hasNamaKelasList categories (OTHERS) and plakPerBlock categories
@@ -1242,6 +1248,12 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
                   {(row.tokohFields || []).filter((f) => f.place === 'beforeQty').map((f) => (
                     <td key={f.key}>
                       {renderTokohField(f, editable.rowDesc)}
+                      {f.typoHint && (
+                        <div className="typo-hint">Possible typo: "{f.typoHint.word}" — did you mean "{f.typoHint.suggestion}"?</div>
+                      )}
+                      {f.extraLine && (
+                        <div className="typo-hint">Not in the Reference Sample — please double-check. Reference Sample 没有这一行。</div>
+                      )}
                       {f.key === 'namaMurid' && isReservedName(f.value) && (
                         <div className="typo-hint">Stock booked. Fill in the name later to engrave it.</div>
                       )}

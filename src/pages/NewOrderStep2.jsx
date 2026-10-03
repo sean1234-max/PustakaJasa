@@ -206,46 +206,86 @@ export default function NewOrderStep2() {
   // teacher's picker — see filterHiddenPlakCatalog.
   const visiblePlakCatalog = useMemo(() => filterHiddenPlakCatalog(state.plakCatalog), [state.plakCatalog]);
 
-  // Every filled Reference Sample line across the given categories, tagged
-  // with the lineValues key so an accepted fix is a plain substring replace.
-  const collectEngravingLines = (catKeys) => {
-    const out = [];
+  // Every filled engraving text across the given categories — the
+  // Reference Sample lines plus each Kuantiti row's own text (its
+  // description, UMUM's ①–④) — for the AI spelling check, each with
+  // `target` (where a fix goes) and its block (confirmed words are kept per
+  // block). `extras` = UMUM row lines the Reference Sample leaves blank,
+  // which the teacher must confirm.
+  const collectEngraving = (catKeys) => {
+    const lines = [];
+    const extras = [];
     catKeys.forEach((catKey) => {
+      const catLabel = resolveCategory(catKey)?.label || catKey;
       const { blocks: catBlocks } = computeBlocks(
         catKey, state.lineValues, state.matrixValues, state.rowsByBlock, state.plakRows, state.columnsByBlock,
         noopUpdaters, state.plakCatalog, state.schoolLanguage,
       );
       catBlocks.forEach((blk) => {
+        const blockKey = `${catKey}::${blk.idx}`;
         (blk.lines || []).forEach((ln) => {
           [ln, ln.secondLine].filter(Boolean).forEach((l) => {
             const text = String(l.value || '').trim();
-            if (text) out.push({ id: l.key, label: (l.placeholder || 'Line').replace(/[()]/g, ' ').replace(/\s+/g, ' ').trim(), text });
+            const label = (l.placeholder || 'Line').replace(/[()]/g, ' ').replace(/\s+/g, ' ').trim();
+            if (text) lines.push({ id: l.key, label, text, blockKey, where: `${catLabel} — Reference Sample`, target: { lineKey: l.key } });
+          });
+        });
+        if (blk.selempang) return;
+        (blk.rows || []).forEach((row, ri) => {
+          const fields = [
+            ...(!blk.hideDescColumn ? [{ key: 'desc', label: blk.descColumnLabel || 'Description', value: row.desc }] : []),
+            ...(row.tokohFields || []).filter((f) => f.contohSlot !== undefined),
+          ];
+          fields.forEach((f) => {
+            const text = String(f.value || '').trim();
+            if (!text || text === '-') return;
+            const where = `${catLabel} — row ${ri + 1} ${f.label}`;
+            lines.push({ id: `${blockKey}::row::${row.id}::${f.key}`, label: f.label, text, blockKey, where, target: { rowsKey: blockKey, rowId: row.id, field: f.key } });
+            if (f.extraLine) extras.push({ type: 'extra', text, where });
           });
         });
       });
     });
-    return out;
+    return { lines, extras };
   };
 
-  // Add to cart, but first send the engraving lines through the AI
-  // proofread. If it finds something, show the review panel and hold the
-  // add until the teacher clicks through; on any failure (or nothing
-  // found) just add — the check is never allowed to block.
+  // Add to cart, but first: UMUM lines missing from the Reference Sample
+  // (confirm each) and the AI spelling check over every engraving text. A
+  // flagged word must be fixed ("Use fix") or confirmed right ("This word
+  // is correct" — kept on the order so Production sees it) before the add
+  // goes through (Sean, 2026-10-03). If the AI is down nothing is flagged.
   const runAddWithCheck = async (catKeys, proceed) => {
-    const lines = collectEngravingLines(catKeys);
-    if (lines.length === 0) { proceed(); return; }
-    setChecking(true);
-    let issues = [];
-    try {
-      ({ issues } = await checkEngravingText(lines));
-    } catch { issues = []; }
-    setChecking(false);
+    const { lines, extras } = collectEngraving(catKeys);
+    let aiIssues = [];
+    if (lines.length > 0) {
+      setChecking(true);
+      try {
+        ({ issues: aiIssues } = await checkEngravingText(lines));
+      } catch { aiIssues = []; }
+      setChecking(false);
+    }
+    const byId = new Map(lines.map((l) => [l.id, l]));
+    const okWords = (blockKey) => (state.lineValues[`${blockKey}::wordsOk`] || '').split(',');
+    // One panel entry per (block, wrong word, fix), however many lines have it.
+    const grouped = new Map();
+    aiIssues.forEach((it) => {
+      const line = byId.get(it.lineId);
+      if (!line || okWords(line.blockKey).includes(it.original.toUpperCase())) return;
+      const key = `${line.blockKey}|${it.original}|${it.suggestion}`;
+      const prev = grouped.get(key);
+      grouped.set(key, prev
+        ? { ...prev, targets: [...prev.targets, line.target] }
+        : { ...it, type: 'ai', blockKey: line.blockKey, where: line.where, targets: [line.target] });
+    });
+    const issues = [...extras, ...grouped.values()];
     if (issues.length > 0) {
       setPendingCheck({ issues, proceed });
     } else {
       proceed();
-      setCheckOkToast(true);
-      setTimeout(() => setCheckOkToast(false), 2500);
+      if (lines.length > 0) {
+        setCheckOkToast(true);
+        setTimeout(() => setCheckOkToast(false), 2500);
+      }
     }
   };
 
@@ -265,19 +305,37 @@ export default function NewOrderStep2() {
     runAddWithCheck(engagedKeys, addAllToCart);
   };
 
-  // "Use fix" on one issue — replace the first occurrence of `original` in
-  // its line. If the text changed since the check, the occurrence is gone
-  // and this is a no-op (the issue just drops off the list).
-  const applyFix = (issue) => {
-    const cur = state.lineValues[issue.lineId] || '';
+  const resolveIssue = (issue) => setPendingCheck((p) => (p ? { ...p, issues: p.issues.filter((x) => x !== issue) } : p));
+  // "Use fix" — replace the first occurrence of `original` in every line
+  // that has it. If the text changed since the check, that line is skipped.
+  const replaceFirst = (cur, issue) => {
     const idx = cur.indexOf(issue.original);
-    if (idx !== -1) {
-      updaters.onLine(issue.lineId, cur.slice(0, idx) + issue.suggestion + cur.slice(idx + issue.original.length));
-    }
-    setPendingCheck((p) => (p ? { ...p, issues: p.issues.filter((x) => x !== issue) } : p));
+    return idx === -1 ? null : cur.slice(0, idx) + issue.suggestion + cur.slice(idx + issue.original.length);
   };
-  const dismissIssue = (issue) => setPendingCheck((p) => (p ? { ...p, issues: p.issues.filter((x) => x !== issue) } : p));
+  const applyFix = (issue) => {
+    issue.targets.forEach((t) => {
+      if (t.lineKey) {
+        const next = replaceFirst(state.lineValues[t.lineKey] || '', issue);
+        if (next !== null) updaters.onLine(t.lineKey, next);
+        return;
+      }
+      const row = (state.rowsByBlock[t.rowsKey] || []).find((r) => r.id === t.rowId);
+      const next = replaceFirst(String(row?.[t.field] || ''), issue);
+      if (next !== null) updaters.onRowField(t.rowsKey, t.rowId, t.field, next);
+    });
+    resolveIssue(issue);
+  };
+  // "This word is correct" — remembered on the block (wordsOk), so it isn't
+  // asked again and Production sees it at review.
+  const keepWord = (issue) => {
+    const key = `${issue.blockKey}::wordsOk`;
+    const words = (state.lineValues[key] || '').split(',').filter(Boolean);
+    const word = issue.original.toUpperCase();
+    if (!words.includes(word)) updaters.onLine(key, [...words, word].join(','));
+    resolveIssue(issue);
+  };
   const proceedFromPanel = () => {
+    if (pendingCheck?.issues.length) return;
     const proceed = pendingCheck?.proceed;
     setPendingCheck(null);
     if (proceed) proceed();
@@ -449,30 +507,46 @@ export default function NewOrderStep2() {
         {pendingCheck && (
           <div className="confirm-panel" style={{ marginTop: 'var(--space-5)' }}>
             <div className="confirm-panel-title">
-              Spelling check — {pendingCheck.issues.length === 0 ? 'nothing left to review' : `${pendingCheck.issues.length} thing(s) to review`}
+              Please check — {pendingCheck.issues.length === 0 ? 'all done' : `${pendingCheck.issues.length} thing(s) to answer`}
               <span className="confirm-panel-count">AI</span>
             </div>
             <p className="hint-text" style={{ margin: '0 0 var(--space-3)' }}>
-              This text gets engraved on the plaque. Review it below, or add to cart as-is.
+              This text gets engraved on the plaque. Answer every item below before adding to cart.
+              每一项都要处理好才能 Add to Cart。
             </p>
             {pendingCheck.issues.map((issue, k) => (
               <div key={k} className="confirm-item">
-                <p className="confirm-item-q" style={{ margin: 0 }}>
-                  <span style={{ textDecoration: 'line-through', opacity: 0.6 }}>{issue.original}</span>
-                  {' → '}
-                  <strong>{issue.suggestion}</strong>
-                  <span className="hint-text" style={{ marginLeft: 8 }}>({issue.kind})</span>
-                </p>
-                {issue.note && <p className="hint-text" style={{ margin: '2px 0 6px' }}>{issue.note}</p>}
-                <div className="confirm-item-opts">
-                  <button type="button" className="btn btn-ghost" onClick={() => applyFix(issue)}>Use fix</button>
-                  <button type="button" className="btn btn-ghost" onClick={() => dismissIssue(issue)}>Ignore</button>
-                </div>
+                <p className="hint-text" style={{ margin: 0 }}>{issue.where}</p>
+                {issue.type === 'extra' ? (
+                  <>
+                    <p className="confirm-item-q" style={{ margin: 0 }}>
+                      <strong>{issue.text}</strong> — not in the Reference Sample. Engrave it on this plaque?
+                      Reference Sample 没有这一行，确定要加吗？
+                    </p>
+                    <div className="confirm-item-opts">
+                      <button type="button" className="btn btn-ghost" onClick={() => resolveIssue(issue)}>Yes, keep it</button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <p className="confirm-item-q" style={{ margin: 0 }}>
+                      <span style={{ textDecoration: 'line-through', opacity: 0.6 }}>{issue.original}</span>
+                      {' → '}
+                      <strong>{issue.suggestion}</strong>
+                      <span className="hint-text" style={{ marginLeft: 8 }}>({issue.kind})</span>
+                    </p>
+                    {issue.note && <p className="hint-text" style={{ margin: '2px 0 6px' }}>{issue.note}</p>}
+                    <div className="confirm-item-opts">
+                      <button type="button" className="btn btn-ghost" onClick={() => applyFix(issue)}>Use fix</button>
+                      <button type="button" className="btn btn-ghost" onClick={() => keepWord(issue)}>This word is correct 这个字是对的</button>
+                    </div>
+                  </>
+                )}
               </div>
             ))}
             <div className="row-actions" style={{ marginTop: 'var(--space-3)' }}>
-              <button type="button" className="btn btn-primary" onClick={proceedFromPanel}>
-                {pendingCheck.issues.length === 0 ? 'Add to cart' : 'Add to cart anyway'}
+              <button type="button" className="btn btn-primary" disabled={pendingCheck.issues.length > 0} onClick={proceedFromPanel}>
+                Add to cart
               </button>
               <button type="button" className="btn btn-ghost" onClick={() => setPendingCheck(null)}>Back to editing</button>
             </div>

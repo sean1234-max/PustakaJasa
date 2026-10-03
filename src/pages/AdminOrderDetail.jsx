@@ -94,7 +94,7 @@ export default function AdminOrderDetail() {
     const csv = rowsToCsv(csvData.rows);
     const label = [group.blk.qtyLabel, group.batch !== 0 ? group.label : null, group.jenisPlak]
       .filter(Boolean).join(' - ');
-    const filename = buildCategoryCsvFilename(order, label, group.jenisPlak);
+    const filename = buildCategoryCsvFilename(order, label, group.items[0].jenisPlak);
     downloadTextFile(filename, csv);
     setExportNote(`Exported ${csvData.rows.length} row(s) to ${filename}.`);
     clearTimeout(exportNoteTimer.current);

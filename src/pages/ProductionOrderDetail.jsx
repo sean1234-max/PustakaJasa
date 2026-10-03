@@ -178,16 +178,15 @@ export default function ProductionOrderDetail() {
   // the same variant reused by a later Add On with a different Jenis Plak),
   // and each needs its own reference-sample view and its own CSV export —
   // merging them would mix rows meant for different physical AI files into
-  // one file with no way to tell them apart. See reconstructOrderDetailGroups.
-  // Each group is already exactly one Jenis Plak (see that function's own
-  // `items: [item]`), so filtering by invoice here is a plain array filter
-  // — no partial-block slicing needed, unlike a merged reference-sample
-  // reconstruction would require.
+  // one file with no way to tell them apart. See reconstructOrderDetailGroups
+  // (a one-item-per-row sheet like UMUM is the exception: its rows show as
+  // one table). Filtered by invoice item by item before grouping.
   const detailGroups = useMemo(() => {
     if (!effectiveOrder || !currentCat) return [];
-    const groups = reconstructOrderDetailGroups(effectiveOrder, currentCat.key, state.plakCatalog, reorderUpdaters);
-    if (!isFiltered) return groups;
-    return groups.filter((g) => getInvoiceIdForJenisPlak(effectiveOrder, g.jenisPlak) === viewInvoiceId);
+    const scoped = isFiltered
+      ? { ...effectiveOrder, items: effectiveOrder.items.filter((it) => getInvoiceIdForJenisPlak(effectiveOrder, it.jenisPlak) === viewInvoiceId) }
+      : effectiveOrder;
+    return reconstructOrderDetailGroups(scoped, currentCat.key, state.plakCatalog, reorderUpdaters);
   }, [effectiveOrder, currentCat, state.plakCatalog, isFiltered, viewInvoiceId, reorderUpdaters]);
 
   // Scoped to (category, Jenis Plak) — never combined across categories,
@@ -270,7 +269,9 @@ export default function ProductionOrderDetail() {
     const csv = rowsToCsv(csvData.rows);
     const label = [group.blk.qtyLabel, group.batch !== 0 ? group.label : null, group.jenisPlak]
       .filter(Boolean).join(' - ');
-    const filename = buildCategoryCsvFilename(order, label, group.jenisPlak);
+    // A combined sheet's group can list several Jenis Plak — its first one
+    // picks the invoice number for the filename.
+    const filename = buildCategoryCsvFilename(order, label, group.items[0].jenisPlak);
     downloadTextFile(filename, csv);
     setExportNote(`Exported ${csvData.rows.length} row(s) to ${filename}.`);
     clearTimeout(exportNoteTimer.current);
