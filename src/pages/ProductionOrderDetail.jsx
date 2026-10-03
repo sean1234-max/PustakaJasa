@@ -1,6 +1,7 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import Nav from '../components/Nav';
+import ConfirmButton from '../components/ConfirmButton';
 import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import CorrectedExcelControl from '../components/CorrectedExcelControl';
@@ -248,10 +249,6 @@ export default function ProductionOrderDetail() {
   if (!order) return null;
 
   const reviewing = order.status === 'Reviewing Order';
-  const handleDoneReview = () => {
-    if (!window.confirm(`Done reviewing ${order.id}? The salesman can approve it after this. 确定 review 好了吗？`)) return;
-    markReviewDone(order.id);
-  };
 
   const stamp = getOrderChangeStamp(order);
   // Only this invoice's items when filtered — feeds the "Jenis Plak / QTY /
@@ -387,7 +384,9 @@ export default function ProductionOrderDetail() {
             </p>
             <div style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
               <button type="button" className="btn btn-secondary" onClick={() => navigate(`/production/orders/${order.id}/edit`)}>Edit Order</button>
-              {!isReviewed(order) && <button type="button" className="btn btn-primary" onClick={handleDoneReview}>Done Review</button>}
+              {!isReviewed(order) && (
+                <ConfirmButton label="Done Review" question="确定 review 好了吗？Salesman can approve it after this." onConfirm={() => markReviewDone(order.id)} />
+              )}
             </div>
           </div>
         )}

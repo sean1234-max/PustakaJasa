@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
+import ConfirmButton from '../components/ConfirmButton';
 import { useAppState } from '../state/useAppState';
 import { statusPillStyle, formatDate, deliveryStageForShipmentDate, getLowStockAlerts, toMalaysiaDay, malaysiaToday } from '../data/catalog';
 import { getOrderChangeStamp } from '../utils/orderStamp';
@@ -76,7 +77,7 @@ function shipmentDateKey(shipmentDate) {
 }
 
 export default function ProductionDashboard() {
-  const { state, today, markProductionDone, markTypingDone } = useAppState();
+  const { state, today, markProductionDone, markTypingDone, markReviewDone } = useAppState();
   const navigate = useNavigate();
   const [tab, setTab] = useState('active');
   // Lets Production see, at a glance, everything due out on one shipment
@@ -84,16 +85,6 @@ export default function ProductionDashboard() {
   // Invoice, what's ready to ship today, what already went out).
   const [shipmentDateFilter, setShipmentDateFilter] = useState('');
 
-  const handleMarkDone = (ord) => {
-    const nextStatus = deliveryStageForShipmentDate(ord.shipmentDate, malaysiaToday());
-    if (!window.confirm(`Mark order ${ord.id} as done? Its status will change to "${nextStatus}".`)) return;
-    markProductionDone(ord.id, ord.invoiceId);
-  };
-
-  const handleDoneTyping = (ord) => {
-    if (!window.confirm(`Done typing ${ord.id}${ord.invoiceId ? ` (${ord.invoiceId})` : ''}? It moves to In Production, ready to print. 确定打好字了吗？`)) return;
-    markTypingDone(ord.id, ord.invoiceId);
-  };
 
   const lowStockAlerts = getLowStockAlerts(state.plakCatalog);
 
@@ -249,15 +240,31 @@ export default function ProductionDashboard() {
               <div className="dim" style={{ fontSize: 11 }}>Total Amount</div>
               <div className={`order-card-total${ord.priceAdjusted ? ' amount-adjusted' : ''}`}>RM {ord.totalAmount.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
 
-              <div className="order-card-actions" style={tab === 'active' || tab === 'typing' ? { display: 'flex', gap: 'var(--space-2)' } : undefined}>
+              <div className="order-card-actions" style={tab === 'active' || tab === 'typing' || tab === 'reviewing' ? { display: 'flex', gap: 'var(--space-2)' } : undefined}>
+                {tab === 'reviewing' && (
+                  <>
+                    <button type="button" className="btn btn-ghost" style={{ flex: 1 }} onClick={() => navigate(`/production/orders/${ord.id}`)}>
+                      View Order
+                    </button>
+                    {!ord.reviewedAt && (
+                      <ConfirmButton
+                        label="Done Review" style={{ flex: 1 }}
+                        question="确定 review 好了吗？Salesman can approve it after this."
+                        onConfirm={() => markReviewDone(ord.id)}
+                      />
+                    )}
+                  </>
+                )}
                 {tab === 'typing' && (
                   <>
                     <button type="button" className="btn btn-ghost" style={{ flex: 1 }} onClick={() => navigate(`/production/orders/${ord.id}${ord.invoiceId ? `?invoice=${encodeURIComponent(ord.invoiceId)}` : ''}`)}>
                       View Order
                     </button>
-                    <button type="button" className="btn btn-primary" style={{ flex: 1 }} onClick={() => handleDoneTyping(ord)}>
-                      Done Typing
-                    </button>
+                    <ConfirmButton
+                      label="Done Typing" style={{ flex: 1 }}
+                      question="确定打好字了吗？It moves to In Production, ready to print."
+                      onConfirm={() => markTypingDone(ord.id, ord.invoiceId)}
+                    />
                   </>
                 )}
                 {tab === 'active' && (
@@ -268,19 +275,16 @@ export default function ProductionDashboard() {
                     <button type="button" className="btn btn-ghost" style={{ flex: 1 }} onClick={() => navigate(`/production/orders/${ord.id}${ord.invoiceId ? `?invoice=${encodeURIComponent(ord.invoiceId)}` : ''}`)}>
                       View Order
                     </button>
-                    <button
-                      type="button"
-                      className="btn btn-primary"
-                      style={{ flex: 1 }}
+                    <ConfirmButton
+                      label={ord.invoiceId ? 'Done' : 'Awaiting Invoice'} style={{ flex: 1 }}
                       disabled={!ord.invoiceId}
                       title={!ord.invoiceId ? 'Waiting for Store Admin to assign an Invoice Number' : undefined}
-                      onClick={() => handleMarkDone(ord)}
-                    >
-                      {ord.invoiceId ? 'Done' : 'Awaiting Invoice'}
-                    </button>
+                      question={`Mark as done? Status → "${deliveryStageForShipmentDate(ord.shipmentDate, malaysiaToday())}".`}
+                      onConfirm={() => markProductionDone(ord.id, ord.invoiceId)}
+                    />
                   </>
                 )}
-                {tab !== 'active' && tab !== 'typing' && (
+                {tab !== 'active' && tab !== 'typing' && tab !== 'reviewing' && (
                   <button type="button" className="btn btn-ghost btn-block" onClick={() => navigate(`/production/orders/${ord.id}${ord.invoiceId ? `?invoice=${encodeURIComponent(ord.invoiceId)}` : ''}`)}>
                     View Order
                   </button>
