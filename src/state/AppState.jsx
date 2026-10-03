@@ -13,6 +13,7 @@ import {
 } from '../utils/excelImport';
 import { parseWordingDocx } from '../utils/docxImport';
 import { checkColumnTotals, checkExpansionTotals, checkLevelBreakdownMatch, checkAliranKelasTotals } from '../utils/importChecks';
+import { frontPgToFunctionDetails } from '../utils/frontPgDetails';
 import { buildCategoryCartItems } from './categoryCartItems';
 import { AppStateContext } from './AppStateContext';
 import {
@@ -357,6 +358,8 @@ const NEW_ORDER_IMPORT_FIELDS = {
   nextRowId: 'nextRowId', nextColumnId: 'nextColumnId', nextPlakRowId: 'nextPlakRowId',
   visibleBlocksByCategory: 'visibleBlocksByCategory', category: 'category',
   remark: 'remark', importFilePath: 'importFilePath', importFileName: 'importFileName',
+  // FRONT PG's header fills this New Order's Function Details (Step 1).
+  functionDetails: true,
 };
 
 // Production's "corrected Excel" scratch import (uploadCorrectedExcel /
@@ -638,6 +641,7 @@ export function AppStateProvider({ children }) {
       shipmentDateSelected: null, funcSelected: null,
       logoDataUrl: null, logoFileName: '', logoRemark: '', schoolType: null, stepError: '',
       importFilePath: null, importFileName: null,
+      step2ImportStatus: null, step2ChoiceAnswers: {},
 
       category: null,
       lineValues: {}, matrixValues: {},
@@ -1312,6 +1316,25 @@ export function AppStateProvider({ children }) {
     if (parsed.kivNotes?.length) {
       parsed.kivNotes.forEach((n) => remarkNotes.push(`${n.desc}${n.qty ? ` — ${n.qty} ORANG` : ''} — KIV (belum ada nama, jangan cetak buat masa ini)`));
     }
+    // FRONT PG's header (excelImport.js readFrontPgInfo) → Function Details
+    // (Sean, 2026-10-03): a blank field is filled; one that already says
+    // something else becomes a question (Step 2's "Confirm before
+    // continuing" — each option carries what to write, so "change" undoes
+    // it). Its REMARK goes into the Remark like the notes below.
+    if (fields.functionDetails && parsed.frontPg) {
+      const fp = frontPgToFunctionDetails(parsed.frontPg, next, malaysiaToday());
+      next = { ...next, ...fp.patch };
+      if (fp.remark) remarkNotes.unshift(fp.remark);
+      fp.notes.forEach((text) => warnings.push({ type: 'truncated', text }));
+      fp.questions.forEach((q) => warnings.push({
+        type: 'choice', id: `frontpg-${q.id}`, addPatches: [],
+        text: `${q.label}: the Excel's FRONT PG says "${q.excel.text}", but Function Details says "${q.current.text}". Which one is right?`,
+        options: [
+          { key: 'excel', label: `Use the Excel: ${q.excel.text}`, fieldPatch: q.excel.patch },
+          { key: 'website', label: `Keep: ${q.current.text}`, fieldPatch: q.current.patch },
+        ],
+      }));
+    }
     // No AddOn-side equivalent (fields.remark undefined there) — AddOn
     // uploads simply don't surface KIV/PERASMI notes anywhere, rather than
     // building new addOnRemark plumbing nothing else in that flow reads.
@@ -1509,7 +1532,7 @@ export function AppStateProvider({ children }) {
       patch({ cartToast: message });
       return null;
     }
-    patch((latest) => ({ lastOrderId: newId, orders: [newOrder, ...latest.orders], cart: [], cartToast: '' }));
+    patch((latest) => ({ lastOrderId: newId, orders: [newOrder, ...latest.orders], cart: [], cartToast: '', step2ImportStatus: null, step2ChoiceAnswers: {} }));
     return newId;
   }, [patch]);
 

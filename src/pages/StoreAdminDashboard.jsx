@@ -181,6 +181,9 @@ export default function StoreAdminDashboard() {
               {ord.correctedImportFilePath && (
                 <span className="status-pill" style={{ background: '#fff4ce', color: '#8a6d00', marginTop: 'var(--space-2)' }}>Excel Updated</span>
               )}
+              {ord.salesmanDelivery && (
+                <span className="status-pill" style={{ background: '#e4ecf2', color: '#2f5878', marginTop: 'var(--space-2)' }}>Salesman hantar sendiri</span>
+              )}
               {stamp && <div className="order-stamp-inline" style={{ marginTop: 'var(--space-1)' }}>{stamp}</div>}
 
               <div className="order-card-meta">

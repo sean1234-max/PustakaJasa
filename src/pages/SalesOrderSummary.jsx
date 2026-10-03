@@ -69,6 +69,9 @@ export default function SalesOrderSummary() {
   // approval — the same "Sales can still adjust it" window the price
   // fields already had — then get folded into the approval update below.
   const [shipmentDateDraft, setShipmentDateDraft] = useState(() => (order?.shipmentDate ? toMalaysiaDay(order.shipmentDate) : null));
+  // "Salesman hantar sendiri" — the salesman delivers this order himself;
+  // saved on Approve, printed on the order for Store Admin (0079).
+  const [salesmanDeliveryDraft, setSalesmanDeliveryDraft] = useState(() => !!order?.salesmanDelivery);
   const [functionDateDraft, setFunctionDateDraft] = useState(() => (order?.functionDate ? toMalaysiaDay(order.functionDate) : null));
   const [dateError, setDateError] = useState('');
   // An order with no Shipment Date yet starts at a week after it was placed
@@ -183,6 +186,7 @@ export default function SalesOrderSummary() {
     const overrides = {};
     if (shipmentDate) overrides.shipmentDate = shipmentDate;
     if (functionDateDraft) overrides.functionDate = functionDateDraft;
+    overrides.salesmanDelivery = salesmanDeliveryDraft;
     setBusy(true);
     await approveOrder(order.id, updatedItems, overrides);
     setBusy(false);
@@ -285,6 +289,10 @@ export default function SalesOrderSummary() {
                         at both and Approve re-checks. */}
                     <DatePicker label="Shipment Date" id="salesShipmentDate" selected={shipmentDate} today={today} onSelect={setShipmentDateDraft} minDate={today} maxDate={functionDateDraft} />
                     <DatePicker label="Function Date" id="salesFunctionDate" selected={functionDateDraft} today={today} onSelect={setFunctionDateDraft} minDate={shipmentDate || today} />
+                    <label style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: 8, margin: 0 }}>
+                      <input type="checkbox" checked={salesmanDeliveryDraft} onChange={(e) => setSalesmanDeliveryDraft(e.target.checked)} />
+                      I will deliver this order myself (Salesman hantar sendiri)
+                    </label>
                     {dateError && <div className="login-error" style={{ gridColumn: '1 / -1', margin: 0 }}>{dateError}</div>}
                     {/* Informational only — never blocks Approve, no way to
                         override the urgent determination itself. Purely a
@@ -300,6 +308,7 @@ export default function SalesOrderSummary() {
                   <>
                     {order.shipmentDate && <div><div className="dim">Shipment Date</div><div>{formatDate(toMalaysiaDay(order.shipmentDate))}</div></div>}
                     {order.functionDate && <div><div className="dim">Function Date</div><div>{formatDate(toMalaysiaDay(order.functionDate))}</div></div>}
+                    {order.salesmanDelivery && <div><div className="dim">Delivery</div><div><strong>Salesman hantar sendiri</strong></div></div>}
                   </>
                 )}
               </div>

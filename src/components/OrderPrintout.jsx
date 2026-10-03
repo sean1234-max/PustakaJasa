@@ -21,9 +21,12 @@ export default function OrderPrintout({
           .print-only's own font-size) since that sizing is load-bearing for
           fitting a large category on one printed page. */}
       <div className="print-summary-section">
-        {(urgent || stamp) && (
+        {(urgent || stamp || order.salesmanDelivery) && (
           <div className="order-stamp-corner">
             {urgent && <div className="order-stamp order-stamp-urgent">URGENT</div>}
+            {/* The salesman delivers it himself (0079) — Store Admin doesn't
+                arrange delivery. */}
+            {order.salesmanDelivery && <div className="order-stamp">SALESMAN DELIVER</div>}
             {stamp && <div className="order-stamp">{stamp}</div>}
           </div>
         )}
@@ -43,6 +46,9 @@ export default function OrderPrintout({
               {order.shipmentDate && <><div className="dim">Shipment Date</div><div>{formatDate(toMalaysiaDay(order.shipmentDate))}</div></>}
               {order.functionDate && <><div className="dim" style={order.shipmentDate ? { marginTop: 'var(--space-2)' } : undefined}>Function Date</div><div>{formatDate(toMalaysiaDay(order.functionDate))}</div></>}
             </div>
+          )}
+          {order.salesmanDelivery && (
+            <div><div className="dim">Delivery</div><div><strong>This order: salesman delivers himself (Salesman hantar sendiri)</strong></div></div>
           )}
         </div>
         {/* A KIV/pending note (AppState.jsx's importFormAnugerahExcel) needs to

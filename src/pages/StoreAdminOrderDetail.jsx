@@ -347,6 +347,8 @@ export default function StoreAdminOrderDetail() {
   // paper hard copy to key the Shipment Date + Invoice Number here,
   // force-approving it straight into Production.
   const [shipmentDateDraft, setShipmentDateDraft] = useState(() => (order?.shipmentDate ? toMalaysiaDay(order.shipmentDate) : null));
+  // "Salesman hantar sendiri" (0079) — set with the approve shortcut.
+  const [salesmanDeliveryDraft, setSalesmanDeliveryDraft] = useState(() => !!order?.salesmanDelivery);
   const [functionDateDraft, setFunctionDateDraft] = useState(() => (order?.functionDate ? toMalaysiaDay(order.functionDate) : null));
   const [dateError, setDateError] = useState('');
 
@@ -422,6 +424,7 @@ export default function StoreAdminOrderDetail() {
     const overrides = {};
     if (shipmentDateDraft) overrides.shipmentDate = shipmentDateDraft;
     if (functionDateDraft) overrides.functionDate = functionDateDraft;
+    overrides.salesmanDelivery = salesmanDeliveryDraft;
     // Bundles whatever's ticked in InvoiceSplitDraft into this SAME write —
     // empty if Store Admin never opened/used that panel, same as before.
     const invoiceGroups = splitSelected.size > 0 && splitInvoiceId.trim()
@@ -506,6 +509,10 @@ export default function StoreAdminOrderDetail() {
                       Approve re-checks. */}
                   <DatePicker label="Shipment Date" id="storeAdminShipmentDate" selected={shipmentDateDraft} today={today} onSelect={setShipmentDateDraft} minDate={today} maxDate={functionDateDraft} />
                   <DatePicker label="Function Date" id="storeAdminFunctionDate" selected={functionDateDraft} today={today} onSelect={setFunctionDateDraft} minDate={shipmentDateDraft || today} />
+                  <label style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: 8, margin: 0 }}>
+                    <input type="checkbox" checked={salesmanDeliveryDraft} onChange={(e) => setSalesmanDeliveryDraft(e.target.checked)} />
+                    Salesman delivers this order himself (Salesman hantar sendiri)
+                  </label>
                   {dateError && <div className="login-error" style={{ gridColumn: '1 / -1', margin: 0 }}>{dateError}</div>}
                   {/* Same non-blocking heads-up as SalesOrderSummary.jsx — see
                       urgentOrder.js. No override control. */}
@@ -519,6 +526,7 @@ export default function StoreAdminOrderDetail() {
                 <>
                   {order.shipmentDate && <div><div className="dim">Shipment Date</div><div>{formatDate(toMalaysiaDay(order.shipmentDate))}</div></div>}
                   {order.functionDate && <div><div className="dim">Function Date</div><div>{formatDate(toMalaysiaDay(order.functionDate))}</div></div>}
+                  {order.salesmanDelivery && <div><div className="dim">Delivery</div><div><strong>Salesman hantar sendiri</strong></div></div>}
                 </>
               )}
               <div><div className="dim">Order Date</div><div>{order.datePlaced}</div></div>

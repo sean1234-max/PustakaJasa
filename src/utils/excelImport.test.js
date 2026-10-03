@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import * as XLSX from 'xlsx';
-import { parseFormAnugerahExcel, matchJenisPlakPath, deriveKlasMatrixSectionLines } from './excelImport';
+import { parseFormAnugerahExcel, matchJenisPlakPath, deriveKlasMatrixSectionLines, readFrontPgInfo, splitCikguPhone } from './excelImport';
 import { computeBlocks, noopUpdaters, reconstructOrderDetailGroups } from './computeBlocks';
 import { buildCategoryCartItems } from '../state/categoryCartItems';
 import { buildCsvRows, CSV_COLUMNS } from './exportCsv';
@@ -1106,3 +1106,43 @@ describe('computeBlocks — TAJUK BESAR + 0b share one number', () => {
     expect(blocks[0].lines.some((ln) => ln.slotId === '2b')).toBe(false);
   });
 });
+
+describe('FRONT PG header → Function Details (Sean, 2026-10-03)', () => {
+  const frontPg = (rows) => {
+    const r = [];
+    Object.entries(rows).forEach(([i, row]) => { r[Number(i)] = row; });
+    return XLSX.read(workbookFromSheets({ 'FRONT PG': r }), { type: 'array' });
+  };
+
+  it('splits the CIKGU / NO TEL cell into a name and a phone number', () => {
+    expect(splitCikguPhone('PN AMINAH / 012-345 6789')).toEqual({ name: 'PN AMINAH', phone: '012-3456789' });
+    expect(splitCikguPhone('CIKGU LIM 0123456789')).toEqual({ name: 'CIKGU LIM', phone: '0123456789' });
+    expect(splitCikguPhone('PN AMINAH')).toEqual({ name: 'PN AMINAH', phone: '' });
+  });
+
+  it('reads each answer right of its label, and a REMARK that runs on below', () => {
+    const wb = frontPg({
+      0: ['SALES  :', 'Sean', null, null, null, 'TARIKH ORDER :', '01/10/2026'],
+      1: ['SEKOLAH  :', 'SK TAMAN SEGAR', null, null, null, 'TARIKH FUNCTION  :', '22/10/2026'],
+      2: ['LOGO :', 'SK'],
+      3: ['CIKGU / NO TEL :', 'PN AMINAH / 012-345 6789'],
+      5: [null, 'JENIS PLAK', null, 'QTY', null, 'HARGA'],
+      31: ['REMARK :', 'TOLONG HANTAR AWAL'],
+      32: [null, 'LOGO SEKOLAH BARU'],
+    });
+    expect(readFrontPgInfo(wb)).toEqual({
+      sales: 'Sean', picName: 'PN AMINAH', phone: '012-3456789',
+      functionDate: new Date(2026, 9, 22), remark: 'TOLONG HANTAR AWAL\nLOGO SEKOLAH BARU',
+    });
+  });
+
+  it('an untouched cover sheet gives nothing', () => {
+    const wb = frontPg({
+      0: ['SALES  :', null, null, null, null, 'TARIKH ORDER :'],
+      3: ['CIKGU / NO TEL :'],
+      31: ['REMARK :'],
+    });
+    expect(readFrontPgInfo(wb)).toBeNull();
+  });
+});
+

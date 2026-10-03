@@ -57,6 +57,7 @@ function toDbOrder(order) {
     urgent_sheet_synced_at: order.urgentSheetSyncedAt ?? null,
     reviewed_at: order.reviewedAt ?? null,
     typed_at: order.typedAt ?? null,
+    salesman_delivery: !!order.salesmanDelivery,
   };
 }
 
@@ -104,6 +105,7 @@ function fromDbOrder(row) {
     urgentSheetSyncedAt: row.urgent_sheet_synced_at || null,
     reviewedAt: row.reviewed_at || null,
     typedAt: row.typed_at || null,
+    salesmanDelivery: !!row.salesman_delivery,
   };
 }
 

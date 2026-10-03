@@ -25,7 +25,12 @@ export default function NewOrderStep2() {
   const { state, patch, addToCart, addAllToCart, importFormAnugerahExcel } = useAppState();
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
-  const [importStatus, setImportStatus] = useState(null); // { ok, message } | null
+  // The last import's result ({ ok, message, warnings }) and the answers to
+  // its questions live in AppState, not this page, so they're still here
+  // after the teacher steps back to Function Details — every question must
+  // be answered before Add to Cart (Sean, 2026-10-03).
+  const importStatus = state.step2ImportStatus || null;
+  const setImportStatus = (value) => patch({ step2ImportStatus: value });
   const [importing, setImporting] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   // Clicking a "couldn't match Jenis Plak" warning jumps straight to that
@@ -42,7 +47,10 @@ export default function NewOrderStep2() {
   // AppState's importFormAnugerahExcel / the "Confirm before continuing"
   // panel below), keyed by warning id → chosen option key. An unanswered
   // choice question blocks Add to Cart.
-  const [choiceAnswers, setChoiceAnswers] = useState({});
+  const choiceAnswers = state.step2ChoiceAnswers || {};
+  const setChoiceAnswers = (next) => patch((st) => ({
+    step2ChoiceAnswers: typeof next === 'function' ? next(st.step2ChoiceAnswers || {}) : next,
+  }));
   // AI proofread of the engraving lines, run on Add to Cart. `checking` is
   // the spinner while it runs; `pendingCheck` = { issues, proceed } holds
   // the found issues + the add action to run once the teacher is done
@@ -146,6 +154,10 @@ export default function NewOrderStep2() {
       w.addPatches.forEach((p) => { mv[p.mkey] = p.value; });
       patch({ matrixValues: mv });
     }
+    // FRONT PG questions (AppState's importFormAnugerahExcelInto): the
+    // chosen side's value goes into Function Details.
+    const fieldPatch = w.options.find((o) => o.key === optionKey)?.fieldPatch;
+    if (fieldPatch) patch(fieldPatch);
     setChoiceAnswers((a) => ({ ...a, [w.id]: optionKey }));
     if (optionKey === 'keep') jumpToBlock(w.blockIdx, w.catKey || 'KLAS_MATRIX');
   };

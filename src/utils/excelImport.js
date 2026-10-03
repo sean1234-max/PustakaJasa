@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import { ordinalToNum, resolveSelempangWarna, makeDynamicCategoryKey, DEFAULT_REF_ORDER, ALIRAN_REF_ORDER } from '../data/catalog';
+import { ordinalToNum, resolveSelempangWarna, makeDynamicCategoryKey, DEFAULT_REF_ORDER, ALIRAN_REF_ORDER, parseDisplayDate } from '../data/catalog';
 import { breakAcaraLine } from './acaraBreak';
 
 // Reads a teacher's own filled-in copy of the FORM ANUGERAH Excel template —
@@ -1737,6 +1737,97 @@ function readFrontPgTotals(wb) {
   return totals.size > 0 ? totals : null;
 }
 
+// The FRONT PG cover sheet's header — who the order is from, written beside
+// each label ("SALES  :", "CIKGU / NO TEL :", "REMARK :" …). AppState fills
+// the New Order's Function Details from it, or asks the teacher which to
+// keep when it differs (Sean, 2026-10-03): the teacher's name and phone,
+// salesman, Function Date and Remark — nothing else (Sekolah comes from the
+// teacher's account, Logo needs an image).
+const FRONT_PG_FIELDS = [
+  ['sales', /^SALES$/], ['cikgu', /^CIKGU\s*\/\s*NO\.?\s*TEL$/],
+  ['functionDate', /^TARIKH FUNCTION$/], ['remark', /^REMARK$/],
+];
+const FRONT_PG_ANY_LABEL = /^(SALES|SEKOLAH|LOGO|CIKGU\s*\/\s*NO\.?\s*TEL|TARIKH [A-Z ]+|REMARK)$/;
+// "SALES  :" → { label: 'SALES', inline: '' }; "SALES : SEAN" → inline 'SEAN'.
+function frontPgLabel(text) {
+  const i = text.indexOf(':');
+  const label = (i === -1 ? text : text.slice(0, i)).toUpperCase().replace(/\s+/g, ' ').trim();
+  return FRONT_PG_ANY_LABEL.test(label) ? { label, inline: i === -1 ? '' : text.slice(i + 1).trim() } : null;
+}
+
+// "PN AMINAH / 012-345 6789" → { name: 'PN AMINAH', phone: '012-3456789' }.
+export function splitCikguPhone(text) {
+  const s = String(text || '').trim();
+  const m = /\+?\d[\d\s-]{7,}\d/.exec(s);
+  const phone = m ? m[0].replace(/[^0-9-]/g, '') : '';
+  const name = (m ? s.replace(m[0], ' ') : s).replace(/[/|,()]+/g, ' ').replace(/\s+/g, ' ').replace(/[\s-]+$/, '').trim();
+  return { name, phone };
+}
+
+// A date cell as the teacher typed it: an Excel date, "22/10/2026" (day
+// first) or "22 Oct 2026". null when it isn't one.
+function frontPgDate(cell) {
+  if (!cell || cell.v == null || cell.v === '') return null;
+  let d = null;
+  if (typeof cell.v === 'number') {
+    const p = XLSX.SSF.parse_date_code(cell.v);
+    d = p ? new Date(p.y, p.m - 1, p.d) : null;
+  } else {
+    const text = String(cell.v).trim();
+    const m = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2}|\d{4})$/.exec(text);
+    d = m ? new Date(m[3].length === 2 ? 2000 + Number(m[3]) : Number(m[3]), Number(m[2]) - 1, Number(m[1])) : parseDisplayDate(text);
+  }
+  return d && !Number.isNaN(d.getTime()) ? d : null;
+}
+
+export function readFrontPgInfo(wb) {
+  const ws = findSheet(wb, 'FRONT PG');
+  if (!ws) return null;
+  const range = sheetRange(ws);
+  // The answer is whatever sits right of the label, up to the next label.
+  const answerCells = (r, c) => {
+    const out = [];
+    for (let cc = c + 1; cc <= range.c2; cc++) {
+      const t = cellText(ws, r, cc);
+      if (!t) continue;
+      if (frontPgLabel(t)) break;
+      out.push({ text: t, cell: cellAt(ws, r, cc) });
+    }
+    return out;
+  };
+  const info = {};
+  for (let r = range.r1; r <= range.r2; r++) {
+    for (let c = range.c1; c <= range.c2; c++) {
+      const lab = frontPgLabel(cellText(ws, r, c));
+      const field = lab && FRONT_PG_FIELDS.find(([, re]) => re.test(lab.label))?.[0];
+      if (!field || info[field] !== undefined) continue;
+      const cells = answerCells(r, c);
+      if (field === 'functionDate') {
+        info.functionDate = frontPgDate(cells[0]?.cell) || (lab.inline ? frontPgDate({ v: lab.inline }) : null);
+        continue;
+      }
+      let text = [lab.inline, ...cells.map((x) => x.text)].filter(Boolean).join(' ');
+      // REMARK can run on below its own row.
+      if (field === 'remark') {
+        const below = [];
+        for (let rr = r + 1; rr <= range.r2; rr++) {
+          const line = [];
+          for (let cc = range.c1; cc <= range.c2; cc++) { const t = cellText(ws, rr, cc); if (t) line.push(t); }
+          if (line.length) below.push(line.join(' '));
+        }
+        text = [text, ...below].filter(Boolean).join('\n');
+      }
+      info[field] = text;
+    }
+  }
+  const { name, phone } = splitCikguPhone(info.cikgu);
+  const out = {
+    sales: info.sales || '', picName: name, phone,
+    functionDate: info.functionDate || null, remark: info.remark || '',
+  };
+  return Object.values(out).some(Boolean) ? out : null;
+}
+
 // Loosens up a code/text for substring comparison: uppercase, parentheses
 // treated as plain separators, and — critically — any spaced-out hyphen
 // ("SM - 13187") collapsed to the bare one the catalog actually stores
@@ -2154,6 +2245,7 @@ export function parseFormAnugerahExcel(arrayBuffer) {
     unrecognizedSheets,
     klasMatrix: klasMatrixSections.length > 0 ? { sections: klasMatrixSections } : null,
     kivNotes,
+    frontPg: readFrontPgInfo(wb),
   };
 }
 
