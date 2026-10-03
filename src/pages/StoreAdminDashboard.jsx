@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import { useAppState } from '../state/useAppState';
-import { STATUS_STAGES, statusPillStyle, isReviewed } from '../data/catalog';
+import { STATUS_STAGES, statusPillStyle } from '../data/catalog';
 import { getOrderChangeStamp } from '../utils/orderStamp';
 import { getOrderInvoiceSlices } from '../utils/orderBatches';
 import { fetchMyAssignedSalesmen, fetchAllSalesmen } from '../lib/ordersApi';
@@ -23,8 +23,15 @@ const EMPTY_ORDERS = [];
 // (GOOGLE_SHEETS_SPREADSHEET_ID) — kept here just for the button link, the
 // Edge Function still only knows it via its own Supabase secret.
 const URGENT_ORDERS_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1gccvpiiY4QfzkXudF36RCx5350sCY5lVsGPRqW7lvrA/edit?gid=0#gid=0';
+// Store Admin's main job first (Sean, 2026-10-03): Salesman Approved orders
+// waiting for their Invoice Number (also any older order still without one).
+// Then, separately, orders Production has reviewed but Sales hasn't approved
+// yet — the paper-copy "Approve & Invoice" shortcut. An order Production is
+// still reviewing (or a cancelled one) isn't Store Admin's business yet and
+// isn't listed.
 const TABS = [
-  { key: 'pending', label: 'Waiting for Invoice', match: (o) => !o.invoiceId },
+  { key: 'approved', label: 'Salesman Approved', match: (o) => !o.invoiceId && o.status !== 'Reviewing Order' && o.status !== 'Cancelled' },
+  { key: 'awaiting', label: 'Waiting for Salesman Approval', match: (o) => o.status === 'Reviewing Order' && !!o.reviewedAt },
   { key: 'invoiced', label: 'Invoiced', match: (o) => !!o.invoiceId },
 ];
 
@@ -104,7 +111,7 @@ export default function StoreAdminDashboard() {
       <div className="dashboard-header">
         <div>
           <div className="card-title" style={{ marginBottom: 'var(--space-2)' }}>{isManager ? 'Store Admin Manager' : 'Store Admin'}</div>
-          <p className="hint-text" style={{ margin: 0 }}>Assign Invoice Numbers for approved orders — or approve one yourself (with pricing) straight from a hard copy — and search/track ones already invoiced.</p>
+          <p className="hint-text" style={{ margin: 0 }}>Assign Invoice Numbers for Salesman Approved orders first. Orders still waiting for the salesman's approval are in their own tab (approve one yourself from a hard copy there); invoiced ones can be searched under Invoiced.</p>
         </div>
         {isManager && (
           <a href={URGENT_ORDERS_SHEET_URL} target="_blank" rel="noreferrer" className="btn btn-urgent">
@@ -208,7 +215,7 @@ export default function StoreAdminDashboard() {
                   // whenever there's an invoice number to pass at all.
                   onClick={() => navigate(`/store-admin/orders/${ord.id}${ord.invoiceId ? `?invoice=${encodeURIComponent(ord.invoiceId)}` : ''}`)}
                 >
-                  {ord.invoiceId ? 'View Order' : ord.status !== 'Reviewing Order' ? 'Assign Invoice' : isReviewed(ord) ? 'Approve & Invoice' : 'View (Production reviewing)'}
+                  {ord.invoiceId ? 'View Order' : ord.status === 'Reviewing Order' ? 'Approve & Invoice' : 'Assign Invoice'}
                 </button>
               </div>
             </div>
