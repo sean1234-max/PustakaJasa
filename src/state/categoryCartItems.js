@@ -82,7 +82,10 @@ export function buildCategoryCartItems(st, catKey) {
     // sharing the same qtyLabel — the Kuantiti TAHUN value, when set,
     // is included too so the message says which Tahun part has
     // the problem instead of just repeating the category name.
-    const blockLabel = blk.tahun?.value ? `${blk.qtyLabel} (${blk.tahun.value})` : blk.qtyLabel;
+    // qtyLabel is blank on hideQtyLabelSuffix categories (UMUM, TOKOH …) —
+    // the category's own name then.
+    const baseLabel = blk.qtyLabel || cat?.label || catKey;
+    const blockLabel = blk.tahun?.value ? `${baseLabel} (${blk.tahun.value})` : baseLabel;
     const incompleteLine = blk.lines.find((line) => line.required && !lineHasValue(line));
     if (incompleteLine) {
       return { engaged, error: `Please fill in line ${incompleteLine.num} for ${blockLabel} before adding to cart.` };
