@@ -15,7 +15,7 @@ export default function Success() {
         </div>
         <div className="card-title" style={{ marginBottom: 'var(--space-2)' }}>Order Submitted</div>
         <p className="hint-text" style={{ margin: '0 0 var(--space-2)' }}>
-          Order <strong>{state.lastOrderId}</strong> has been sent to Sales for review.
+          Order <strong>{state.lastOrderId}</strong> has been received. Production will check it first, then your salesman approves it.
         </p>
         <p className="hint-text" style={{ margin: '0 0 var(--space-6)' }}>
           You'll see the status update in My Orders as it moves through approval, production, and delivery.

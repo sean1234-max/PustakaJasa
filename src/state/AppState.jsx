@@ -105,6 +105,20 @@ function describeOrderWriteError(err, verb = 'save') {
   return `Could not ${verb} this order: ${m || 'unknown error'}. Please try again.`;
 }
 
+// One invoice "slice" of an order (orderBatches.js's getOrderInvoiceSlices):
+// its own invoice when `sliceInvoiceId` is the order's invoiceId, else that
+// invoice_groups entry — with the slice's status and Done Typing time.
+// null when the order or the group doesn't exist.
+function findInvoiceSlice(order, sliceInvoiceId) {
+  if (!order) return null;
+  const groups = order.invoiceGroups || [];
+  if (sliceInvoiceId === (order.invoiceId || null)) {
+    return { isDefault: true, groups, group: null, status: order.status, typedAt: order.typedAt };
+  }
+  const group = groups.find((g) => g.invoiceId === sliceInvoiceId);
+  return group ? { isDefault: false, groups, group, status: group.status || order.status, typedAt: group.typedAt } : null;
+}
+
 // Invoice numbers are compared with every space stripped. Taken = already
 // used by ANOTHER order, as its own invoice or one of its split invoices.
 function invoiceNumberTaken(orders, orderId, normalized) {
@@ -2496,50 +2510,73 @@ export function AppStateProvider({ children }) {
   // Delivery" locally when the database still says otherwise — and
   // surfaces success/failure via the same `productionToast` the rest of
   // this page's actions already use.
-  const markProductionDone = useCallback(async (orderId, sliceInvoiceId) => {
-    const order = stateRef.current.orders.find((o) => o.id === orderId);
-    const groups = order?.invoiceGroups || [];
-    const isDefaultSlice = order && sliceInvoiceId === (order.invoiceId || null);
-    const group = order && !isDefaultSlice ? groups.find((g) => g.invoiceId === sliceInvoiceId) : null;
-    const currentStatus = order && (isDefaultSlice ? order.status : group?.status || order.status);
-    if (!order || (!isDefaultSlice && !group) || currentStatus !== 'In Production') {
-      patch({ productionToast: 'This order is not ready to be marked done.' });
-    } else if (isDefaultSlice && !order.invoiceId) {
-      patch({ productionToast: 'Waiting for Store Admin to assign an Invoice Number before this can be marked done.' });
-    } else {
-      // Status isn't always 'Waiting for Shipment': if this order's Shipment
-      // Date has already arrived (or passed) by the time Production finishes,
-      // the calendar rule sends it straight to 'Shipped' / 'Completed', the
-      // same as the daily sweep_shipped_orders job would on its next run.
-      const nextStatus = deliveryStageForShipmentDate(order.shipmentDate, malaysiaToday());
-      const toastForStatus = {
-        'Waiting for Shipment': 'Production completed. Order is now waiting for shipment.',
-        Shipped: 'Production completed. Shipment Date has arrived — order is now Shipped.',
-        Completed: 'Production completed. Shipment Date has passed — order is now Completed.',
-      };
-      try {
-        if (isDefaultSlice) {
-          await updateOrder(orderId, { status: nextStatus });
-          patch((st) => ({
-            orders: st.orders.map((o) => (o.id === orderId ? { ...o, status: nextStatus } : o)),
-            productionToast: toastForStatus[nextStatus],
-          }));
-        } else {
-          const nextGroups = groups.map((g) => (g.invoiceId === sliceInvoiceId ? { ...g, status: nextStatus } : g));
-          await updateOrder(orderId, { invoiceGroups: nextGroups });
-          patch((st) => ({
-            orders: st.orders.map((o) => (o.id === orderId ? { ...o, invoiceGroups: nextGroups } : o)),
-            productionToast: toastForStatus[nextStatus],
-          }));
-        }
-      } catch (err) {
-        console.error('Failed to mark order done in Supabase:', err);
-        patch({ productionToast: 'Unable to update order status. Please try again.' });
-      }
-    }
+  // Writes `fields` onto one invoice slice of an order: the order itself for
+  // its own (default) invoice, else that invoice_groups entry.
+  const writeSlice = useCallback(async (order, slice, fields) => {
+    const next = slice.isDefault
+      ? fields
+      : { invoiceGroups: slice.groups.map((g) => (g === slice.group ? { ...g, ...fields } : g)) };
+    await updateOrder(order.id, next);
+    patch((st) => ({ orders: st.orders.map((o) => (o.id === order.id ? { ...o, ...next } : o)) }));
+  }, [patch]);
+
+  const flashProductionToast = useCallback((message) => {
+    patch({ productionToast: message });
     clearTimeout(productionToastTimer.current);
     productionToastTimer.current = setTimeout(() => patch({ productionToast: '' }), 2500);
   }, [patch]);
+
+  // Production's Done Typing (0078): the AI file for this invoice is
+  // generated — the Production head can print it. Status stays In Production.
+  const markTypingDone = useCallback(async (orderId, sliceInvoiceId) => {
+    const order = stateRef.current.orders.find((o) => o.id === orderId);
+    const slice = findInvoiceSlice(order, sliceInvoiceId);
+    if (!slice || slice.status !== 'In Production' || slice.typedAt) {
+      flashProductionToast('This order is not waiting for typing.');
+      return;
+    }
+    try {
+      await writeSlice(order, slice, { typedAt: new Date().toISOString() });
+      flashProductionToast('Typing done — the order is now In Production, ready to print.');
+    } catch (err) {
+      console.error('Failed to mark typing done in Supabase:', err);
+      flashProductionToast(describeOrderWriteError(err, 'update'));
+    }
+  }, [writeSlice, flashProductionToast]);
+
+  const markProductionDone = useCallback(async (orderId, sliceInvoiceId) => {
+    const order = stateRef.current.orders.find((o) => o.id === orderId);
+    const slice = findInvoiceSlice(order, sliceInvoiceId);
+    if (!slice || slice.status !== 'In Production') {
+      flashProductionToast('This order is not ready to be marked done.');
+      return;
+    }
+    if (slice.isDefault && !order.invoiceId) {
+      flashProductionToast('Waiting for Store Admin to assign an Invoice Number before this can be marked done.');
+      return;
+    }
+    if (!slice.typedAt) {
+      flashProductionToast('Click Done Typing first — this order’s AI file isn’t typed yet.');
+      return;
+    }
+    // Status isn't always 'Waiting for Shipment': if this order's Shipment
+    // Date has already arrived (or passed) by the time Production finishes,
+    // the calendar rule sends it straight to 'Shipped' / 'Completed', the
+    // same as the daily sweep_shipped_orders job would on its next run.
+    const nextStatus = deliveryStageForShipmentDate(order.shipmentDate, malaysiaToday());
+    const toastForStatus = {
+      'Waiting for Shipment': 'Production completed. Order is now waiting for shipment.',
+      Shipped: 'Production completed. Shipment Date has arrived — order is now Shipped.',
+      Completed: 'Production completed. Shipment Date has passed — order is now Completed.',
+    };
+    try {
+      await writeSlice(order, slice, { status: nextStatus });
+      flashProductionToast(toastForStatus[nextStatus]);
+    } catch (err) {
+      console.error('Failed to mark order done in Supabase:', err);
+      flashProductionToast('Unable to update order status. Please try again.');
+    }
+  }, [writeSlice, flashProductionToast]);
 
   // Production's editor (ProductionEditOrder.jsx) while an order is being
   // reviewed — the order re-opened as a draft in Production's own scratch
@@ -2838,6 +2875,7 @@ export function AppStateProvider({ children }) {
     recordPrint,
     ensureOrderLoaded,
     markProductionDone,
+    markTypingDone,
     updateReferenceOrder,
     markReviewDone,
     openProductionEdit,

@@ -32,12 +32,16 @@ function daysSinceShipmentDate(shipmentDate, today) {
 // 'reviewing' is Production's own job first (0077): open the order, fix it
 // (Edit Order) and click Done Review — Sales can only approve after that.
 // 'approved' waits for Store Admin's Invoice Number; Production can already
-// export its CSVs to get the AI file ready. The Done button is only on the
-// 'active' tab.
+// export its CSVs to get the AI file ready. Once invoiced the order is In
+// Production, which only Production sees split in two (0078): 'typing' —
+// generate the AI file, click Done Typing — then 'active', where the
+// Production head prints it and clicks Done. Every other role just sees
+// In Production.
 const TABS = [
   { key: 'reviewing', label: 'Reviewing Order', match: (o) => o.status === 'Reviewing Order' },
   { key: 'approved', label: 'Salesman Approved', match: (o) => o.status === 'Salesman Approved' },
-  { key: 'active', label: 'In Production', match: (o) => o.status === 'In Production' },
+  { key: 'typing', label: 'Typing', match: (o) => o.status === 'In Production' && !o.typedAt },
+  { key: 'active', label: 'In Production', match: (o) => o.status === 'In Production' && !!o.typedAt },
   { key: 'waiting', label: 'Waiting for Shipment', match: (o) => o.status === 'Waiting for Shipment' },
   { key: 'shipped', label: 'Shipped', match: (o) => o.status === 'Shipped' },
   {
@@ -72,7 +76,7 @@ function shipmentDateKey(shipmentDate) {
 }
 
 export default function ProductionDashboard() {
-  const { state, today, markProductionDone } = useAppState();
+  const { state, today, markProductionDone, markTypingDone } = useAppState();
   const navigate = useNavigate();
   const [tab, setTab] = useState('active');
   // Lets Production see, at a glance, everything due out on one shipment
@@ -84,6 +88,11 @@ export default function ProductionDashboard() {
     const nextStatus = deliveryStageForShipmentDate(ord.shipmentDate, malaysiaToday());
     if (!window.confirm(`Mark order ${ord.id} as done? Its status will change to "${nextStatus}".`)) return;
     markProductionDone(ord.id, ord.invoiceId);
+  };
+
+  const handleDoneTyping = (ord) => {
+    if (!window.confirm(`Done typing ${ord.id}${ord.invoiceId ? ` (${ord.invoiceId})` : ''}? It moves to In Production, ready to print. 确定打好字了吗？`)) return;
+    markTypingDone(ord.id, ord.invoiceId);
   };
 
   const lowStockAlerts = getLowStockAlerts(state.plakCatalog);
@@ -101,7 +110,7 @@ export default function ProductionDashboard() {
   const orderSlices = useMemo(() => state.orders.flatMap((ord) => (
     getOrderInvoiceSlices(ord, state.plakCatalog).map((slice) => ({
       ...ord, invoiceId: slice.invoiceId, totalAmount: slice.totalAmount, totalQty: slice.totalQty,
-      priceAdjusted: slice.priceAdjusted, status: slice.status,
+      priceAdjusted: slice.priceAdjusted, status: slice.status, typedAt: slice.typedAt,
       _sliceKey: `${ord.id}::${slice.invoiceId || 'default'}`,
     }))
   )), [state.orders, state.plakCatalog]);
@@ -213,7 +222,9 @@ export default function ProductionDashboard() {
                   {ord.correctedImportFilePath && (
                     <span className="status-pill" style={{ background: '#fff4ce', color: '#8a6d00' }}>Excel Updated</span>
                   )}
-                  <span className="status-pill" style={statusPillStyle(ord.status)}>{ord.status}</span>
+                  <span className="status-pill" style={statusPillStyle(ord.status)}>
+                    {ord.status === 'In Production' && !ord.typedAt ? 'Typing' : ord.status}
+                  </span>
                   {ord.status === 'Reviewing Order' && ord.reviewedAt && (
                     <span className="status-pill" style={{ background: '#dcefe3', color: '#2f6b4f' }}>✓ Review Done</span>
                   )}
@@ -238,7 +249,17 @@ export default function ProductionDashboard() {
               <div className="dim" style={{ fontSize: 11 }}>Total Amount</div>
               <div className={`order-card-total${ord.priceAdjusted ? ' amount-adjusted' : ''}`}>RM {ord.totalAmount.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
 
-              <div className="order-card-actions" style={tab === 'active' ? { display: 'flex', gap: 'var(--space-2)' } : undefined}>
+              <div className="order-card-actions" style={tab === 'active' || tab === 'typing' ? { display: 'flex', gap: 'var(--space-2)' } : undefined}>
+                {tab === 'typing' && (
+                  <>
+                    <button type="button" className="btn btn-ghost" style={{ flex: 1 }} onClick={() => navigate(`/production/orders/${ord.id}${ord.invoiceId ? `?invoice=${encodeURIComponent(ord.invoiceId)}` : ''}`)}>
+                      View Order
+                    </button>
+                    <button type="button" className="btn btn-primary" style={{ flex: 1 }} onClick={() => handleDoneTyping(ord)}>
+                      Done Typing
+                    </button>
+                  </>
+                )}
                 {tab === 'active' && (
                   <>
                     {/* ?invoice= tells ProductionOrderDetail which slice this
@@ -259,7 +280,7 @@ export default function ProductionDashboard() {
                     </button>
                   </>
                 )}
-                {tab !== 'active' && (
+                {tab !== 'active' && tab !== 'typing' && (
                   <button type="button" className="btn btn-ghost btn-block" onClick={() => navigate(`/production/orders/${ord.id}${ord.invoiceId ? `?invoice=${encodeURIComponent(ord.invoiceId)}` : ''}`)}>
                     View Order
                   </button>

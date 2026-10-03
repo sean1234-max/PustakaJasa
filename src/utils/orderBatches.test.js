@@ -168,3 +168,19 @@ describe('stockDiff — stock follows a Production edit', () => {
       .toEqual({ deduct: [{ full_path: 'A', qty: 1 }], restore: [] });
   });
 });
+
+describe('getOrderInvoiceSlices — Done Typing per invoice (0078)', () => {
+  it('the order\'s own invoice uses the order\'s typedAt; a split invoice its own (new ones start untyped)', () => {
+    const order = {
+      invoiceId: 'INV-100', totalAmount: 900, status: 'In Production', typedAt: '2026-10-03T01:00:00Z',
+      invoiceGroups: [{ invoiceId: 'INV-200', jenisPlakList: ['PKF 266'] }],
+      items: [
+        { id: 'a', jenisPlak: 'PKC 263', qty: 10, harga: 500 },
+        { id: 'b', jenisPlak: 'PKF 266', qty: 40, harga: 400 },
+      ],
+    };
+    expect(getOrderInvoiceSlices(order).map((s) => [s.invoiceId, s.typedAt])).toEqual([
+      ['INV-100', '2026-10-03T01:00:00Z'], ['INV-200', undefined],
+    ]);
+  });
+});

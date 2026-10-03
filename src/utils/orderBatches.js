@@ -93,6 +93,10 @@ export function combineByJenisPlak(items) {
 // jumping together. A group with no `status` of its own yet (never marked
 // done independently) just follows the order's own `status`, same as
 // before this existed.
+//
+// `typedAt` likewise: Production's Done Typing (0078) for that invoice — the
+// order's own typedAt for the default slice, the group's own for a split one
+// (a new split invoice starts untyped).
 export function getOrderInvoiceSlices(order, plakCatalog) {
   const groups = order.invoiceGroups || [];
   const priceAdjustedOf = (rows) => (plakCatalog
@@ -101,7 +105,7 @@ export function getOrderInvoiceSlices(order, plakCatalog) {
   if (groups.length === 0) {
     const totalQty = (order.items || []).reduce((sum, it) => sum + (Number(it.qty) || 0), 0);
     const priceAdjusted = priceAdjustedOf(combineByJenisPlak(order.items));
-    return [{ invoiceId: order.invoiceId || null, totalAmount: order.totalAmount, totalQty, priceAdjusted, status: order.status }];
+    return [{ invoiceId: order.invoiceId || null, totalAmount: order.totalAmount, totalQty, priceAdjusted, status: order.status, typedAt: order.typedAt }];
   }
   // Default slice first, then each group in the order Store Admin created
   // them — keeps card order stable/predictable.
@@ -115,6 +119,7 @@ export function getOrderInvoiceSlices(order, plakCatalog) {
       totalQty: items.reduce((sum, it) => sum + (Number(it.qty) || 0), 0),
       priceAdjusted: priceAdjustedOf(combineByJenisPlak(items)),
       status: i === 0 ? order.status : groups[i - 1].status || order.status,
+      typedAt: i === 0 ? order.typedAt : groups[i - 1].typedAt,
     }];
   });
 }

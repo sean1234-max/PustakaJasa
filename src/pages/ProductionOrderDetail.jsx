@@ -62,9 +62,10 @@ export default function ProductionOrderDetail() {
   // matching invoiceGroups entry — falls back to the whole order's status
   // when viewing unfiltered, or when this invoice was never marked done on
   // its own yet, same as getOrderInvoiceSlices (src/utils/orderBatches.js).
-  const sliceStatus = isFiltered
-    ? (order.invoiceGroups || []).find((g) => g.invoiceId === viewInvoiceId)?.status || order.status
-    : order?.status;
+  const viewGroup = isFiltered ? (order.invoiceGroups || []).find((g) => g.invoiceId === viewInvoiceId) : null;
+  const sliceStatus = viewGroup?.status || order?.status;
+  // Production alone sees In Production split: not typed yet = "Typing" (0078).
+  const sliceLabel = sliceStatus === 'In Production' && !(viewGroup ? viewGroup.typedAt : order?.typedAt) ? 'Typing' : sliceStatus;
 
   // Re-derived from order.correctedImportFilePath whenever this order has
   // one (see loadCorrectedExcelPreview) — null while there's none, or
@@ -369,7 +370,7 @@ export default function ProductionOrderDetail() {
             {order.correctedImportFilePath && (
               <span className="status-pill no-print" style={{ background: '#fff4ce', color: '#8a6d00' }}>Excel Updated</span>
             )}
-            <span className="status-pill" style={statusPillStyle(sliceStatus)}>{sliceStatus}</span>
+            <span className="status-pill" style={statusPillStyle(sliceStatus)}>{sliceLabel}</span>
             {reviewing && isReviewed(order) && <span className="status-pill no-print" style={{ background: '#dcefe3', color: '#2f6b4f' }}>✓ Review Done</span>}
           </div>
         </div>
