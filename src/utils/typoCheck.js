@@ -28,7 +28,7 @@ const EVENT_WORDS = [
   'CEMERLANG', 'TAHUN', 'KELAS', 'KEBANGSAAN', 'PERDANA', 'WAWASAN',
   'KONVOKESYEN', 'SIJIL', 'PENTAKSIRAN', 'PRESTASI', 'RUMAH', 'SUKAN',
   'PERMAINAN', 'PERTANDINGAN', 'PERSATUAN', 'UNIT', 'BERUNIFORM', 'KELAB',
-  'PRASEKOLAH', 'PPKI',
+  'PRASEKOLAH', 'PPKI', 'AINS',
   // Recurring words in real order files — listed so a legit word isn't
   // hinted as a near-miss of another (SESI vs SENI, IKON vs IKAN).
   'SESI', 'APRESIASI', 'HADIAH', 'PENERIMA', 'PENCAPAIAN', 'IKON', 'INOVASI',
