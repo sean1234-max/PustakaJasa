@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { countWorkingDaysBetween, isUrgentShipment } from './urgentOrder';
+import { countWorkingDaysBetween, isUrgentShipment, prioritizeUrgentOrders } from './urgentOrder';
 
 // 2026-09-21 is a Monday.
 const MON = new Date(2026, 8, 21);
@@ -49,6 +49,21 @@ describe('countWorkingDaysBetween', () => {
 describe('isUrgentShipment', () => {
   it('is urgent when shipment date is the same day', () => {
     expect(isUrgentShipment(MON, MON)).toBe(true);
+  });
+
+  describe('prioritizeUrgentOrders', () => {
+    it('places urgent orders first while preserving order within each group', () => {
+      const orders = [
+        { id: 'regular-1', urgent: false },
+        { id: 'urgent-1', urgent: true },
+        { id: 'regular-2', urgent: false },
+        { id: 'urgent-2', urgent: true },
+      ];
+
+      expect(prioritizeUrgentOrders(orders).map((order) => order.id))
+        .toEqual(['urgent-1', 'urgent-2', 'regular-1', 'regular-2']);
+      expect(orders[0].id).toBe('regular-1');
+    });
   });
 
   it('is urgent when fewer than 5 working days away (Mon -> Fri, 4 days)', () => {

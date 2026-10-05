@@ -6,6 +6,8 @@ import { STATUS_STAGES, statusPillStyle } from '../data/catalog';
 import { getOrderChangeStamp } from '../utils/orderStamp';
 import { getOrderInvoiceSlices } from '../utils/orderBatches';
 import { fetchMyAssignedSalesmen, fetchAllSalesmen } from '../lib/ordersApi';
+import { prioritizeUrgentOrders } from '../utils/urgentOrder';
+import OrderUrgentBadge from '../components/OrderUrgentBadge';
 
 // Store Admin (formerly "Invoicing Department" — role renamed 0047) can see
 // and act on every order, including ones still 'Reviewing Order' — a
@@ -89,7 +91,7 @@ export default function StoreAdminDashboard() {
   const activeTab = TABS.find((t) => t.key === tab);
   const ordersInTab = orderSlices.filter(activeTab.match);
 
-  const filteredOrders = ordersInTab.filter((o) => {
+  const filteredOrders = prioritizeUrgentOrders(ordersInTab.filter((o) => {
     const q = search.trim().toLowerCase();
     if (q && !o.id.toLowerCase().includes(q) && !(o.invoiceId || '').toLowerCase().includes(q)) return false;
     if (salesmanFilter !== 'all' && o.sales !== salesmanFilter) return false;
@@ -98,7 +100,7 @@ export default function StoreAdminDashboard() {
     if (typeFilter === 'original' && isTambahan) return false;
     if (typeFilter === 'tambahan' && !isTambahan) return false;
     return true;
-  });
+  }));
 
   const clearFilters = () => {
     setSearch(''); setSalesmanFilter('all'); setStatusFilter('all'); setTypeFilter('all');
@@ -181,7 +183,10 @@ export default function StoreAdminDashboard() {
                   <div className="order-card-label">Order ID</div>
                   <div className="order-card-id">{ord.id}</div>
                 </div>
-                <span className="status-pill" style={statusPillStyle(ord.status)}>{ord.status}</span>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+                  <OrderUrgentBadge urgent={ord.urgent} />
+                  <span className="status-pill" style={statusPillStyle(ord.status)}>{ord.status}</span>
+                </div>
               </div>
               {/* Production uploaded a corrected copy of the teacher's file
                   (see ProductionOrderDetail's CorrectedExcelControl). */}

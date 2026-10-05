@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import { useAppState } from '../state/useAppState';
 import { statusPillStyle } from '../data/catalog';
+import OrderUrgentBadge from '../components/OrderUrgentBadge';
+import { prioritizeUrgentOrders } from '../utils/urgentOrder';
 
 // Sales works one stage at a time — filter tabs map 1:1 to STATUS_STAGES.
 // A 'Reviewing Order' order can only be approved once Production has
@@ -39,9 +41,9 @@ export default function SalesDashboard() {
   const byStage = filter === ADDON_FILTER
     ? state.orders.filter((ord) => ord.pendingAddonStatus === 'pending')
     : state.orders.filter((ord) => ord.status === filter);
-  const filteredOrders = isManager && salesmanFilter !== 'all'
+  const filteredOrders = prioritizeUrgentOrders(isManager && salesmanFilter !== 'all'
     ? byStage.filter((ord) => ord.sales === salesmanFilter)
-    : byStage;
+    : byStage);
 
   return (
     <div className="screen-wrap">
@@ -103,7 +105,10 @@ export default function SalesDashboard() {
                   <div className="order-card-label">Order ID</div>
                   <div className="order-card-id">{ord.id}</div>
                 </div>
-                <span className="status-pill" style={statusPillStyle(ord.status)}>{ord.status}</span>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+                  <OrderUrgentBadge urgent={ord.urgent} />
+                  <span className="status-pill" style={statusPillStyle(ord.status)}>{ord.status}</span>
+                </div>
               </div>
               {ord.status === 'Reviewing Order' && (
                 <span className="status-pill" style={{ ...(readyToApprove ? { background: '#dcefe3', color: '#2f6b4f' } : { background: '#f1f1f1', color: '#555' }), marginTop: 'var(--space-2)' }}>

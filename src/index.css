@@ -914,3 +914,15 @@ input.catalog-admin-code { padding: 6px 8px; }
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
+.order-urgent-badge {
+  display: inline-block;
+  border-radius: 4px;
+  background: #c62828;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  padding: 5px 8px;
+  white-space: nowrap;
+}

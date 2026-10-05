@@ -5,6 +5,8 @@ import { useAppState } from '../state/useAppState';
 import { fetchAllProfiles } from '../lib/adminApi';
 import { loadWithRetry } from '../lib/loadWithRetry';
 import { STATUS_STAGES, statusPillStyle, getLowStockAlerts } from '../data/catalog';
+import { prioritizeUrgentOrders } from '../utils/urgentOrder';
+import OrderUrgentBadge from '../components/OrderUrgentBadge';
 
 function StatTile({ value, label }) {
   return (
@@ -42,8 +44,8 @@ export default function AdminDashboard() {
   // data/catalog.js) — a plain string comparison sorts wrong across month/
   // day boundaries (e.g. "10 Jan" would sort before "2 Jan"), so re-parse
   // with `new Date(...)` for the actual chronological order.
-  const recentOrders = [...orders]
-    .sort((a, b) => new Date(b.datePlaced) - new Date(a.datePlaced))
+  const recentOrders = prioritizeUrgentOrders([...orders]
+    .sort((a, b) => new Date(b.datePlaced) - new Date(a.datePlaced)))
     .slice(0, 8);
 
   const lowStockAlerts = getLowStockAlerts(state.plakCatalog);
@@ -122,9 +124,12 @@ export default function AdminDashboard() {
                     <span className="text-label-bold text-on-surface-variant block mb-1">Order ID</span>
                     <span className="text-headline-md text-primary">{ord.id}</span>
                   </div>
-                  <span className="px-3 py-1 rounded text-label-bold font-semibold" style={statusPillStyle(ord.status)}>
-                    {ord.status}
-                  </span>
+                  <div className="flex flex-col items-end gap-1">
+                    <OrderUrgentBadge urgent={ord.urgent} />
+                    <span className="px-3 py-1 rounded text-label-bold font-semibold" style={statusPillStyle(ord.status)}>
+                      {ord.status}
+                    </span>
+                  </div>
                 </div>
                 <div className="grid grid-cols-3 gap-4">
                   <div>

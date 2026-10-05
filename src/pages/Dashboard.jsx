@@ -4,6 +4,8 @@ import Nav from '../components/Nav';
 import { useAppState } from '../state/useAppState';
 import { STATUS_STAGES, statusPillStyle, isReviewed } from '../data/catalog';
 import { getOrderInvoiceSlices } from '../utils/orderBatches';
+import { prioritizeUrgentOrders } from '../utils/urgentOrder';
+import OrderUrgentBadge from '../components/OrderUrgentBadge';
 
 const FILTERS = [
   { key: 'Reviewing Order', label: 'Reviewing Order', match: (o) => o.status === 'Reviewing Order' },
@@ -40,7 +42,7 @@ export default function Dashboard() {
   )), [state.orders, state.plakCatalog]);
 
   const activeFilter = FILTERS.find((f) => f.key === filter) || FILTERS[0];
-  const filteredOrders = orderSlices.filter(activeFilter.match);
+  const filteredOrders = prioritizeUrgentOrders(orderSlices.filter(activeFilter.match));
 
   return (
     <div className="screen-wrap">
@@ -106,7 +108,10 @@ export default function Dashboard() {
                   <div className="order-card-label">Order ID</div>
                   <div className="order-card-id">{ord.id}</div>
                 </div>
-                <span className="status-pill" style={statusPillStyle(ord.status)}>{ord.status}</span>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+                  <OrderUrgentBadge urgent={ord.urgent} />
+                  <span className="status-pill" style={statusPillStyle(ord.status)}>{ord.status}</span>
+                </div>
               </div>
 
               <div className="order-dots">

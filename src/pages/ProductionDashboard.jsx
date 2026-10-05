@@ -6,6 +6,8 @@ import { useAppState } from '../state/useAppState';
 import { statusPillStyle, formatDate, deliveryStageForShipmentDate, getLowStockAlerts, toMalaysiaDay, malaysiaToday } from '../data/catalog';
 import { getOrderChangeStamp } from '../utils/orderStamp';
 import { getOrderInvoiceSlices } from '../utils/orderBatches';
+import { prioritizeUrgentOrders } from '../utils/urgentOrder';
+import OrderUrgentBadge from '../components/OrderUrgentBadge';
 
 // Production works 'In Production' orders (invoice number or not — that's
 // Store Admin's job now, see supabase/migrations/0036_add_invoicing_role.sql
@@ -108,8 +110,8 @@ export default function ProductionDashboard() {
 
   const activeTab = TABS.find((t) => t.key === tab);
   const ordersInTab = orderSlices.filter((o) => activeTab.match(o, today));
-  const filteredOrders = ordersInTab
-    .filter((o) => !shipmentDateFilter || shipmentDateKey(o.shipmentDate) === shipmentDateFilter);
+  const filteredOrders = prioritizeUrgentOrders(ordersInTab
+    .filter((o) => !shipmentDateFilter || shipmentDateKey(o.shipmentDate) === shipmentDateFilter));
 
   // Only shipment dates that actually have an order in this tab are
   // selectable — production shouldn't be able to pick a date with nothing
@@ -213,6 +215,7 @@ export default function ProductionDashboard() {
                   {ord.correctedImportFilePath && (
                     <span className="status-pill" style={{ background: '#fff4ce', color: '#8a6d00' }}>Excel Updated</span>
                   )}
+                  <OrderUrgentBadge urgent={ord.urgent} />
                   <span className="status-pill" style={statusPillStyle(ord.status)}>
                     {ord.status === 'In Production' && !ord.typedAt ? 'Typing' : ord.status}
                   </span>

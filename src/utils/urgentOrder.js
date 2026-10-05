@@ -33,3 +33,7 @@ export function isUrgentShipment(fromDate, shipmentDate) {
   if (!fromDate || !shipmentDate) return false;
   return countWorkingDaysBetween(fromDate, shipmentDate) < 5;
 }
+
+export function prioritizeUrgentOrders(orders) {
+  return [...orders].sort((a, b) => Number(!!b.urgent) - Number(!!a.urgent));
+}
