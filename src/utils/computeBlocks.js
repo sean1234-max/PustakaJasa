@@ -4,9 +4,9 @@ import {
   getCategoryLinePlaceholders, getCategoryPositionLine2Placeholder,
   getCategoryTahunPlaceholder, getCategoryNamaKelasPlaceholder,
   resolveSelempangWarna, SELEMPANG_CODE, SELEMPANG_UNIT_PRICE, getStockStatus,
-  resolveCategory, categoriesUsedByItems,
+  resolveCategory, categoriesUsedByItems, kelasListLabel,
 } from '../data/catalog';
-import { findPossibleTypo } from './typoCheck';
+import { findPossibleTypo, replaceWord } from './typoCheck';
 import { umumSlotFields, umumRedSlots, UMUM_NO_RED } from './umumLines';
 
 // Assigns each Reference Sample line its displayed number, 1..N — except
@@ -161,6 +161,20 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
     // own button on a deletableReferenceLines category — see
     // `addSubjekPosition` below.
     const hiddenLineSlots = new Set((lineValues[`${catKey}::${b}::hiddenLines`] || '').split(',').filter(Boolean));
+    // Word-list typo hint + the teacher's two choices for it: keep the word as
+    // typed, or the suggestion — see draftUpdaters.js's onKeepWordInBlock /
+    // onReplaceWordInBlock. A kept word (wordsOk) is no longer flagged.
+    const okWords = (lineValues[`${catKey}::${b}::wordsOk`] || '').split(',').filter(Boolean);
+    const typoOf = (text) => {
+      const hint = findPossibleTypo(text, undefined, okWords);
+      return hint && {
+        ...hint,
+        text: String(text),
+        fixedText: replaceWord(text, hint.clean, hint.suggestion),
+        keep: () => updaters.onKeepWordInBlock(catKey, b, hint.clean),
+        fix: () => updaters.onReplaceWordInBlock(catKey, b, hint.clean, hint.suggestion),
+      };
+    };
     // Line 3's optional second box gets its own slotId ('2b') alongside
     // every other line's own index — flattened below (secondLine, if any,
     // right after its own first box) and numbered sequentially, so plain
@@ -201,7 +215,7 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
         // Flags a likely typo (e.g. "ANIGERAH" for "ANUGERAH") against a
         // small curated word list — see src/utils/typoCheck.js. Shown near
         // the input, and also blocks Add to Cart (categoryCartItems.js).
-        typoHint: findPossibleTypo(lineValues[key]),
+        typoHint: typoOf(lineValues[key]),
         // TAJUK BESAR (i === 0) can never be deleted even on a
         // deletableReferenceLines category — every other row (including any
         // teacher-added extra) gets its own ✕.
@@ -214,7 +228,7 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
           key: key2, slotId: '2b', placeholder: catPositionLine2Placeholder, value: lineValues[key2] || '',
           redText: !!currentCat.positionFieldsRedText,
           onChange: (val) => updaters.onLine(key2, val),
-          typoHint: findPossibleTypo(lineValues[key2]),
+          typoHint: typoOf(lineValues[key2]),
           // Deletable now (a named-recipient roster import — see
           // excelImport.js's buildRosterSectionLines — never has a real
           // SUBJEK/POSITION value to begin with, and hides it outright),
@@ -242,7 +256,7 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
           starred: starredLineIndices.includes(0),
           titleLine: true,
           onChange: (val) => updaters.onLine(key0b, val),
-          typoHint: findPossibleTypo(lineValues[key0b]),
+          typoHint: typoOf(lineValues[key0b]),
           deletable: true,
           onDelete: () => updaters.onDeleteReferenceLine(catKey, b, '0b'),
         };
@@ -555,7 +569,7 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
               return {
                 ...f, value: row[f.key] || '', placeholder: umumContoh[f.contohSlot] || '',
                 // Same word-list typo hint as the Reference Sample (blocks Add to Cart).
-                typoHint: typed ? findPossibleTypo(own) : null,
+                typoHint: typed ? typoOf(own) : null,
                 // A line the CONTOH leaves blank: Add to Cart asks the teacher
                 // to confirm it (NewOrderStep2); Production sees it flagged.
                 extraLine: typed && !String(umumContoh[f.contohSlot] || '').trim(),
@@ -599,7 +613,7 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
           qtyMismatch: namaKelasCount > 0 && Number(row.qty) > 0 && Number(row.qty) !== namaKelasCount,
           // See Reference Sample's own typoHint above — same word-list hint,
           // just for the Description field (subject names in particular).
-          typoHint: findPossibleTypo(row.desc) || (umumRowFields || []).find((f) => f.typoHint)?.typoHint || null,
+          typoHint: typoOf(row.desc) || (umumRowFields || []).find((f) => f.typoHint)?.typoHint || null,
           setDesc: (v) => updaters.onRowField(rowsKey, row.id, 'desc', v),
           setQty: (v) => updaters.onRowField(rowsKey, row.id, 'qty', v),
           remove: () => updaters.onRowRemove(rowsKey, row.id),
@@ -786,6 +800,7 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
       canAddRow: !currentCat.capRowsAt5 || rows.length < 5,
       columns, matrixRows, levelBreakdown,
       levelBreakdownNoMoral: !!currentCat.levelBreakdownNoMoral || !!currentCat.aliranNamaKelas,
+      kelasListLabel: kelasListLabel(lineValues[`${catKey}::${b}::kelasSubject`]),
       aliranNamaKelas: !!currentCat.aliranNamaKelas,
       matrixRowLabel: currentCat.matrixRowLabel || 'Subjek',
       colTotals: colTotals.map((v) => ({ value: v })), grandTotal,
@@ -894,6 +909,7 @@ export const noopUpdaters = {
   onAddMatrixRow: () => {}, onMatrixRowRemove: () => {},
   onAddReferenceLine: () => {}, onRemoveReferenceLine: () => {}, onDeleteReferenceLine: () => {}, onRestoreReferenceLine: () => {},
   onLevelKelasField: () => {}, onAddLevelKelasRow: () => {}, onRemoveLevelKelasRow: () => {},
+  onKeepWordInBlock: () => {}, onReplaceWordInBlock: () => {},
   onAliranKedudukan: () => {}, onAliranPlakField: () => {}, onAliranAddPlak: () => {}, onAliranRemovePlak: () => {}, onAliranPlakQty: () => {},
 };
 

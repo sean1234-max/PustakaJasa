@@ -3,7 +3,7 @@ import {
   getCustomMatrixRowIds, customMatrixLabelKey, matrixCellKey,
   flattenPlakCatalog, isCustomPlakCode, MANUAL_MAX_QTY, numToOrdinal,
   resolveCategory, categoriesUsedByItems,
-  MORAL_SUBJECT_BY_LANGUAGE, DEFAULT_REF_ORDER,
+  isKelasSubject, DEFAULT_REF_ORDER,
 } from '../data/catalog';
 import { breakAcaraLine } from './acaraBreak';
 import { partialSplitQty } from './orderBatches';
@@ -221,7 +221,8 @@ export function buildSubjectTahunFormatter(sample, subjects, levels, classNames 
 // (buildSubjectTahunFormatter above), which every plaque then follows — or, once a level has a Nama Kelas breakdown (hasLevelBreakdown
 // — PPKI/MP1_KELAS/MP2_KELAS's per-level class list, see computeBlocks.js/
 // draftUpdaters.js), one row per actual class instead: event_line_2 =
-// "<level> <class>". Pendidikan Moral reads the level's own Moral Kelas list
+// "<level> <class>". Pendidikan Moral (or whichever subject the second list's
+// header names — "TAMIL Kelas", catalog.js's isKelasSubject) reads that list
 // instead of the shared Nama Kelas one (same subject match draftUpdaters.js's
 // recomputeLevelBreakdown uses) — every other subject shares the level's one
 // Nama Kelas breakdown, which is also why each of their own KUANTITI cells
@@ -232,7 +233,7 @@ function buildMatrixRows(item, cat, header, year, positionPart1, schoolLanguage)
   if (!matrix) return rows;
   const columns = getCategoryColumns(cat, schoolLanguage);
   const breakdown = item.detail?.namaKelasBreakdown || {};
-  const moralSubject = MORAL_SUBJECT_BY_LANGUAGE[schoolLanguage] || MORAL_SUBJECT_BY_LANGUAGE.SK;
+  const kelasWord = item.detail?.lines?.[`${item.categoryKey}::${item.blockIdx}::kelasSubject`];
   // Line 3's own CONTOH (e.g. "TAHUN 1 CERDIK" vs "1 CERDIK") decides
   // whether the word "TAHUN" itself is kept in front of the level number on
   // event_line_2 — same toggle buildOthersRows/buildAliranRows already use
@@ -273,7 +274,7 @@ function buildMatrixRows(item, cat, header, year, positionPart1, schoolLanguage)
     // engraved line — same filter buildPbdMatrixRows applies to the subject.
     const bareCol = ['KUANTITI', 'KEDUDUKAN'].includes(String(column).trim().toUpperCase()) ? '' : column;
     const tahunLabel = includeTahunWord ? bareCol : bareCol.replace(/^TAHUN\s*/i, '');
-    const listKind = subject.trim().toUpperCase() === moralSubject.toUpperCase() ? 'moral' : 'main';
+    const listKind = isKelasSubject(subject, kelasWord) ? 'moral' : 'main';
     const classes = (breakdown[`${item.categoryKey}::${item.blockIdx}::${column}::${listKind}`] || [])
       .filter((c) => (c.desc || '').trim());
     let covered = 0;

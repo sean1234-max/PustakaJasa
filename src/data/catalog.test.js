@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   flattenPlakCatalog, standardUnitPrice, tahunRangeYears,
   stockZoneFor, getStockStatus, statusPillStyle, STATUS_STAGES, ORDER_STATUSES,
-  deliveryStageForShipmentDate, resolveSelempangWarna,
+  deliveryStageForShipmentDate, resolveSelempangWarna, isKelasSubject, kelasListLabel,
   MALAY_ORDINALS, ordinalToNum, numToOrdinal,
   CATEGORIES, makeDynamicCategoryKey, isDynamicCategoryKey, resolveCategory, categoriesUsedByItems,
   filterHiddenPlakCatalog, getLowStockAlerts,
@@ -350,5 +350,19 @@ describe('Malaysia dates — the project always runs on Asia/Kuala_Lumpur', () =
     expect(deliveryStageForShipmentDate('2026-10-08T16:00:00.000Z', day(2026, 10, 9))).toBe('Shipped');
     expect(deliveryStageForShipmentDate('2026-10-09T00:00:00+08:00', day(2026, 10, 8))).toBe('Waiting for Shipment');
     expect(deliveryStageForShipmentDate('2026-10-09T00:00:00+08:00', day(2026, 10, 10))).toBe('Completed');
+  });
+});
+
+describe('isKelasSubject', () => {
+  it('matches Pendidikan Moral when the list is MORAL Kelas (or unset)', () => {
+    expect(isKelasSubject('PENDIDIKAN MORAL', 'MORAL')).toBe(true);
+    expect(isKelasSubject('道德教育', undefined)).toBe(true);
+    expect(isKelasSubject('BAHASA TAMIL', 'MORAL')).toBe(false);
+  });
+  it('matches the subject named after the header word otherwise', () => {
+    expect(isKelasSubject('BAHASA TAMIL', 'TAMIL')).toBe(true);
+    expect(isKelasSubject('PENDIDIKAN MORAL', 'TAMIL')).toBe(false);
+    expect(kelasListLabel('TAMIL')).toBe('Tamil Kelas');
+    expect(kelasListLabel(undefined)).toBe('Moral Kelas');
   });
 });

@@ -59,6 +59,24 @@ function handleRefLineAltEnter(e, onChange) {
 // own Jenis Plak field — see NewOrderStep2.jsx's liveImportWarnings click
 // handler, which scrolls a warning's own block into view and flips this on
 // for a moment so the teacher's eye lands on the exact field it's about.
+// A word-list typo hint (computeBlocks.js's typoOf). Where the text can be
+// edited the teacher picks which spelling is right — the first keeps it as
+// typed, the second takes the suggestion; either applies to the whole block.
+function TypoHint({ hint, canChoose }) {
+  if (!canChoose) {
+    return <div className="typo-hint">Possible typo: "{hint.word}" — did you mean "{hint.suggestion}"?</div>;
+  }
+  return (
+    <div className="typo-hint">
+      Possible typo: "{hint.word}" — which one is right?
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)', marginTop: 4 }}>
+        <button type="button" className="btn btn-secondary" onClick={hint.keep}>1. {hint.text}</button>
+        <button type="button" className="btn btn-secondary" onClick={hint.fix}>2. {hint.fixedText}</button>
+      </div>
+    </div>
+  );
+}
+
 export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmptyRows, isLastBlock, flashJenisPlak }) {
   // Drag-and-drop reordering of Reference Sample rows (OTHERS — see
   // catalog.js's draggableReferenceSample / computeBlocks.js's
@@ -408,11 +426,7 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
                         onKeyDown={editable.lines ? (e) => handleRefLineAltEnter(e, ln.onChange) : undefined}
                       />
                     )}
-                    {ln.typoHint && (
-                      <div className="typo-hint">
-                        Possible typo: "{ln.typoHint.word}" — did you mean "{ln.typoHint.suggestion}"?
-                      </div>
-                    )}
+                    {ln.typoHint && <TypoHint hint={ln.typoHint} canChoose={editable.lines} />}
                   </div>
                   {ln.umumRed && editable.lines && (
                     <label style={{ flex: 'none', marginTop: 8, fontSize: 12, color: '#c0392b', whiteSpace: 'nowrap' }}>
@@ -544,7 +558,7 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
                   <thead>
                     <tr>
                       <th>Nama Kelas</th><th style={{ width: 90, textAlign: 'center' }}>QTY</th>
-                      {!blk.levelBreakdownNoMoral && <><th>Moral Kelas</th><th style={{ width: 90, textAlign: 'center' }}>QTY</th></>}
+                      {!blk.levelBreakdownNoMoral && <><th>{blk.kelasListLabel || 'Moral Kelas'}</th><th style={{ width: 90, textAlign: 'center' }}>QTY</th></>}
                     </tr>
                   </thead>
                   <tbody>
@@ -569,7 +583,7 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
                                 {mo && (
                                   <div style={{ display: 'flex', gap: 4 }}>
                                     <input className="input" style={{ flex: 1, minWidth: 0 }} value={mo.desc} readOnly={!editable.rowDesc} onChange={editable.rowDesc ? (e) => mo.setDesc(e.target.value) : undefined} />
-                                    {editable.addRemoveRows && <button type="button" className="btn btn-ghost btn-icon" aria-label="Remove Moral Kelas" onClick={mo.remove}>✕</button>}
+                                    {editable.addRemoveRows && <button type="button" className="btn btn-ghost btn-icon" aria-label={`Remove ${blk.kelasListLabel || 'Moral Kelas'}`} onClick={mo.remove}>✕</button>}
                                   </div>
                                 )}
                               </td>
@@ -600,7 +614,7 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
               {editable.addRemoveRows && (
                 <div className="row-actions" style={{ display: 'flex', gap: 8 }}>
                   <button type="button" className="btn btn-secondary" onClick={lb.addMain}>+ Add Nama Kelas</button>
-                  {!blk.levelBreakdownNoMoral && <button type="button" className="btn btn-secondary" onClick={lb.addMoral}>+ Add Moral Kelas</button>}
+                  {!blk.levelBreakdownNoMoral && <button type="button" className="btn btn-secondary" onClick={lb.addMoral}>+ Add {blk.kelasListLabel || 'Moral Kelas'}</button>}
                 </div>
               )}
             </div>
@@ -885,11 +899,7 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
                       {editable.rowDesc
                         ? <input className="input" placeholder="e.g. BAHASA MELAYU" value={row.desc} onChange={(e) => row.setDesc(e.target.value)} />
                         : row.desc}
-                      {row.typoHint && (
-                        <div className="typo-hint">
-                          Possible typo: "{row.typoHint.word}" — did you mean "{row.typoHint.suggestion}"?
-                        </div>
-                      )}
+                      {row.typoHint && <TypoHint hint={row.typoHint} canChoose={editable.rowDesc} />}
                     </td>
                     {row.extraRefValues.map((rv) => (
                       <td key={rv.key}>
@@ -1230,11 +1240,7 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
                       {editable.rowDesc
                         ? <input className="input" placeholder="e.g. TAHUN 1" value={row.desc} onChange={(e) => row.setDesc(e.target.value)} />
                         : row.desc}
-                      {row.typoHint && (
-                        <div className="typo-hint">
-                          Possible typo: "{row.typoHint.word}" — did you mean "{row.typoHint.suggestion}"?
-                        </div>
-                      )}
+                      {row.typoHint && <TypoHint hint={row.typoHint} canChoose={editable.rowDesc} />}
                     </td>
                   )}
                   {row.extraRefValues.map((rv) => (
@@ -1247,9 +1253,7 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
                   {(row.tokohFields || []).filter((f) => f.place === 'beforeQty').map((f) => (
                     <td key={f.key}>
                       {renderTokohField(f, editable.rowDesc)}
-                      {f.typoHint && (
-                        <div className="typo-hint">Possible typo: "{f.typoHint.word}" — did you mean "{f.typoHint.suggestion}"?</div>
-                      )}
+                      {f.typoHint && <TypoHint hint={f.typoHint} canChoose={editable.rowDesc} />}
                       {f.extraLine && (
                         <div className="typo-hint">Not in the Reference Sample — please double-check.</div>
                       )}

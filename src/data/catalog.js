@@ -42,6 +42,22 @@ const SUBJECTS_MP2_CN = [
 // parsePpkiSheet and draftUpdaters.js's recomputeLevelBreakdown).
 export const MORAL_SUBJECT_BY_LANGUAGE = { SK: 'PENDIDIKAN MORAL', SJKC: '道德教育' };
 
+// That second list isn't always Moral: its Excel header reads "<WORD> Kelas"
+// ("MORAL Kelas", "TAMIL Kelas" …), and only the subject named after WORD
+// sums it — handled exactly like Moral, just another subject. Stored per
+// block as lineValues `${catKey}::${b}::kelasSubject`; unset = MORAL (older
+// orders and files).
+export function isKelasSubject(subjectName, kelasWord) {
+  const name = String(subjectName || '').trim().toUpperCase();
+  const word = String(kelasWord || 'MORAL').trim().toUpperCase();
+  if (word === 'MORAL') return Object.values(MORAL_SUBJECT_BY_LANGUAGE).includes(name);
+  return name.split(/\s+/).includes(word);
+}
+export function kelasListLabel(kelasWord) {
+  const word = String(kelasWord || 'MORAL').trim();
+  return `${word.charAt(0).toUpperCase()}${word.slice(1).toLowerCase()} Kelas`;
+}
+
 // ALIRAN TERBAIK's KEDUDUKAN — Malay ordinals PERTAMA (1st) .. KEDUA PULUH
 // (20th). The sheet's KEDUDUKAN column is a "DARI → HINGGA KE" range
 // (excelImport.js's parseAliranSheet); a range PERTAMA→KESEPULUH means

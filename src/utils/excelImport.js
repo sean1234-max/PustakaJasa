@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import { ordinalToNum, resolveSelempangWarna, makeDynamicCategoryKey, DEFAULT_REF_ORDER, ALIRAN_REF_ORDER, parseDisplayDate } from '../data/catalog';
+import { ordinalToNum, resolveSelempangWarna, makeDynamicCategoryKey, DEFAULT_REF_ORDER, ALIRAN_REF_ORDER, parseDisplayDate, isKelasSubject } from '../data/catalog';
 import { breakAcaraLine } from './acaraBreak';
 
 // Reads a teacher's own filled-in copy of the FORM ANUGERAH Excel template —
@@ -975,14 +975,19 @@ function findPpkiNamaKelasBlocks(ws, range) {
   const anchors = byRow.get(headerRow).sort((a, b) => a.col - b.col);
   return anchors.map((nk) => {
     const qtyCol = nk.col + 1;
-    const moralCell = findLabelCells(
-      ws, { r1: headerRow, r2: headerRow, c1: nk.col + 2, c2: Math.min(nk.col + 3, range.c2) }, ['MORAL KELAS'],
-    )[0];
+    // "MORAL Kelas" — or "TAMIL Kelas" etc. (catalog.js's isKelasSubject).
+    let moralCol = null;
+    let kelasWord = null;
+    for (let c = nk.col + 2; c <= Math.min(nk.col + 3, range.c2); c++) {
+      const m = /^(\S+)\s+KELAS$/i.exec(cellText(ws, headerRow, c).trim());
+      if (m && m[1].toUpperCase() !== 'NAMA') { moralCol = c; kelasWord = m[1].toUpperCase(); break; }
+    }
     const label = cellText(ws, headerRow - 1, nk.col) || cellText(ws, headerRow - 1, qtyCol);
     return {
       label, nkCol: nk.col, qtyCol,
-      moralCol: moralCell ? moralCell.col : null,
-      moralQtyCol: moralCell ? moralCell.col + 1 : null,
+      moralCol,
+      moralQtyCol: moralCol != null ? moralCol + 1 : null,
+      kelasWord,
       headerRow,
     };
   });
@@ -1024,6 +1029,8 @@ function parseSubjectLevelSheet(ws) {
 
   const blocks = findPpkiNamaKelasBlocks(ws, range);
   const hasNamaKelasData = blocks && blocks.some((b) => cellText(ws, b.headerRow + 1, b.nkCol));
+  // The second list's subject word ("MORAL" / "TAMIL" …) — null = no breakdown.
+  const kelasSubject = hasNamaKelasData ? (blocks.find((b) => b.kelasWord)?.kelasWord || 'MORAL') : null;
 
   let classes;
   let subjectOrder = null; // every subject name in sheet order — see readSubjectMatrix
@@ -1092,7 +1099,7 @@ function parseSubjectLevelSheet(ws) {
       return {
         tahunFrom: tahun, tahunTo: tahun, namaKelas: tahun ? '' : b.label,
         subjects: subjectRows.map(({ name, row }) => {
-          const levelTotal = /^PENDIDIKAN MORAL$/i.test(name.trim())
+          const levelTotal = isKelasSubject(name, kelasSubject)
             ? levelTotals[bi].moralTotal : levelTotals[bi].mainTotal;
           if (!matrixHasAnyValue) return { name, qty: levelTotal };
           // Matrix has values elsewhere → this subject's own cell is the
@@ -1150,7 +1157,7 @@ function parseSubjectLevelSheet(ws) {
     }
   }
 
-  return { lines, classes, jenisPlak, levelBreakdown, subjectOrder };
+  return { lines, classes, jenisPlak, levelBreakdown, subjectOrder, kelasSubject };
 }
 
 // PBD TERBAIK's sheet has NO subject axis — just "TAHUN | KUANTITI" down

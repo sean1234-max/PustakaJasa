@@ -1197,6 +1197,7 @@ export function AppStateProvider({ children }) {
             newRowsByBlock[`${key}::${label}::main`] = mainRows.map((r) => ({ id: nextRowId++, desc: r.name, qty: String(r.qty) }));
             newRowsByBlock[`${key}::${label}::moral`] = moralRows.map((r) => ({ id: nextRowId++, desc: r.name, qty: String(r.qty) }));
           });
+          if (section.kelasSubject) newLineValues[`${key}::kelasSubject`] = section.kelasSubject;
 
           // A subject whose imported KUANTITI for a level doesn't match that
           // level's own Nama Kelas breakdown total (every subject offered at

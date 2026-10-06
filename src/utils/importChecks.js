@@ -1,4 +1,5 @@
 import { getOrderJenisPlakGroups, getPlakProductionMode } from './exportCsv';
+import { isKelasSubject } from '../data/catalog';
 
 // Deterministic post-import / pre-production checks. Nothing here calls a
 // model — these are plain arithmetic and lookups over an order's items or
@@ -121,7 +122,6 @@ export function checkLevelBreakdownMatch(section) {
       totalByLevel.set(lb.label, { main: sum(lb.mainRows), moral: sum(lb.moralRows), classCount });
     }
   });
-  const isMoral = (name) => /^PENDIDIKAN MORAL$/i.test(String(name || '').trim());
   const issues = [];
   (section.classes || []).forEach((cls) => {
     const level = cls.tahunFrom || cls.tahunTo || cls.namaKelas || '';
@@ -130,7 +130,7 @@ export function checkLevelBreakdownMatch(section) {
     (cls.subjects || []).forEach((s) => {
       const qty = Number(s.qty) || 0;
       if (qty <= 0) return; // blank / 0 = subject not offered at this level
-      const expected = isMoral(s.name) ? t.moral : t.main;
+      const expected = isKelasSubject(s.name, section.kelasSubject) ? t.moral : t.main;
       if (qty === expected) return;
       issues.push({
         id: `lvlbrk:${level}:${s.name}`,

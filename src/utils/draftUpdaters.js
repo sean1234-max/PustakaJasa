@@ -1,8 +1,9 @@
 import {
   customMatrixLabelKey, getCustomMatrixRowIds, getCategoryLinePlaceholders,
   getCategoryPositionLine2Placeholder, getCategorySubjects, getCategoryColumns, matrixCellKey,
-  MORAL_SUBJECT_BY_LANGUAGE, resolveCategory,
+  isKelasSubject, resolveCategory,
 } from '../data/catalog';
+import { replaceWord } from './typoCheck';
 
 // Reference Sample's base line count (catalog lines + optional second box),
 // resolved the same way computeBlocks.js does — length is identical across
@@ -24,7 +25,7 @@ function baseReferenceLineCount(cat) {
 // the main and moral list under this same level, whichever one actually
 // changed), so the total reflects the edit that's about to be applied, not
 // stale pre-edit state.
-function recomputeLevelBreakdown(st, listKey, updatedRowsByBlock, matrixValuesField) {
+function recomputeLevelBreakdown(st, listKey, updatedRowsByBlock, matrixValuesField, lineValuesField) {
   const m = /^(.+)::\d+::(.+)::(?:main|moral)$/.exec(listKey);
   if (!m) return {};
   const [, catKey, level] = m;
@@ -50,9 +51,9 @@ function recomputeLevelBreakdown(st, listKey, updatedRowsByBlock, matrixValuesFi
     const rowKey = rowId != null ? `custom-${rowId}` : level;
     newMatrixValues[matrixCellKey(catKey, rowKey, col)] = String(mainTotal);
   } else {
-    const moralSubject = MORAL_SUBJECT_BY_LANGUAGE[st.schoolLanguage] || MORAL_SUBJECT_BY_LANGUAGE.SK;
-    const isMoral = (label) => label.trim().toUpperCase() === moralSubject.toUpperCase()
-      || /^PENDIDIKAN MORAL$/i.test(label.trim());
+    const blockKey = base.slice(0, base.length - `::${level}`.length);
+    const kelasWord = st[lineValuesField]?.[`${blockKey}::kelasSubject`];
+    const isMoral = (label) => isKelasSubject(label, kelasWord);
     // `subjectsFromImport` (PPKI, MP THP 1/2 (Kalau ada kelas)) once imported
     // keeps its subject rows as editable `custom-<id>` rows, not the fixed
     // catalog list — re-sum straight into those, matching Moral by label.
@@ -62,7 +63,7 @@ function recomputeLevelBreakdown(st, listKey, updatedRowsByBlock, matrixValuesFi
         rowKey: `custom-${id}`,
         moral: isMoral(st[matrixValuesField][customMatrixLabelKey(catKey, id)] || ''),
       }))
-      : getCategorySubjects(cat, st.schoolLanguage).map((subject) => ({ rowKey: subject, moral: subject === moralSubject }));
+      : getCategorySubjects(cat, st.schoolLanguage).map((subject) => ({ rowKey: subject, moral: isMoral(subject) }));
     targets.forEach(({ rowKey, moral }) => {
       const cellKey = matrixCellKey(catKey, rowKey, level);
       // A subject the import left blank for this level (the school doesn't
@@ -123,6 +124,30 @@ export function createDraftUpdaters(patch, fields) {
         [rowsKey]: st[rowsByBlock][rowsKey].map((r) => (r.id === id ? { ...r, [field]: val } : r)),
       },
     })),
+    // A word-list typo hint's two choices (Sean, 2026-10-06), both for the
+    // whole block: keep the word as typed (wordsOk — no longer flagged,
+    // Production sees it) or take the suggestion in every line and row.
+    onKeepWordInBlock: (catKey, b, word) => patch((st) => {
+      const key = `${catKey}::${b}::wordsOk`;
+      const words = (st[lineValues][key] || '').split(',').filter(Boolean);
+      return words.includes(word) ? {} : { [lineValues]: { ...st[lineValues], [key]: [...words, word].join(',') } };
+    }),
+    onReplaceWordInBlock: (catKey, b, word, suggestion) => patch((st) => {
+      const prefix = `${catKey}::${b}::`;
+      const fix = (v) => (typeof v === 'string' ? replaceWord(v, word, suggestion) : v);
+      const rowsKey = `${catKey}::${b}`;
+      return {
+        // Only the engraved line slots (0, 0b, 2b, 3 …), not settings kept
+        // beside them (wordsOk, hiddenLines, refOrder …).
+        [lineValues]: Object.fromEntries(Object.entries(st[lineValues])
+          .map(([k, v]) => [k, k.startsWith(prefix) && /::\d+b?$/.test(k) ? fix(v) : v])),
+        [rowsByBlock]: {
+          ...st[rowsByBlock],
+          [rowsKey]: (st[rowsByBlock][rowsKey] || [])
+            .map((r) => Object.fromEntries(Object.entries(r).map(([k, v]) => [k, k === 'qty' ? v : fix(v)]))),
+        },
+      };
+    }),
     onRowRemove: (rowsKey, id) => patch((st) => ({
       [rowsByBlock]: { ...st[rowsByBlock], [rowsKey]: st[rowsByBlock][rowsKey].filter((r) => r.id !== id) },
     })),
@@ -554,7 +579,7 @@ export function createDraftUpdaters(patch, fields) {
         ...st[rowsByBlock],
         [listKey]: (st[rowsByBlock][listKey] || []).map((r) => (r.id === id ? { ...r, [field]: val } : r)),
       };
-      return { [rowsByBlock]: updatedRowsByBlock, ...recomputeLevelBreakdown(st, listKey, updatedRowsByBlock, matrixValues) };
+      return { [rowsByBlock]: updatedRowsByBlock, ...recomputeLevelBreakdown(st, listKey, updatedRowsByBlock, matrixValues, lineValues) };
     }),
     onAddLevelKelasRow: (listKey) => patch((st) => ({
       [rowsByBlock]: {
@@ -571,7 +596,7 @@ export function createDraftUpdaters(patch, fields) {
         ...st[rowsByBlock],
         [listKey]: (st[rowsByBlock][listKey] || []).filter((r) => r.id !== id),
       };
-      return { [rowsByBlock]: updatedRowsByBlock, ...recomputeLevelBreakdown(st, listKey, updatedRowsByBlock, matrixValues) };
+      return { [rowsByBlock]: updatedRowsByBlock, ...recomputeLevelBreakdown(st, listKey, updatedRowsByBlock, matrixValues, lineValues) };
     }),
 
     // ALIRAN TERBAIK (catalog.js's aliranKedudukan). A TAHUN row's
