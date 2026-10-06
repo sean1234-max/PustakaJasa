@@ -540,15 +540,13 @@ export default function NewOrderStep2() {
                 ) : (
                   <>
                     <p className="confirm-item-q" style={{ margin: 0 }}>
-                      <span style={{ textDecoration: 'line-through', opacity: 0.6 }}>{issue.original}</span>
-                      {' → '}
-                      <strong>{issue.suggestion}</strong>
+                      Which one is right?
                       <span className="hint-text" style={{ marginLeft: 8 }}>({issue.kind})</span>
                     </p>
                     {issue.note && <p className="hint-text" style={{ margin: '2px 0 6px' }}>{issue.note}</p>}
                     <div className="confirm-item-opts">
-                      <button type="button" className="btn btn-ghost" onClick={() => applyFix(issue)}>Use fix</button>
-                      <button type="button" className="btn btn-ghost" onClick={() => keepWord(issue)}>This word is correct</button>
+                      <button type="button" className="btn btn-ghost" onClick={() => keepWord(issue)}>1. {issue.original}</button>
+                      <button type="button" className="btn btn-ghost" onClick={() => applyFix(issue)}>2. {issue.suggestion}</button>
                     </div>
                   </>
                 )}

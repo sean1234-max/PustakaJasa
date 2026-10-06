@@ -520,7 +520,7 @@ describe('UMUM (万能) — import → cart → CSV', () => {
     const st = toDraft('UMUM', section);
     const blk = computeBlocks('UMUM', st.lineValues, {}, st.rowsByBlock, st.plakRows, {}, noopUpdaters, catalog, 'SK').blocks[0];
     const field = (ri, key) => blk.rows[ri].tokohFields.find((f) => f.key === key);
-    expect(field(0, 'l2').typoHint).toEqual({ word: 'AHUN', suggestion: 'TAHUN' });
+    expect(field(0, 'l2').typoHint).toMatchObject({ word: 'AHUN', suggestion: 'TAHUN' });
     expect(field(0, 'l2').extraLine).toBe(false);
     expect(field(1, 'l3').extraLine).toBe(true);
     expect(buildCategoryCartItems(st, 'UMUM').error).toMatch(/AHUN.*TAHUN/);

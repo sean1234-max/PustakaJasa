@@ -97,7 +97,7 @@ export function buildCategoryCartItems(st, catKey) {
     // person's name) never trips this — only fixing the actual typo clears it.
     const typoLine = blk.lines.find((line) => line.typoHint) || (blk.rows || []).find((row) => row.typoHint);
     if (typoLine) {
-      return { engaged, error: `Possible typo in ${blockLabel}: "${typoLine.typoHint.word}" — did you mean "${typoLine.typoHint.suggestion}"? Fix it before adding to cart.` };
+      return { engaged, error: `Possible typo in ${blockLabel}: "${typoLine.typoHint.word}" — or "${typoLine.typoHint.suggestion}"? Pick the right one under the word before adding to cart.` };
     }
     if (!hasQty) {
       return { engaged, error: `Please enter a quantity for ${blockLabel} before adding to cart.` };

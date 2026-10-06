@@ -87,19 +87,27 @@ function levenshtein(a, b) {
 // (e.g. a school name like "SUBANG" is distance 2 from "SUKAN") as false
 // positives, which is worse than missing an occasional real typo for a
 // hint that's meant to be a light nudge, not an authority.
-export function findPossibleTypo(text, dictionary = getTypoDictionary()) {
+// `okWords` — words the teacher chose to keep as typed (the block's
+// wordsOk) — are never flagged again. `clean` is the flagged word, letters only.
+export function findPossibleTypo(text, dictionary = getTypoDictionary(), okWords = []) {
   const words = String(text || '').split(/\s+/).filter(Boolean);
   const maxDistance = 1;
   for (const raw of words) {
     const word = raw.toUpperCase().replace(/[^A-Z]/g, '');
-    if (word.length < 3 || dictionary.includes(word)) continue;
+    if (word.length < 3 || dictionary.includes(word) || okWords.includes(word)) continue;
     let best = null;
     for (const known of dictionary) {
       if (Math.abs(known.length - word.length) > maxDistance) continue;
       const dist = levenshtein(word, known);
       if (dist > 0 && dist <= maxDistance && (!best || dist < best.dist)) best = { dist, known };
     }
-    if (best) return { word: raw, suggestion: best.known };
+    if (best) return { word: raw, clean: word, suggestion: best.known };
   }
   return null;
+}
+
+// Every whole-word copy of `word` (letters only, any case) in `text` becomes
+// `replacement` — "ADAB GEMILANG" → "ARAB GEMILANG", never touching "ADABI".
+export function replaceWord(text, word, replacement) {
+  return String(text ?? '').replace(new RegExp(`(?<![A-Z])${word}(?![A-Z])`, 'gi'), replacement);
 }
