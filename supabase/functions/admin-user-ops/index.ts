@@ -5,7 +5,9 @@
 // reach the browser (it bypasses RLS entirely), so this function is the
 // sole place it's used — and only after re-verifying, server-side, that
 // the caller is actually an admin. The client's own claim of being an
-// admin is never trusted.
+// admin is never trusted. The production manager (profiles.is_production_
+// manager, 0080) may also call it — for one thing only: creating another
+// production account.
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
@@ -49,10 +51,13 @@ Deno.serve(async (req) => {
 
   const { data: callerProfile, error: profileError } = await adminClient
     .from('profiles')
-    .select('role')
+    .select('role, status, is_production_manager')
     .eq('id', user.id)
     .single();
-  if (profileError || callerProfile?.role !== 'admin') {
+  const isAdmin = !profileError && callerProfile?.role === 'admin';
+  const isProductionManager = !profileError && callerProfile?.role === 'production'
+    && callerProfile?.is_production_manager === true && callerProfile?.status === 'active';
+  if (!isAdmin && !isProductionManager) {
     return jsonResponse({ error: 'Only admins can do this.' }, 403);
   }
 
@@ -61,6 +66,9 @@ Deno.serve(async (req) => {
     body = await req.json();
   } catch {
     return jsonResponse({ error: 'Invalid request body.' }, 400);
+  }
+  if (!isAdmin && !(body.action === 'create' && body.role === 'production')) {
+    return jsonResponse({ error: 'The production manager can only create production accounts.' }, 403);
   }
 
   if (body.action === 'create') {

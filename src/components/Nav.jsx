@@ -29,6 +29,9 @@ export default function Nav() {
         <span className="nav-brand">Production Portal</span>
         <Link to="/production/dashboard" aria-current={ordersActive ? 'page' : undefined}>Orders</Link>
         <Link to="/production/catalog" aria-current={pathname === '/production/catalog' ? 'page' : undefined}>Catalog</Link>
+        {state.isProductionManager && (
+          <Link to="/production/team" aria-current={pathname === '/production/team' ? 'page' : undefined}>Team</Link>
+        )}
         <button type="button" className="nav-logout" onClick={handleLogout}>Log Out</button>
       </nav>
     );

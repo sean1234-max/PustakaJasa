@@ -56,8 +56,13 @@ const SOURCE_SHEET_TO_CATEGORY = {
   'KEHADIRAN PENUH': 'KEHADIRAN',
   TOKOH: 'TOKOH_SHEET',
   SELEMPANG: 'SELEMPANG',
+  // The general sheet: ORDER LAIN-LAIN since 2026-10-06 (was UMUM (万能)).
+  'ORDER LAIN-LAIN': 'UMUM',
   'UMUM (万能)': 'UMUM',
 };
+
+// The template's own general sheet, under its current and older names.
+const UMUM_SHEET_NAMES = ['ORDER LAIN-LAIN', 'UMUM (万能)', 'UMUM', '万能'];
 
 function normalizeTahun(raw) {
   const s = String(raw || '').trim().toUpperCase();
@@ -1977,7 +1982,8 @@ export function parseFormAnugerahExcel(arrayBuffer) {
       || upper === 'SENARAI PLAK') return;
     const ws = wb.Sheets[name];
 
-    // UMUM (万能) — the template's own sheet lands on the UMUM tab; any
+    // ORDER LAIN-LAIN (formerly UMUM (万能) — older files still read) — the
+    // template's own sheet lands on the UMUM tab; any
     // other sheet with its shape (a teacher's copy for a second event,
     // whatever it's renamed to) gets its own tab named after the sheet. An
     // untouched template (no KUANTITI) is skipped silently; a filled one we
@@ -1985,12 +1991,12 @@ export function parseFormAnugerahExcel(arrayBuffer) {
     const umumLike = parseUmumSheet(ws);
     if (umumLike) {
       umumLike.sourceSheet = name;
-      if (!['UMUM (万能)', 'UMUM', '万能'].includes(upper)) umumLike.dynamicCategoryKey = makeDynamicCategoryKey('UMUM', name);
-      else umumLike.sourceSheet = 'UMUM (万能)';
+      if (!UMUM_SHEET_NAMES.includes(upper)) umumLike.dynamicCategoryKey = makeDynamicCategoryKey('UMUM', name);
+      else umumLike.sourceSheet = 'ORDER LAIN-LAIN';
       allSections.push(umumLike);
       return;
     }
-    if (upper.includes('万能') || upper.startsWith('UMUM')) {
+    if (upper.includes('万能') || upper.startsWith('UMUM') || upper.startsWith('ORDER LAIN')) {
       if (umumHasOrders(ws)) unrecognizedSheets.push(name);
       return;
     }

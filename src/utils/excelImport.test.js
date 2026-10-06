@@ -470,8 +470,8 @@ describe('UMUM (万能) — import → cart → CSV', () => {
     const H = 'SK TAMAN SEGAR\nKARNIVAL KOKURIKULUM 2026';
     const order = 'event_header|event_line_1|position|event_line_2';
     expect(rows).toEqual([
-      ...Array(3).fill([H, '', 'JOHAN TAHUN 4', 'PENGAKAP', '', 'PKC 263', 'UMUM (万能)', order, '']),
-      ...Array(2).fill([H, '', 'NAIB JOHAN', 'KADET POLIS', '', 'PKC 263', 'UMUM (万能)', order, '']),
+      ...Array(3).fill([H, '', 'JOHAN TAHUN 4', 'PENGAKAP', '', 'PKC 263', 'ORDER LAIN-LAIN', order, '']),
+      ...Array(2).fill([H, '', 'NAIB JOHAN', 'KADET POLIS', '', 'PKC 263', 'ORDER LAIN-LAIN', order, '']),
     ]);
   });
 
@@ -480,7 +480,7 @@ describe('UMUM (万能) — import → cart → CSV', () => {
     const st = toDraft('UMUM', section);
     const res = buildCategoryCartItems(st, 'UMUM');
     const { rows } = buildCsvRows({ schoolLanguage: 'SK', items: res.items }, 'UMUM', res.items);
-    expect(rows).toEqual([['SK TAMAN SEGAR\nKARNIVAL KOKURIKULUM 2026', '', 'JOHAN TAHUN 4', '', '', 'PKC 263', 'UMUM (万能)', 'event_header|event_line_1|position|event_line_2', '']]);
+    expect(rows).toEqual([['SK TAMAN SEGAR\nKARNIVAL KOKURIKULUM 2026', '', 'JOHAN TAHUN 4', '', '', 'PKC 263', 'ORDER LAIN-LAIN', 'event_header|event_line_1|position|event_line_2', '']]);
   });
 
   it('a keyword position starts ticked red; unticking it keeps it the position but prints black', () => {
@@ -543,6 +543,17 @@ describe('UMUM (万能) — import → cart → CSV', () => {
     });
     expect(parsed.klasMatrix?.sections || []).toEqual([]);
     expect(parsed.unrecognizedSheets).toEqual([]);
+  });
+
+  it('the new sheet name ORDER LAIN-LAIN lands on the same tab; a copy of it gets its own', () => {
+    const parsed = parse({
+      'ORDER LAIN-LAIN': umum({ rows: [[null, null, null, null, 1, 'PKC 263']] }),
+      'ORDER LAIN-LAIN (2)': umum({ rows: [[null, null, null, null, 2, 'PKC 263']] }),
+    });
+    const dynKey = makeDynamicCategoryKey('UMUM', 'ORDER LAIN-LAIN (2)');
+    expect(Object.keys(parsed.categorized).sort()).toEqual([dynKey, 'UMUM'].sort());
+    expect(parsed.categorized.UMUM[0].umumRows[0].qty).toBe(1);
+    expect(resolveCategory('UMUM').label).toBe('ORDER LAIN-LAIN');
   });
 
   it('a renamed copy of the sheet (second event) is its own tab', () => {

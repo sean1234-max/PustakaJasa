@@ -478,7 +478,7 @@ export const CATEGORIES = [
     // ①–④ changes, KUANTITI and Jenis Plak (plakPerRow). Which line lands
     // on which plaque field: utils/umumLines.js. A renamed copy of the sheet
     // (a second event) becomes its own DYN::UMUM::<sheet> tab.
-    key: 'UMUM', label: 'UMUM (万能)', mode: 'list', blocksCount: 1, active: true,
+    key: 'UMUM', label: 'ORDER LAIN-LAIN', mode: 'list', blocksCount: 1, active: true,
     // The sheet's NO. column is only a row count — nothing engraves it.
     hideDescColumn: true,
     hideQtyLabelSuffix: true,

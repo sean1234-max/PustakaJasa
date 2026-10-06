@@ -66,7 +66,7 @@ const catalogAnnouncements = {
 function CatalogRow({
   node, depth, parentId, path, canReorder, onAddChild, onRemove, onRename, ordersUsingPath, onPriceChange, onStockChange, onToggleHidden,
   onLinkStockGroup, onUnlinkStockGroup, existingGroupKeys,
-  collapsedIds, onToggleCollapsed, dragActive, highlightedId,
+  collapsedIds, onToggleCollapsed, dragActive, highlightedId, readOnly,
 }) {
   const fullPath = [...path, node.code].join(' / ');
   const [addingChild, setAddingChild] = useState(false);
@@ -227,6 +227,7 @@ function CatalogRow({
           onChange={(e) => setCodeDraft(e.target.value)}
           onBlur={commitCode}
           onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
+          disabled={readOnly}
         />
         <input
           className="input catalog-admin-price"
@@ -235,6 +236,7 @@ function CatalogRow({
           value={priceDraft}
           onChange={(e) => setPriceDraft(e.target.value)}
           onBlur={commitPrice}
+          disabled={readOnly}
         />
         <input
           className="input catalog-admin-price"
@@ -246,6 +248,7 @@ function CatalogRow({
           value={stockDraft}
           onChange={(e) => setStockDraft(e.target.value)}
           onBlur={commitStock}
+          disabled={readOnly}
         />
         <span
           className="catalog-admin-balance"
@@ -263,18 +266,19 @@ function CatalogRow({
             value={groupDraft}
             onChange={(e) => setGroupDraft(e.target.value)}
             onBlur={commitStockGroup}
+            disabled={readOnly}
           />
           {node.stockGroupKey && node.stockGroupSize > 1 && (
             <div className="hint-text" style={{ fontSize: 11, marginTop: 2 }}>🔗 shared with {node.stockGroupSize - 1} other code(s)</div>
           )}
         </div>
-        <div className="catalog-admin-actions">
+        <div className="catalog-admin-actions" style={readOnly ? { visibility: 'hidden' } : undefined} aria-hidden={readOnly || undefined}>
           <button
             type="button"
             {...attributes}
             {...listeners}
             className="btn btn-ghost btn-icon"
-            disabled={!canReorder}
+            disabled={!canReorder || readOnly}
             aria-label={`Reorder ${node.code}`}
             style={{ cursor: canReorder ? 'grab' : 'not-allowed', touchAction: 'none' }}
           >
@@ -321,6 +325,7 @@ function CatalogRow({
               onToggleCollapsed={onToggleCollapsed}
               dragActive={dragActive}
               highlightedId={highlightedId}
+              readOnly={readOnly}
             />
           ))}
         </SortableContext>
@@ -370,6 +375,8 @@ export default function ProductionCatalog() {
     state, addCatalogNode, removeCatalogNode, updateCatalogNodePrice, renameCatalogNode, updateCatalogNodeStock, setCatalogNodeHidden, reorderCatalogSiblings,
     linkCatalogNodeStockGroup, unlinkCatalogNodeStockGroup,
   } = useAppState();
+  // Only the production manager changes the catalog (0080); the rest view it.
+  const readOnly = !state.isProductionManager;
   const [newTopCode, setNewTopCode] = useState('');
   const [newTopPrice, setNewTopPrice] = useState('');
   // Seeded lazily (once, on first non-empty load) rather than derived fresh
@@ -500,11 +507,15 @@ export default function ProductionCatalog() {
           Type the same Stock Group name on several codes to make them share one stock count instead of tracking separately — e.g. the same physical base sold under different colors or designs. A first-time name asks for a starting number; an existing name just joins it.
         </p>
 
-        <div className="catalog-admin-row catalog-admin-add-row" style={{ marginBottom: 'var(--space-4)' }}>
-          <input className="input" placeholder="New top-level code" value={newTopCode} onChange={(e) => setNewTopCode(e.target.value)} />
-          <input className="input catalog-admin-price" type="number" step="0.01" placeholder="Price" value={newTopPrice} onChange={(e) => setNewTopPrice(e.target.value)} />
-          <button type="button" className="btn btn-primary" onClick={addTopLevel}>+ Add Code</button>
-        </div>
+        {readOnly ? (
+          <p className="hint-text" style={{ fontWeight: 600 }}>View only — only the Production manager can change the catalog.</p>
+        ) : (
+          <div className="catalog-admin-row catalog-admin-add-row" style={{ marginBottom: 'var(--space-4)' }}>
+            <input className="input" placeholder="New top-level code" value={newTopCode} onChange={(e) => setNewTopCode(e.target.value)} />
+            <input className="input catalog-admin-price" type="number" step="0.01" placeholder="Price" value={newTopPrice} onChange={(e) => setNewTopPrice(e.target.value)} />
+            <button type="button" className="btn btn-primary" onClick={addTopLevel}>+ Add Code</button>
+          </div>
+        )}
 
         {/* Autocomplete only — typing a name NOT in this list is exactly how
             a brand new Stock Group gets created, so this must never
@@ -575,6 +586,7 @@ export default function ProductionCatalog() {
                     onToggleCollapsed={toggleCollapsed}
                     dragActive={draggingId !== null}
                     highlightedId={highlightedId}
+                    readOnly={readOnly}
                   />
                 ))}
               </SortableContext>
