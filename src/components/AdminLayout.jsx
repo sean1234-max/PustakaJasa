@@ -16,6 +16,7 @@ import { useAppState } from '../state/useAppState';
 const NAV_ITEMS = [
   { to: '/admin/dashboard', icon: 'dashboard', label: 'Dashboard', match: (p) => p === '/admin/dashboard' },
   { to: '/admin/orders', icon: 'shopping_cart', label: 'Orders', match: (p) => p.startsWith('/admin/orders') },
+  { to: '/admin/urgent-commission', icon: 'percent', label: 'Urgent Commission', match: (p) => p === '/admin/urgent-commission' },
   { to: '/admin/schools', icon: 'school', label: 'Schools', match: (p) => p.startsWith('/admin/schools') },
   { to: '/admin/salesmen', icon: 'badge', label: 'Salesmen', match: (p) => p.startsWith('/admin/salesmen') },
   { to: '/admin/store-admins', icon: 'storefront', label: 'Store Admin', match: (p) => p.startsWith('/admin/store-admins') },

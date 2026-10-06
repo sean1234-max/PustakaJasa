@@ -1635,6 +1635,17 @@ export function AppStateProvider({ children }) {
   // Only reachable while status is 'Reviewing Order' and not yet reviewed (Dashboard.jsx's
   // canAmend gate), so every item is still batch 0 — nothing here needs to
   // handle an already-approved Tambahan round.
+  // An urgent order already in the Google Sheet whose total just changed
+  // (amend / add-on / Production edit): refresh its row so the amount and
+  // 2.5% commission there stay current. Fire-and-forget, like the first sync.
+  const resyncUrgentSheet = useCallback((order) => {
+    if (!order?.urgent || !order.urgentSheetSyncedAt) return;
+    syncUrgentOrderToSheet({ orderId: order.id }).catch((err) => {
+      console.error('Urgent-order Sheet refresh failed:', err);
+      patch((latest) => ({ sheetSyncErrors: { ...latest.sheetSyncErrors, [order.id]: err.message } }));
+    });
+  }, [patch]);
+
   const updateAmend = useCallback(async () => {
     const st = stateRef.current;
     const order = st.orders.find((o) => o.id === st.amendOrderId);
@@ -1694,9 +1705,10 @@ export function AppStateProvider({ children }) {
     patch((latest) => ({
       orders: latest.orders.map((o) => (o.id === st.amendOrderId ? { ...o, items: newItems, totalAmount: amendedTotal } : o)),
     }));
+    resyncUrgentSheet(st.orders.find((o) => o.id === st.amendOrderId));
     flashToast('updateToast', 'Update successful.');
     return { ok: true };
-  }, [patch, flashToast]);
+  }, [patch, flashToast, resyncUrgentSheet]);
 
   const openAddOn = useCallback((ord) => {
     patch((st) => ({
@@ -2129,9 +2141,10 @@ export function AppStateProvider({ children }) {
     patch((latest) => ({
       orders: latest.orders.map((o) => (o.id === orderId ? { ...o, ...fields } : o)),
     }));
+    resyncUrgentSheet(order);
     flashToast('updateToast', 'Add-on approved and added to the order.');
     return { ok: true };
-  }, [patch, flashToast]);
+  }, [patch, flashToast, resyncUrgentSheet]);
 
   // Sales approval: `updatedItems` carries each item's (possibly
   // Sales-negotiated) unitPrice and recalculated harga. priceAdjusted is
@@ -2197,19 +2210,10 @@ export function AppStateProvider({ children }) {
   // append and the persisted "still pending" flag the retry UI on
   // StoreAdminOrderDetail.jsx reads — sheetSyncErrors is only the
   // human-readable message for that UI, not the source of truth.
-  const attemptUrgentSheetSync = useCallback(async (order, fields) => {
-    const payload = {
-      orderId: order.id,
-      invoiceId: fields.invoiceId ?? order.invoiceId,
-      amount: fields.totalAmount ?? order.totalAmount,
-      salesman: order.sales,
-      school: order.sekolah,
-      shipmentDate: fields.shipmentDate ?? order.shipmentDate,
-      functionDate: fields.functionDate ?? order.functionDate,
-      datePlaced: order.datePlaced,
-    };
+  const attemptUrgentSheetSync = useCallback(async (order) => {
+    // The function reads everything else from the saved order itself.
     try {
-      await syncUrgentOrderToSheet(payload);
+      await syncUrgentOrderToSheet({ orderId: order.id });
       const syncedAt = new Date().toISOString();
       await updateOrder(order.id, { urgentSheetSyncedAt: syncedAt });
       patch((latest) => ({
@@ -2224,7 +2228,7 @@ export function AppStateProvider({ children }) {
 
   const retryUrgentSheetSync = useCallback((orderId) => {
     const order = stateRef.current.orders.find((o) => o.id === orderId);
-    if (order) attemptUrgentSheetSync(order, {});
+    if (order) attemptUrgentSheetSync(order);
   }, [attemptUrgentSheetSync]);
 
   // Production: records the invoice ID billing hands over on paper once an
@@ -2271,7 +2275,7 @@ export function AppStateProvider({ children }) {
     // Sheets sync. Fire-and-forget: never blocks/undoes the invoice save
     // above, which already succeeded.
     if (order.urgent && !order.urgentSheetSyncedAt) {
-      attemptUrgentSheetSync(order, { invoiceId: normalized });
+      attemptUrgentSheetSync(order);
     }
     return { ok: true };
   }, [patch, flashToast, attemptUrgentSheetSync]);
@@ -2505,7 +2509,7 @@ export function AppStateProvider({ children }) {
     // the other trigger point for the one-time Sheets sync (setInvoiceId
     // above is the other). Fire-and-forget, same reasoning as there.
     if ((salesApproved ? order.urgent : urgent) && !order.urgentSheetSyncedAt) {
-      attemptUrgentSheetSync({ ...order, ...fields }, fields);
+      attemptUrgentSheetSync({ ...order, ...fields });
     }
     return { ok: true };
   }, [patch, flashToast, attemptUrgentSheetSync]);

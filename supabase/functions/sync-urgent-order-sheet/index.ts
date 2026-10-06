@@ -1,25 +1,18 @@
-// One-time write of an urgent order's data to an external Google Sheet —
-// fired from src/state/AppState.jsx (attemptUrgentSheetSync) right after
-// Store Admin saves the Invoice Number for an order flagged `urgent`
-// (see src/utils/urgentOrder.js). Never called again for the same order
-// afterward (urgent_sheet_synced_at is the idempotency guard on the
-// caller's side); management uses the Sheet to total urgent orders per
+// Writes an urgent order's row to an external Google Sheet (one row per
+// order, see below) — first when Store Admin saves the Invoice Number
+// (src/state/AppState.jsx's attemptUrgentSheetSync), then again whenever its
+// total changes afterwards (add-on approved, amend), so the Sheet's
+// amount and 2.5% commission stay current. Management totals it per
 // salesman at month-end.
 //
-// Same house style as admin-user-ops/index.ts: two Supabase clients (one
-// scoped to the caller's own session just to identify them, one
-// service-role to re-verify their real role server-side — the client's
-// own claim is never trusted), and — matching extract-order-file/
-// check-engraving-text — a raw `fetch` for the third-party API rather
-// than an SDK, since Deno's Web Crypto (`crypto.subtle`) already covers
-// the RS256 JWT signing a Google service-account flow needs, with no
-// npm:googleapis dependency.
+// Only the order ID is taken from the request; every value is read from
+// the order as the caller (RLS). The Google call is a raw `fetch` with the
+// service-account JWT signed by Deno's Web Crypto — no googleapis dependency.
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
-const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
 // Google service-account credentials for the Sheets API — set via
 // `supabase secrets set`. The private key is a PEM; Deno env vars can't
@@ -40,6 +33,22 @@ function jsonResponse(body: unknown, status = 200) {
     status,
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   });
+}
+
+// Same rate as src/utils/urgentOrder.js's URGENT_COMMISSION_RATE (an Edge
+// Function can't import from src/) — change both together.
+const URGENT_COMMISSION_RATE = 0.025;
+
+// Dates arrive as stored ISO instants (a Malaysian midnight, e.g.
+// "2026-09-21T16:00:00.000Z" = 22 Sep); the Sheet gets "22 Sep 2026".
+// Anything that isn't a date (e.g. "TBD") is written as-is.
+function malaysiaDay(value: string): string {
+  const d = new Date(value);
+  if (!value || Number.isNaN(d.getTime())) return value;
+  return d.toLocaleDateString('en-GB', { timeZone: 'Asia/Kuala_Lumpur', day: '2-digit', month: 'short', year: 'numeric' });
+}
+function malaysiaDateTime(d: Date): string {
+  return d.toLocaleString('en-GB', { timeZone: 'Asia/Kuala_Lumpur', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
 function base64url(bytes: Uint8Array): string {
@@ -117,19 +126,9 @@ Deno.serve(async (req) => {
   const callerClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     global: { headers: { Authorization: authHeader } },
   });
-  const adminClient = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
   const { data: { user }, error: userError } = await callerClient.auth.getUser();
   if (userError || !user) return jsonResponse({ error: 'Not authenticated.' }, 401);
-
-  const { data: callerProfile, error: profileError } = await adminClient
-    .from('profiles')
-    .select('role')
-    .eq('id', user.id)
-    .single();
-  if (profileError || !['store_admin', 'admin'].includes(callerProfile?.role ?? '')) {
-    return jsonResponse({ error: 'Only Store Admin or Admin can sync an urgent order to the sheet.' }, 403);
-  }
 
   let body: Record<string, unknown>;
   try {
@@ -137,16 +136,26 @@ Deno.serve(async (req) => {
   } catch {
     return jsonResponse({ error: 'Invalid request body.' }, 400);
   }
-
   const orderId = typeof body.orderId === 'string' ? body.orderId : '';
   if (!orderId) return jsonResponse({ error: 'Order ID is required.' }, 400);
-  const invoiceId = typeof body.invoiceId === 'string' ? body.invoiceId : '';
-  const amount = typeof body.amount === 'number' ? body.amount : Number(body.amount) || 0;
-  const salesman = typeof body.salesman === 'string' ? body.salesman : '';
-  const school = typeof body.school === 'string' ? body.school : '';
-  const shipmentDate = typeof body.shipmentDate === 'string' ? body.shipmentDate : '';
-  const functionDate = typeof body.functionDate === 'string' ? body.functionDate : '';
-  const datePlaced = typeof body.datePlaced === 'string' ? body.datePlaced : '';
+
+  // Everything written comes from the order itself, read as the CALLER (RLS):
+  // whoever can see the order may refresh its row, and nobody can put
+  // figures in the Sheet that the order doesn't hold.
+  const { data: order, error: orderError } = await callerClient
+    .from('orders')
+    .select('id, invoice_id, total_amount, sales, sekolah, shipment_date, function_date, date_placed, urgent')
+    .eq('id', orderId)
+    .maybeSingle();
+  if (orderError || !order) return jsonResponse({ error: 'Order not found.' }, 404);
+  if (!order.urgent) return jsonResponse({ error: 'This order is not urgent.' }, 400);
+  const amount = Number(order.total_amount) || 0;
+  const commission = Math.round(amount * URGENT_COMMISSION_RATE * 100) / 100;
+  const row = [
+    order.id, order.invoice_id || '', amount, order.sales || '', order.sekolah || '',
+    malaysiaDay(order.shipment_date || ''), malaysiaDay(order.function_date || ''), order.date_placed || '',
+    malaysiaDateTime(new Date()), commission,
+  ];
 
   let accessToken: string;
   try {
@@ -155,21 +164,31 @@ Deno.serve(async (req) => {
     console.error('Google OAuth failed:', err);
     return jsonResponse({ error: 'Could not authenticate with Google Sheets. Please try again.' }, 502);
   }
+  const sheetsBase = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values`;
+  const headers = { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' };
 
-  const appendUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(SHEET_RANGE)}:append?valueInputOption=USER_ENTERED`;
-  const appendResp = await fetch(appendUrl, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      values: [[
-        orderId, invoiceId, amount, salesman, school,
-        shipmentDate, functionDate, datePlaced, new Date().toISOString(),
-      ]],
-    }),
-  });
-  if (!appendResp.ok) {
-    const errBody = await appendResp.text();
-    console.error('Google Sheets append failed:', appendResp.status, errBody);
+  // One row per order: its row is updated in place once it exists (an
+  // add-on or amend changes the total and commission),
+  // otherwise appended. The last row carrying this Order ID wins.
+  const tab = SHEET_RANGE.split('!')[0];
+  const idsResp = await fetch(`${sheetsBase}/${encodeURIComponent(`${tab}!A:A`)}`, { headers });
+  if (!idsResp.ok) {
+    console.error('Google Sheets read failed:', idsResp.status, await idsResp.text());
+    return jsonResponse({ error: 'Could not read the tracking sheet. Please try again.' }, 502);
+  }
+  const ids: string[][] = (await idsResp.json()).values || [];
+  let rowNumber = 0;
+  ids.forEach((r, i) => { if (r[0] === order.id) rowNumber = i + 1; });
+
+  const writeResp = rowNumber
+    ? await fetch(`${sheetsBase}/${encodeURIComponent(`${tab}!A${rowNumber}:J${rowNumber}`)}?valueInputOption=USER_ENTERED`, {
+      method: 'PUT', headers, body: JSON.stringify({ values: [row] }),
+    })
+    : await fetch(`${sheetsBase}/${encodeURIComponent(`${tab}!A:J`)}:append?valueInputOption=USER_ENTERED`, {
+      method: 'POST', headers, body: JSON.stringify({ values: [row] }),
+    });
+  if (!writeResp.ok) {
+    console.error('Google Sheets write failed:', writeResp.status, await writeResp.text());
     return jsonResponse({ error: 'Could not write to the tracking sheet. Please try again.' }, 502);
   }
 

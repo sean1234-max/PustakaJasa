@@ -1,9 +1,9 @@
 import { supabase } from './supabaseClient';
 
-// Calls the sync-urgent-order-sheet Edge Function — the one-time write of
-// an urgent order's data to the external Google Sheet, fired right after
-// Store Admin saves its Invoice Number (see attemptUrgentSheetSync in
-// src/state/AppState.jsx). Same error-surfacing convention as
+// Calls the sync-urgent-order-sheet Edge Function — writes (or refreshes)
+// an urgent order's row in the external Google Sheet: first when Store
+// Admin saves its Invoice Number, again whenever its total changes (see
+// attemptUrgentSheetSync / resyncUrgentSheet in src/state/AppState.jsx). Same error-surfacing convention as
 // invokeAdminUserOps (src/lib/adminApi.js): supabase-js hands back a
 // generic FunctionsHttpError on any non-2xx response, with the function's
 // actual { error: "..." } body reachable via error.context.json().

@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { countWorkingDaysBetween, isUrgentShipment, prioritizeUrgentOrders } from './urgentOrder';
+import {
+  countWorkingDaysBetween, isUrgentShipment, prioritizeUrgentOrders, urgentCommission, summarizeUrgentCommission,
+} from './urgentOrder';
 
 // 2026-09-21 is a Monday.
 const MON = new Date(2026, 8, 21);
@@ -85,5 +87,27 @@ describe('isUrgentShipment', () => {
   it('returns false when either date is missing', () => {
     expect(isUrgentShipment(null, MON)).toBe(false);
     expect(isUrgentShipment(MON, null)).toBe(false);
+  });
+});
+describe('urgent commission', () => {
+  it('is 2.5% of the order total, to the sen', () => {
+    expect(urgentCommission(4035)).toBe(100.88);
+    expect(urgentCommission('1000')).toBe(25);
+    expect(urgentCommission(null)).toBe(0);
+  });
+
+  it('totals urgent, not-cancelled orders per month and salesman', () => {
+    const { rows, months } = summarizeUrgentCommission([
+      { id: 'A', urgent: true, status: 'Shipped', sales: 'fida', totalAmount: 1000, datePlaced: '06 Oct 2026' },
+      { id: 'B', urgent: true, status: 'In Production', sales: 'fida', totalAmount: 2000, datePlaced: '01 Oct 2026' },
+      { id: 'C', urgent: true, status: 'Cancelled', sales: 'fida', totalAmount: 9999, datePlaced: '02 Oct 2026' },
+      { id: 'D', urgent: false, status: 'Shipped', sales: 'fida', totalAmount: 9999, datePlaced: '02 Oct 2026' },
+      { id: 'E', urgent: true, status: 'Shipped', sales: 'joyce', totalAmount: 400, datePlaced: '30 Sep 2026' },
+    ]);
+    expect(rows.map((r) => r.order.id)).toEqual(['A', 'B', 'E']);
+    expect(months).toEqual([
+      { month: 'Oct 2026', commission: 75, salesmen: [{ name: 'fida', count: 2, amount: 3000, commission: 75 }] },
+      { month: 'Sep 2026', commission: 10, salesmen: [{ name: 'joyce', count: 1, amount: 400, commission: 10 }] },
+    ]);
   });
 });

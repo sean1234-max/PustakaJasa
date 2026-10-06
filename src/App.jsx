@@ -35,6 +35,7 @@ import AdminStoreAdmins from './pages/AdminStoreAdmins';
 import AdminStoreAdminDetail from './pages/AdminStoreAdminDetail';
 import AdminOrders from './pages/AdminOrders';
 import AdminOrderDetail from './pages/AdminOrderDetail';
+import AdminUrgentCommission from './pages/AdminUrgentCommission';
 import AdminCatalog from './pages/AdminCatalog';
 import AdminAuditLog from './pages/AdminAuditLog';
 import AdminAiUsage from './pages/AdminAiUsage';
@@ -87,6 +88,7 @@ function AppRoutes() {
       <Route path="/admin/store-admins/:id" element={<RequireRole role="admin"><AdminStoreAdminDetail /></RequireRole>} />
       <Route path="/admin/orders" element={<RequireRole role="admin"><AdminOrders /></RequireRole>} />
       <Route path="/admin/orders/:id" element={<RequireRole role="admin"><AdminOrderDetail /></RequireRole>} />
+      <Route path="/admin/urgent-commission" element={<RequireRole role="admin"><AdminUrgentCommission /></RequireRole>} />
       <Route path="/admin/catalog" element={<RequireRole role="admin"><AdminCatalog /></RequireRole>} />
       <Route path="/admin/audit-log" element={<RequireRole role="admin"><AdminAuditLog /></RequireRole>} />
       <Route path="/admin/ai-usage" element={<RequireRole role="admin"><AdminAiUsage /></RequireRole>} />
