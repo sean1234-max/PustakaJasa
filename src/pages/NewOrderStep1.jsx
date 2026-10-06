@@ -6,9 +6,65 @@ import ImageDrop from '../components/ImageDrop';
 import { useAppState } from '../state/useAppState';
 import { formatDate, addDays } from '../data/catalog';
 import { uploadLogo } from '../lib/storageApi';
+import { searchSchools } from '../lib/ordersApi';
+
+const SCHOOL_SEARCH_DELAY_MS = 250;
+
+// Salesman New Order: the school must be one already in the system, picked
+// from what matches the typed text (search_schools, 0081).
+function SchoolSearch({ value, picked, onPick }) {
+  const [text, setText] = useState(value);
+  const [matches, setMatches] = useState([]);
+  const [open, setOpen] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    const q = text.trim();
+    if (!open || !q) { setMatches([]); return undefined; }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      searchSchools(q)
+        .then((rows) => { if (!cancelled) { setMatches(rows); setError(''); } })
+        .catch((err) => {
+          console.error('School search failed:', err);
+          if (!cancelled) setError('Could not search schools. Check your connection and try again.');
+        });
+    }, SCHOOL_SEARCH_DELAY_MS);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [text, open]);
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <input
+        className="input" id="sekolah" placeholder="Type to search, e.g. SK Sungai" autoComplete="off"
+        value={text}
+        onChange={(e) => { setText(e.target.value); setOpen(true); if (picked) onPick(null); }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+      />
+      {open && text.trim() && (
+        <div className="card elev-md" style={{ position: 'absolute', zIndex: 20, left: 0, right: 0, marginTop: 4, padding: 0, maxHeight: 260, overflowY: 'auto' }}>
+          {error && <p className="hint-text" style={{ margin: 'var(--space-2) var(--space-3)', color: '#b3261e' }}>{error}</p>}
+          {!error && matches.length === 0 && <p className="hint-text" style={{ margin: 'var(--space-2) var(--space-3)' }}>No school found.</p>}
+          {matches.map((m) => (
+            <button
+              key={m.id} type="button" className="btn btn-ghost"
+              style={{ display: 'block', width: '100%', textAlign: 'left', borderRadius: 0 }}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => { setText(m.sekolah); setOpen(false); onPick(m); }}
+            >
+              {m.sekolah}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function NewOrderStep1() {
-  const { state, patch, today, refreshAssignedSalesman } = useAppState();
+  const { state, patch, today, refreshAssignedSalesman, pickActingSchool } = useAppState();
+  const isSalesman = state.role === 'salesman';
   const navigate = useNavigate();
   const dueMinDate = addDays(today, 3);
   // Local, not AppState — this only matters while the teacher is on this
@@ -50,6 +106,10 @@ export default function NewOrderStep1() {
   useEffect(() => { refreshAssignedSalesman(); }, [refreshAssignedSalesman]);
 
   const handleNext = () => {
+    if (isSalesman && !state.actingSchoolId) {
+      patch({ stepError: 'Please pick the school from the list.' });
+      return;
+    }
     if (!state.sekolah.trim()) {
       patch({ stepError: 'Please enter the school name.' });
       return;
@@ -132,7 +192,9 @@ export default function NewOrderStep1() {
         <div className="form-grid-2">
           <div className="field">
             <label htmlFor="sekolah">Sekolah (School Name)</label>
-            <input className="input" id="sekolah" placeholder="School name" value={state.sekolah} onChange={(e) => patch({ sekolah: e.target.value })} />
+            {isSalesman
+              ? <SchoolSearch value={state.sekolah} picked={!!state.actingSchoolId} onPick={pickActingSchool} />
+              : <input className="input" id="sekolah" placeholder="School name" value={state.sekolah} onChange={(e) => patch({ sekolah: e.target.value })} />}
           </div>
           <div className="field">
             <label htmlFor="sales">Sales</label>

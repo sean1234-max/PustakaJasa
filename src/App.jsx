@@ -2,6 +2,9 @@ import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AppStateProvider } from './state/AppState';
 import { useAppState } from './state/useAppState';
 import RequireRole from './components/RequireRole';
+
+// A salesman can also place a New Order, on a school's behalf (0081).
+const NEW_ORDER_ROLES = ['teacher', 'salesman'];
 import Login from './pages/Login';
 import NewOrderStep1 from './pages/NewOrderStep1';
 import NewOrderStep2 from './pages/NewOrderStep2';
@@ -51,10 +54,10 @@ function AppRoutes() {
       <Route path="/" element={<Navigate to="/login" replace />} />
       <Route path="/login" element={<Login />} />
 
-      <Route path="/order/step1" element={<RequireRole role="teacher"><NewOrderStep1 /></RequireRole>} />
-      <Route path="/order/step2" element={<RequireRole role="teacher"><NewOrderStep2 /></RequireRole>} />
-      <Route path="/cart" element={<RequireRole role="teacher"><Cart /></RequireRole>} />
-      <Route path="/success" element={<RequireRole role="teacher"><Success /></RequireRole>} />
+      <Route path="/order/step1" element={<RequireRole role={NEW_ORDER_ROLES}><NewOrderStep1 /></RequireRole>} />
+      <Route path="/order/step2" element={<RequireRole role={NEW_ORDER_ROLES}><NewOrderStep2 /></RequireRole>} />
+      <Route path="/cart" element={<RequireRole role={NEW_ORDER_ROLES}><Cart /></RequireRole>} />
+      <Route path="/success" element={<RequireRole role={NEW_ORDER_ROLES}><Success /></RequireRole>} />
       <Route path="/dashboard" element={<RequireRole role="teacher"><Dashboard /></RequireRole>} />
       <Route path="/orders/:id" element={<RequireRole role="teacher"><OrderDetails /></RequireRole>} />
       <Route path="/amend/:id" element={<RequireRole role="teacher"><Amend /></RequireRole>} />

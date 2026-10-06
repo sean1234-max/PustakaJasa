@@ -404,6 +404,7 @@ export default function ProductionOrderDetail() {
             <div className="form-grid-2" style={{ marginTop: 'var(--space-3)' }}>
               {order.sekolah && <div><div className="dim">Sekolah</div><div>{order.sekolah}</div></div>}
               {order.sales && <div><div className="dim">Sales</div><div>{order.sales}</div></div>}
+              {order.createdBySalesman && <div><div className="dim">Placed by</div><div>Salesman {order.snapshot?.placedBy || ''}</div></div>}
               {order.picName && <div><div className="dim">PIC Name</div><div>{order.picName}{order.phone ? ` / ${order.phone}` : ''}</div></div>}
               {order.ketuaPanitia && <div><div className="dim">Ketua Panitia</div><div>{order.ketuaPanitia}</div></div>}
               {order.terms && <div><div className="dim">Terms</div><div>{order.terms}</div></div>}

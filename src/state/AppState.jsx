@@ -234,6 +234,8 @@ function initialState() {
 
     sekolah: '',
     schoolLanguage: 'SK',
+    // Salesman New Order: the school (teacher account id) picked on Step 1.
+    actingSchoolId: null,
     sales: '',
     assignedSalesmen: [],
     assignedSalesmanLoaded: false,
@@ -523,9 +525,11 @@ export function AppStateProvider({ children }) {
   // trusting a stale value carried over from login.
   const refreshAssignedSalesman = useCallback(async () => {
     const st = stateRef.current;
-    if (st.role !== 'teacher' || !st.userAuthId) return;
+    if (!['teacher', 'salesman'].includes(st.role) || !st.userAuthId) return;
     try {
-      const salesmen = await fetchAllSalesmen();
+      // A salesman's own New Order (on a school's behalf) is always theirs.
+      const all = await fetchAllSalesmen();
+      const salesmen = st.role === 'salesman' ? all.filter((s) => s.id === st.userAuthId) : all;
       patch((latest) => {
         // Keep the teacher's already-picked salesman if it's still in the
         // (possibly changed) assigned list; auto-pick when there's only
@@ -650,7 +654,21 @@ export function AppStateProvider({ children }) {
       nextRowId: 1000, nextPlakRowId: 1000, nextColumnId: 1000, visibleBlocksByCategory: {},
 
       cart: [], cartToast: '',
+      // A salesman picks the school fresh for every New Order.
+      ...(st.role === 'salesman' ? { sekolah: '', actingSchoolId: null } : {}),
     }));
+  }, [patch]);
+
+  // Salesman New Order, Step 1: the school this order is for. Its language
+  // decides the default subject lists, so the blank draft is rebuilt for it.
+  const pickActingSchool = useCallback((school) => {
+    patch((st) => {
+      if (!school) return { actingSchoolId: null, sekolah: '' };
+      return {
+        actingSchoolId: school.id, sekolah: school.sekolah, schoolLanguage: school.schoolLanguage, stepError: '',
+        ...(school.schoolLanguage !== st.schoolLanguage ? { rowsByBlock: buildInitialRowsByBlock(school.schoolLanguage) } : {}),
+      };
+    });
   }, [patch]);
 
   const addToCart = useCallback(() => {
@@ -1457,6 +1475,10 @@ export function AppStateProvider({ children }) {
     // assignment set — this check just avoids burning an order number (see
     // next_order_seq below) on a submission that can never succeed, and
     // gives a clearer message than a raw RLS-violation error would.
+    if (st.role === 'salesman' && !st.actingSchoolId) {
+      patch({ cartToast: 'Please pick the school on Function Details first.' });
+      return null;
+    }
     if (!selectedSalesman) {
       patch({ cartToast: st.assignedSalesmen.length === 0 ? 'Your school has not been assigned to a salesman yet. Please contact the administrator.' : 'Please select which salesman this order is for.' });
       return null;
@@ -1487,11 +1509,17 @@ export function AppStateProvider({ children }) {
       rowsByBlock: JSON.parse(JSON.stringify(st.rowsByBlock)),
       plakRows: JSON.parse(JSON.stringify(st.plakRows)),
       columnsByBlock: JSON.parse(JSON.stringify(st.columnsByBlock)),
+      // Who typed it in, by name — kept even if the order is later reassigned.
+      ...(st.role === 'salesman' ? { placedBy: selectedSalesman.name } : {}),
     };
+    // A salesman's New Order belongs to the school they picked (Step 1):
+    // that school's account owns it, the salesman is recorded as its maker.
+    const bySalesman = st.role === 'salesman';
     const newOrder = {
       id: newId, invoiceId: null, datePlaced: formatDate(malaysiaToday()), deliveryDate: 'TBD',
       totalAmount: totalAmt, status: 'Reviewing Order', priceAdjusted: false,
-      createdBy: st.userAuthId,
+      createdBy: bySalesman ? st.actingSchoolId : st.userAuthId,
+      createdBySalesman: bySalesman ? st.userAuthId : null,
       salesmanId: selectedSalesman.id,
       sekolah: st.sekolah, schoolLanguage: st.schoolLanguage, sales: selectedSalesman.name, picName: st.picName, phone: st.phone, ketuaPanitia: st.ketuaPanitia, terms: st.terms, remark: st.remark,
       ...storedDays({ shipmentDate: st.shipmentDateSelected, functionDate: st.funcSelected }),
@@ -2910,6 +2938,7 @@ export function AppStateProvider({ children }) {
     linkCatalogNodeStockGroup, unlinkCatalogNodeStockGroup,
     reorderCatalogSiblings,
     refreshAssignedSalesman,
+    pickActingSchool,
   };
 
   return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>;

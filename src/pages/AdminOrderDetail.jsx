@@ -176,6 +176,7 @@ export default function AdminOrderDetail() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
               {order.sekolah && <div><span className="text-body-sm text-on-surface-variant block mb-0.5">Sekolah</span><span className="text-body-md text-on-surface">{order.sekolah}</span></div>}
               {order.sales && <div><span className="text-body-sm text-on-surface-variant block mb-0.5">Sales</span><span className="text-body-md text-on-surface">{order.sales}</span></div>}
+              {order.createdBySalesman && <div><span className="text-body-sm text-on-surface-variant block mb-0.5">Placed by</span><span className="text-body-md text-on-surface">Salesman {order.snapshot?.placedBy || ''}</span></div>}
               {order.picName && <div><span className="text-body-sm text-on-surface-variant block mb-0.5">PIC Name</span><span className="text-body-md text-on-surface">{order.picName}{order.phone ? ` / ${order.phone}` : ''}</span></div>}
               {order.ketuaPanitia && <div><span className="text-body-sm text-on-surface-variant block mb-0.5">Ketua Panitia</span><span className="text-body-md text-on-surface">{order.ketuaPanitia}</span></div>}
               {order.terms && <div><span className="text-body-sm text-on-surface-variant block mb-0.5">Terms</span><span className="text-body-md text-on-surface">{order.terms}</span></div>}

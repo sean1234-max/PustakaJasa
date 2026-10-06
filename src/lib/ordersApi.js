@@ -47,6 +47,7 @@ function toDbOrder(order) {
     items: order.items ?? [],
     snapshot: order.snapshot ?? null,
     created_by: order.createdBy ?? null,
+    created_by_salesman: order.createdBySalesman ?? null,
     pending_addon_items: order.pendingAddonItems ?? null,
     pending_addon_status: order.pendingAddonStatus ?? null,
     pending_addon_reject_reason: order.pendingAddonRejectReason ?? null,
@@ -95,6 +96,7 @@ function fromDbOrder(row) {
     items: row.items || [],
     snapshot: row.snapshot,
     createdBy: row.created_by,
+    createdBySalesman: row.created_by_salesman || null,
     pendingAddonItems: row.pending_addon_items || null,
     pendingAddonStatus: row.pending_addon_status || null,
     pendingAddonRejectReason: row.pending_addon_reject_reason || null,
@@ -176,6 +178,14 @@ export async function updateOrder(id, patch) {
 // and submitOrder() stamps the order with whichever one they chose. The
 // RLS insert policy on `orders` is the real enforcement (still validates
 // the chosen id is a genuine salesman account server-side).
+// A salesman's New Order school picker (supabase/migrations/0081): active
+// schools whose name contains `query`, at most 20.
+export async function searchSchools(query) {
+  const { data, error } = await supabase.rpc('search_schools', { p_query: query });
+  if (error) throw error;
+  return (data || []).map((s) => ({ id: s.id, sekolah: s.sekolah, schoolLanguage: s.school_language || 'SK' }));
+}
+
 export async function fetchAllSalesmen() {
   const { data: salesmen, error: salesmenError } = await supabase
     .from('profiles')

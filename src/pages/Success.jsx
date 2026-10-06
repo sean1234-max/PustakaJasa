@@ -21,7 +21,7 @@ export default function Success() {
           You'll see the status update in My Orders as it moves through approval, production, and delivery.
         </p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-          <button type="button" className="btn btn-primary" onClick={() => navigate('/dashboard')}>Go to My Orders</button>
+          <button type="button" className="btn btn-primary" onClick={() => navigate(state.role === 'salesman' ? '/sales/dashboard' : '/dashboard')}>Go to My Orders</button>
           <button type="button" className="btn btn-ghost" onClick={() => { startNewOrder(); navigate('/order/step1'); }}>Place Another Order</button>
         </div>
       </div>
