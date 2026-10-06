@@ -117,7 +117,7 @@ export default function ProductionEditOrder() {
         <p className="hint-text" style={{ margin: '0 0 var(--space-4)' }}>
           Change anything — wording, line order, quantities, Jenis Plak — then Save. Prices use the website price list;
           the total and stock follow automatically, and the teacher, salesman and Store Admin see the new version straight away.
-          可以直接在这里改，也可以下载老师的 Excel，改好再上传。
+          Edit it here, or download the teacher’s Excel, fix it and upload it again.
         </p>
 
         <div style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap', marginBottom: 'var(--space-4)' }}>

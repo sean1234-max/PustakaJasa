@@ -255,7 +255,7 @@ export default function SalesOrderSummary() {
         <div className="screen-only">
           {awaitingReview && (
             <p className="hint-text" style={{ margin: '0 0 var(--space-3)', fontWeight: 600, color: '#8a6d00' }}>
-              Production is still reviewing this order — you can set the Shipment Date and approve it once they click Done Review. Production 还在 review，review 好了才可以 approve。
+              Production is still reviewing this order — you can set the Shipment Date and approve it once they click Done Review.
             </p>
           )}
           {reviewing && !awaitingReview && (

@@ -211,7 +211,7 @@ export default function ProductionDashboard() {
                   {/* Production uploaded a corrected copy of the teacher's
                       file (see ProductionOrderDetail's CorrectedExcelControl)
                       — flagged here so it's visible without opening the
-                      order, per-request: "不能跟着老师upload 的excel 去做checking". */}
+                      order, per Sean: don't check against the teacher's original upload. */}
                   {ord.correctedImportFilePath && (
                     <span className="status-pill" style={{ background: '#fff4ce', color: '#8a6d00' }}>Excel Updated</span>
                   )}
@@ -252,7 +252,7 @@ export default function ProductionDashboard() {
                     {!ord.reviewedAt && (
                       <ConfirmButton
                         label="Done Review" style={{ flex: 1 }}
-                        question="确定 review 好了吗？Salesman can approve it after this."
+                        question="Finished reviewing? The salesman can approve it after this."
                         onConfirm={() => markReviewDone(ord.id)}
                       />
                     )}
@@ -265,7 +265,7 @@ export default function ProductionDashboard() {
                     </button>
                     <ConfirmButton
                       label="Done Typing" style={{ flex: 1 }}
-                      question="确定打好字了吗？It moves to In Production, ready to print."
+                      question="Finished typing? It moves to In Production, ready to print."
                       onConfirm={() => markTypingDone(ord.id, ord.invoiceId)}
                     />
                   </>

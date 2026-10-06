@@ -129,8 +129,8 @@ export default function ProductionOrderDetail() {
     onLine: async (key, value) => {
       const ok = await updateReferenceOrder(order.id, key, value);
       setRefOrderNote(ok
-        ? 'New row order saved — export the CSV / Generate AI File again to use it. 顺序已保存，请重新 export / generate。'
-        : 'Could not save the new row order. Please try again. 顺序没有保存，请再试一次。');
+        ? 'New row order saved — export the CSV / Generate AI File again to use it.'
+        : 'Could not save the new row order. Please try again.');
     },
   } : noopUpdaters), [canReorder, order?.id, updateReferenceOrder]);
 
@@ -312,11 +312,11 @@ export default function ProductionOrderDetail() {
     try {
       const status = await getAiFileHelperStatus();
       if (!status) {
-        window.alert('This computer is not set up to generate AI files (the AI File helper is not running).\n\n这台电脑没有安装或没有开启 AI File helper，不能生成 AI file。');
+        window.alert('This computer is not set up to generate AI files (the AI File helper is not running).');
         return;
       }
       if (!status.nasOk) {
-        window.alert(`This computer can't find the AI FILE folder:\n${status.aiFileDir}\n\n这台电脑找不到这个 file path，不能生成 AI file。`);
+        window.alert(`This computer can't find the AI FILE folder:\n${status.aiFileDir}`);
         return;
       }
       const id = await startAiFileHelperJob(buildCombinedCsvFilename(order), rowsToCsv(combinedRows));
@@ -379,13 +379,13 @@ export default function ProductionOrderDetail() {
           <div className="confirm-panel" style={{ marginBottom: 'var(--space-4)' }}>
             <p className="hint-text" style={{ margin: '0 0 var(--space-3)', fontWeight: 600 }}>
               {isReviewed(order)
-                ? 'Review done — waiting for the salesman to approve. You can still edit the order until then. 已 review，等 Salesman approve。'
-                : 'Check this order — wording, line order, quantities, Jenis Plak. Fix anything with Edit Order, then click Done Review so Sales can approve it. 检查好了按 Done Review，Salesman 才可以 approve。'}
+                ? 'Review done — waiting for the salesman to approve. You can still edit the order until then.'
+                : 'Check this order — wording, line order, quantities, Jenis Plak. Fix anything with Edit Order, then click Done Review so Sales can approve it.'}
             </p>
             <div style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
               <button type="button" className="btn btn-secondary" onClick={() => navigate(`/production/orders/${order.id}/edit`)}>Edit Order</button>
               {!isReviewed(order) && (
-                <ConfirmButton label="Done Review" question="确定 review 好了吗？Salesman can approve it after this." onConfirm={() => markReviewDone(order.id)} />
+                <ConfirmButton label="Done Review" question="Finished reviewing? The salesman can approve it after this." onConfirm={() => markReviewDone(order.id)} />
               )}
             </div>
           </div>
@@ -598,7 +598,7 @@ export default function ProductionOrderDetail() {
                 <div className="hint-text" style={{ marginTop: 'var(--space-6)', fontWeight: 600, opacity: 0.8 }}>Export by Category (for review)</div>
                 {canReorder && (
                   <p className="hint-text">
-                    Drag a Reference Sample row number to change the line order on the plaque (allowed until the Shipment Date). 拖 Reference Sample 的号码可以换上下顺序（到 Shipment Date 当天为止）。
+                    Drag a Reference Sample row number to change the line order on the plaque (allowed until the Shipment Date).
                   </p>
                 )}
                 {refOrderNote && <p className="hint-text" style={{ fontWeight: 600 }}>{refOrderNote}</p>}

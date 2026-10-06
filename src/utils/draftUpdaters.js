@@ -586,7 +586,7 @@ export function createDraftUpdaters(patch, fields) {
     // A JENIS PLAK footer row's own field. Setting a row's `posHingga`
     // auto-advances the NEXT row's `posDari` to the place right after it,
     // so the footer's ranges tile 1st..last without gaps or overlaps
-    // (matching the Excel sheet's own DARI接龙 formula).
+    // (matching the Excel sheet's own DARI chaining formula).
     onAliranPlakField: (plakRowsKey, id, field, val) => patch((st) => {
       const list = st[plakRows][plakRowsKey] || [];
       const i = list.findIndex((pr) => pr.id === id);

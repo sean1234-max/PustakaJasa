@@ -910,7 +910,7 @@ export function AppStateProvider({ children }) {
 
       // Cross-check each subject matrix against the teacher's own TOTAL row.
       // A mismatch becomes a `type:'choice'` warning the teacher must answer
-      // on Step 2 before Add to Cart (see NewOrderStep2's "需要你确认"
+      // on Step 2 before Add to Cart (see NewOrderStep2's "Confirm before continuing"
       // panel) — never auto-corrected here. Each option carries the exact
       // draft edits its answer implies, resolved to real row/column ids now
       // while newRowsByBlock/newColumnsByBlock are in scope.
@@ -1076,7 +1076,7 @@ export function AppStateProvider({ children }) {
             };
           });
         } else if (section.isUmumList) {
-          // UMUM (万能) (excelImport.js's parseUmumSheet) — one row per plak
+          // UMUM (ORDER LAIN-LAIN) (excelImport.js's parseUmumSheet) — one row per plak
           // row of the sheet: its own ①–④ changes (l0–l3), KUANTITI, Jenis
           // Plak (plakPerRow) and the sheet's HARGA PER UNIT, kept only to
           // show it (catalog.js's UMUM_ROW_FIELDS).

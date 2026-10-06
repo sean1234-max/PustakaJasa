@@ -524,7 +524,6 @@ export default function NewOrderStep2() {
             </div>
             <p className="hint-text" style={{ margin: '0 0 var(--space-3)' }}>
               This text gets engraved on the plaque. Answer every item below before adding to cart.
-              每一项都要处理好才能 Add to Cart。
             </p>
             {pendingCheck.issues.map((issue, k) => (
               <div key={k} className="confirm-item">
@@ -533,7 +532,6 @@ export default function NewOrderStep2() {
                   <>
                     <p className="confirm-item-q" style={{ margin: 0 }}>
                       <strong>{issue.text}</strong> — not in the Reference Sample. Engrave it on this plaque?
-                      Reference Sample 没有这一行，确定要加吗？
                     </p>
                     <div className="confirm-item-opts">
                       <button type="button" className="btn btn-ghost" onClick={() => resolveIssue(issue)}>Yes, keep it</button>
@@ -550,7 +548,7 @@ export default function NewOrderStep2() {
                     {issue.note && <p className="hint-text" style={{ margin: '2px 0 6px' }}>{issue.note}</p>}
                     <div className="confirm-item-opts">
                       <button type="button" className="btn btn-ghost" onClick={() => applyFix(issue)}>Use fix</button>
-                      <button type="button" className="btn btn-ghost" onClick={() => keepWord(issue)}>This word is correct 这个字是对的</button>
+                      <button type="button" className="btn btn-ghost" onClick={() => keepWord(issue)}>This word is correct</button>
                     </div>
                   </>
                 )}

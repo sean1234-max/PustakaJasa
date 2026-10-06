@@ -122,7 +122,7 @@ function sheetRange(ws) {
 // as always) from one they actually typed something into but whose shape
 // none of the parsers below recognized (worth a warning — see
 // parseFormAnugerahExcel's `unrecognizedSheets`).
-// UMUM (万能) sheet: any KUANTITI (数量) filled in below its header, outside
+// UMUM (ORDER LAIN-LAIN) sheet: any KUANTITI (数量) filled in below its header, outside
 // the template's own grey CONTOH (示范) example rows.
 function umumHasOrders(ws) {
   const range = sheetRange(ws);
@@ -1446,7 +1446,7 @@ function parseTahunPlakRowSheet(ws) {
 //     the student's name is known: stock is deducted at submit like any
 //     other row, but the row is kept OUT of the production CSV until a real
 //     name replaces "Reserved".
-// UMUM (万能) — LANGKAH 1's CONTOH box (the ① ② ③ ④ markers, each line's
+// UMUM (ORDER LAIN-LAIN) — LANGKAH 1's CONTOH box (the ① ② ③ ④ markers, each line's
 // text to its right, an optional MERAH pick under "WARNA MERAH?") and
 // LANGKAH 2's list, whose header row carries ① ② ③ ④ + KUANTITI (+ JENIS
 // PLAK, HARGA PER UNIT). Each list row with a KUANTITI becomes one plak row

@@ -36,7 +36,7 @@ export function buildManualRemarkBlock(order) {
   ].join('\n');
 }
 
-// ── Import cross-checks (feed the Step-2 "需要你确认" panel) ──────────────
+// ── Import cross-checks (feed the Step-2 "Confirm before continuing" panel) ──────────────
 
 // The label a parsed KLAS_MATRIX class row is known by — matches the key
 // excelImport.js's readSubjectMatrix uses for `statedTotals`.

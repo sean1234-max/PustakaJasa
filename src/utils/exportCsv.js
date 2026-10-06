@@ -11,7 +11,7 @@ import { UMUM_SLOTS, umumSlotFields, umumClassifyText, umumRedSlots } from './um
 
 export const CSV_COLUMNS = ['event_header', 'year', 'position', 'event_line_1', 'event_line_2', 'jenis_plak', 'category', 'line_order', 'position_black'];
 
-// UMUM (万能): the CONTOH lines ①–④ (slots 0–3) of this item, which plaque
+// UMUM (ORDER LAIN-LAIN): the CONTOH lines ①–④ (slots 0–3) of this item, which plaque
 // field each one is (utils/umumLines.js), and a raw slot reader (no
 // breakAcaraLine — UMUM lines are engraved exactly as typed).
 function umumParts(item) {

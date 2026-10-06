@@ -1,4 +1,4 @@
-// UMUM (万能) sheet — which plaque field each CONTOH line ①–④ (Reference
+// UMUM (ORDER LAIN-LAIN) sheet — which plaque field each CONTOH line ①–④ (Reference
 // Sample slots '0'–'3') is engraved on. Shared by computeBlocks.js (which
 // line shows red on screen), exportCsv.js (CSV columns + line_order).
 //

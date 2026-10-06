@@ -166,7 +166,7 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
     // right after its own first box) and numbered sequentially, so plain
     // categories (no second box) end up numbered 1..N exactly as before.
     const refOrderKey = `${catKey}::${b}::refOrder`;
-    // UMUM (万能): which CONTOH line is the position and which prints red
+    // UMUM (ORDER LAIN-LAIN): which CONTOH line is the position and which prints red
     // — see utils/umumLines.js. `umumRedKey` stores the slot the teacher
     // marked MERAH ('' = untouched, keywords decide; UMUM_NO_RED = unticked).
     const umumRedKey = `${catKey}::${b}::umumRed`;
@@ -544,7 +544,7 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
             onChange: (v) => updaters.onRowField(rowsKey, row.id, f.key, v),
           }))
           : null;
-        // UMUM (万能): the row's own ①–④ (placeholder = the CONTOH line it
+        // UMUM (ORDER LAIN-LAIN): the row's own ①–④ (placeholder = the CONTOH line it
         // replaces) + the sheet's own HARGA PER UNIT, flagged when it isn't
         // the website price (the order still uses the website price).
         const umumRowFields = currentCat.umumRows

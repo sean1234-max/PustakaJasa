@@ -209,7 +209,7 @@ export const TOKOH_ROW_FIELDS = [
   { key: 'design', label: 'DESIGN', place: 'afterPlak' },
 ];
 
-// UMUM (万能)'s per-row columns: the row's own ①–④ (blank = the CONTOH
+// UMUM (ORDER LAIN-LAIN)'s per-row columns: the row's own ①–④ (blank = the CONTOH
 // line, "-" = leave that line off this plaque — `contohSlot` is the
 // Reference Sample slot it overrides) and the HARGA PER UNIT the teacher
 // typed on the sheet — shown only (red when it differs from the website's
@@ -473,7 +473,7 @@ export const CATEGORIES = [
     positionFromRows: true,
   },
   {
-    // UMUM (万能) — the general-purpose sheet: a 4-line CONTOH (①–④, one
+    // UMUM (ORDER LAIN-LAIN) — the general-purpose sheet: a 4-line CONTOH (①–④, one
     // optionally marked MERAH) and a list of plak rows, each with its own
     // ①–④ changes, KUANTITI and Jenis Plak (plakPerRow). Which line lands
     // on which plaque field: utils/umumLines.js. A renamed copy of the sheet

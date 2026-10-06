@@ -230,8 +230,7 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
     <div>
       {blk.wordsOk?.length > 0 && (
         <p className="typo-hint" style={{ marginBottom: 'var(--space-3)' }}>
-          The teacher confirmed these words are correct (the AI spelling check flagged them): {blk.wordsOk.join(', ')}.
-          老师确认这些字是对的，请再检查。
+          The teacher confirmed these words are correct (the AI spelling check flagged them): {blk.wordsOk.join(', ')}. Please double-check them.
         </p>
       )}
       {showSharedSections && (
@@ -1252,7 +1251,7 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
                         <div className="typo-hint">Possible typo: "{f.typoHint.word}" — did you mean "{f.typoHint.suggestion}"?</div>
                       )}
                       {f.extraLine && (
-                        <div className="typo-hint">Not in the Reference Sample — please double-check. Reference Sample 没有这一行。</div>
+                        <div className="typo-hint">Not in the Reference Sample — please double-check.</div>
                       )}
                       {f.key === 'namaMurid' && isReservedName(f.value) && (
                         <div className="typo-hint">Stock booked. Fill in the name later to engrave it.</div>
