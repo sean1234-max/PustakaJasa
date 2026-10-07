@@ -189,6 +189,12 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
       : null;
     const umumFields = umumContoh ? umumSlotFields(umumContoh, lineValues[umumRedKey]) : null;
     const umumRed = umumContoh ? umumRedSlots(umumContoh, lineValues[umumRedKey]) : [];
+    // Which Reference Sample rows print red: the category's own `redSlots`
+    // (MP THP: ACARA only; ALIRAN: the KEDUDUKAN line) or, by default, ACARA
+    // and its second box.
+    const isRedSlot = (slotId) => (currentCat.redSlots
+      ? currentCat.redSlots.includes(slotId)
+      : !!currentCat.positionFieldsRedText && (slotId === '2' || slotId === '2b'));
     const rawLines = catLinePlaceholders.map((placeholder, i) => {
       const key = `${catKey}::${b}::${i}`;
       const slotId = `${i}`;
@@ -204,7 +210,7 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
         // Line 3's own text renders red on some categories (OTHERS — see
         // catalog.js's positionFieldsRedText) since it's the position text
         // that actually gets engraved; every other line stays plain.
-        redText: umumFields ? umumRed.includes(`${i}`) : i === 2 && !!currentCat.positionFieldsRedText,
+        redText: umumFields ? umumRed.includes(`${i}`) : isRedSlot(slotId),
         // UMUM's own per-line MERAH toggle (the sheet's WARNA MERAH? column):
         // ticked = red; unticking the red line makes it black.
         umumRed: umumFields ? {
@@ -226,7 +232,7 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
         const key2 = `${catKey}::${b}::2b`;
         line.secondLine = {
           key: key2, slotId: '2b', placeholder: catPositionLine2Placeholder, value: lineValues[key2] || '',
-          redText: !!currentCat.positionFieldsRedText,
+          redText: isRedSlot('2b'),
           onChange: (val) => updaters.onLine(key2, val),
           typoHint: typoOf(lineValues[key2]),
           // Deletable now (a named-recipient roster import — see

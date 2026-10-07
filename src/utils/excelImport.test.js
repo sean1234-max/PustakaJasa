@@ -1157,3 +1157,32 @@ describe('FRONT PG header → Function Details (Sean, 2026-10-03)', () => {
   });
 });
 
+
+describe('Reference Sample follows each sheet\'s CONTOH (Sean, 2026-10-07)', () => {
+  const layout = (catKey) => computeBlocks(catKey, {}, {}, {}, {}, {}, noopUpdaters, [], 'SK').blocks[0].lines
+    .map((ln) => `${ln.placeholder}${ln.redText ? ' (red)' : ''}`);
+
+  it('PPKI / MP THP: TAJUK BESAR / ACARA / SUBJEK / TAHUN, only ACARA red', () => {
+    ['PPKI', 'MP1', 'MP1_KELAS', 'MP2', 'MP2_KELAS'].forEach((cat) => {
+      expect(layout(cat)).toEqual(['TAJUK BESAR', 'ACARA (red)', '( SUBJEK )', '( TAHUN )']);
+    });
+  });
+
+  it('LONJAKAN / KEHADIRAN: TAJUK BESAR / ACARA / TAHUN', () => {
+    expect(layout('LONJAKAN')).toEqual(['TAJUK BESAR', 'ACARA (red)', '( TAHUN ? )']);
+    expect(layout('KEHADIRAN')).toEqual(['TAJUK BESAR', 'ACARA (red)', '( TAHUN ? )']);
+  });
+
+  it('TOKOH: TAJUK BESAR / TOKOH / NAMA', () => {
+    expect(layout('TOKOH_SHEET')).toEqual(['TAJUK BESAR', 'TOKOH (red)', 'NAMA']);
+  });
+
+  it('ALIRAN: TAJUK BESAR / KEDUDUKAN (red) / ACARA / TAHUN', () => {
+    expect(layout('ALIRAN')).toEqual(['TAJUK BESAR', 'KEDUDUKAN (PERTAMA) (red)', 'ACARA', '( TAHUN ? )']);
+    expect(layout('ALIRAN_KELAS')).toEqual(['TAJUK BESAR', 'KEDUDUKAN (PERTAMA) (red)', 'ACARA', '( TAHUN ? )']);
+  });
+
+  it('PBD: TAJUK BESAR / ACARA / POSITION / TAHUN', () => {
+    expect(layout('PBD')).toEqual(['TAJUK BESAR', 'ACARA (red)', '( POSITION ) (red)', '( TAHUN ? )']);
+  });
+});

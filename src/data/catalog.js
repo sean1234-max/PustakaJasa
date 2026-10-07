@@ -203,16 +203,19 @@ const STANDARD_REFERENCE_LINES = ['TAJUK BESAR', 'YEAR', 'ACARA', '( TAHUN ? )']
 export const DEFAULT_REF_ORDER = ['0', '0b', '1', '2', '2b', '3'];
 export const ALIRAN_REF_ORDER = ['0', '0b', '1', '3', '2', '2b'];
 
-// PPKI / MP THP 1/2 (and their "Kalau ada kelas" variants) — TAJUK BESAR /
-// YEAR / POSITION (★, red, fixed) / a CONTOH-only "( SUBJEK )" line. Line 3
-// used to be a combined "TAHUN N (SUBJEK)" CONTOH that exportCsv.js's now-
-// removed parseTahunSubjekTemplate parsed apart; the matrix's real per-cell
-// subject and level/Nama-Kelas breakdown (buildMatrixRows) never actually
-// read that combined text, so line 3 is now just its own plain subject
-// example — nothing to parse, and no more `positionLine2Placeholder` second
-// box stacked under POSITION either (that used to carry this same worked
-// example; it's now line 3's own job).
-const MATRIX_SUBJECT_REFERENCE_LINES = ['TAJUK BESAR', 'YEAR', 'POSITION', '( SUBJEK )'];
+// PPKI / MP THP 1/2 (and their "Kalau ada kelas" variants) follow the
+// sheet's 4-line CONTOH (Sean, 2026-10-07): TAJUK BESAR / ACARA (★, red) /
+// SUBJEK (slot 2b, black) / TAHUN (slot 3). SUBJEK and TAHUN are CONTOH only
+// — every plaque takes its real subject and Tahun from the matrix
+// (exportCsv.js's buildMatrixRows), as event_line_1 / event_line_2. A
+// teacher who wants the subject red writes it into ACARA (Alt+Enter).
+const MATRIX_SUBJECT_REFERENCE_LINES = ['TAJUK BESAR', 'YEAR', 'ACARA', '( TAHUN )'];
+const MATRIX_SUBJECT_LINE = '( SUBJEK )';
+// TOKOH's 3-line CONTOH: TAJUK BESAR / the honour (red) / NAMA.
+const TOKOH_REFERENCE_LINES = ['TAJUK BESAR', 'YEAR', 'TOKOH', 'NAMA'];
+// ALIRAN's CONTOH: TAJUK BESAR / KEDUDUKAN (red, "PERTAMA" — slot 3, shown
+// second via ALIRAN_REF_ORDER) / ACARA / TAHUN (slot 2b).
+const ALIRAN_REFERENCE_LINES = ['TAJUK BESAR', 'YEAR', 'ACARA', 'KEDUDUKAN (PERTAMA)'];
 
 // TOKOH_SHEET's per-row metadata columns (catalog.js's tokohRowFields).
 // `place` says which side of the KUANTITI/JENIS PLAK columns each renders
@@ -285,8 +288,10 @@ export const CATEGORIES = [
     columnsByLanguage: { SK: PPKI_LEVELS },
     subjectsByLanguage: { SK: SUBJECTS_CORE, SJKC: SUBJECTS_CORE_CN },
     linePlaceholders: MATRIX_SUBJECT_REFERENCE_LINES,
+    positionLine2Placeholder: MATRIX_SUBJECT_LINE,
     requiredLineIndices: [0, 2],
     positionFieldsRedText: true,
+    redSlots: ['2'],
     draggableReferenceSample: true,
     subjectsFromImport: SUBJECTS_FROM_IMPORT,
     // Each of the 3 levels (PRA PPKI/PPKI/PRASEKOLAH) can carry its own
@@ -302,8 +307,10 @@ export const CATEGORIES = [
     columnsByLanguage: { SK: MP_THP1_LEVELS_MY, SJKC: MP_THP1_LEVELS_CN },
     subjectsByLanguage: { SK: SUBJECTS_CORE, SJKC: SUBJECTS_CORE_CN },
     linePlaceholders: MATRIX_SUBJECT_REFERENCE_LINES,
+    positionLine2Placeholder: MATRIX_SUBJECT_LINE,
     requiredLineIndices: [0, 2],
     positionFieldsRedText: true,
+    redSlots: ['2'],
     draggableReferenceSample: true,
     subjectsFromImport: SUBJECTS_FROM_IMPORT,
   },
@@ -318,8 +325,10 @@ export const CATEGORIES = [
     columnsByLanguage: { SK: MP_THP1_LEVELS_MY, SJKC: MP_THP1_LEVELS_CN },
     subjectsByLanguage: { SK: SUBJECTS_CORE, SJKC: SUBJECTS_CORE_CN },
     linePlaceholders: MATRIX_SUBJECT_REFERENCE_LINES,
+    positionLine2Placeholder: MATRIX_SUBJECT_LINE,
     requiredLineIndices: [0, 2],
     positionFieldsRedText: true,
+    redSlots: ['2'],
     draggableReferenceSample: true,
     subjectsFromImport: SUBJECTS_FROM_IMPORT,
     // A per-Tahun Nama Kelas + Moral Kelas breakdown instead of typing each
@@ -335,8 +344,10 @@ export const CATEGORIES = [
       SJKC: SUBJECTS_MP2_CN,
     },
     linePlaceholders: MATRIX_SUBJECT_REFERENCE_LINES,
+    positionLine2Placeholder: MATRIX_SUBJECT_LINE,
     requiredLineIndices: [0, 2],
     positionFieldsRedText: true,
+    redSlots: ['2'],
     draggableReferenceSample: true,
     subjectsFromImport: SUBJECTS_FROM_IMPORT,
   },
@@ -350,8 +361,10 @@ export const CATEGORIES = [
       SJKC: SUBJECTS_MP2_CN,
     },
     linePlaceholders: MATRIX_SUBJECT_REFERENCE_LINES,
+    positionLine2Placeholder: MATRIX_SUBJECT_LINE,
     requiredLineIndices: [0, 2],
     positionFieldsRedText: true,
+    redSlots: ['2'],
     draggableReferenceSample: true,
     subjectsFromImport: SUBJECTS_FROM_IMPORT,
     hasLevelBreakdown: true,
@@ -369,7 +382,7 @@ export const CATEGORIES = [
     subjectsByLanguage: { SK: ALL_TAHUN },
     matrixRowLabel: 'Tahun',
     linePlaceholders: STANDARD_REFERENCE_LINES,
-    positionLine2Placeholder: '( SUBJEK/POSITION )',
+    positionLine2Placeholder: '( POSITION )',
     requiredLineIndices: [0, 2],
     positionFieldsRedText: true,
     draggableReferenceSample: true,
@@ -399,10 +412,11 @@ export const CATEGORIES = [
     aliranKedudukan: true,
     descColumnLabel: 'Tahun',
     hideQtyLabelSuffix: true,
-    linePlaceholders: STANDARD_REFERENCE_LINES,
-    positionLine2Placeholder: '( SUBJEK/POSITION )',
+    linePlaceholders: ALIRAN_REFERENCE_LINES,
+    positionLine2Placeholder: '( TAHUN ? )',
     requiredLineIndices: [0, 2],
     positionFieldsRedText: true,
+    redSlots: ['3'],
     draggableReferenceSample: true,
     defaultRefOrder: ALIRAN_REF_ORDER,
   },
@@ -422,10 +436,11 @@ export const CATEGORIES = [
     aliranNamaKelas: true,
     descColumnLabel: 'Tahun',
     hideQtyLabelSuffix: true,
-    linePlaceholders: STANDARD_REFERENCE_LINES,
-    positionLine2Placeholder: '( SUBJEK/POSITION )',
+    linePlaceholders: ALIRAN_REFERENCE_LINES,
+    positionLine2Placeholder: '( TAHUN ? )',
     requiredLineIndices: [0, 2],
     positionFieldsRedText: true,
+    redSlots: ['3'],
     draggableReferenceSample: true,
     defaultRefOrder: ALIRAN_REF_ORDER,
   },
@@ -441,7 +456,6 @@ export const CATEGORIES = [
     hideQtyLabelSuffix: true,
     plakPerRow: true,
     linePlaceholders: STANDARD_REFERENCE_LINES,
-    positionLine2Placeholder: '( SUBJEK/POSITION )',
     requiredLineIndices: [0, 2],
     positionFieldsRedText: true,
     draggableReferenceSample: true,
@@ -456,7 +470,6 @@ export const CATEGORIES = [
     hideQtyLabelSuffix: true,
     plakPerRow: true,
     linePlaceholders: STANDARD_REFERENCE_LINES,
-    positionLine2Placeholder: '( SUBJEK/POSITION )',
     requiredLineIndices: [0, 2],
     positionFieldsRedText: true,
     draggableReferenceSample: true,
@@ -481,8 +494,7 @@ export const CATEGORIES = [
     hideQtyLabelSuffix: true,
     plakPerRow: true,
     tokohRowFields: true,
-    linePlaceholders: STANDARD_REFERENCE_LINES,
-    positionLine2Placeholder: '( SUBJEK/POSITION )',
+    linePlaceholders: TOKOH_REFERENCE_LINES,
     requiredLineIndices: [0, 2],
     positionFieldsRedText: true,
     draggableReferenceSample: true,

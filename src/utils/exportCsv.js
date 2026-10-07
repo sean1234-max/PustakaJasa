@@ -240,7 +240,10 @@ function buildMatrixRows(item, cat, header, year, positionPart1, schoolLanguage)
   // for their own free-typed Tahun labels. PPKI's own levels (PRA PPKI/
   // PPKI/PRASEKOLAH) never start with "TAHUN " to begin with, so this is a
   // no-op for them either way.
-  const includeTahunWord = /tahun/i.test(getLine(item, 3));
+  // The CONTOH's SUBJEK line (slot 2b) and TAHUN line (slot 3) together are
+  // the worked example; an older order kept both on line 3 alone.
+  const contoh = [item.detail?.lines?.[`${item.categoryKey}::${item.blockIdx}::2b`], getLine(item, 3)].filter(Boolean).join('\n');
+  const includeTahunWord = /tahun/i.test(contoh);
 
   // Every subject this order has, plus the catalog's own defaults, so the
   // CONTOH's subject is recognised even if the order itself never ordered it.
@@ -248,7 +251,7 @@ function buildMatrixRows(item, cat, header, year, positionPart1, schoolLanguage)
   const customSubjects = getCustomMatrixRowIds(cat.key, matrix).map((rowId) => matrix[customMatrixLabelKey(cat.key, rowId)] || '').filter(Boolean);
   const knownSubjects = [...getCategorySubjects(cat, schoolLanguage), ...customSubjects];
   const format = buildSubjectTahunFormatter(
-    getLine(item, 3),
+    contoh,
     knownSubjects,
     columns,
     Object.values(breakdown).flat().map((c) => c.desc).filter(Boolean),
@@ -262,9 +265,11 @@ function buildMatrixRows(item, cat, header, year, positionPart1, schoolLanguage)
   const positionFor = (subject) => (posSpan
     ? positionPart1.slice(0, posSpan.start) + subject + positionPart1.slice(posSpan.end)
     : positionPart1);
+  // A subject already in ACARA (the teacher wanted it red) is never repeated below.
   const lines = (subject, tahun) => {
+    if (posSpan) return [tahun, ''];
     if (format && tahun) return format(subject, tahun);
-    return posSpan ? [tahun, ''] : [subject, tahun];
+    return [subject, tahun];
   };
 
   const emitRow = (subject, column, qty) => {

@@ -948,3 +948,28 @@ describe('getLineOrder — engraved line order follows the Reference Sample rows
     expect(rows[0][CSV_COLUMNS.indexOf('line_order')]).toBe('position|event_header|event_line_1|event_line_2');
   });
 });
+
+describe('MP THP 4-line CONTOH (TAJUK / ACARA / SUBJEK / TAHUN)', () => {
+  const mk = (lines) => ({
+    id: 'm', jenisPlak: 'DECO LIGHT', qty: 1, categoryKey: 'MP2', blockIdx: 0,
+    detail: {
+      lines: { 'MP2::0::0': 'H', ...lines },
+      matrix: { [customMatrixLabelKey('MP2', 1)]: 'SAINS', [matrixCellKey('MP2', 'custom-1', 'TAHUN 5')]: '1' },
+    },
+  });
+  const first = (lines) => buildCsvRows({ schoolLanguage: 'SK', items: [mk(lines)] }, 'MP2', [mk(lines)]).rows[0].slice(2, 5);
+
+  it('SUBJEK line -> event_line_1, TAHUN line -> event_line_2, each plaque its own', () => {
+    expect(first({ 'MP2::0::2': 'TERBAIK', 'MP2::0::2b': 'BAHASA MELAYU', 'MP2::0::3': 'TAHUN 4' })).toEqual(['TERBAIK', 'SAINS', 'TAHUN 5']);
+  });
+
+  it('follows the SUBJEK line\'s own wording around the subject', () => {
+    expect(first({ 'MP2::0::2': 'TERBAIK', 'MP2::0::2b': 'MATA PELAJARAN BAHASA MELAYU', 'MP2::0::3': 'TAHUN 4' }))
+      .toEqual(['TERBAIK', 'MATA PELAJARAN SAINS', 'TAHUN 5']);
+  });
+
+  it('a subject written into ACARA (to print red) is not repeated below', () => {
+    expect(first({ 'MP2::0::2': 'TERBAIK\nBAHASA MELAYU', 'MP2::0::2b': 'BAHASA MELAYU', 'MP2::0::3': 'TAHUN 4' }))
+      .toEqual(['TERBAIK\nSAINS', 'TAHUN 5', '']);
+  });
+});
