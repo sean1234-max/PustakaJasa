@@ -81,7 +81,9 @@ function shipmentDateKey(shipmentDate) {
 export default function ProductionDashboard() {
   const { state, today, markProductionDone, markTypingDone, markReviewDone } = useAppState();
   const navigate = useNavigate();
-  const [tab, setTab] = useState('active');
+  // The team's own accounts (kesin, sean …) open on Reviewing Order — their
+  // first job; the manager keeps In Production (Sean, 2026-10-07).
+  const [tab, setTab] = useState(state.isProductionManager ? 'active' : 'reviewing');
   // Lets Production see, at a glance, everything due out on one shipment
   // date — useful across all three tabs (what's coming up in Pending
   // Invoice, what's ready to ship today, what already went out).
