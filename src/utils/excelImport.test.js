@@ -1254,3 +1254,22 @@ describe('TAJUK BESAR may be left blank (Sean, 2026-10-07)', () => {
     expect(buildCategoryCartItems(st({ 'LONJAKAN::0::3': '2026' }), 'LONJAKAN').error).toMatch(/fill in line/);
   });
 });
+
+describe('OTHER Jenis Plak needs a price at Add to Cart (Sean, 2026-10-07)', () => {
+  const st = (row) => ({
+    lineValues: { 'LONJAKAN::0::2': 'ANUGERAH' },
+    matrixValues: {},
+    rowsByBlock: { 'LONJAKAN::0': [{ id: 1, desc: 'TAHUN 1', qty: '2', jenisPlak: 'OTHER - 19540 B', ...row }] },
+    plakRows: { 'LONJAKAN::0': [] },
+    columnsByBlock: {},
+    plakCatalog: [],
+    schoolLanguage: 'SK',
+  });
+
+  it('blocks an OTHER row with no price, adds one priced when picked', () => {
+    expect(buildCategoryCartItems(st({}), 'LONJAKAN').error).toMatch(/has no price/);
+    const res = buildCategoryCartItems(st({ unitPrice: 33 }), 'LONJAKAN');
+    expect(res.error).toBeUndefined();
+    expect(res.items.map((it) => [it.unitPrice, it.harga])).toEqual([[33, 66]]);
+  });
+});

@@ -558,7 +558,7 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
             unitPrice: rowUnitPrice,
             rawHarga: rowHarga,
             hargaLabel: rowUnitPrice != null ? `RM ${rowHarga.toFixed(2)}` : '—',
-            setJenisPlak: (v) => updaters.onRowField(rowsKey, row.id, 'jenisPlak', v),
+            setJenisPlak: (v, price) => updaters.onRowPlak(rowsKey, row.id, v, price),
           };
         }
         // TOKOH_SHEET (catalog.js's tokohRowFields) — NAMA MURID / GAMBAR /
@@ -759,7 +759,7 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
         unitPrice,
         posDari: pr.posDari, posHingga: pr.posHingga,
         hargaLabel: unitPrice != null ? `RM ${harga.toFixed(2)}` : '—',
-        setJenisPlak: (v) => updaters.onPlakSelect(plakRowsKey, pr.id, v),
+        setJenisPlak: (v, price) => updaters.onPlakSelect(plakRowsKey, pr.id, v, price),
         setPosField: (field, v) => updaters.onAliranPlakField(plakRowsKey, pr.id, field, v),
         setPlakQty: (v) => updaters.onAliranPlakQty(plakRowsKey, pr.id, v),
         remove: () => updaters.onAliranRemovePlak(plakRowsKey, pr.id),
@@ -921,7 +921,7 @@ export const noopUpdaters = {
   onAddMatrixRow: () => {}, onMatrixRowRemove: () => {},
   onAddReferenceLine: () => {}, onRemoveReferenceLine: () => {}, onDeleteReferenceLine: () => {}, onRestoreReferenceLine: () => {},
   onLevelKelasField: () => {}, onAddLevelKelasRow: () => {}, onRemoveLevelKelasRow: () => {},
-  onKeepWordInBlock: () => {}, onReplaceWordInBlock: () => {},
+  onKeepWordInBlock: () => {}, onReplaceWordInBlock: () => {}, onRowPlak: () => {},
   onAliranKedudukan: () => {}, onAliranPlakField: () => {}, onAliranAddPlak: () => {}, onAliranRemovePlak: () => {}, onAliranPlakQty: () => {},
 };
 

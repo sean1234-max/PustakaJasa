@@ -404,10 +404,19 @@ export function createDraftUpdaters(patch, fields) {
     // still copies the PREVIOUS block's choice forward as a starting point
     // (see onDuplicateBlock below), but editing it afterward only ever
     // touches this one block — no cross-block sync.
-    onPlakSelect: (rowsKey, id, val) => patch((st) => ({
+    // A newly picked Jenis Plak takes the website price — except "OTHER - …",
+    // which carries the unit price typed with it (PlakPicker).
+    onPlakSelect: (rowsKey, id, val, price) => patch((st) => ({
       [plakRows]: {
         ...st[plakRows],
-        [rowsKey]: st[plakRows][rowsKey].map((r) => (r.id === id ? { ...r, jenisPlak: val } : r)),
+        [rowsKey]: st[plakRows][rowsKey].map((r) => (r.id === id ? { ...r, jenisPlak: val, unitPrice: price ?? null } : r)),
+      },
+    })),
+    // Same for a per-row Jenis Plak (plakPerRow categories).
+    onRowPlak: (rowsKey, id, val, price) => patch((st) => ({
+      [rowsByBlock]: {
+        ...st[rowsByBlock],
+        [rowsKey]: st[rowsByBlock][rowsKey].map((r) => (r.id === id ? { ...r, jenisPlak: val, unitPrice: price ?? null } : r)),
       },
     })),
     // Columns (Tahun + Nama Kelas) — dynamicMatrix categories only (PBD).

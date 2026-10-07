@@ -1,4 +1,4 @@
-import { resolveCategory, SELEMPANG_CODE } from '../data/catalog';
+import { resolveCategory, SELEMPANG_CODE, isCustomPlakCode } from '../data/catalog';
 import { computeBlocks, snapshotDetail, noopUpdaters } from '../utils/computeBlocks';
 
 // Turns one category's live draft (lineValues / matrixValues / rowsByBlock
@@ -114,6 +114,13 @@ export function buildCategoryCartItems(st, catKey) {
       if (missing.length) {
         return { engaged, error: `Choose a Jenis Plak for ${missing.join(', ')} in ${blockLabel} before adding to cart.` };
       }
+    }
+    // "OTHER - …" has no website price — it needs its own (typed with it,
+    // or the sheet's HARGA PER UNIT).
+    const unpricedOther = [...(blk.plakPerRow ? blk.rows : blk.plakRows)]
+      .find((r) => isCustomPlakCode(r.jenisPlak) && r.unitPrice == null);
+    if (unpricedOther) {
+      return { engaged, error: `"${unpricedOther.jenisPlak}" in ${blockLabel} has no price — pick it again and fill in its Harga before adding to cart.` };
     }
     // ALIRAN TERBAIK: every plaque the Tahun table asks for must be covered
     // by a Jenis Plak footer row. The footer QTY can be derived or a

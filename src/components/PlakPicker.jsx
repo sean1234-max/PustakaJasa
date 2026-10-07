@@ -98,6 +98,10 @@ export default function PlakPicker({ value, onChange, catalog }) {
   // of just recording the bare word "OTHERS".
   const [othersMode, setOthersMode] = useState(false);
   const [othersText, setOthersText] = useState('');
+  // OTHER has no website price, so its unit price is asked for here too
+  // (Sean, 2026-10-07) and handed to onChange as the 2nd argument.
+  const [othersPrice, setOthersPrice] = useState('');
+  const othersPriceOk = othersPrice.trim() !== '' && Number(othersPrice) >= 0;
   const ref = useRef(null);
 
   useEffect(() => { setQuery(value || ''); }, [value]);
@@ -128,6 +132,7 @@ export default function PlakPicker({ value, onChange, catalog }) {
     if (isOthersLeaf(path[path.length - 1])) {
       setOthersMode(true);
       setOthersText('');
+      setOthersPrice('');
       return;
     }
     onChange(path.join(' / '));
@@ -137,9 +142,9 @@ export default function PlakPicker({ value, onChange, catalog }) {
 
   const commitOthers = () => {
     const text = othersText.trim();
-    if (!text) return;
+    if (!text || !othersPriceOk) return;
     const finalValue = `${OTHERS_CODE} - ${text}`;
-    onChange(finalValue);
+    onChange(finalValue, Number(othersPrice));
     setQuery(finalValue);
     setOpen(false);
     setOthersMode(false);
@@ -173,8 +178,22 @@ export default function PlakPicker({ value, onChange, catalog }) {
               else if (e.key === 'Escape') { setOthersMode(false); e.stopPropagation(); }
             }}
           />
+          <div className="hint-text" style={{ margin: 'var(--space-2) 0' }}>Harga per unit (RM):</div>
+          <input
+            className="input"
+            type="number"
+            min="0"
+            step="0.01"
+            value={othersPrice}
+            placeholder="e.g. 33"
+            onChange={(e) => setOthersPrice(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') { commitOthers(); e.preventDefault(); }
+              else if (e.key === 'Escape') { setOthersMode(false); e.stopPropagation(); }
+            }}
+          />
           <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-2)' }}>
-            <button type="button" className="btn btn-primary" disabled={!othersText.trim()} onClick={commitOthers}>Confirm</button>
+            <button type="button" className="btn btn-primary" disabled={!othersText.trim() || !othersPriceOk} onClick={commitOthers}>Confirm</button>
             <button type="button" className="btn btn-ghost" onClick={() => setOthersMode(false)}>Cancel</button>
           </div>
         </div>
