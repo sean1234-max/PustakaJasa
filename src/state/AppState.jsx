@@ -751,11 +751,10 @@ export function AppStateProvider({ children }) {
   // TOKOH, the native "KLAS MATRIX" sheet — see excelImport.js) or a Word
   // "WORDING / KUANTITI / KOD HADIAH" order table (see docxImport.js), a
   // completely different real-world shape some schools use instead. Both
-  // parsers return the exact same `{ klasMatrix: { sections } }` shape, so
+  // parsers return the same `{ categorized, klasMatrix }` shape, so
   // whichever one matches the file's own extension feeds the same merge
-  // step below — every recognized award, regardless of source format,
-  // lands in KLAS_MATRIX (see excelImport.js's header comment for why one
-  // destination beats splitting across categories). Deliberately REPLACES
+  // step below (a Word award lands in its own dynamic category, see
+  // docxImport.js). Deliberately REPLACES
   // rather than merges KLAS_MATRIX's own draft — this is meant to be the
   // teacher's starting point (see NewOrderStep2's "Import from Excel"
   // button), not layered on top of whatever's already there. Never adds
@@ -1326,6 +1325,12 @@ export function AppStateProvider({ children }) {
     // format at all (excelImport.js's unrecognizedSheets) — surfaced so the
     // teacher/production knows to check it by hand, instead of that data
     // silently not appearing anywhere.
+    // Anything a Word order table had that docxImport.js couldn't place with
+    // certainty (an unreadable quantity, a row with no wording, a JUMLAH
+    // that disagrees) — shown for the teacher to check, never guessed.
+    if (parsed.notes?.length) {
+      parsed.notes.forEach((text) => warnings.push({ type: 'truncated', text }));
+    }
     if (parsed.unrecognizedSheets?.length) {
       parsed.unrecognizedSheets.forEach((name) => {
         warnings.push({ type: 'truncated', text: `Couldn't recognize the format of sheet "${name}" — please check it and add its data by hand if needed.` });

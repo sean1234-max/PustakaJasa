@@ -65,7 +65,7 @@ export default function NewOrderStep2() {
   // ANUGERAH Excel template (see src/utils/excelImport.js) or a Word
   // "WORDING/KUANTITI/KOD HADIAH" order table (see src/utils/docxImport.js),
   // a completely different shape some schools use instead. Loads into
-  // Mata Pelajaran/Klas (Matrix) for review here on Step 2 — never adds
+  // the matching category tab(s) for review here on Step 2 — never adds
   // straight to cart, so a parsing mistake never reaches an order
   // un-reviewed.
   const handleImportFile = async (file) => {
