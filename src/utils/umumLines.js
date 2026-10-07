@@ -3,8 +3,10 @@
 // line shows red on screen), exportCsv.js (CSV columns + line_order).
 //
 // Sean's rules (2026-10-02):
-//   - A line marked MERAH is the position; ① is the TAJUK BESAR; the rest,
-//     top to bottom, are event_line_1 / event_line_2.
+//   - A line marked MERAH is the position; a MAJLIS / school / year line
+//     (keywords below) is the TAJUK BESAR wherever it sits, else ① is; the
+//     rest, top to bottom, are event_line_1 / event_line_2. The plaque is
+//     still stacked in the CONTOH's own order (CSV line_order).
 //   - Nothing marked MERAH: classify by keywords — school / MAJLIS / year
 //     → TAJUK BESAR, ANUGERAH / TOKOH / JOHAN … → position (a line with
 //     both counts as TAJUK BESAR); touching lines of the same kind join
@@ -50,11 +52,15 @@ export function umumSlotFields(contoh, redSlot) {
   const taken = new Set();
   const assign = (list, field) => list.forEach((s) => { out[s] = field; taken.add(s); });
 
+  const kinds = Object.fromEntries(slots.map((s) => [s, kindOf(contoh[s])]));
   if (redSlot && slots.includes(redSlot)) {
     assign([redSlot], 'position');
-    if (redSlot !== slots[0]) assign([slots[0]], 'event_header');
+    // A MAJLIS / school / year line is the TAJUK BESAR wherever it sits
+    // (Sean, 2026-10-07); with none, ① is (unless ① is the red line).
+    const headerRun = firstRun(slots, kinds, 'header', taken);
+    if (headerRun.length) assign(headerRun, 'event_header');
+    else if (redSlot !== slots[0]) assign([slots[0]], 'event_header');
   } else {
-    const kinds = Object.fromEntries(slots.map((s) => [s, kindOf(contoh[s])]));
     if (!slots.some((s) => kinds[s])) {
       slots.forEach((s, i) => { out[s] = ['event_header', 'position', 'event_line_1', 'event_line_2'][i]; });
       return out;

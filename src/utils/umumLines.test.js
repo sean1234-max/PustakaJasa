@@ -74,3 +74,15 @@ describe('umumRedSlots — which CONTOH line prints red', () => {
     expect(umumSlotFields(lines('SK X', 'JOHAN TAHUN 4'), UMUM_NO_RED)).toEqual({ 0: 'event_header', 1: 'position' });
   });
 });
+
+describe('MERAH line + a MAJLIS line further down (ORD-0026)', () => {
+  it('the MAJLIS line is still the TAJUK BESAR; the rest fill the event lines', () => {
+    const contoh = { 0: 'ANUGERAH TOKOH MURID (LELAKI)', 1: 'PRA IBNU KHALDUN', 2: 'MAJLIS APRESIASI PRASEKOLAH 2026' };
+    expect(umumSlotFields(contoh, '0')).toEqual({ 0: 'position', 1: 'event_line_1', 2: 'event_header' });
+  });
+
+  it('no header keyword: ① stays the TAJUK BESAR unless ① is the red line', () => {
+    expect(umumSlotFields({ 0: 'PRA IBNU', 1: 'TOKOH MURID', 2: 'NAMA' }, '1')).toEqual({ 0: 'event_header', 1: 'position', 2: 'event_line_1' });
+    expect(umumSlotFields({ 0: 'TOKOH MURID', 1: 'PRA IBNU', 2: 'NAMA' }, '0')).toEqual({ 0: 'position', 1: 'event_line_1', 2: 'event_line_2' });
+  });
+});
