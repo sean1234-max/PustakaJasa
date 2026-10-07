@@ -1186,3 +1186,71 @@ describe('Reference Sample follows each sheet\'s CONTOH (Sean, 2026-10-07)', () 
     expect(layout('PBD')).toEqual(['TAJUK BESAR', 'ACARA (red)', '( POSITION ) (red)', '( TAHUN ? )']);
   });
 });
+
+describe('OTHER Jenis Plak takes the sheet\'s own price (Sean, 2026-10-07)', () => {
+  const row = (extra) => computeBlocks('UMUM', { 'UMUM::0::0': 'MAJLIS' }, {}, {
+    'UMUM::0': [{ id: 1, desc: '1', qty: '2', jenisPlak: 'OTHER - 19540 B', l0: 'MAJLIS', hargaExcel: '33', ...extra }],
+  }, {}, {}, noopUpdaters, [], 'SK').blocks[0].rows[0];
+
+  it('prices an OTHER row from HARGA PER UNIT, even over a stored 0', () => {
+    expect([row({}).unitPrice, row({}).rawHarga]).toEqual([33, 66]);
+    expect(row({ unitPrice: 0 }).unitPrice).toBe(33);
+  });
+
+  it('keeps a real price already set, and leaves catalog codes alone', () => {
+    expect(row({ unitPrice: 40 }).unitPrice).toBe(40);
+    expect(row({ jenisPlak: 'PKC 263' }).unitPrice).toBeNull();
+  });
+});
+
+describe('a blank ① TAJUK BESAR box stays blank (Sean, 2026-10-07)', () => {
+  it('LONJAKAN: ② ACARA and ③ stay in their own rows instead of moving up', () => {
+    const parsed = parseFormAnugerahExcel(workbookFromSheets({
+      'LONJAKAN SAUJANA (2)': [
+        [null, null, 'TOLONG ISI DI SINI'],
+        [null, null, null],
+        [null, null, 'ANUGERAH LONJAKAN KEHADIRAN'],
+        [null, null, '2026'],
+        [],
+        ['TAHUN', 'KUANTITI', 'JENIS PLAK'],
+        [null, 78, '18059'],
+      ],
+    }));
+    const section = Object.values(parsed.categorized || {}).flat().find((s) => s.isSimpleTahunList);
+    // (ACARA gets the importer's usual "ANUGERAH⏎…" two-line split.)
+    expect(section.lines).toEqual({ 0: '', 2: 'ANUGERAH\nLONJAKAN KEHADIRAN', 3: '2026' });
+  });
+
+  it('a filled ① with the year on its own row below still joins the title', () => {
+    const parsed = parseFormAnugerahExcel(workbookFromSheets({
+      'LONJAKAN SAUJANA': [
+        [null, null, 'TOLONG ISI DI SINI'],
+        [null, null, 'HARI ANUGERAH'],
+        [null, null, '2026'],
+        [null, null, 'LONJAKAN SAUJANA'],
+        [],
+        ['TAHUN', 'KUANTITI', 'JENIS PLAK'],
+        ['TAHUN 1', 5, '18059'],
+      ],
+    }));
+    const section = (parsed.categorized?.LONJAKAN || [])[0];
+    expect(section.lines).toEqual({ 0: 'HARI ANUGERAH\n2026', 2: 'LONJAKAN SAUJANA' });
+  });
+});
+
+describe('TAJUK BESAR may be left blank (Sean, 2026-10-07)', () => {
+  const st = (lines) => ({
+    lineValues: lines,
+    matrixValues: {},
+    rowsByBlock: { 'LONJAKAN::0': [{ id: 1, desc: '', qty: '78', jenisPlak: 'BRONZE' }] },
+    plakRows: { 'LONJAKAN::0': [] },
+    columnsByBlock: {},
+    plakCatalog: [{ code: 'BRONZE', price: 6, stockQty: 1e6, stockBaseline: 1e6 }],
+    schoolLanguage: 'SK',
+  });
+
+  it('adds to cart with no title, still needing ACARA', () => {
+    expect(buildCategoryCartItems(st({ 'LONJAKAN::0::2': 'ANUGERAH LONJAKAN KEHADIRAN', 'LONJAKAN::0::3': '2026' }), 'LONJAKAN').error).toBeUndefined();
+    expect(buildCategoryCartItems(st({ 'LONJAKAN::0::3': '2026' }), 'LONJAKAN').error).toMatch(/fill in line/);
+  });
+});

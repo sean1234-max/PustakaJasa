@@ -186,7 +186,11 @@ const STANDALONE_YEAR_RE = /^(SESI\s+|TAHUN\s+)?(19|20)\d{2}\s*(\/\s*(19|20)?\d{
 // rather than fixed position (see slotsByCount tables above) since a real
 // order just writes into however many lines it needs rather than leaving a
 // gap for a skipped optional one.
-function readRefLinesInBand(ws, range, rowStart, rowEnd, slotsByCount = KLAS_MATRIX_SLOTS_BY_COUNT) {
+// `titleBoxFirst` — the band starts with the sheet's own ① TAJUK BESAR box
+// (every FORM ANUGERAH sheet: the boxes sit right under "TOLONG ISI DI
+// SINI"). A ① left blank then stays a blank title rather than the ② line
+// moving up into it (Sean, 2026-10-07).
+function readRefLinesInBand(ws, range, rowStart, rowEnd, slotsByCount = KLAS_MATRIX_SLOTS_BY_COUNT, titleBoxFirst = false) {
   const maxSlots = Math.max(...Object.keys(slotsByCount).map(Number));
   const values = [];
   for (let r = rowStart; r <= rowEnd; r++) {
@@ -195,6 +199,7 @@ function readRefLinesInBand(ws, range, rowStart, rowEnd, slotsByCount = KLAS_MAT
       const val = cellText(ws, r, c);
       if (val) rowValues.push(val);
     }
+    if (titleBoxFirst && r === rowStart && !rowValues.length) { values.push(''); continue; }
     // A row can hold more than one distinct text run (e.g. a school typed
     // the title across two merged cells) — keep them as ONE line, joined,
     // since they're on the same physical printed line.
@@ -214,7 +219,7 @@ function readRefLinesInBand(ws, range, rowStart, rowEnd, slotsByCount = KLAS_MAT
   // every following line down a slot.
   const tableHasYearSlot = Object.values(slotsByCount).some((arr) => arr.includes('1'));
   let yearLine = '';
-  if (!tableHasYearSlot && values.length >= 2 && STANDALONE_YEAR_RE.test(values[1].trim())) {
+  if (!tableHasYearSlot && values.length >= 2 && values[0] && STANDALONE_YEAR_RE.test(values[1].trim())) {
     [yearLine] = values.splice(1, 1);
   }
   const slots = slotsByCount[Math.min(values.length, maxSlots)] || slotsByCount[maxSlots];
@@ -1146,6 +1151,7 @@ function parseSubjectLevelSheet(ws) {
   const linesStart = instructionRow ? instructionRow.row + 1 : range.r1;
   const lines = readRefLinesInBand(
     ws, { r1: linesStart, r2: subjekH.row - 1, c1: titleC1, c2: titleC2 }, linesStart, subjekH.row - 1,
+    undefined, !!instructionRow,
   );
 
   let jenisPlak = '';
@@ -1246,6 +1252,7 @@ function parsePbdSheet(ws) {
   const linesStart = (pbdInstr?.row || 0) + 1;
   const lines = readRefLinesInBand(
     ws, { r1: linesStart, r2: tahunH.row - 1, c1: pbdTitleC1, c2: pbdTitleC2 }, linesStart, tahunH.row - 1,
+    undefined, !!pbdInstr,
   );
 
   let jenisPlak = '';
@@ -1359,6 +1366,7 @@ function parseAliranSheet(ws) {
   const linesStart = (instructionCell?.row || 0) + 1;
   const lines = aliranSlotsByContent(readRefLinesInBand(
     ws, { r1: linesStart, r2: tahunH.row - 1, c1: titleCol, c2: titleCol }, linesStart, tahunH.row - 1,
+    undefined, !!instructionCell,
   ));
 
   return { lines, tahunRows, plakRanges, isAliran: true, classes: [], jenisPlak: '' };
@@ -1434,6 +1442,7 @@ function parseTahunPlakRowSheet(ws) {
   const linesStart = (instructionCell?.row || 0) + 1;
   const lines = readRefLinesInBand(
     ws, { r1: linesStart, r2: tahunH.row - 1, c1: titleCol, c2: titleCol }, linesStart, tahunH.row - 1,
+    undefined, !!instructionCell,
   );
 
   return { lines, tahunRows, isSimpleTahunList: true, classes: [] };
@@ -1573,6 +1582,7 @@ function parseTokohAnugerahSheet(ws) {
   const linesStart = instr ? instr.row + 1 : range.r1;
   const lines = readRefLinesInBand(
     ws, { r1: linesStart, r2: tokohH.row - 1, c1: titleCol, c2: titleColRead }, linesStart, tokohH.row - 1,
+    undefined, !!instr,
   );
 
   return { lines, tokohRows, isTokohList: true, classes: [] };

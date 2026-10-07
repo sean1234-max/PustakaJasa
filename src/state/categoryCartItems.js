@@ -66,9 +66,9 @@ export function buildCategoryCartItems(st, catKey) {
 
   for (const blk of blocks) {
     const lineHasValue = (line) => Boolean(String(line.value).trim());
-    // Line 1 (the event name) is always required; a category can mark
-    // extra lines required too (`line.required` — see computeBlocks.js's
-    // requiredLineIndices) — everything else (year, ACARA, position
+    // A category marks the lines it needs (`line.required` — see
+    // computeBlocks.js's requiredLineIndices; TAJUK BESAR may be blank) —
+    // everything else (year, ACARA, position
     // CONTOH, etc.) is reference-sample context the teacher may not
     // always have yet, so it can stay blank.
     const hasQty = blk.blockTotalQty > 0;

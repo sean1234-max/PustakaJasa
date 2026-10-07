@@ -4,7 +4,7 @@ import {
   getCategoryLinePlaceholders, getCategoryPositionLine2Placeholder,
   getCategoryTahunPlaceholder, getCategoryNamaKelasPlaceholder,
   resolveSelempangWarna, SELEMPANG_CODE, SELEMPANG_UNIT_PRICE, getStockStatus,
-  resolveCategory, categoriesUsedByItems, kelasListLabel,
+  resolveCategory, categoriesUsedByItems, kelasListLabel, isCustomPlakCode,
 } from '../data/catalog';
 import { findPossibleTypo, replaceWord } from './typoCheck';
 import { umumSlotFields, umumRedSlots, UMUM_NO_RED } from './umumLines';
@@ -103,11 +103,11 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
   const blocks = [];
 
   for (const b of activeIndices) {
-    // Every category requires line 1 (the event name); a category can mark
-    // additional lines required too via `requiredLineIndices` (0-based —
-    // OTHERS requires line 3's first box, see catalog.js) instead of
-    // defaulting every field to optional. Read by OrderCategoryBlock (the
-    // ★ marker) and AppState.jsx's addToCart validation.
+    // A category marks lines required via `requiredLineIndices` (0-based —
+    // e.g. ACARA, see catalog.js) instead of defaulting every field to
+    // optional. TAJUK BESAR (line 1) keeps its ★ but may be left blank — a
+    // plaque can have no title (Sean, 2026-10-07). Read by
+    // OrderCategoryBlock (the ★ marker) and addToCart's validation.
     const requiredLineIndices = currentCat.requiredLineIndices || [0];
     // Separate from requiredLineIndices — the ★ marker on Main
     // Template/Mata Pelajaran-Klas's YEAR line is purely visual ("this
@@ -200,7 +200,7 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
       const slotId = `${i}`;
       const line = {
         key, slotId, placeholder, value: lineValues[key] || '',
-        required: requiredLineIndices.includes(i),
+        required: i !== 0 && requiredLineIndices.includes(i),
         starred: starredLineIndices.includes(i),
         // TAJUK BESAR's own bigger/bold live-preview styling — normally
         // just whichever line renders first, but that stops being slot 0
@@ -545,7 +545,13 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
         // single block-level Jenis Plak table.
         let plakFields = {};
         if (currentCat.plakPerRow) {
-          const rowUnitPrice = row.unitPrice != null ? row.unitPrice : priceFor(row.jenisPlak);
+          // An "OTHER - …" Jenis Plak has no website price: it takes the
+          // sheet's own HARGA PER UNIT (Sean, 2026-10-07) unless a real price
+          // was already set on it.
+          const excelPrice = row.hargaExcel === '' || row.hargaExcel == null ? null : Number(row.hargaExcel);
+          const rowUnitPrice = isCustomPlakCode(row.jenisPlak) && !(Number(row.unitPrice) > 0) && Number.isFinite(excelPrice)
+            ? excelPrice
+            : (row.unitPrice != null ? row.unitPrice : priceFor(row.jenisPlak));
           const rowHarga = rowUnitPrice != null ? (Number(row.qty) || 0) * rowUnitPrice : 0;
           plakFields = {
             jenisPlak: row.jenisPlak || '',
