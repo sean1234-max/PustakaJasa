@@ -130,6 +130,14 @@ Deno.serve(async (req) => {
     return json({ issues: [], checked: false });
   }
 
+  // Site-wide monthly AI cap shared by every AI feature (migration 0085).
+  // Fails open: before that migration exists the RPC just errors.
+  const { data: budget, error: budgetError } = await adminClient.rpc('ai_budget_status');
+  if (!budgetError && Array.isArray(budget) && budget[0]?.blocked === true) {
+    await adminClient.from('ai_grammar_checks').insert({ created_by: user.id, status: 'cost_capped', lines_checked: lines.length });
+    return json({ issues: [], checked: false });
+  }
+
   const { data: run } = await adminClient
     .from('ai_grammar_checks')
     .insert({ created_by: user.id, status: 'processing', model: MODEL, lines_checked: lines.length })

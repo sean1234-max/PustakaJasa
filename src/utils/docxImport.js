@@ -208,44 +208,11 @@ function findHeading(body) {
   return '';
 }
 
-const BAD_FILE = 'Could not read this file — please make sure it is a valid .docx file.';
-
-// Top-level entry point — same return shape as excelImport.js's
-// parseFormAnugerahExcel (`{ categorized, notes } | { error }`), so
-// AppState.jsx/addOnDiff.js merge either file type through the same code
-// path. `DOMParser` is injectable for tests (node has none). Never throws.
-export async function parseWordingDocx(arrayBuffer, { DOMParser: DP = globalThis.DOMParser } = {}) {
-  let zip;
-  try {
-    zip = await JSZip.loadAsync(arrayBuffer);
-  } catch {
-    return { klasMatrix: null, error: BAD_FILE };
-  }
-  const xmlFile = zip.file('word/document.xml');
-  if (!xmlFile) return { klasMatrix: null, error: BAD_FILE };
-  const xmlText = await xmlFile.async('text');
-  const doc = new DP().parseFromString(xmlText, 'application/xml');
-  if (!doc || !doc.documentElement || doc.getElementsByTagName('parsererror').length > 0) {
-    return { klasMatrix: null, error: BAD_FILE };
-  }
-  const body = doc.getElementsByTagNameNS(W_NS, 'body')[0];
-  const heading = body ? findHeading(body) : '';
-
-  const notes = [];
-  const rows = [];
-  Array.from(doc.getElementsByTagNameNS(W_NS, 'tbl')).forEach((tbl, tableIdx) => {
-    const tableRows = [];
-    readTableRows(tbl, tableIdx, notes).forEach((r) => {
-      if (!r.isTotal) { tableRows.push(r); return; }
-      // A JUMLAH/TOTAL row checks only its own table's rows above it.
-      const sum = tableRows.reduce((s, x) => s + x.qty, 0);
-      if (r.qty != null && r.qty !== sum) {
-        notes.push(`${r.where}: the file's JUMLAH/TOTAL says ${r.qty}, but the rows above it add up to ${sum} — please check nothing is missing.`);
-      }
-    });
-    rows.push(...tableRows);
-  });
-
+// Groups wording rows ({ lines, qty, kod }) into one KLAS_MATRIX-shaped
+// section per award (title + plaque code), each under its own dynamic
+// category key. Shared with aiMapping.js, so a Word table and an
+// AI-mapped Excel list land on Step 2 exactly the same way.
+export function wordingRowsToCategorized(rows, heading = '') {
   // Group by award title + plaque code. One title with two different codes
   // is two awards (each block carries one Jenis Plak) — both kept, each
   // labelled with its own code so neither silently takes the other's.
@@ -290,7 +257,49 @@ export async function parseWordingDocx(arrayBuffer, { DOMParser: DP = globalThis
     categorized[makeDynamicCategoryKey('KLAS_MATRIX', label)] = [section];
   });
 
-  if (groupOrder.length === 0) {
+  return { categorized, count: groupOrder.length };
+}
+
+const BAD_FILE = 'Could not read this file — please make sure it is a valid .docx file.';
+
+// Top-level entry point — same return shape as excelImport.js's
+// parseFormAnugerahExcel (`{ categorized, notes } | { error }`), so
+// AppState.jsx/addOnDiff.js merge either file type through the same code
+// path. `DOMParser` is injectable for tests (node has none). Never throws.
+export async function parseWordingDocx(arrayBuffer, { DOMParser: DP = globalThis.DOMParser } = {}) {
+  let zip;
+  try {
+    zip = await JSZip.loadAsync(arrayBuffer);
+  } catch {
+    return { klasMatrix: null, error: BAD_FILE };
+  }
+  const xmlFile = zip.file('word/document.xml');
+  if (!xmlFile) return { klasMatrix: null, error: BAD_FILE };
+  const xmlText = await xmlFile.async('text');
+  const doc = new DP().parseFromString(xmlText, 'application/xml');
+  if (!doc || !doc.documentElement || doc.getElementsByTagName('parsererror').length > 0) {
+    return { klasMatrix: null, error: BAD_FILE };
+  }
+  const body = doc.getElementsByTagNameNS(W_NS, 'body')[0];
+  const heading = body ? findHeading(body) : '';
+
+  const notes = [];
+  const rows = [];
+  Array.from(doc.getElementsByTagNameNS(W_NS, 'tbl')).forEach((tbl, tableIdx) => {
+    const tableRows = [];
+    readTableRows(tbl, tableIdx, notes).forEach((r) => {
+      if (!r.isTotal) { tableRows.push(r); return; }
+      // A JUMLAH/TOTAL row checks only its own table's rows above it.
+      const sum = tableRows.reduce((s, x) => s + x.qty, 0);
+      if (r.qty != null && r.qty !== sum) {
+        notes.push(`${r.where}: the file's JUMLAH/TOTAL says ${r.qty}, but the rows above it add up to ${sum} — please check nothing is missing.`);
+      }
+    });
+    rows.push(...tableRows);
+  });
+
+  const { categorized, count } = wordingRowsToCategorized(rows, heading);
+  if (count === 0) {
     return { klasMatrix: null, error: 'No recognized WORDING/KUANTITI or LABEL/BILANGAN table found in this file.' };
   }
 

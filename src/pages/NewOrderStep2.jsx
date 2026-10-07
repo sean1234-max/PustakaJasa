@@ -11,6 +11,7 @@ import {
 import { computeBlocks, noopUpdaters } from '../utils/computeBlocks';
 import { createDraftUpdaters } from '../utils/draftUpdaters';
 import { checkEngravingText } from '../lib/grammarCheckApi';
+import { canUseAiReader } from '../lib/fileReadApi';
 
 const DRAFT_FIELDS = {
   lineValues: 'lineValues', matrixValues: 'matrixValues', rowsByBlock: 'rowsByBlock', plakRows: 'plakRows',
@@ -22,7 +23,7 @@ const DRAFT_FIELDS = {
 const EDITABLE = { lines: true, rowDesc: true, rowQty: true, addRemoveRows: true, matrix: true, jenisPlak: true };
 
 export default function NewOrderStep2() {
-  const { state, patch, addToCart, addAllToCart, importFormAnugerahExcel } = useAppState();
+  const { state, patch, addToCart, addAllToCart, importFormAnugerahExcel, readSkippedSheetsWithAi } = useAppState();
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
   // The last import's result ({ ok, message, warnings }) and the answers to
@@ -32,6 +33,10 @@ export default function NewOrderStep2() {
   const importStatus = state.step2ImportStatus || null;
   const setImportStatus = (value) => patch({ step2ImportStatus: value });
   const [importing, setImporting] = useState(false);
+  // The last imported file, kept only for this page visit so its skipped
+  // sheets can be offered to the AI sheet reader (readSkippedSheetsWithAi).
+  const lastImportFileRef = useRef(null);
+  const [aiReading, setAiReading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   // Clicking a "couldn't match Jenis Plak" warning jumps straight to that
   // one field — see jumpToBlock/the effect below. `pendingScrollBlockIdx`
@@ -77,6 +82,7 @@ export default function NewOrderStep2() {
     setImporting(true);
     setImportStatus(null);
     setChoiceAnswers({});
+    lastImportFileRef.current = file;
     let result;
     try {
       result = await importFormAnugerahExcel(file);
@@ -94,6 +100,34 @@ export default function NewOrderStep2() {
     if (result.ok && unmatched.length > 0) {
       window.alert(`Jenis Plak ini tidak dijumpai dalam katalog. Sila pilih sendiri sebelum tambah ke troli:\n\n${unmatched.map((raw) => `• ${raw}`).join('\n')}\n\nThese Jenis Plak couldn't be matched to the catalog — please choose them manually before adding to cart.`);
     }
+  };
+
+  // "Read with AI" for the sheets the rule-based reader skipped. Its tabs
+  // and notes are ADDED to the current import (nothing already imported is
+  // touched), and the offer goes away once used.
+  const aiSheets = importStatus?.ok && !importStatus.aiDone && lastImportFileRef.current && canUseAiReader(state.role)
+    ? (importStatus.skippedSheets || []) : [];
+  const handleReadWithAi = async () => {
+    if (aiReading || aiSheets.length === 0) return;
+    setAiReading(true);
+    let result;
+    try {
+      result = await readSkippedSheetsWithAi(lastImportFileRef.current, aiSheets);
+    } finally {
+      setAiReading(false);
+    }
+    const prev = importStatus || {};
+    setImportStatus({
+      ...prev,
+      aiDone: !!result.ok,
+      message: result.ok ? `${prev.message} ${result.message}` : prev.message,
+      aiError: result.ok ? '' : result.message,
+      // The rule reader's "this sheet was skipped" lines are answered now.
+      warnings: [
+        ...(prev.warnings || []).filter((w) => !(result.ok && w.type === 'truncated' && /were skipped|Couldn't recognize the format of sheet/.test(w.text))),
+        ...(result.warnings || []),
+      ],
+    });
   };
 
   // The import's cross-check questions (matrix column vs its own TOTAL row,
@@ -414,6 +448,14 @@ export default function NewOrderStep2() {
             <p className="hint-text" style={{ margin: '4px 0 0', color: importStatus.ok ? '#1f8a3b' : '#c0392b', fontWeight: 600 }}>
               {importStatus.message}
             </p>
+          )}
+          {importStatus?.aiError && (
+            <p className="hint-text" style={{ margin: '4px 0 0', color: '#c0392b', fontWeight: 600 }}>{importStatus.aiError}</p>
+          )}
+          {aiSheets.length > 0 && (
+            <button type="button" className="btn btn-secondary" style={{ marginTop: 8 }} disabled={aiReading} onClick={handleReadWithAi}>
+              {aiReading ? 'AI is reading…' : `Read ${aiSheets.length} skipped sheet(s) with AI`}
+            </button>
           )}
           {/* Separate from the plain success/failure line above — flags a
               file that had more sections than could be imported (`truncated`),

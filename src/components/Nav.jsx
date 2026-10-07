@@ -1,5 +1,6 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAppState } from '../state/useAppState';
+import AiBudgetBanner from './AiBudgetBanner';
 
 export default function Nav() {
   const { state, logout, startNewOrder } = useAppState();
@@ -62,19 +63,22 @@ export default function Nav() {
 
   if (state.role === 'admin') {
     return (
-      <nav className="nav">
-        <span className="nav-brand">Admin Portal</span>
-        <Link to="/admin/dashboard" aria-current={pathname === '/admin/dashboard' ? 'page' : undefined}>Dashboard</Link>
-        <Link to="/admin/orders" aria-current={pathname.startsWith('/admin/orders') ? 'page' : undefined}>Orders</Link>
-        <Link to="/admin/urgent-commission" aria-current={pathname === '/admin/urgent-commission' ? 'page' : undefined}>Urgent Commission</Link>
-        <Link to="/admin/schools" aria-current={pathname.startsWith('/admin/schools') ? 'page' : undefined}>Schools</Link>
-        <Link to="/admin/salesmen" aria-current={pathname.startsWith('/admin/salesmen') ? 'page' : undefined}>Salesmen</Link>
-        <Link to="/admin/store-admins" aria-current={pathname.startsWith('/admin/store-admins') ? 'page' : undefined}>Store Admin</Link>
-        <Link to="/admin/users" aria-current={pathname === '/admin/users' ? 'page' : undefined}>Users</Link>
-        <Link to="/admin/catalog" aria-current={pathname === '/admin/catalog' ? 'page' : undefined}>Products</Link>
-        <Link to="/admin/audit-log" aria-current={pathname === '/admin/audit-log' ? 'page' : undefined}>Activity Log</Link>
-        <button type="button" className="nav-logout" onClick={handleLogout}>Log Out</button>
-      </nav>
+      <>
+        <nav className="nav">
+          <span className="nav-brand">Admin Portal</span>
+          <Link to="/admin/dashboard" aria-current={pathname === '/admin/dashboard' ? 'page' : undefined}>Dashboard</Link>
+          <Link to="/admin/orders" aria-current={pathname.startsWith('/admin/orders') ? 'page' : undefined}>Orders</Link>
+          <Link to="/admin/urgent-commission" aria-current={pathname === '/admin/urgent-commission' ? 'page' : undefined}>Urgent Commission</Link>
+          <Link to="/admin/schools" aria-current={pathname.startsWith('/admin/schools') ? 'page' : undefined}>Schools</Link>
+          <Link to="/admin/salesmen" aria-current={pathname.startsWith('/admin/salesmen') ? 'page' : undefined}>Salesmen</Link>
+          <Link to="/admin/store-admins" aria-current={pathname.startsWith('/admin/store-admins') ? 'page' : undefined}>Store Admin</Link>
+          <Link to="/admin/users" aria-current={pathname === '/admin/users' ? 'page' : undefined}>Users</Link>
+          <Link to="/admin/catalog" aria-current={pathname === '/admin/catalog' ? 'page' : undefined}>Products</Link>
+          <Link to="/admin/audit-log" aria-current={pathname === '/admin/audit-log' ? 'page' : undefined}>Activity Log</Link>
+          <button type="button" className="nav-logout" onClick={handleLogout}>Log Out</button>
+        </nav>
+        <AiBudgetBanner />
+      </>
     );
   }
 
