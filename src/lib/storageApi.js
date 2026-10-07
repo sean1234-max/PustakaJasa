@@ -49,16 +49,39 @@ export async function removeOrderImportFile(path) {
 // A short-lived signed download URL for a stored import file (private
 // bucket). `download: true` sets Content-Disposition so the browser saves
 // it rather than trying to open it. Returns null on any failure.
-// `fileName` (optional) is the name the browser saves it as — a cross-origin
-// link ignores <a download>, so the name has to come from Storage itself.
-export async function getOrderImportUrl(path, fileName) {
+export async function getOrderImportUrl(path) {
   if (!path) return null;
   try {
-    const { data, error } = await supabase.storage.from('order-imports').createSignedUrl(path, 300, { download: fileName || true });
+    const { data, error } = await supabase.storage.from('order-imports').createSignedUrl(path, 300, { download: true });
     if (error || !data?.signedUrl) return null;
     return data.signedUrl;
   } catch {
     return null;
+  }
+}
+
+// Saves a stored upload under `fileName` exactly. A cross-origin link ignores
+// <a download>, and Storage's own download name percent-encodes "(" ")", so
+// the file is fetched and handed to the browser as a local blob instead.
+// Returns false when it couldn't be downloaded.
+export async function saveOrderImportAs(path, fileName) {
+  const url = await getOrderImportUrl(path);
+  if (!url) return false;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return false;
+    const blobUrl = URL.createObjectURL(await res.blob());
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+    return true;
+  } catch (err) {
+    console.error('order import download failed:', err);
+    return false;
   }
 }
 

@@ -7,7 +7,7 @@ import { useAppState } from '../state/useAppState';
 import { ACTIVE_CATEGORIES, filterHiddenPlakCatalog, isDynamicCategoryKey, resolveCategory } from '../data/catalog';
 import { computeBlocks } from '../utils/computeBlocks';
 import { createDraftUpdaters } from '../utils/draftUpdaters';
-import { getOrderImportUrl } from '../lib/storageApi';
+import { saveOrderImportAs } from '../lib/storageApi';
 import { buildOrderImportFilename } from '../utils/exportCsv';
 
 // Production's own scratch draft (AppState's prodExcel* fields — the same
@@ -90,15 +90,9 @@ export default function ProductionEditOrder() {
   };
 
   const handleDownload = async () => {
-    const fileName = buildOrderImportFilename(order);
-    const url = await getOrderImportUrl(order.importFilePath, fileName);
-    if (!url) { setMessage({ ok: false, text: 'Could not download the teacher’s Excel right now. Please try again.' }); return; }
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = fileName;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
+    if (!(await saveOrderImportAs(order.importFilePath, buildOrderImportFilename(order)))) {
+      setMessage({ ok: false, text: 'Could not download the teacher’s Excel right now. Please try again.' });
+    }
   };
 
   const handleSave = async () => {

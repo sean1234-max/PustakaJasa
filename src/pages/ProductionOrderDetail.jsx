@@ -13,7 +13,7 @@ import { reconstructOrderDetailGroups, reconstructBlocksForCategory, noopUpdater
 import { getExportableCategories, splitOrderCategories, getOrderJenisPlakGroups, getPlakProductionMode, summarizeRowsForManual, buildCsvRows, rowsToCsv, buildCategoryCsvFilename, combineCsvRows, buildCombinedCsvFilename, buildOrderImportFilename, validateExport, getInvoiceIdForJenisPlak, getPartialSplitNotes } from '../utils/exportCsv';
 import { downloadTextFile } from '../utils/downloadBlob';
 import { getInvoiceItems } from '../utils/orderBatches';
-import { getOrderImportUrl } from '../lib/storageApi';
+import { saveOrderImportAs } from '../lib/storageApi';
 import { getAiFileHelperStatus, startAiFileHelperJob, getAiFileHelperJob } from '../lib/aiFileHelper';
 import { getOrderChangeStamp } from '../utils/orderStamp';
 
@@ -25,15 +25,9 @@ const REORDER_ONLY = { ...READONLY, lineOrder: true };
 // short-lived signed URL — for cross-checking the order against the file.
 async function downloadOrderImport(order, setErr) {
   setErr('');
-  const fileName = buildOrderImportFilename(order);
-  const url = await getOrderImportUrl(order.importFilePath, fileName);
-  if (!url) { setErr('Could not download the file right now. Please try again.'); return; }
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = fileName;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
+  if (!(await saveOrderImportAs(order.importFilePath, buildOrderImportFilename(order)))) {
+    setErr('Could not download the file right now. Please try again.');
+  }
 }
 
 export default function ProductionOrderDetail() {
