@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   CSV_COLUMNS, rowsToCsv, buildCsvRows, validateExport, buildCategoryCsvFilename, getInvoiceIdForJenisPlak, getPartialSplitNotes, isReservedName,
   getOrderJenisPlakGroups, getExportableCategories, splitOrderCategories,
-  combineCsvRows, buildCombinedCsvFilename, getLineOrder,
+  combineCsvRows, buildCombinedCsvFilename, buildOrderImportFilename, getLineOrder,
 } from './exportCsv';
 import { customMatrixLabelKey, matrixCellKey, resolveCategory } from '../data/catalog';
 
@@ -971,5 +971,13 @@ describe('MP THP 4-line CONTOH (TAJUK / ACARA / SUBJEK / TAHUN)', () => {
   it('a subject written into ACARA (to print red) is not repeated below', () => {
     expect(first({ 'MP2::0::2': 'TERBAIK\nBAHASA MELAYU', 'MP2::0::2b': 'BAHASA MELAYU', 'MP2::0::3': 'TAHUN 4' }))
       .toEqual(['TERBAIK\nSAINS', 'TAHUN 5', '']);
+  });
+});
+
+describe('buildOrderImportFilename', () => {
+  it('saves the teacher\'s upload as "<school> (<salesman>)" with its own extension', () => {
+    expect(buildOrderImportFilename({ sekolah: 'SK PUTRAJAYA PRESINT 11(1)', sales: 'Keith', importFilePath: 'u/a.xlsx' }))
+      .toBe('SK PUTRAJAYA PRESINT 11(1) (Keith).xlsx');
+    expect(buildOrderImportFilename({ sekolah: 'SK A/B', sales: '', importFilePath: 'u/a.docx' })).toBe('SK A-B.docx');
   });
 });

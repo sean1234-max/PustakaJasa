@@ -8,6 +8,7 @@ import { ACTIVE_CATEGORIES, filterHiddenPlakCatalog, isDynamicCategoryKey, resol
 import { computeBlocks } from '../utils/computeBlocks';
 import { createDraftUpdaters } from '../utils/draftUpdaters';
 import { getOrderImportUrl } from '../lib/storageApi';
+import { buildOrderImportFilename } from '../utils/exportCsv';
 
 // Production's own scratch draft (AppState's prodExcel* fields — the same
 // ones the corrected-Excel parse fills).
@@ -89,11 +90,12 @@ export default function ProductionEditOrder() {
   };
 
   const handleDownload = async () => {
-    const url = await getOrderImportUrl(order.importFilePath);
+    const fileName = buildOrderImportFilename(order);
+    const url = await getOrderImportUrl(order.importFilePath, fileName);
     if (!url) { setMessage({ ok: false, text: 'Could not download the teacher’s Excel right now. Please try again.' }); return; }
     const a = document.createElement('a');
     a.href = url;
-    a.download = order.importFileName || 'order.xlsx';
+    a.download = fileName;
     document.body.appendChild(a);
     a.click();
     a.remove();

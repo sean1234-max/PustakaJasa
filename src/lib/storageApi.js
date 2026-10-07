@@ -49,10 +49,12 @@ export async function removeOrderImportFile(path) {
 // A short-lived signed download URL for a stored import file (private
 // bucket). `download: true` sets Content-Disposition so the browser saves
 // it rather than trying to open it. Returns null on any failure.
-export async function getOrderImportUrl(path) {
+// `fileName` (optional) is the name the browser saves it as — a cross-origin
+// link ignores <a download>, so the name has to come from Storage itself.
+export async function getOrderImportUrl(path, fileName) {
   if (!path) return null;
   try {
-    const { data, error } = await supabase.storage.from('order-imports').createSignedUrl(path, 300, { download: true });
+    const { data, error } = await supabase.storage.from('order-imports').createSignedUrl(path, 300, { download: fileName || true });
     if (error || !data?.signedUrl) return null;
     return data.signedUrl;
   } catch {

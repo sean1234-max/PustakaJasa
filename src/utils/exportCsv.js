@@ -817,6 +817,16 @@ export function combineCsvRows(groups) {
   return (groups || []).flatMap((g) => g.csvData.rows);
 }
 
+// Production's download of the teacher's original upload is saved as
+// "<school> (<salesman>).xlsx" (Sean, 2026-10-07); the extension follows the
+// stored file (.xlsx or .docx).
+export function buildOrderImportFilename(order) {
+  const ext = /\.docx$/i.test(order.importFilePath || '') ? '.docx' : '.xlsx';
+  const school = sanitizeFilenamePart(order.sekolah || 'Order');
+  const salesman = sanitizeFilenamePart(order.sales || '');
+  return `${school}${salesman ? ` (${salesman})` : ''}${ext}`;
+}
+
 export function buildCombinedCsvFilename(order) {
   const invoice = sanitizeFilenamePart(order.invoiceId || order.id);
   const school = sanitizeFilenamePart(order.sekolah || 'Combined');

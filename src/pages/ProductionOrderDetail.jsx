@@ -10,7 +10,7 @@ import OrderPrintout from '../components/OrderPrintout';
 import { useAppState } from '../state/useAppState';
 import { statusPillStyle, formatDate, MANUAL_MAX_QTY, deliveryStageForShipmentDate, toMalaysiaDay, malaysiaToday, isReviewed } from '../data/catalog';
 import { reconstructOrderDetailGroups, reconstructBlocksForCategory, noopUpdaters } from '../utils/computeBlocks';
-import { getExportableCategories, splitOrderCategories, getOrderJenisPlakGroups, getPlakProductionMode, summarizeRowsForManual, buildCsvRows, rowsToCsv, buildCategoryCsvFilename, combineCsvRows, buildCombinedCsvFilename, validateExport, getInvoiceIdForJenisPlak, getPartialSplitNotes } from '../utils/exportCsv';
+import { getExportableCategories, splitOrderCategories, getOrderJenisPlakGroups, getPlakProductionMode, summarizeRowsForManual, buildCsvRows, rowsToCsv, buildCategoryCsvFilename, combineCsvRows, buildCombinedCsvFilename, buildOrderImportFilename, validateExport, getInvoiceIdForJenisPlak, getPartialSplitNotes } from '../utils/exportCsv';
 import { downloadTextFile } from '../utils/downloadBlob';
 import { getInvoiceItems } from '../utils/orderBatches';
 import { getOrderImportUrl } from '../lib/storageApi';
@@ -25,11 +25,12 @@ const REORDER_ONLY = { ...READONLY, lineOrder: true };
 // short-lived signed URL — for cross-checking the order against the file.
 async function downloadOrderImport(order, setErr) {
   setErr('');
-  const url = await getOrderImportUrl(order.importFilePath);
+  const fileName = buildOrderImportFilename(order);
+  const url = await getOrderImportUrl(order.importFilePath, fileName);
   if (!url) { setErr('Could not download the file right now. Please try again.'); return; }
   const a = document.createElement('a');
   a.href = url;
-  a.download = order.importFileName || 'order.xlsx';
+  a.download = fileName;
   document.body.appendChild(a);
   a.click();
   a.remove();
