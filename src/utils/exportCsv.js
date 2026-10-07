@@ -818,13 +818,13 @@ export function combineCsvRows(groups) {
 }
 
 // Production's download of the teacher's original upload is saved as
-// "<school> (<salesman>).xlsx" (Sean, 2026-10-07); the extension follows the
-// stored file (.xlsx or .docx).
+// "<order id>-<school>(<salesman>).xlsx" (Sean, 2026-10-07); the extension
+// follows the stored file (.xlsx or .docx).
 export function buildOrderImportFilename(order) {
   const ext = /\.docx$/i.test(order.importFilePath || '') ? '.docx' : '.xlsx';
   const school = sanitizeFilenamePart(order.sekolah || 'Order');
   const salesman = sanitizeFilenamePart(order.sales || '');
-  return `${school}${salesman ? ` (${salesman})` : ''}${ext}`;
+  return `${sanitizeFilenamePart(order.id || '')}-${school}${salesman ? `(${salesman})` : ''}${ext}`;
 }
 
 export function buildCombinedCsvFilename(order) {

@@ -975,9 +975,9 @@ describe('MP THP 4-line CONTOH (TAJUK / ACARA / SUBJEK / TAHUN)', () => {
 });
 
 describe('buildOrderImportFilename', () => {
-  it('saves the teacher\'s upload as "<school> (<salesman>)" with its own extension', () => {
-    expect(buildOrderImportFilename({ sekolah: 'SK PUTRAJAYA PRESINT 11(1)', sales: 'Keith', importFilePath: 'u/a.xlsx' }))
-      .toBe('SK PUTRAJAYA PRESINT 11(1) (Keith).xlsx');
-    expect(buildOrderImportFilename({ sekolah: 'SK A/B', sales: '', importFilePath: 'u/a.docx' })).toBe('SK A-B.docx');
+  it('saves the teacher\'s upload as "<order id>-<school>(<salesman>)" with its own extension', () => {
+    expect(buildOrderImportFilename({ id: 'ORD-0023', sekolah: 'SK SG SERAI KUANG', sales: 'onn', importFilePath: 'u/a.xlsx' }))
+      .toBe('ORD-0023-SK SG SERAI KUANG(onn).xlsx');
+    expect(buildOrderImportFilename({ id: 'ORD-0001', sekolah: 'SK A/B', sales: '', importFilePath: 'u/a.docx' })).toBe('ORD-0001-SK A-B.docx');
   });
 });
