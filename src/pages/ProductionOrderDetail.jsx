@@ -10,10 +10,10 @@ import OrderPrintout from '../components/OrderPrintout';
 import { useAppState } from '../state/useAppState';
 import { statusPillStyle, formatDate, MANUAL_MAX_QTY, deliveryStageForShipmentDate, toMalaysiaDay, malaysiaToday, isReviewed } from '../data/catalog';
 import { reconstructOrderDetailGroups, reconstructBlocksForCategory, noopUpdaters } from '../utils/computeBlocks';
-import { getExportableCategories, splitOrderCategories, getOrderJenisPlakGroups, getPlakProductionMode, summarizeRowsForManual, buildCsvRows, rowsToCsv, buildCategoryCsvFilename, combineCsvRows, buildCombinedCsvFilename, buildOrderImportFilename, validateExport, getInvoiceIdForJenisPlak, getPartialSplitNotes } from '../utils/exportCsv';
+import { getExportableCategories, splitOrderCategories, getOrderJenisPlakGroups, getPlakProductionMode, summarizeRowsForManual, buildCsvRows, rowsToCsv, buildCategoryCsvFilename, combineCsvRows, buildCombinedCsvFilename, validateExport, getInvoiceIdForJenisPlak, getPartialSplitNotes } from '../utils/exportCsv';
 import { downloadTextFile } from '../utils/downloadBlob';
 import { getInvoiceItems } from '../utils/orderBatches';
-import { saveOrderImportAs } from '../lib/storageApi';
+import ImportFileButtons from '../components/ImportFileButtons';
 import { getAiFileHelperStatus, startAiFileHelperJob, getAiFileHelperJob } from '../lib/aiFileHelper';
 import { getOrderChangeStamp } from '../utils/orderStamp';
 
@@ -21,18 +21,8 @@ const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: f
 // Production may still drag the Reference Sample rows into a new order — nothing else.
 const REORDER_ONLY = { ...READONLY, lineOrder: true };
 
-// Downloads the teacher's original FORM ANUGERAH upload (0055) via a
-// short-lived signed URL — for cross-checking the order against the file.
-async function downloadOrderImport(order, setErr) {
-  setErr('');
-  if (!(await saveOrderImportAs(order.importFilePath, buildOrderImportFilename(order)))) {
-    setErr('Could not download the file right now. Please try again.');
-  }
-}
-
 export default function ProductionOrderDetail() {
   const { state, ensureOrderLoaded, loadCorrectedExcelPreview, updateReferenceOrder, markReviewDone } = useAppState();
-  const [importErr, setImportErr] = useState('');
   const { id } = useParams();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -423,10 +413,7 @@ export default function ProductionOrderDetail() {
             {order.importFilePath && (
               <div style={{ marginTop: 'var(--space-4)' }}>
                 <div className="dim">Original Excel (from the teacher)</div>
-                <button type="button" className="btn btn-primary" style={{ marginTop: 4 }} onClick={() => downloadOrderImport(order, setImportErr)}>
-                  ⬇ {order.importFileName || 'Download file'}
-                </button>
-                {importErr && <div className="login-error" style={{ marginTop: 4 }}>{importErr}</div>}
+                <ImportFileButtons order={order} buttonClassName="btn btn-primary" errorClassName="login-error" />
               </div>
             )}
 

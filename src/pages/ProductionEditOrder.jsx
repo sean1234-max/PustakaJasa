@@ -9,6 +9,7 @@ import { computeBlocks } from '../utils/computeBlocks';
 import { createDraftUpdaters } from '../utils/draftUpdaters';
 import { saveOrderImportAs } from '../lib/storageApi';
 import { buildOrderImportFilename } from '../utils/exportCsv';
+import { orderImportFiles } from '../utils/importFiles';
 
 // Production's own scratch draft (AppState's prodExcel* fields — the same
 // ones the corrected-Excel parse fills).
@@ -89,9 +90,14 @@ export default function ProductionEditOrder() {
       : { ok: false, text: res.message || 'Could not read this file.' });
   };
 
+  // Every Excel the teacher uploaded for this order (usually one).
   const handleDownload = async () => {
-    if (!(await saveOrderImportAs(order.importFilePath, buildOrderImportFilename(order)))) {
-      setMessage({ ok: false, text: 'Could not download the teacher’s Excel right now. Please try again.' });
+    const files = orderImportFiles(order);
+    for (let i = 0; i < files.length; i++) {
+      if (!(await saveOrderImportAs(files[i].path, buildOrderImportFilename(order, files[i], i)))) {
+        setMessage({ ok: false, text: 'Could not download the teacher’s Excel right now. Please try again.' });
+        return;
+      }
     }
   };
 

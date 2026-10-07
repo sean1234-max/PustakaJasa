@@ -817,14 +817,14 @@ export function combineCsvRows(groups) {
   return (groups || []).flatMap((g) => g.csvData.rows);
 }
 
-// Production's download of the teacher's original upload is saved as
-// "<order id>-<school>(<salesman>).xlsx" (Sean, 2026-10-07); the extension
-// follows the stored file (.xlsx or .docx).
-export function buildOrderImportFilename(order) {
-  const ext = /\.docx$/i.test(order.importFilePath || '') ? '.docx' : '.xlsx';
+// The teacher's upload is downloaded as "<order id>-<school>(<salesman>)
+// .xlsx" (Sean, 2026-10-07); an order's second/third file gets "-2"/"-3".
+// The extension follows the stored file (.xlsx or .docx).
+export function buildOrderImportFilename(order, file = { path: order.importFilePath }, index = 0) {
+  const ext = /\.docx$/i.test(file?.path || '') ? '.docx' : '.xlsx';
   const school = sanitizeFilenamePart(order.sekolah || 'Order');
   const salesman = sanitizeFilenamePart(order.sales || '');
-  return `${sanitizeFilenamePart(order.id || '')}-${school}${salesman ? `(${salesman})` : ''}${ext}`;
+  return `${sanitizeFilenamePart(order.id || '')}-${school}${salesman ? `(${salesman})` : ''}${index > 0 ? `-${index + 1}` : ''}${ext}`;
 }
 
 export function buildCombinedCsvFilename(order) {

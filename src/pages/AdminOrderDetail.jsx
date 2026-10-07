@@ -9,21 +9,8 @@ import CancelOrderControl from '../components/CancelOrderControl';
 import { reconstructOrderDetailGroups, reconstructBlocksForCategory } from '../utils/computeBlocks';
 import { getExportableCategories, splitOrderCategories, getOrderJenisPlakGroups, buildCsvRows, rowsToCsv, buildCategoryCsvFilename, combineCsvRows, buildCombinedCsvFilename, validateExport } from '../utils/exportCsv';
 import { downloadTextFile } from '../utils/downloadBlob';
-import { getOrderImportUrl } from '../lib/storageApi';
+import ImportFileButtons from '../components/ImportFileButtons';
 
-// Downloads the teacher's original FORM ANUGERAH upload (0055) via a
-// short-lived signed URL — for cross-checking the order against the file.
-async function downloadOrderImport(order, setErr) {
-  setErr('');
-  const url = await getOrderImportUrl(order.importFilePath);
-  if (!url) { setErr('Could not download the file right now. Please try again.'); return; }
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = order.importFileName || 'order.xlsx';
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-}
 import { groupItemsByBatch } from '../utils/orderBatches';
 
 // Admin-only fork of ProductionOrderDetail.jsx — same order data and the
@@ -43,7 +30,6 @@ export default function AdminOrderDetail() {
   const [invoiceDraft, setInvoiceDraft] = useState('');
   const [savingInvoice, setSavingInvoice] = useState(false);
   const [exportNote, setExportNote] = useState('');
-  const [importErr, setImportErr] = useState('');
   const exportNoteTimer = useRef(null);
   const [page, setPage] = useState('summary');
 
@@ -189,10 +175,11 @@ export default function AdminOrderDetail() {
             {order.importFilePath && (
               <div className="mt-6">
                 <span className="text-body-sm text-on-surface-variant block mb-1">Download Excel File (Backup)</span>
-                <button type="button" onClick={() => downloadOrderImport(order, setImportErr)} className="inline-flex items-center gap-1 bg-primary text-on-primary text-label-bold font-semibold py-2 px-4 rounded-lg shadow-sm hover:shadow-md transition-all active:scale-95">
-                  ⬇ {order.importFileName || 'Download file'}
-                </button>
-                {importErr && <p className="text-body-sm text-error mt-1">{importErr}</p>}
+                <ImportFileButtons
+                  order={order}
+                  buttonClassName="inline-flex items-center gap-1 bg-primary text-on-primary text-label-bold font-semibold py-2 px-4 rounded-lg shadow-sm hover:shadow-md transition-all active:scale-95"
+                  errorClassName="text-body-sm text-error"
+                />
               </div>
             )}
 

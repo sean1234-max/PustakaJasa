@@ -25,7 +25,8 @@ import {
   deductPlakStock, restorePlakStock,
 } from '../lib/catalogAdminApi';
 import { supabase } from '../lib/supabaseClient';
-import { uploadOrderImportFile, removeOrderImportFile, getOrderImportUrl } from '../lib/storageApi';
+import { uploadOrderImportFile, getOrderImportUrl } from '../lib/storageApi';
+import { withImportFile, orderImportFields } from '../utils/importFiles';
 import { syncUrgentOrderToSheet } from '../lib/urgentSheetApi';
 import { isUrgentShipment } from '../utils/urgentOrder';
 import { fetchCustomTypoWords } from '../lib/typoWordsApi';
@@ -259,6 +260,10 @@ function initialState() {
     // stamped onto the order at submit.
     importFilePath: null,
     importFileName: null,
+    // Every file uploaded in this draft ({ path, name }) — a teacher can
+    // import a second Excel before submitting, so each cart item remembers
+    // its own file (`importFile`) and the order keeps all of them.
+    importFiles: [],
 
     // No category open on entry to Order Details — the teacher either
     // uploads a FORM ANUGERAH file (which auto-selects whichever categories
@@ -645,7 +650,7 @@ export function AppStateProvider({ children }) {
       sales: '', picName: '', phone: '', ketuaPanitia: '', terms: '', remark: '',
       shipmentDateSelected: null, funcSelected: null,
       logoDataUrl: null, logoFileName: '', logoRemark: '', schoolType: null, stepError: '',
-      importFilePath: null, importFileName: null,
+      importFilePath: null, importFileName: null, importFiles: [],
       step2ImportStatus: null, step2ChoiceAnswers: {},
 
       category: null,
@@ -688,7 +693,7 @@ export function AppStateProvider({ children }) {
       // after edits supersedes the old version instead of duplicating it.
       return {
         ...st,
-        cart: [...st.cart.filter((ci) => ci.categoryKey !== st.category), ...items],
+        cart: [...st.cart.filter((ci) => ci.categoryKey !== st.category), ...withImportFile(items, st.importFilePath)],
         cartToast: `Added ${items.length} item(s) to cart.`,
         ...resetCategoryFields(st.category, st, 'visibleBlocksByCategory'),
       };
@@ -733,7 +738,7 @@ export function AppStateProvider({ children }) {
       const touchedKeys = new Set(allItems.map((it) => it.categoryKey));
       return {
         ...working,
-        cart: [...working.cart.filter((ci) => !touchedKeys.has(ci.categoryKey)), ...allItems],
+        cart: [...working.cart.filter((ci) => !touchedKeys.has(ci.categoryKey)), ...withImportFile(allItems, st.importFilePath)],
         cartToast: `Added ${allItems.length} item(s) from ${doneLabels.length} categor${doneLabels.length === 1 ? 'y' : 'ies'} to cart.`,
       };
     });
@@ -1369,15 +1374,17 @@ export function AppStateProvider({ children }) {
     // Keep the raw upload as a backup on the order — Production / Store
     // Admin / Admin download it to cross-check the order details (0055).
     // Fire-and-forget: a failure here just means no backup file, the import
-    // already succeeded. Replaces a file from an earlier import in the same
-    // draft. No AddOn-side equivalent (fields.importFilePath undefined
-    // there) — skipped entirely for that flow.
+    // already succeeded. An earlier file in the same draft is kept — cart
+    // items already added from it still point at it (`importFile`). No
+    // AddOn-side equivalent (fields.importFilePath undefined there) —
+    // skipped entirely for that flow.
     if (fields.importFilePath) {
-      const prevImportPath = st[fields.importFilePath];
       uploadOrderImportFile(file).then((res) => {
         if (res) {
-          patch({ [fields.importFilePath]: res.path, [fields.importFileName]: res.name });
-          if (prevImportPath && prevImportPath !== res.path) removeOrderImportFile(prevImportPath);
+          patch((latest) => ({
+            [fields.importFilePath]: res.path, [fields.importFileName]: res.name,
+            ...(fields.importFilePath === 'importFilePath' ? { importFiles: [...(latest.importFiles || []), res] } : {}),
+          }));
         }
       });
     }
@@ -1524,7 +1531,7 @@ export function AppStateProvider({ children }) {
       sekolah: st.sekolah, schoolLanguage: st.schoolLanguage, sales: selectedSalesman.name, picName: st.picName, phone: st.phone, ketuaPanitia: st.ketuaPanitia, terms: st.terms, remark: st.remark,
       ...storedDays({ shipmentDate: st.shipmentDateSelected, functionDate: st.funcSelected }),
       logoDataUrl: st.logoDataUrl, logoFileName: st.logoFileName, logoRemark: st.logoRemark, schoolType: st.schoolType,
-      importFilePath: st.importFilePath, importFileName: st.importFileName,
+      ...orderImportFields(st),
       snapshot, items: st.cart.map((ci) => ({ ...ci })),
     };
 
@@ -1587,7 +1594,7 @@ export function AppStateProvider({ children }) {
       logoDataUrl: ord.logoDataUrl || null, logoFileName: ord.logoFileName || '', logoRemark: ord.logoRemark || '', schoolType: ord.schoolType || null,
       // A reorder is a fresh order — no upload behind it unless the teacher
       // imports one now.
-      importFilePath: null, importFileName: null,
+      importFilePath: null, importFileName: null, importFiles: [],
       stepError: '',
 
       category: restored.category || 'TOKOH',

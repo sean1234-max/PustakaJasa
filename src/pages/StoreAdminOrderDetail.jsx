@@ -10,23 +10,10 @@ import { statusPillStyle, formatDate, standardUnitPrice, toMalaysiaDay, malaysia
 import { reconstructBlocksForCategory } from '../utils/computeBlocks';
 import { splitOrderCategories, getInvoiceIdForJenisPlak } from '../utils/exportCsv';
 import { combineByJenisPlak, getInvoiceItems, partialSplitQty } from '../utils/orderBatches';
-import { getOrderImportUrl } from '../lib/storageApi';
+import ImportFileButtons from '../components/ImportFileButtons';
 import { getOrderChangeStamp } from '../utils/orderStamp';
 import { isUrgentShipment } from '../utils/urgentOrder';
 
-// Downloads the teacher's original FORM ANUGERAH upload (0055) via a
-// short-lived signed URL — for cross-checking the order against the file.
-async function downloadOrderImport(order, setErr) {
-  setErr('');
-  const url = await getOrderImportUrl(order.importFilePath);
-  if (!url) { setErr('Could not download the file right now. Please try again.'); return; }
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = order.importFileName || 'order.xlsx';
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-}
 
 const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: false, matrix: false, jenisPlak: false };
 
@@ -331,7 +318,6 @@ export default function StoreAdminOrderDetail() {
   const [invoiceDraft, setInvoiceDraft] = useState('');
   const [page, setPage] = useState('summary');
   const [busy, setBusy] = useState(false);
-  const [importErr, setImportErr] = useState('');
 
   // Pre-approval invoice-split draft — see InvoiceSplitDraft above. Lives
   // here (not inside that component) so handleApproveAndInvoice can read it
@@ -548,10 +534,7 @@ export default function StoreAdminOrderDetail() {
             {order.importFilePath && (
               <div style={{ marginTop: 'var(--space-4)' }}>
                 <div className="dim">Download Excel File (Backup)</div>
-                <button type="button" className="btn btn-primary" style={{ marginTop: 4 }} onClick={() => downloadOrderImport(order, setImportErr)}>
-                  ⬇ {order.importFileName || 'Download file'}
-                </button>
-                {importErr && <div className="login-error" style={{ marginTop: 4 }}>{importErr}</div>}
+                <ImportFileButtons order={order} buttonClassName="btn btn-primary" errorClassName="login-error" />
               </div>
             )}
 

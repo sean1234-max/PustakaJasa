@@ -37,15 +37,6 @@ export async function uploadOrderImportFile(file) {
   }
 }
 
-// Best-effort delete of a previous import file — called when a teacher
-// re-imports (the new upload replaces it). Ignored on failure.
-export async function removeOrderImportFile(path) {
-  if (!path) return;
-  try {
-    await supabase.storage.from('order-imports').remove([path]);
-  } catch { /* orphan blob — the retention sweep will get it */ }
-}
-
 // A short-lived signed download URL for a stored import file (private
 // bucket). `download: true` sets Content-Disposition so the browser saves
 // it rather than trying to open it. Returns null on any failure.
