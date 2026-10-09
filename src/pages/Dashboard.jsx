@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import { useAppState } from '../state/useAppState';
-import { STATUS_STAGES, statusPillStyle, isReviewed } from '../data/catalog';
+import { STATUS_STAGES, statusPillStyle, isReviewed, isAddonInFlight, addonStageText } from '../data/catalog';
 import { getOrderInvoiceSlices } from '../utils/orderBatches';
 import { prioritizeUrgentOrders } from '../utils/urgentOrder';
 import OrderUrgentBadge from '../components/OrderUrgentBadge';
@@ -93,13 +93,12 @@ export default function Dashboard() {
         {filteredOrders.map((ord) => {
           const idx = STATUS_STAGES.indexOf(ord.status);
           const invoiceIdLabel = idx >= 2 ? (ord.invoiceId || `INV-${ord.id.replace('ORD-', '')}`) : '-';
-          const canAddOn = (idx === 1 || idx === 2) && ord.pendingAddonStatus !== 'pending';
+          const canAddOn = (idx === 1 || idx === 2) && !isAddonInFlight(ord);
           const isCompleted = ord.status === 'Completed';
-          // Restored 2026-08-25 — teacher can still update permitted order
-          // details until Production's Done Review (see AppState.jsx's
-          // openAmend/updateAmend; orders_write_guard enforces it, 0077).
-          const canAmend = idx === 0 && !isReviewed(ord);
-          const reviewedLocked = idx === 0 && isReviewed(ord);
+          // Update Details stays open until the salesman approves; changing an
+          // order Production already reviewed sends it back for review
+          // (AppState.jsx's updateAmend, orders_write_guard — 0085).
+          const canAmend = idx === 0;
 
           return (
             <div key={ord._sliceKey} className="card order-card">
@@ -128,9 +127,9 @@ export default function Dashboard() {
               <div className="dim" style={{ fontSize: 11 }}>Total Amount</div>
               <div className={`order-card-total${ord.priceAdjusted ? ' amount-adjusted' : ''}`}>RM {ord.totalAmount.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
 
-              {ord.isPrimarySlice && ord.pendingAddonStatus === 'pending' && (
+              {ord.isPrimarySlice && isAddonInFlight(ord) && (
                 <div style={{ background: 'var(--color-accent-100)', color: 'var(--color-accent-900)', fontSize: 12, padding: 'var(--space-2) var(--space-3)', marginTop: 'var(--space-2)' }}>
-                  Add-on submitted — waiting for Sales approval.
+                  {addonStageText(ord)}
                   <button type="button" className="btn btn-ghost" style={{ marginLeft: 'var(--space-2)', padding: 0 }} onClick={() => setExpandedAddOnId(expandedAddOnId === ord.id ? null : ord.id)}>
                     {expandedAddOnId === ord.id ? 'Hide' : 'View Add-On'}
                   </button>
@@ -162,7 +161,7 @@ export default function Dashboard() {
               <div className="order-card-actions">
                 <button type="button" className="btn btn-ghost btn-block" onClick={() => navigate(`/orders/${ord.id}${ord.invoiceId ? `?invoice=${encodeURIComponent(ord.invoiceId)}` : ''}`)}>View Details</button>
                 {canAmend && <button type="button" className="btn btn-secondary btn-block" onClick={() => { openAmend(ord); navigate(`/amend/${ord.id}`); }}>Update Details</button>}
-                {reviewedLocked && <p className="hint-text" style={{ margin: 0 }}>✓ Checked by Production — to change anything, please contact your salesman.</p>}
+                {canAmend && isReviewed(ord) && <p className="hint-text" style={{ margin: 0 }}>✓ Checked by Production — any change goes back to Production for review.</p>}
                 {canAddOn && <button type="button" className="btn btn-secondary btn-block" onClick={() => { openAddOn(ord); navigate(`/addon/${ord.id}`); }}>Add On</button>}
                 {isCompleted && <button type="button" className="btn btn-secondary btn-block" onClick={() => { reorderOrder(ord); navigate('/order/step1'); }}>Reorder</button>}
               </div>

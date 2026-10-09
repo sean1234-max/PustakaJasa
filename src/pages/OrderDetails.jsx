@@ -5,7 +5,7 @@ import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import OrderPrintout from '../components/OrderPrintout';
 import { useAppState } from '../state/useAppState';
-import { STATUS_STAGES, statusPillStyle, formatDate, standardUnitPrice, toMalaysiaDay } from '../data/catalog';
+import { STATUS_STAGES, statusPillStyle, formatDate, standardUnitPrice, toMalaysiaDay, isAddonInFlight, addonStageText } from '../data/catalog';
 import CancelOrderControl from '../components/CancelOrderControl';
 import { reconstructBlocksForCategory } from '../utils/computeBlocks';
 import { splitOrderCategories } from '../utils/exportCsv';
@@ -142,8 +142,8 @@ export default function OrderDetails() {
                 ))}
               </div>
 
-              {order.pendingAddonStatus === 'pending' && (
-                <p className="hint-text" style={{ marginTop: 'var(--space-4)' }}>An add-on for this order is waiting for Sales approval.</p>
+              {isAddonInFlight(order) && (
+                <p className="hint-text" style={{ marginTop: 'var(--space-4)' }}>{addonStageText(order)}</p>
               )}
               {order.pendingAddonStatus === 'rejected' && (
                 <div className="login-error" style={{ marginTop: 'var(--space-4)' }}>

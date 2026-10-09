@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import {
   CATEGORIES, ACTIVE_CATEGORIES, formatDate, standardUnitPrice, getCategorySubjects, matrixCellKey, customMatrixLabelKey,
-  deliveryStageForShipmentDate, SELEMPANG_CODE, isReviewed,
+  deliveryStageForShipmentDate, SELEMPANG_CODE, isReviewed, isAddonInFlight,
   resolveCategory, categoriesUsedByItems, isDynamicCategoryKey, malaysiaToday, malaysiaDayIso,
 } from '../data/catalog';
 import { buildInitialRowsByBlock, buildInitialColumnsByBlock, buildInitialPlakRows } from '../data/formDefaults';
@@ -1657,10 +1657,12 @@ export function AppStateProvider({ children }) {
     const st = stateRef.current;
     const order = st.orders.find((o) => o.id === st.amendOrderId);
     if (!order) return { ok: false, message: 'Order not found.' };
-    if (order.status !== 'Reviewing Order' || isReviewed(order)) {
-      flashToast('updateToast', 'Production has already checked this order — please contact your salesman to change it.');
+    if (order.status !== 'Reviewing Order') {
+      flashToast('updateToast', 'This order is already approved — please use Add On instead.');
       return { ok: false };
     }
+    // An order Production already reviewed goes back for review (0085).
+    const reReview = isReviewed(order) ? { reviewedAt: null } : {};
     const originalById = new Map((order.items || []).map((it) => [it.id, it]));
     const categoriesUsed = categoriesUsedByItems(order.items);
     const newItems = [];
@@ -1703,17 +1705,17 @@ export function AppStateProvider({ children }) {
     });
     const amendedTotal = newItems.reduce((sum, it) => sum + it.harga, 0);
     try {
-      await updateOrder(st.amendOrderId, { items: newItems, totalAmount: amendedTotal });
+      await updateOrder(st.amendOrderId, { items: newItems, totalAmount: amendedTotal, ...reReview });
     } catch (err) {
       console.error('Failed to save amend to Supabase:', err);
       flashToast('updateToast', describeOrderWriteError(err, 'update'));
       return { ok: false };
     }
     patch((latest) => ({
-      orders: latest.orders.map((o) => (o.id === st.amendOrderId ? { ...o, items: newItems, totalAmount: amendedTotal } : o)),
+      orders: latest.orders.map((o) => (o.id === st.amendOrderId ? { ...o, items: newItems, totalAmount: amendedTotal, ...reReview } : o)),
     }));
     resyncUrgentSheet(st.orders.find((o) => o.id === st.amendOrderId));
-    flashToast('updateToast', 'Update successful.');
+    flashToast('updateToast', reReview.reviewedAt === null ? 'Update successful — Production will review the order again.' : 'Update successful.');
     return { ok: true };
   }, [patch, flashToast, resyncUrgentSheet]);
 
@@ -1794,7 +1796,7 @@ export function AppStateProvider({ children }) {
     // 'rejected' add-on was already restored when it was rejected (see
     // rejectAddOn), so this only fires for 'pending'. Skipped for the test
     // account's own orders — their stock was never touched to begin with.
-    if (!isTestOrder && order?.pendingAddonStatus === 'pending' && order.pendingAddonItems?.length) {
+    if (!isTestOrder && isAddonInFlight(order) && order.pendingAddonItems?.length) {
       try {
         await restorePlakStock(order.pendingAddonItems.map((it) => ({ full_path: it.jenisPlak, qty: it.qty })));
       } catch (err) {
@@ -1827,7 +1829,7 @@ export function AppStateProvider({ children }) {
         o.id === st.addOnOrderId ? { ...o, pendingAddonItems: newItems, pendingAddonStatus: 'pending', pendingAddonRejectReason: null } : o
       )),
     }));
-    flashToast('updateToast', 'Add-on submitted — waiting for Sales approval.');
+    flashToast('updateToast', 'Add-on submitted — Production will review it, then Sales approves it.');
     return true;
   }, [patch, flashToast]);
 
@@ -1852,7 +1854,7 @@ export function AppStateProvider({ children }) {
     // rejected (see rejectAddOn) — only a still-'pending' one still has its
     // submission-time deduction outstanding. Best-effort, after the write.
     // Skipped for the test account's own orders (never deducted).
-    if (!isTestOrderId(orderId) && order.pendingAddonStatus === 'pending' && order.pendingAddonItems?.length) {
+    if (!isTestOrderId(orderId) && isAddonInFlight(order) && order.pendingAddonItems?.length) {
       try {
         await restorePlakStock(order.pendingAddonItems.map((it) => ({ full_path: it.jenisPlak, qty: it.qty })));
       } catch (err) {
@@ -1917,7 +1919,7 @@ export function AppStateProvider({ children }) {
     if (!order) return { ok: false, message: 'Order not found.' };
     if (order.status === 'Cancelled') return { ok: false, message: 'This order is already cancelled.' };
 
-    const hadPendingAddon = order.pendingAddonStatus === 'pending' && order.pendingAddonItems?.length;
+    const hadPendingAddon = isAddonInFlight(order) && order.pendingAddonItems?.length;
     const cancelFields = {
       status: 'Cancelled',
       cancelReason: (reason || '').trim() || null,
@@ -2113,6 +2115,10 @@ export function AppStateProvider({ children }) {
     const st = stateRef.current;
     const order = st.orders.find((o) => o.id === orderId);
     if (!order) return { ok: false, message: 'Order not found.' };
+    if (order.pendingAddonStatus !== 'reviewed') {
+      flashToast('updateToast', 'Production has to review this add-on before it can be approved.');
+      return { ok: false };
+    }
     // Stamps `originalUnitPrice` the first time Sales negotiates an add-on
     // item's price away from what the teacher's own pending add-on had —
     // compared against the item as it stood before THIS approval, not the
@@ -2784,6 +2790,23 @@ export function AppStateProvider({ children }) {
     return { ok: true };
   }, [patch, flashToast]);
 
+  // Production: "Done Review" on a submitted add-on (0085) — the salesman
+  // can approve it after this.
+  const markAddOnReviewed = useCallback(async (orderId) => {
+    const order = stateRef.current.orders.find((o) => o.id === orderId);
+    if (!order || order.pendingAddonStatus !== 'pending') return { ok: false };
+    try {
+      await updateOrder(orderId, { pendingAddonStatus: 'reviewed' });
+    } catch (err) {
+      console.error('Failed to save add-on review:', err);
+      flashToast('productionToast', describeOrderWriteError(err, 'mark the add-on as reviewed for'));
+      return { ok: false };
+    }
+    patch((st) => ({ orders: st.orders.map((o) => (o.id === orderId ? { ...o, pendingAddonStatus: 'reviewed' } : o)) }));
+    flashToast('productionToast', 'Add-on reviewed — Sales can approve it now.');
+    return { ok: true };
+  }, [patch, flashToast]);
+
   // Production: re-orders one category block's Reference Sample rows after
   // the order is submitted (ProductionOrderDetail gates this until the
   // Shipment Date). Only that block's refOrder line changes — on every item
@@ -2979,6 +3002,7 @@ export function AppStateProvider({ children }) {
     markTypingDone,
     updateReferenceOrder,
     markReviewDone,
+    markAddOnReviewed,
     openProductionEdit,
     loadExcelIntoProductionEdit,
     saveProductionEdit,

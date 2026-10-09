@@ -63,7 +63,7 @@ export default function Amend() {
         ))}
 
         <div className="row-split" style={{ marginTop: 'var(--space-6)' }}>
-          <button type="button" className="btn btn-ghost" onClick={() => navigate('/dashboard')}>← Cancel</button>
+          <button type="button" className="btn btn-ghost" onClick={() => navigate(state.role === 'salesman' ? `/sales/orders/${order.id}` : '/dashboard')}>← Cancel</button>
           <button type="button" className="btn btn-primary" onClick={() => navigate(`/amend/${order.id}/summary`)}>Next</button>
         </div>
       </div>

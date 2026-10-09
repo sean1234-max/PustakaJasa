@@ -8,7 +8,7 @@ import CorrectedExcelControl from '../components/CorrectedExcelControl';
 import PriceTable from '../components/PriceTable';
 import OrderPrintout from '../components/OrderPrintout';
 import { useAppState } from '../state/useAppState';
-import { statusPillStyle, formatDate, MANUAL_MAX_QTY, deliveryStageForShipmentDate, toMalaysiaDay, malaysiaToday, isReviewed } from '../data/catalog';
+import { statusPillStyle, formatDate, MANUAL_MAX_QTY, deliveryStageForShipmentDate, toMalaysiaDay, malaysiaToday, isReviewed, isAddonInFlight } from '../data/catalog';
 import { reconstructOrderDetailGroups, reconstructBlocksForCategory, noopUpdaters } from '../utils/computeBlocks';
 import { getExportableCategories, splitOrderCategories, getOrderJenisPlakGroups, getPlakProductionMode, summarizeRowsForManual, buildCsvRows, rowsToCsv, buildCategoryCsvFilename, combineCsvRows, buildCombinedCsvFilename, validateExport, getInvoiceIdForJenisPlak, getPartialSplitNotes } from '../utils/exportCsv';
 import { downloadTextFile } from '../utils/downloadBlob';
@@ -23,7 +23,7 @@ const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: f
 const REORDER_ONLY = { ...READONLY, lineOrder: true };
 
 export default function ProductionOrderDetail() {
-  const { state, ensureOrderLoaded, loadCorrectedExcelPreview, updateReferenceOrder, markReviewDone } = useAppState();
+  const { state, ensureOrderLoaded, loadCorrectedExcelPreview, updateReferenceOrder, markReviewDone, markAddOnReviewed } = useAppState();
   const { id } = useParams();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -228,6 +228,16 @@ export default function ProductionOrderDetail() {
           .filter((blk) => !isFiltered || !blk.jenisPlak || sliceItems.some((it) => it.jenisPlak === blk.jenisPlak)),
       }));
   }, [effectiveOrder, isFiltered, viewInvoiceId, state.plakCatalog]);
+  // A submitted add-on waiting for (or past) Production's review (0085).
+  const addonBlocks = useMemo(() => {
+    const items = order?.pendingAddonItems || [];
+    if (!isAddonInFlight(order) || items.length === 0) return [];
+    const addonOrder = { ...order, items };
+    const { anugerah, selempang } = splitOrderCategories(addonOrder);
+    return [...anugerah, ...selempang]
+      .filter((cat) => items.some((it) => it.categoryKey === cat.key))
+      .flatMap((cat) => reconstructBlocksForCategory(addonOrder, cat.key, state.plakCatalog).blocks);
+  }, [order, state.plakCatalog]);
   const [printedAt, setPrintedAt] = useState(null);
   // Deferred a tick so the new printedAt is in the print-only DOM first.
   const handlePrint = () => { setPrintedAt(new Date().toISOString()); setTimeout(() => window.print(), 0); };
@@ -374,6 +384,33 @@ export default function ProductionOrderDetail() {
                 <ConfirmButton label="Done Review" question="Finished reviewing? The salesman can approve it after this." onConfirm={() => markReviewDone(order.id)} />
               )}
             </div>
+          </div>
+        )}
+        {isAddonInFlight(order) && (
+          <div className="confirm-panel" style={{ marginBottom: 'var(--space-4)' }}>
+            <div className="card-kicker">Tambahan (Add-On)</div>
+            <p className="hint-text" style={{ margin: 'var(--space-2) 0', fontWeight: 600 }}>
+              {order.pendingAddonStatus === 'reviewed'
+                ? 'Add-on reviewed — waiting for the salesman to approve it.'
+                : 'Check this add-on, then click Done Review (Add-On) so Sales can approve it.'}
+            </p>
+            <table className="table" style={{ margin: 'var(--space-2) 0', background: '#fff' }}>
+              <thead><tr><th>Category</th><th>Jenis Plak</th><th style={{ width: 80 }}>QTY</th><th style={{ width: 100 }}>Harga</th></tr></thead>
+              <tbody>
+                {(order.pendingAddonItems || []).map((it) => (
+                  <tr key={it.id}>
+                    <td>{it.categoryLabel}</td>
+                    <td>{it.jenisPlak}</td>
+                    <td>{it.qty}</td>
+                    <td>RM {(Number(it.harga) || 0).toFixed(2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {addonBlocks.map((blk, i) => <OrderCategoryBlock key={i} blk={blk} editable={READONLY} />)}
+            {order.pendingAddonStatus === 'pending' && (
+              <ConfirmButton label="Done Review (Add-On)" question="Finished reviewing this add-on? The salesman can approve it after this." onConfirm={() => markAddOnReviewed(order.id)} />
+            )}
           </div>
         )}
         {isFiltered && (

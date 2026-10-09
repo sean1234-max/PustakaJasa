@@ -3,7 +3,8 @@ import { AppStateProvider } from './state/AppState';
 import { useAppState } from './state/useAppState';
 import RequireRole from './components/RequireRole';
 
-// A salesman can also place a New Order, on a school's behalf (0081).
+// A salesman can also place a New Order on a school's behalf (0081), and
+// use Update Details / Add On (0085).
 const NEW_ORDER_ROLES = ['teacher', 'salesman'];
 import Login from './pages/Login';
 import NewOrderStep1 from './pages/NewOrderStep1';
@@ -61,10 +62,10 @@ function AppRoutes() {
       <Route path="/success" element={<RequireRole role={NEW_ORDER_ROLES}><Success /></RequireRole>} />
       <Route path="/dashboard" element={<RequireRole role="teacher"><Dashboard /></RequireRole>} />
       <Route path="/orders/:id" element={<RequireRole role="teacher"><OrderDetails /></RequireRole>} />
-      <Route path="/amend/:id" element={<RequireRole role="teacher"><Amend /></RequireRole>} />
-      <Route path="/amend/:id/summary" element={<RequireRole role="teacher"><AmendSummary /></RequireRole>} />
-      <Route path="/addon/:id" element={<RequireRole role="teacher"><AddOn /></RequireRole>} />
-      <Route path="/addon/:id/summary" element={<RequireRole role="teacher"><AddOnSummary /></RequireRole>} />
+      <Route path="/amend/:id" element={<RequireRole role={NEW_ORDER_ROLES}><Amend /></RequireRole>} />
+      <Route path="/amend/:id/summary" element={<RequireRole role={NEW_ORDER_ROLES}><AmendSummary /></RequireRole>} />
+      <Route path="/addon/:id" element={<RequireRole role={NEW_ORDER_ROLES}><AddOn /></RequireRole>} />
+      <Route path="/addon/:id/summary" element={<RequireRole role={NEW_ORDER_ROLES}><AddOnSummary /></RequireRole>} />
 
       <Route path="/sales/dashboard" element={<RequireRole role="salesman"><SalesDashboard /></RequireRole>} />
       <Route path="/sales/orders/:id" element={<RequireRole role="salesman"><SalesOrderSummary /></RequireRole>} />

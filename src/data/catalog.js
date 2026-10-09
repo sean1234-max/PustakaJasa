@@ -1034,6 +1034,14 @@ export const STATUS_STAGES = [
 // Sales / Store Admin may approve only after Production's Done Review.
 export const isReviewed = (order) => !!order?.reviewedAt;
 
+// An add-on still on its way in: submitted ('pending', waiting for
+// Production's review) or reviewed ('reviewed', waiting for the salesman to
+// approve) — 0085. Its stock is already deducted while in flight.
+export const isAddonInFlight = (order) => order?.pendingAddonStatus === 'pending' || order?.pendingAddonStatus === 'reviewed';
+export const addonStageText = (order) => (order?.pendingAddonStatus === 'reviewed'
+  ? 'Add-on reviewed by Production — waiting for Sales approval.'
+  : 'Add-on submitted — waiting for Production to review it.');
+
 // 'Cancelled' is a terminal OFF-RAMP, not a pipeline stage — kept out of
 // STATUS_STAGES (which drives the progress steppers and the
 // stage-tab dashboards) but included here for status filter dropdowns.

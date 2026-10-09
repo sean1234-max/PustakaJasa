@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import { useAppState } from '../state/useAppState';
-import { statusPillStyle } from '../data/catalog';
+import { statusPillStyle, isAddonInFlight } from '../data/catalog';
 import OrderUrgentBadge from '../components/OrderUrgentBadge';
 import { prioritizeUrgentOrders } from '../utils/urgentOrder';
 
@@ -39,7 +39,7 @@ export default function SalesDashboard() {
   );
 
   const byStage = filter === ADDON_FILTER
-    ? state.orders.filter((ord) => ord.pendingAddonStatus === 'pending')
+    ? state.orders.filter((ord) => isAddonInFlight(ord))
     : state.orders.filter((ord) => ord.status === filter);
   const filteredOrders = prioritizeUrgentOrders(isManager && salesmanFilter !== 'all'
     ? byStage.filter((ord) => ord.sales === salesmanFilter)
@@ -76,7 +76,7 @@ export default function SalesDashboard() {
             ? state.orders.filter((o) => o.sales === salesmanFilter)
             : state.orders;
           const count = f.status === ADDON_FILTER
-            ? scope.filter((o) => o.pendingAddonStatus === 'pending').length
+            ? scope.filter((o) => isAddonInFlight(o)).length
             : scope.filter((o) => o.status === f.status).length;
           return (
             <button
@@ -96,7 +96,7 @@ export default function SalesDashboard() {
       <div className="order-grid">
         {filteredOrders.map((ord) => {
           const readyToApprove = ord.status === 'Reviewing Order' && !!ord.reviewedAt;
-          const pendingReview = readyToApprove || (filter === ADDON_FILTER && ord.pendingAddonStatus === 'pending');
+          const pendingReview = readyToApprove || (filter === ADDON_FILTER && isAddonInFlight(ord));
 
           return (
             <div key={ord.id} className="card order-card">

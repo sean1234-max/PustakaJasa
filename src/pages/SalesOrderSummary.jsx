@@ -7,7 +7,7 @@ import PriceTable from '../components/PriceTable';
 import OrderPrintout from '../components/OrderPrintout';
 import DatePicker from '../components/DatePicker';
 import { useAppState } from '../state/useAppState';
-import { statusPillStyle, standardUnitPrice, formatDate, defaultShipmentDate, toMalaysiaDay, malaysiaToday, isReviewed } from '../data/catalog';
+import { statusPillStyle, standardUnitPrice, formatDate, defaultShipmentDate, toMalaysiaDay, malaysiaToday, isReviewed, isAddonInFlight } from '../data/catalog';
 import CancelOrderControl from '../components/CancelOrderControl';
 import ReassignSalesmanControl from '../components/ReassignSalesmanControl';
 import { reconstructBlocksForCategory } from '../utils/computeBlocks';
@@ -20,7 +20,7 @@ import { isUrgentShipment } from '../utils/urgentOrder';
 const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: false, matrix: false, jenisPlak: false };
 
 export default function SalesOrderSummary() {
-  const { state, today, approveOrder, approveAddOn, rejectAddOn, recordPrint, ensureOrderLoaded, loadCorrectedExcelPreview } = useAppState();
+  const { state, today, approveOrder, approveAddOn, rejectAddOn, recordPrint, ensureOrderLoaded, loadCorrectedExcelPreview, openAmend, openAddOn } = useAppState();
   const { id } = useParams();
   const navigate = useNavigate();
   const order = state.orders.find((o) => o.id === id);
@@ -63,6 +63,9 @@ export default function SalesOrderSummary() {
   // (0077); before that the order is shown read-only, waiting.
   const reviewing = order?.status === 'Reviewing Order';
   const awaitingReview = reviewing && !isReviewed(order);
+  const addonReviewed = order?.pendingAddonStatus === 'reviewed';
+  const canAmend = reviewing;
+  const canAddOn = ['Salesman Approved', 'In Production'].includes(order?.status) && !isAddonInFlight(order);
   const editable = reviewing && isReviewed(order) && isOwn;
 
   // Shipment Date (shipmentDate) / Function Date stay editable right up to the moment of
@@ -340,10 +343,16 @@ export default function SalesOrderSummary() {
                 </div>
               ))}
 
-              {order.pendingAddonStatus === 'pending' && isOwn && (
+              {isAddonInFlight(order) && isOwn && (
                 <>
-                  <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Tambahan — Pending Approval</div>
-                  <p className="hint-text" style={{ marginTop: 0 }}>Adjust pricing if needed, then approve to add these into the order, or reject to send it back to the teacher.</p>
+                  <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>
+                    Tambahan — {addonReviewed ? 'Pending Approval' : 'Waiting for Production review'}
+                  </div>
+                  <p className="hint-text" style={{ marginTop: 0 }}>
+                    {addonReviewed
+                      ? 'Production has reviewed it. Adjust pricing if needed, then approve to add these into the order, or reject to send it back.'
+                      : 'Production reviews every add-on first — you can approve it once they have.'}
+                  </p>
                   <table className="table" style={{ margin: 'var(--space-3) 0 0' }}>
                     <thead>
                       <tr>
@@ -384,7 +393,9 @@ export default function SalesOrderSummary() {
                   </div>
                   <div className="row-split" style={{ marginTop: 'var(--space-4)' }}>
                     <button type="button" className="btn btn-ghost" onClick={handleRejectAddOn} disabled={busy}>Reject</button>
-                    <button type="button" className="btn btn-primary" onClick={handleApproveAddOn} disabled={busy}>{busy ? 'Working…' : 'Approve Add-On'}</button>
+                    <button type="button" className="btn btn-primary" onClick={handleApproveAddOn} disabled={busy || !addonReviewed}>
+                      {busy ? 'Working…' : addonReviewed ? 'Approve Add-On' : 'Waiting for Production review'}
+                    </button>
                   </div>
                 </>
               )}
@@ -419,6 +430,14 @@ export default function SalesOrderSummary() {
                 {awaitingReview && <button type="button" className="btn btn-primary" disabled>Waiting for Production review</button>}
                 {!reviewing && <button type="button" className="btn btn-primary" onClick={handlePrint}>Print Order</button>}
               </div>
+              {/* Update Details until approval (a reviewed order goes back to
+                  Production), Add On after it — same as the teacher (0085). */}
+              {isOwn && (canAmend || canAddOn) && (
+                <div className="row-split" style={{ marginTop: 'var(--space-3)', justifyContent: 'flex-end', gap: 'var(--space-2)' }}>
+                  {canAmend && <button type="button" className="btn btn-secondary" onClick={() => { openAmend(order); navigate(`/amend/${order.id}`); }}>Update Details</button>}
+                  {canAddOn && <button type="button" className="btn btn-secondary" onClick={() => { openAddOn(order); navigate(`/addon/${order.id}`); }}>Add On</button>}
+                </div>
+              )}
             </>
           ) : (
             <>

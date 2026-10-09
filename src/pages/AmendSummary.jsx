@@ -16,7 +16,7 @@ export default function AmendSummary() {
     setSaving(true);
     const res = await updateAmend();
     setSaving(false);
-    if (res?.ok) navigate('/dashboard');
+    if (res?.ok) navigate(state.role === 'salesman' ? `/sales/orders/${order.id}` : '/dashboard');
     // on failure the error toast (state.updateToast) shows below and the
     // user stays on this page to retry.
   };

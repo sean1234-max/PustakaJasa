@@ -52,7 +52,7 @@ export default function AddOnSummary() {
     setSubmitting(true);
     const ok = await submitPendingAddOn();
     setSubmitting(false);
-    if (ok) navigate('/dashboard');
+    if (ok) navigate(state.role === 'salesman' ? `/sales/orders/${order.id}` : '/dashboard');
   };
 
   if (!order) return null;

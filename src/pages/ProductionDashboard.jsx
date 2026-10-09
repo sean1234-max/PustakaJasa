@@ -43,6 +43,9 @@ function daysSinceShipmentDate(shipmentDate, today) {
 const TABS = [
   { key: 'reviewing', label: 'Reviewing Order', match: (o) => o.status === 'Reviewing Order' },
   { key: 'approved', label: 'Salesman Approved', match: (o) => o.status === 'Salesman Approved' },
+  // A submitted add-on waiting for Production's review (0085) — one card per
+  // order (its first invoice slice), whatever the order's own status.
+  { key: 'addon', label: 'Add-On Review', match: (o) => o._primarySlice && o.pendingAddonStatus === 'pending' },
   { key: 'typing', label: 'Typing', match: (o) => o.status === 'In Production' && !o.typedAt },
   { key: 'active', label: 'In Production', match: (o) => o.status === 'In Production' && !!o.typedAt },
   { key: 'waiting', label: 'Waiting for Shipment', match: (o) => o.status === 'Waiting for Shipment' },
@@ -103,10 +106,10 @@ export default function ProductionDashboard() {
   // back as exactly one slice unchanged, so this is a no-op for the vast
   // majority of orders.
   const orderSlices = useMemo(() => state.orders.flatMap((ord) => (
-    getOrderInvoiceSlices(ord, state.plakCatalog).map((slice) => ({
+    getOrderInvoiceSlices(ord, state.plakCatalog).map((slice, i) => ({
       ...ord, invoiceId: slice.invoiceId, totalAmount: slice.totalAmount, totalQty: slice.totalQty,
       priceAdjusted: slice.priceAdjusted, status: slice.status, typedAt: slice.typedAt,
-      _sliceKey: `${ord.id}::${slice.invoiceId || 'default'}`,
+      _sliceKey: `${ord.id}::${slice.invoiceId || 'default'}`, _primarySlice: i === 0,
     }))
   )), [state.orders, state.plakCatalog]);
 
