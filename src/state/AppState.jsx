@@ -31,7 +31,7 @@ import { syncUrgentOrderToSheet } from '../lib/urgentSheetApi';
 import { isUrgentShipment, urgentSheetAction, SHIPMENT_EDITABLE_STATUSES } from '../utils/urgentOrder';
 import { fetchCustomTypoWords } from '../lib/typoWordsApi';
 import { setCustomTypoWords } from '../utils/typoCheck';
-import { normalizeSplitQty, stockDiff } from '../utils/orderBatches';
+import { normalizeSplitQty, stockDiff, applyPriceDrafts } from '../utils/orderBatches';
 
 // Malaysia's "today" (catalog.js's malaysiaToday — the project always runs
 // on Malaysian dates), normalized to midnight so it compares cleanly against
@@ -2797,6 +2797,35 @@ export function AppStateProvider({ children }) {
     return { ok: true };
   }, [patch]);
 
+  // Production adjusts prices while reviewing (Sean, 2026-10-09 — e.g. RM1
+  // more on plaques carrying a student's name): the order's items, or with
+  // `addOn` the submitted add-on's. The salesman still sees (and can change)
+  // them when approving.
+  const saveProductionPrices = useCallback(async (orderId, drafts, { addOn = false } = {}) => {
+    const st = stateRef.current;
+    const order = st.orders.find((o) => o.id === orderId);
+    if (addOn ? !isAddonInFlight(order) : (!order || order.status !== 'Reviewing Order')) {
+      return { ok: false, message: addOn ? 'This order has no add-on waiting for review.' : 'Prices can only be changed while the order is being reviewed.' };
+    }
+    const res = applyPriceDrafts(addOn ? order.pendingAddonItems : order.items, drafts);
+    if (res.error) return { ok: false, message: res.error };
+    const fields = addOn
+      ? { pendingAddonItems: res.items }
+      : {
+        items: res.items,
+        totalAmount: res.items.reduce((sum, it) => sum + (Number(it.harga) || 0), 0),
+        priceAdjusted: res.items.some((it) => it.unitPrice !== standardUnitPrice(it.jenisPlak, st.plakCatalog)),
+      };
+    try {
+      await updateOrder(orderId, fields);
+    } catch (err) {
+      console.error('Failed to save Production prices:', err);
+      return { ok: false, message: describeOrderWriteError(err, 'save the prices of') };
+    }
+    patch((latest) => ({ orders: latest.orders.map((o) => (o.id === orderId ? { ...o, ...fields } : o)) }));
+    return { ok: true };
+  }, [patch]);
+
   // Production: "Done Review" — the order has been checked (and fixed if
   // needed, see saveProductionEdit); Sales / Store Admin can approve it now.
   // The status stays 'Reviewing Order' — reviewedAt is the mark.
@@ -3028,7 +3057,7 @@ export function AppStateProvider({ children }) {
     markTypingDone,
     updateReferenceOrder,
     markReviewDone,
-    markAddOnReviewed,
+    markAddOnReviewed, saveProductionPrices,
     openProductionEdit,
     loadExcelIntoProductionEdit,
     saveProductionEdit,

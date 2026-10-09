@@ -358,7 +358,7 @@ export default function StoreAdminOrderDetail() {
   const rows = useMemo(() => visibleItems.map((it) => {
     const unitPrice = Number(priceDrafts[it.id] ?? it.unitPrice ?? 0);
     const harga = unitPrice * (Number(it.qty) || 0);
-    return { ...it, unitPrice, harga };
+    return { ...it, priceKey: it.unitPrice, unitPrice, harga };
   }), [visibleItems, priceDrafts]);
   const setPrice = (itemIds, value) => setPriceDrafts((prev) => {
     const next = { ...prev };
@@ -404,7 +404,7 @@ export default function StoreAdminOrderDetail() {
       return;
     }
     setDateError('');
-    const updatedItems = rows.map((r) => ({ ...r, unitPrice: r.unitPrice, harga: r.harga }));
+    const updatedItems = rows.map(({ priceKey: _priceKey, ...r }) => ({ ...r, unitPrice: r.unitPrice, harga: r.harga }));
     // Only sends a date when Store Admin actually has one — never blanks an
     // existing shipment/function date because the draft started empty.
     const overrides = {};

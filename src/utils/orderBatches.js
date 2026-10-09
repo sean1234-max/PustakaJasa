@@ -18,18 +18,25 @@ import { standardUnitPrice } from '../data/catalog';
 // the original per-item price whenever every merged item already shares
 // one). A Jenis Plak that only appears once still comes back as a single
 // row — this is a no-op for the common case.
-export function combineByJenisPlak(items) {
+//
+// `splitByPrice` (PriceTable): the same Jenis Plak at two different prices
+// stays two rows — e.g. Production charged RM1 more on the plaques that
+// carry a student's name. Grouped on `priceKey` when the caller sets one
+// (the order's saved price, so a row doesn't jump while a price is being
+// typed), else on unitPrice.
+export function combineByJenisPlak(items, { splitByPrice = false } = {}) {
   const order = [];
   const byPlak = new Map();
   (items || []).forEach((it) => {
-    if (!byPlak.has(it.jenisPlak)) {
-      byPlak.set(it.jenisPlak, {
-        key: it.jenisPlak, jenisPlak: it.jenisPlak, ids: [], qty: 0, harga: 0,
+    const groupKey = splitByPrice ? `${it.jenisPlak}::${it.priceKey ?? it.unitPrice}` : it.jenisPlak;
+    if (!byPlak.has(groupKey)) {
+      byPlak.set(groupKey, {
+        key: groupKey, jenisPlak: it.jenisPlak, ids: [], qty: 0, harga: 0,
         originalHarga: 0, itemCount: 0, itemsWithOriginalPrice: 0,
       });
-      order.push(it.jenisPlak);
+      order.push(groupKey);
     }
-    const row = byPlak.get(it.jenisPlak);
+    const row = byPlak.get(groupKey);
     const qty = Number(it.qty) || 0;
     row.ids.push(it.id);
     row.qty += qty;
@@ -193,6 +200,29 @@ export function groupItemsByBatch(items) {
       label: batch === 0 ? 'Original Order' : (addOnBatchCount > 1 ? `Tambahan #${batch}` : 'Tambahan'),
       items: groupItems,
     }));
+}
+
+// Production's price adjustment while reviewing (Sean, 2026-10-09):
+// `drafts` maps item id → new price per unit. A changed item gets its new
+// unitPrice/harga and remembers the price it had before
+// (originalUnitPrice, shown as "Original Price Per Unit"); setting it back
+// clears that again. Returns { items } or { error } for a bad price.
+export function applyPriceDrafts(items, drafts) {
+  const bad = Object.values(drafts).find((v) => v !== '' && v != null && !(Number(v) >= 0));
+  if (bad !== undefined) return { error: `"${bad}" is not a valid price.` };
+  return {
+    items: (items || []).map((it) => {
+      const draft = drafts[it.id];
+      if (draft === '' || draft == null || Number(draft) === it.unitPrice) return it;
+      const unitPrice = Number(draft);
+      const original = it.originalUnitPrice ?? it.unitPrice;
+      const { originalUnitPrice: _drop, ...rest } = it;
+      return {
+        ...rest, unitPrice, harga: unitPrice * (Number(it.qty) || 0),
+        ...(original != null && original !== unitPrice ? { originalUnitPrice: original } : {}),
+      };
+    }),
+  };
 }
 
 // How an edit changes stock: per-Jenis-Plak quantity before → after, as

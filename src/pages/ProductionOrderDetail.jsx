@@ -15,6 +15,7 @@ import { downloadTextFile } from '../utils/downloadBlob';
 import { getInvoiceItems } from '../utils/orderBatches';
 import ImportFileButtons from '../components/ImportFileButtons';
 import ShipmentUrgencyEditor from '../components/ShipmentUrgencyEditor';
+import ProductionPriceEditor from '../components/ProductionPriceEditor';
 import { getAiFileHelperStatus, startAiFileHelperJob, getAiFileHelperJob } from '../lib/aiFileHelper';
 import { getOrderChangeStamp } from '../utils/orderStamp';
 
@@ -229,6 +230,9 @@ export default function ProductionOrderDetail() {
       }));
   }, [effectiveOrder, isFiltered, viewInvoiceId, state.plakCatalog]);
   const [printedAt, setPrintedAt] = useState(null);
+  // Which price table is open for adjusting: 'order' or 'addon'.
+  const [priceEditor, setPriceEditor] = useState(null);
+  const togglePrices = (which) => setPriceEditor((open) => (open === which ? null : which));
   // Deferred a tick so the new printedAt is in the print-only DOM first.
   const handlePrint = () => { setPrintedAt(new Date().toISOString()); setTimeout(() => window.print(), 0); };
 
@@ -370,10 +374,12 @@ export default function ProductionOrderDetail() {
             </p>
             <div style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
               <button type="button" className="btn btn-secondary" onClick={() => navigate(`/production/orders/${order.id}/edit`)}>Edit Order</button>
+              <button type="button" className="btn btn-secondary" onClick={() => togglePrices('order')}>{priceEditor === 'order' ? 'Close Prices' : 'Adjust Prices'}</button>
               {!isReviewed(order) && (
                 <ConfirmButton label="Done Review" question="Finished reviewing? The salesman can approve it after this." onConfirm={() => markReviewDone(order.id)} />
               )}
             </div>
+            {priceEditor === 'order' && <ProductionPriceEditor order={order} />}
           </div>
         )}
         {/* A submitted add-on (Tambahan) — reviewed like the order itself:
@@ -387,10 +393,12 @@ export default function ProductionOrderDetail() {
             </p>
             <div style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
               <button type="button" className="btn btn-secondary" onClick={() => navigate(`/production/orders/${order.id}/edit?addon=1`)}>Edit Order</button>
+              <button type="button" className="btn btn-secondary" onClick={() => togglePrices('addon')}>{priceEditor === 'addon' ? 'Close Prices' : 'Adjust Prices'}</button>
               {order.pendingAddonStatus === 'pending' && (
                 <ConfirmButton label="Done Review" question="Finished reviewing this Tambahan? The salesman can approve it after this." onConfirm={() => markAddOnReviewed(order.id)} />
               )}
             </div>
+            {priceEditor === 'addon' && <ProductionPriceEditor order={order} addOn />}
           </div>
         )}
         {isFiltered && (

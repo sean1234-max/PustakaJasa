@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getOrderInvoiceSlices, getInvoiceItems, normalizeSplitQty, stockDiff } from './orderBatches';
+import { getOrderInvoiceSlices, getInvoiceItems, normalizeSplitQty, stockDiff, applyPriceDrafts } from './orderBatches';
 
 describe('getOrderInvoiceSlices', () => {
   it('un-split order: one slice, using the order\'s own invoiceId/totalAmount/status unchanged, totalQty summed from items', () => {
@@ -182,5 +182,30 @@ describe('getOrderInvoiceSlices — Done Typing per invoice (0078)', () => {
     expect(getOrderInvoiceSlices(order).map((s) => [s.invoiceId, s.typedAt])).toEqual([
       ['INV-100', '2026-10-03T01:00:00Z'], ['INV-200', undefined],
     ]);
+  });
+});
+
+describe('applyPriceDrafts', () => {
+  const items = [
+    { id: 'a', jenisPlak: 'PKC 246', qty: 2, unitPrice: 12, harga: 24 },
+    { id: 'b', jenisPlak: 'PKC 246', qty: 1, unitPrice: 12, harga: 12 },
+  ];
+
+  it('reprices only the changed item and remembers its old price', () => {
+    const { items: out } = applyPriceDrafts(items, { a: '13' });
+    expect(out[0]).toMatchObject({ unitPrice: 13, harga: 26, originalUnitPrice: 12 });
+    expect(out[1]).toBe(items[1]);
+  });
+
+  it('clears the old price when set back to it', () => {
+    const { items: out } = applyPriceDrafts([{ ...items[0], unitPrice: 13, harga: 26, originalUnitPrice: 12 }], { a: '12' });
+    expect(out[0].unitPrice).toBe(12);
+    expect(out[0].harga).toBe(24);
+    expect(out[0]).not.toHaveProperty('originalUnitPrice');
+  });
+
+  it('rejects a negative or non-numeric price', () => {
+    expect(applyPriceDrafts(items, { a: '-1' }).error).toBeTruthy();
+    expect(applyPriceDrafts(items, { a: 'abc' }).error).toBeTruthy();
   });
 });

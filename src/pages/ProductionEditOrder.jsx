@@ -4,7 +4,7 @@ import Nav from '../components/Nav';
 import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import { useAppState } from '../state/useAppState';
-import { ACTIVE_CATEGORIES, filterHiddenPlakCatalog, isDynamicCategoryKey, resolveCategory, isAddonInFlight } from '../data/catalog';
+import { ACTIVE_CATEGORIES, filterHiddenPlakCatalog, isDynamicCategoryKey, resolveCategory, isAddonInFlight, standardUnitPrice } from '../data/catalog';
 import { computeBlocks } from '../utils/computeBlocks';
 import { createDraftUpdaters } from '../utils/draftUpdaters';
 import { saveOrderImportAs } from '../lib/storageApi';
@@ -136,6 +136,11 @@ export default function ProductionEditOrder() {
         </div>
         {message && (
           <p className="hint-text" style={{ color: message.ok ? undefined : '#b0392e', fontWeight: 600 }}>{message.text}</p>
+        )}
+        {((addOn ? order.pendingAddonItems : order.items) || []).some((it) => it.unitPrice !== standardUnitPrice(it.jenisPlak, state.plakCatalog)) && (
+          <p className="hint-text" style={{ color: '#b0392e', fontWeight: 600 }}>
+            Some prices were changed by hand (Adjust Prices). Saving here resets every price to the website price list — adjust them again afterwards.
+          </p>
         )}
 
         <div className="card-kicker">Jenis Anugerah (Category)</div>

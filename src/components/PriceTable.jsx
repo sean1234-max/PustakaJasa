@@ -37,7 +37,7 @@ export default function PriceTable({
       {groups.map((group, gi) => {
         const groupHarga = group.items.reduce((sum, it) => sum + it.harga, 0);
         const displayItems = combineJenisPlak
-          ? combineByJenisPlak(group.items)
+          ? combineByJenisPlak(group.items, { splitByPrice: true })
           : group.items.map((it) => ({ ...it, key: it.id, ids: [it.id] }));
         return (
           <div key={group.batch}>
