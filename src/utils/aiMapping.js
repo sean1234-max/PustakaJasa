@@ -21,6 +21,10 @@ import { classifyWordingLines, cleanDocxPlakCode, parseDocxQty, wordingRowsToCat
 //                crossing; one award per sheet (titleCell, codeCell).
 
 const TOTAL_RE = /^(JUMLAH|TOTAL|JUMLAH BESAR|GRAND TOTAL)\b/i;
+// A title naming the whole ceremony ("MAJLIS ANUGERAH ... 2026") is the
+// event heading (TAJUK BESAR), not an award, exactly as in a Word order.
+// A bare "ANUGERAH ..." title is an award name, so it isn't matched here.
+const EVENT_HEADING_RE = /^(MAJLIS|HARI ANUGERAH|PERSEMBAHAN)\b|颁奖|典礼/i;
 const COL_RE = /^[A-Z]{1,3}$/;
 const REF_RE = /^[A-Z]{1,3}[1-9]\d*$/;
 
@@ -63,9 +67,11 @@ function readAwardList(m, block, where, notes) {
   const bad = badCols([...wordingCols, m.qtyColumn, m.codeColumn]);
   if (bad.length || wordingCols.length === 0 || !m.qtyColumn) {
     notes.push(`${where}: the AI's column choice can't be used (${bad.join(', ') || 'missing wording or quantity column'}) — please add this sheet by hand.`);
-    return [];
+    return { rows: [], heading: '' };
   }
-  const title = m.titleCell ? rd.text(m.titleCell) : '';
+  const titleText = m.titleCell ? rd.text(m.titleCell) : '';
+  const heading = EVENT_HEADING_RE.test(titleText) ? titleText : '';
+  const title = heading ? '' : titleText;
   const blockCode = m.codeCell ? cleanDocxPlakCode(rd.text(m.codeCell)) : '';
   const rows = [];
   let sum = 0;
@@ -97,7 +103,7 @@ function readAwardList(m, block, where, notes) {
     const kod = m.codeColumn ? cleanDocxPlakCode(rd.text(`${m.codeColumn}${r}`)) || blockCode : blockCode;
     rows.push({ lines: title ? [title, ...lines] : lines, qty, kod });
   }
-  return rows;
+  return { rows, heading };
 }
 
 function readClassMatrix(m, block, where, notes) {
@@ -143,7 +149,7 @@ export function applyAiMapping(ir, mapping) {
   const notes = [];
   const categorized = {};
   const blocksByName = new Map(ir.blocks.map((b) => [b.name, b]));
-  const listRows = [];
+  const listRowsByHeading = new Map();
   const seen = new Set();
   (mapping?.blocks || []).forEach((m) => {
     const block = blocksByName.get(m.sheet);
@@ -157,7 +163,9 @@ export function applyAiMapping(ir, mapping) {
     if (m.confidence === 'low') notes.push(`${where}: the AI wasn't sure how to read this sheet — please check every row carefully.`);
     if (m.note) notes.push(`${where}: ${m.note}`);
     if (m.role === 'award-list') {
-      listRows.push(...readAwardList(m, block, where, notes));
+      const { rows, heading } = readAwardList(m, block, where, notes);
+      if (!listRowsByHeading.has(heading)) listRowsByHeading.set(heading, []);
+      listRowsByHeading.get(heading).push(...rows);
     } else if (m.role === 'class-matrix') {
       const section = readClassMatrix(m, block, where, notes);
       if (!section) return;
@@ -169,7 +177,9 @@ export function applyAiMapping(ir, mapping) {
       notes.push(`${where}: unknown layout "${m.role}" — please add this sheet by hand.`);
     }
   });
-  if (listRows.length) Object.assign(categorized, wordingRowsToCategorized(listRows).categorized);
+  listRowsByHeading.forEach((rows, heading) => {
+    if (rows.length) Object.assign(categorized, wordingRowsToCategorized(rows, heading).categorized);
+  });
   ir.blocks.filter((b) => b.truncated).forEach((b) => notes.push(`Sheet "${b.name}": only the first 400 rows / 60 columns were sent to the AI — please add anything beyond that by hand.`));
   ir.blocks.filter((b) => !seen.has(b.name)).forEach((b) => notes.push(`Sheet "${b.name}": the AI didn't read this sheet — please add its data by hand if needed.`));
   (mapping?.questions || []).forEach((q) => notes.push(`${q.sheet ? `Sheet "${q.sheet}": ` : ''}${q.text}`));

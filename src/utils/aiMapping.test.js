@@ -107,6 +107,19 @@ describe('applyAiMapping', () => {
     ]);
   });
 
+  it('puts a ceremony title in TAJUK BESAR and keeps a plain award title as the award', () => {
+    const list = (title) => ({ aoa: [[title], [], ['ANUGERAH', 'KELAS', 'KUANTITI'], ['MURID CEMERLANG', 'TAHUN 6 BESTARI', 3], ['MURID CEMERLANG', 'TAHUN 6 CERDAS', 2]] });
+    const ir3 = buildWorkbookIr(workbook({ EVENT: list('MAJLIS ANUGERAH KECEMERLANGAN 2026'), AWARD: list('ANUGERAH TOKOH') }), ['EVENT', 'AWARD']);
+    const block = (sheet) => ({ sheet, role: 'award-list', titleCell: 'A1', codeCell: null, headerRow: 3, firstRow: 4, lastRow: 5, wordingColumns: ['A', 'B'], qtyColumn: 'C', codeColumn: null, labelColumn: null, classColumns: [], confidence: 'high', note: null });
+    const res = applyAiMapping(ir3, { blocks: [block('EVENT'), block('AWARD')], questions: [] });
+    const [event] = res.categorized[key('MURID CEMERLANG')];
+    expect(event.lines).toEqual({ 0: 'MAJLIS ANUGERAH KECEMERLANGAN 2026', 2: 'MURID CEMERLANG' });
+    expect(event.classes.map((c) => [c.namaKelas, c.subjects[0].qty])).toEqual([['BESTARI', 3], ['CERDAS', 2]]);
+    const [award] = res.categorized[key('ANUGERAH TOKOH')];
+    expect(award.lines).toEqual({ 2: 'ANUGERAH TOKOH' });
+    expect(award.classes.reduce((n, c) => n + c.subjects.reduce((m, s) => m + s.qty, 0), 0)).toBe(5);
+  });
+
   it('flags a low-confidence block and blank formula quantities', () => {
     const wb = workbook({ LIST: { ...LIST_SHEET, patch: (ws) => { ws.D5 = { t: 'n', f: 'A1+1' }; } } });
     const ir2 = buildWorkbookIr(wb, ['LIST']);
