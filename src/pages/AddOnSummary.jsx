@@ -2,8 +2,7 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import { useAppState } from '../state/useAppState';
-import { CATEGORIES, getStockStatus, formatDate, toMalaysiaDay, categoriesUsedByItems, isDynamicCategoryKey } from '../data/catalog';
-import { computeBlocks, noopUpdaters } from '../utils/computeBlocks';
+import { getStockStatus, formatDate, toMalaysiaDay, resolveCategory } from '../data/catalog';
 
 // The add-on's cart (Sean, 2026-10-09): the same Order Summary as New
 // Order's Cart for the original order, then TAMBAHAN below in the same form.
@@ -13,18 +12,18 @@ const groupRows = (items) => {
   const byKey = new Map();
   items.forEach((it) => {
     const key = `${it.categoryLabel}::${it.jenisPlak}`;
-    const row = byKey.get(key) || { key, categoryLabel: it.categoryLabel, jenisPlak: it.jenisPlak, qty: 0, harga: 0 };
-    byKey.set(key, { ...row, qty: row.qty + (Number(it.qty) || 0), harga: row.harga + (Number(it.harga) || 0) });
+    const row = byKey.get(key) || { key, categoryLabel: it.categoryLabel, jenisPlak: it.jenisPlak, qty: 0, harga: 0, ids: [] };
+    byKey.set(key, { ...row, qty: row.qty + (Number(it.qty) || 0), harga: row.harga + (Number(it.harga) || 0), ids: [...row.ids, it.id] });
   });
   return [...byKey.values()];
 };
 
-function SummaryTable({ title, rows, totalQty, totalHarga, isOverStock = () => false, onEdit }) {
+function SummaryTable({ title, rows, totalQty, totalHarga, isOverStock = () => false, onRemove }) {
   return (
     <>
       <div className="card-kicker">{title}</div>
       <table className="table" style={{ margin: 'var(--space-3) 0 var(--space-6)' }}>
-        <thead><tr><th>Category</th><th>Jenis Plak</th><th style={{ width: 110 }}>QTY</th><th style={{ width: 130 }}>Harga</th><th style={{ width: 48 }} /></tr></thead>
+        <thead><tr><th>Category</th><th>Jenis Plak</th><th style={{ width: 110 }}>QTY</th><th style={{ width: 130 }}>Harga</th><th style={{ width: 44 }} /></tr></thead>
         <tbody>
           {rows.map((row) => (
             <tr key={row.key}>
@@ -32,7 +31,7 @@ function SummaryTable({ title, rows, totalQty, totalHarga, isOverStock = () => f
               <td>{row.jenisPlak || '—'}</td>
               <td style={isOverStock(row) ? { color: '#c0392b', fontWeight: 700 } : undefined}>{row.qty}</td>
               <td>RM {row.harga.toFixed(2)}</td>
-              <td>{onEdit && <button type="button" className="btn btn-ghost btn-icon" aria-label="Edit" title="Edit the add-on" onClick={onEdit}>✎</button>}</td>
+              <td>{onRemove && <button type="button" className="btn btn-ghost btn-icon" aria-label="Remove" onClick={() => onRemove(row.ids)}>✕</button>}</td>
             </tr>
           ))}
           {rows.length === 0 && <tr><td colSpan={5} style={{ textAlign: 'center', opacity: 0.5, padding: 'var(--space-4)' }}>No items yet.</td></tr>}
@@ -44,39 +43,16 @@ function SummaryTable({ title, rows, totalQty, totalHarga, isOverStock = () => f
 }
 
 export default function AddOnSummary() {
-  const { state, submitPendingAddOn } = useAppState();
+  const { state, submitPendingAddOn, removeFromAddOnCart } = useAppState();
   const navigate = useNavigate();
   const [submitting, setSubmitting] = useState(false);
   const order = state.orders.find((o) => o.id === state.addOnOrderId);
 
-  // Enumerates every category's block(s) currently held in the Add On
-  // draft — mirrors submitPendingAddOn's own item-building loop
-  // (src/state/AppState.jsx) so this preview always matches exactly what
-  // that function is about to submit.
-  const addOnSummaryItems = useMemo(() => {
-    const items = [];
-    // A renamed/duplicated template sheet from the original order's own
-    // import has no entry in the static CATEGORIES list — see
-    // submitPendingAddOn's matching fix in AppState.jsx (this preview must
-    // mirror it exactly, per the comment above).
-    const dynamicCats = order ? categoriesUsedByItems(order.items).filter((c) => isDynamicCategoryKey(c.key)) : [];
-    [...CATEGORIES, ...dynamicCats].forEach((cat) => {
-      const { blocks } = computeBlocks(cat.key, state.addOnLineValues, state.addOnMatrixValues, state.addOnRowsByBlock, state.addOnPlakRows, state.addOnColumnsByBlock, noopUpdaters, state.plakCatalog, state.schoolLanguage);
-      blocks.forEach((blk) => {
-        if (blk.selempang) {
-          const rows = (blk.rows || []).filter((r) => Number(r.qty) > 0);
-          if (rows.length === 0) return;
-          const qty = rows.reduce((s, r) => s + Number(r.qty), 0);
-          items.push({ jenisPlak: 'SELEMPANG', qty, harga: qty * (blk.selempangUnitPrice || 0), categoryLabel: cat.label });
-          return;
-        }
-        blk.plakRows.forEach((pr) => {
-          if (pr.jenisPlak && pr.qty) items.push({ jenisPlak: pr.jenisPlak, qty: pr.qty, harga: pr.rawHarga, categoryLabel: blk.qtyLabel });
-        });
-      });
-    });
-    return items;
-  }, [order, state.addOnLineValues, state.addOnMatrixValues, state.addOnRowsByBlock, state.addOnPlakRows, state.addOnColumnsByBlock, state.plakCatalog, state.schoolLanguage]);
+  // Exactly what submitPendingAddOn will submit (AppState's addOnAddToCart).
+  const addOnSummaryItems = useMemo(() => state.addOnCart.map((ci) => ({
+    id: ci.id, jenisPlak: ci.jenisPlak, qty: ci.qty, harga: ci.harga,
+    categoryLabel: resolveCategory(ci.categoryKey)?.label || ci.categoryLabel,
+  })), [state.addOnCart]);
 
   const stockViolation = useMemo(() => addOnSummaryItems
     .map((it) => {
@@ -95,7 +71,7 @@ export default function AddOnSummary() {
 
   if (!order) return null;
 
-  const originalItems = order.items.map((it) => ({ jenisPlak: it.jenisPlak, qty: it.qty, harga: it.harga, categoryLabel: it.categoryLabel }));
+  const originalItems = order.items.map((it) => ({ jenisPlak: it.jenisPlak, qty: it.qty, harga: it.harga, categoryLabel: resolveCategory(it.categoryKey)?.label || it.categoryLabel }));
   const originalTotalQty = originalItems.reduce((sum, it) => sum + (Number(it.qty) || 0), 0);
   const originalTotalHarga = originalItems.reduce((sum, it) => sum + it.harga, 0);
   const addOnTotalQty = addOnSummaryItems.reduce((sum, it) => sum + (Number(it.qty) || 0), 0);
@@ -132,7 +108,7 @@ export default function AddOnSummary() {
         <SummaryTable
           title="Tambahan — Category / Jenis Plak / QTY / Harga" rows={groupRows(addOnSummaryItems)} totalQty={addOnTotalQty} totalHarga={addOnTotalHarga}
           isOverStock={(row) => { const st = getStockStatus(row.jenisPlak, state.plakCatalog); return !!st && row.qty > st.maxOrderable; }}
-          onEdit={() => navigate(`/addon/${order.id}`)}
+          onRemove={removeFromAddOnCart}
         />
 
         <table className="table" style={{ margin: '0 0 var(--space-8)' }}>
@@ -148,7 +124,7 @@ export default function AddOnSummary() {
         )}
         <div className="row-split">
           <button type="button" className="btn btn-ghost" onClick={() => navigate(`/addon/${order.id}`)}>← Back to Add On</button>
-          <button type="button" className="btn btn-primary" disabled={submitting || !!stockViolation} onClick={handleSubmit}>
+          <button type="button" className="btn btn-primary" disabled={submitting || !!stockViolation || addOnSummaryItems.length === 0} onClick={handleSubmit}>
             {submitting ? 'Submitting…' : 'Submit Tambahan'}
           </button>
         </div>

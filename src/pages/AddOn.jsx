@@ -25,7 +25,7 @@ const ADDON_IMPORT_FIELDS = { ...DRAFT_FIELDS, category: 'addOnCategory' };
 const EDITABLE = { lines: true, rowDesc: true, rowQty: true, addRemoveRows: true, matrix: true, jenisPlak: true };
 
 export default function AddOn() {
-  const { state, patch, importFormAnugerahExcelInto } = useAppState();
+  const { state, patch, importFormAnugerahExcelInto, addOnAddToCart } = useAppState();
   const navigate = useNavigate();
   const order = state.orders.find((o) => o.id === state.addOnOrderId);
 
@@ -148,7 +148,13 @@ export default function AddOn() {
 
         <div className="row-split" style={{ marginTop: 'var(--space-6)' }}>
           <button type="button" className="btn btn-ghost" onClick={() => navigate(state.role === 'salesman' ? `/sales/orders/${order.id}` : '/dashboard')}>← Cancel</button>
-          <button type="button" className="btn btn-primary" onClick={() => navigate(`/addon/${order.id}/summary`)} disabled={!state.addOnCategory}>Add to Cart</button>
+          {state.cartToast && <span className="toast-inline">{state.cartToast}</span>}
+          <div style={{ display: 'flex', gap: 8 }}>
+            {state.addOnCategory && (
+              <button type="button" className="btn btn-ghost" onClick={() => addOnAddToCart(false)}>Add this category only</button>
+            )}
+            <button type="button" className="btn btn-primary" onClick={() => addOnAddToCart(true)}>Add All to Cart</button>
+          </div>
         </div>
       </div>
     </div>

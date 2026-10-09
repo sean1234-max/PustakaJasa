@@ -222,6 +222,19 @@ function resetCategoryFields(catKey, st, visibleField) {
   };
 }
 
+// The Add On draft seen through New Order's field names, so
+// buildCategoryCartItems / resetCategoryFields work on it unchanged.
+const ADDON_DRAFT_FIELDS = {
+  addOnLineValues: 'lineValues', addOnMatrixValues: 'matrixValues', addOnRowsByBlock: 'rowsByBlock',
+  addOnPlakRows: 'plakRows', addOnColumnsByBlock: 'columnsByBlock',
+  addOnNextRowId: 'nextRowId', addOnNextPlakRowId: 'nextPlakRowId', addOnNextColumnId: 'nextColumnId',
+};
+const addOnAsDraft = (st) => ({ ...st, ...Object.fromEntries(Object.entries(ADDON_DRAFT_FIELDS).map(([a, d]) => [d, st[a]])) });
+const draftToAddOn = (view) => ({
+  ...Object.fromEntries(Object.entries(ADDON_DRAFT_FIELDS).map(([a, d]) => [a, view[d]])),
+  addOnVisibleBlocksByCategory: view.addOnVisibleBlocksByCategory,
+});
+
 function initialState() {
   return {
     userId: '',
@@ -306,6 +319,7 @@ function initialState() {
     draftRestoredToast: '',
 
     addOnOrderId: null,
+    addOnCart: [],
     addOnCategory: null,
     addOnLineValues: {},
     addOnMatrixValues: {},
@@ -744,6 +758,45 @@ export function AppStateProvider({ children }) {
     });
     clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => patch({ cartToast: '' }), 3000);
+  }, [patch]);
+
+  // Add On's own "Add This Category Only" / "Add All to Cart" (Sean,
+  // 2026-10-09) — same checks and items as New Order's, into addOnCart.
+  const addOnAddToCart = useCallback((allCategories) => {
+    setState((st) => {
+      let view = addOnAsDraft(st);
+      const order = st.orders.find((o) => o.id === st.addOnOrderId);
+      const dynamicKeys = [
+        ...categoriesUsedByItems(order?.items || []).map((c) => c.key),
+        ...Object.keys(st.addOnVisibleBlocksByCategory || {}),
+      ].filter(isDynamicCategoryKey);
+      const cats = allCategories
+        ? [...ACTIVE_CATEGORIES, ...[...new Set(dynamicKeys)].map(resolveCategory).filter(Boolean)]
+        : [resolveCategory(st.addOnCategory)].filter(Boolean);
+      const allItems = [];
+      for (const cat of cats) {
+        const { engaged, error, items } = buildCategoryCartItems(view, cat.key);
+        if (!engaged && allCategories) continue;
+        if (error) return { ...st, addOnCategory: cat.key, cartToast: `${cat.label}: ${error}` };
+        if (!items || items.length === 0) continue;
+        allItems.push(...items);
+        view = { ...view, ...resetCategoryFields(cat.key, view, 'addOnVisibleBlocksByCategory') };
+      }
+      if (allItems.length === 0) return { ...st, cartToast: 'No filled Jenis Plak rows to add.' };
+      const touchedKeys = new Set(allItems.map((it) => it.categoryKey));
+      return {
+        ...st,
+        ...draftToAddOn(view),
+        addOnCart: [...st.addOnCart.filter((ci) => !touchedKeys.has(ci.categoryKey)), ...allItems],
+        cartToast: `Added ${allItems.length} item(s) to cart.`,
+      };
+    });
+    clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => patch({ cartToast: '' }), 3000);
+  }, [patch]);
+
+  const removeFromAddOnCart = useCallback((ids) => {
+    patch((st) => ({ addOnCart: st.addOnCart.filter((ci) => !ids.includes(ci.id)) }));
   }, [patch]);
 
   // Reads a teacher-uploaded past order file — either a filled-in copy of
@@ -1721,7 +1774,7 @@ export function AppStateProvider({ children }) {
 
   const openAddOn = useCallback((ord) => {
     patch((st) => ({
-      addOnOrderId: ord.id, addOnCategory: null,
+      addOnOrderId: ord.id, addOnCategory: null, addOnCart: [],
       addOnLineValues: {}, addOnMatrixValues: {},
       addOnRowsByBlock: buildInitialRowsByBlock(st.schoolLanguage), addOnColumnsByBlock: buildInitialColumnsByBlock(), addOnPlakRows: buildInitialPlakRows(),
       addOnNextRowId: 1000, addOnNextPlakRowId: 1000, addOnNextColumnId: 1000, addOnVisibleBlocksByCategory: {},
@@ -1745,43 +1798,9 @@ export function AppStateProvider({ children }) {
   // render.
   const submitPendingAddOn = useCallback(async () => {
     const st = stateRef.current;
-    const newItems = [];
     const addOnOrder = st.orders.find((o) => o.id === st.addOnOrderId);
-    // A renamed/duplicated template sheet from the original order's own
-    // import has no entry in the static CATEGORIES list at all — without
-    // this, anything the teacher typed into that tab (AddOn.jsx's own
-    // allCategories) would be silently dropped here instead of submitted.
-    const dynamicCats = addOnOrder ? categoriesUsedByItems(addOnOrder.items).filter((c) => isDynamicCategoryKey(c.key)) : [];
-    // Every category (including PBD/ALIRAN, split into their own
-    // top-level entries — see catalog.js) has exactly one block, so this
-    // naturally picks up whichever categories/blocks actually have data
-    // in the draft regardless of which category tab the teacher currently
-    // has open — no per-variant block-index bookkeeping needed here.
-    [...CATEGORIES, ...dynamicCats].forEach((cat) => {
-      // SELEMPANG builds one combined item (acara/warna rows in detail.rows)
-      // — buildCategoryCartItems already knows its shape and validation.
-      if (cat.selempang) {
-        const res = buildCategoryCartItems({
-          lineValues: st.addOnLineValues, matrixValues: st.addOnMatrixValues, rowsByBlock: st.addOnRowsByBlock,
-          plakRows: st.addOnPlakRows, columnsByBlock: st.addOnColumnsByBlock,
-          plakCatalog: st.plakCatalog, schoolLanguage: st.schoolLanguage,
-        }, cat.key);
-        if (res.items) newItems.push(...res.items);
-        return;
-      }
-      const { blocks: catBlocks, isMatrix: catIsMatrix, isDynamicMatrix: catIsDynamicMatrix } = computeBlocks(
-        cat.key, st.addOnLineValues, st.addOnMatrixValues, st.addOnRowsByBlock, st.addOnPlakRows, st.addOnColumnsByBlock, noopUpdaters, st.plakCatalog, st.schoolLanguage,
-      );
-      catBlocks.forEach((blk) => {
-        blk.plakRows.forEach((pr) => {
-          if (pr.jenisPlak && pr.qty) newItems.push({
-            id: crypto.randomUUID(), jenisPlak: pr.jenisPlak, qty: pr.qty, harga: pr.rawHarga, unitPrice: pr.unitPrice, categoryLabel: blk.qtyLabel,
-            categoryKey: cat.key, blockIdx: blk.idx,
-            detail: snapshotDetail(cat.key, blk.idx, catIsMatrix, catIsDynamicMatrix, st.addOnLineValues, st.addOnMatrixValues, st.addOnRowsByBlock, st.addOnColumnsByBlock),
-          });
-        });
-      });
-    });
+    // Exactly what was added to the add-on cart (addOnAddToCart).
+    const newItems = st.addOnCart.map((ci) => ({ ...ci }));
     if (newItems.length === 0) {
       flashToast('updateToast', 'No add-on items to submit.');
       return false;
@@ -1828,6 +1847,7 @@ export function AppStateProvider({ children }) {
       orders: latest.orders.map((o) => (
         o.id === st.addOnOrderId ? { ...o, pendingAddonItems: newItems, pendingAddonStatus: 'pending', pendingAddonRejectReason: null } : o
       )),
+      addOnCart: [],
     }));
     flashToast('updateToast', 'Add-on submitted — Production will review it, then Sales approves it.');
     return true;
@@ -2990,7 +3010,7 @@ export function AppStateProvider({ children }) {
     resetCurrentCategory, startNewOrder, addToCart, addAllToCart, removeFromCart, editCartCategory, submitOrder, reorderOrder,
     importFormAnugerahExcel, importFormAnugerahExcelInto,
     openAmend, updateAmend,
-    openAddOn, submitPendingAddOn, cancelPendingAddOn, rejectAddOn, approveAddOn, approveOrder, setInvoiceId, approveAndSetInvoiceId,
+    openAddOn, addOnAddToCart, removeFromAddOnCart, submitPendingAddOn, cancelPendingAddOn, rejectAddOn, approveAddOn, approveOrder, setInvoiceId, approveAndSetInvoiceId,
     setJenisPlakInvoiceGroup, renameInvoiceNumber,
     retryUrgentSheetSync, updateShipmentAndUrgency,
     cancelOrder,

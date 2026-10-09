@@ -5,7 +5,10 @@ export default function Nav() {
   const { state, logout, startNewOrder } = useAppState();
   const { pathname } = useLocation();
   const navigate = useNavigate();
-  const cartCount = state.cart.length;
+  // On an Add On page the trolley is that add-on's own cart.
+  const addOnMatch = pathname.match(/^\/addon\/([^/]+)/);
+  const cartCount = addOnMatch ? state.addOnCart.length : state.cart.length;
+  const cartTo = addOnMatch ? `/addon/${addOnMatch[1]}/summary` : '/cart';
 
   const handleLogout = () => {
     logout();
@@ -13,7 +16,7 @@ export default function Nav() {
   };
 
   const cartLink = (
-    <Link to="/cart" className="nav-cart" aria-label="Cart">
+    <Link to={cartTo} className="nav-cart" aria-label="Cart">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="8" cy="21" r="1" /><circle cx="19" cy="21" r="1" />
         <path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12" />
