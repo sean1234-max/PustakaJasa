@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import ConfirmButton from '../components/ConfirmButton';
 import { useAppState } from '../state/useAppState';
-import { statusPillStyle, formatDate, deliveryStageForShipmentDate, getLowStockAlerts, toMalaysiaDay, malaysiaToday } from '../data/catalog';
+import { statusPillStyle, formatDate, deliveryStageForShipmentDate, getLowStockAlerts, toMalaysiaDay, malaysiaToday, isAddonInFlight } from '../data/catalog';
 import { getOrderChangeStamp } from '../utils/orderStamp';
 import { getOrderInvoiceSlices } from '../utils/orderBatches';
 import { prioritizeUrgentOrders } from '../utils/urgentOrder';
@@ -42,10 +42,11 @@ function daysSinceShipmentDate(shipmentDate, today) {
 // In Production.
 const TABS = [
   { key: 'reviewing', label: 'Reviewing Order', match: (o) => o.status === 'Reviewing Order' },
+  // A submitted add-on (0085) — one card per order (its first invoice slice),
+  // whatever the order's own status. Like Reviewing Order, it stays here
+  // after Done Review until the salesman approves it.
+  { key: 'addon', label: 'Add-On Review', match: (o) => o._primarySlice && isAddonInFlight(o) },
   { key: 'approved', label: 'Salesman Approved', match: (o) => o.status === 'Salesman Approved' },
-  // A submitted add-on waiting for Production's review (0085) — one card per
-  // order (its first invoice slice), whatever the order's own status.
-  { key: 'addon', label: 'Add-On Review', match: (o) => o._primarySlice && o.pendingAddonStatus === 'pending' },
   { key: 'typing', label: 'Typing', match: (o) => o.status === 'In Production' && !o.typedAt },
   { key: 'active', label: 'In Production', match: (o) => o.status === 'In Production' && !!o.typedAt },
   { key: 'waiting', label: 'Waiting for Shipment', match: (o) => o.status === 'Waiting for Shipment' },
@@ -82,7 +83,7 @@ function shipmentDateKey(shipmentDate) {
 }
 
 export default function ProductionDashboard() {
-  const { state, today, markProductionDone, markTypingDone, markReviewDone } = useAppState();
+  const { state, today, markProductionDone, markTypingDone, markReviewDone, markAddOnReviewed } = useAppState();
   const navigate = useNavigate();
   // The team's own accounts (kesin, sean …) open on Reviewing Order — their
   // first job; the manager keeps In Production (Sean, 2026-10-07).
@@ -227,6 +228,9 @@ export default function ProductionDashboard() {
                   {ord.status === 'Reviewing Order' && ord.reviewedAt && (
                     <span className="status-pill" style={{ background: '#dcefe3', color: '#2f6b4f' }}>✓ Review Done</span>
                   )}
+                  {tab === 'addon' && (ord.pendingAddonStatus === 'reviewed'
+                    ? <span className="status-pill" style={{ background: '#dcefe3', color: '#2f6b4f' }}>✓ Review Done — waiting for Sales</span>
+                    : <span className="status-pill" style={{ background: '#fff4ce', color: '#8a6d00' }}>Tambahan — needs review</span>)}
                 </div>
               </div>
               {stamp && <div className="order-stamp-inline" style={{ marginTop: 'var(--space-1)' }}>{stamp}</div>}
@@ -248,7 +252,7 @@ export default function ProductionDashboard() {
               <div className="dim" style={{ fontSize: 11 }}>Total Amount</div>
               <div className={`order-card-total${ord.priceAdjusted ? ' amount-adjusted' : ''}`}>RM {ord.totalAmount.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
 
-              <div className="order-card-actions" style={tab === 'active' || tab === 'typing' || tab === 'reviewing' ? { display: 'flex', gap: 'var(--space-2)' } : undefined}>
+              <div className="order-card-actions" style={tab === 'active' || tab === 'typing' || tab === 'reviewing' || tab === 'addon' ? { display: 'flex', gap: 'var(--space-2)' } : undefined}>
                 {tab === 'reviewing' && (
                   <>
                     <button type="button" className="btn btn-ghost" style={{ flex: 1 }} onClick={() => navigate(`/production/orders/${ord.id}`)}>
@@ -259,6 +263,20 @@ export default function ProductionDashboard() {
                         label="Done Review" style={{ flex: 1 }}
                         question="Finished reviewing? The salesman can approve it after this."
                         onConfirm={() => markReviewDone(ord.id)}
+                      />
+                    )}
+                  </>
+                )}
+                {tab === 'addon' && (
+                  <>
+                    <button type="button" className="btn btn-ghost" style={{ flex: 1 }} onClick={() => navigate(`/production/orders/${ord.id}`)}>
+                      View Order
+                    </button>
+                    {ord.pendingAddonStatus === 'pending' && (
+                      <ConfirmButton
+                        label="Done Review" style={{ flex: 1 }}
+                        question="Finished reviewing this Tambahan? The salesman can approve it after this."
+                        onConfirm={() => markAddOnReviewed(ord.id)}
                       />
                     )}
                   </>
@@ -292,7 +310,7 @@ export default function ProductionDashboard() {
                     />
                   </>
                 )}
-                {tab !== 'active' && tab !== 'typing' && tab !== 'reviewing' && (
+                {tab !== 'active' && tab !== 'typing' && tab !== 'reviewing' && tab !== 'addon' && (
                   <button type="button" className="btn btn-ghost btn-block" onClick={() => navigate(`/production/orders/${ord.id}${ord.invoiceId ? `?invoice=${encodeURIComponent(ord.invoiceId)}` : ''}`)}>
                     View Order
                   </button>
