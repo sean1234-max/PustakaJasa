@@ -141,6 +141,21 @@ describe('parseWordingDocx', () => {
     expect(res.notes[3]).toMatch(/No event heading/);
   });
 
+  it('flags rows with no plaque code, and a likely leftover copy of coded rows', async () => {
+    const buf = await makeDocx(para('MAJLIS X') + table([
+      ['BIL', 'WORDING', 'KUANTITI', 'KOD HADIAH'],
+      ['1', 'ANUGERAH MP\nTAHUN 5\nSAINS', '1', ''],
+      ['2', 'ANUGERAH MP\nTAHUN 5\nJAWI', '1', ''],
+      ['3', 'ANUGERAH MP\nTAHUN 5\nSAINS', '1', 'CIRCLE'],
+      ['4', 'ANUGERAH LAIN', '2', ''],
+    ]));
+    const res = await parse(buf);
+    expect(res.notes).toEqual([
+      '"ANUGERAH MP": 2 plaque(s) have no plaque code (KOD) — please pick the Jenis Plak by hand. The same wording is also listed with code CIRCLE — it may be a leftover copy; delete whichever is not needed.',
+      '"ANUGERAH LAIN": 2 plaque(s) have no plaque code (KOD) — please pick the Jenis Plak by hand.',
+    ]);
+  });
+
   it('returns an error for a file with no order table, or not a docx at all', async () => {
     expect((await parse(await makeDocx(para('hello')))).error).toMatch(/No recognized/);
     expect((await parse(new TextEncoder().encode('not a zip').buffer)).error).toMatch(/valid \.docx/);

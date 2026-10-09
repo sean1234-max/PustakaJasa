@@ -242,6 +242,29 @@ export function wordingRowsToCategorized(rows, heading = '') {
     else cls.subjects.push({ name: subjectName, qty });
   });
 
+  // Rows with no plaque code can't be priced or made. Say so, and point out
+  // when the same wording is also listed WITH a code (often a draft table
+  // the teacher forgot to delete) so it isn't silently made twice.
+  const notes = [];
+  const codesByWording = new Map();
+  rows.forEach(({ lines, kod }) => {
+    const wk = lines.join('\n');
+    if (!codesByWording.has(wk)) codesByWording.set(wk, new Set());
+    if (kod) codesByWording.get(wk).add(kod);
+  });
+  const uncoded = new Map();
+  rows.filter((r) => !r.kod).forEach(({ lines, qty }) => {
+    const title = classifyWordingLines(lines).title;
+    const u = uncoded.get(title) ?? { qty: 0, dupCodes: new Set() };
+    u.qty += qty;
+    codesByWording.get(lines.join('\n')).forEach((c) => u.dupCodes.add(c));
+    uncoded.set(title, u);
+  });
+  uncoded.forEach((u, title) => {
+    const dup = u.dupCodes.size ? ` The same wording is also listed with code ${[...u.dupCodes].join(', ')} — it may be a leftover copy; delete whichever is not needed.` : '';
+    notes.push(`"${title}": ${u.qty} plaque(s) have no plaque code (KOD) — please pick the Jenis Plak by hand.${dup}`);
+  });
+
   const categorized = {};
   groupOrder.forEach((gk) => {
     const g = groups.get(gk);
@@ -257,7 +280,7 @@ export function wordingRowsToCategorized(rows, heading = '') {
     categorized[makeDynamicCategoryKey('KLAS_MATRIX', label)] = [section];
   });
 
-  return { categorized, count: groupOrder.length };
+  return { categorized, count: groupOrder.length, notes };
 }
 
 const BAD_FILE = 'Could not read this file — please make sure it is a valid .docx file.';
@@ -298,7 +321,8 @@ export async function parseWordingDocx(arrayBuffer, { DOMParser: DP = globalThis
     rows.push(...tableRows);
   });
 
-  const { categorized, count } = wordingRowsToCategorized(rows, heading);
+  const { categorized, count, notes: groupNotes } = wordingRowsToCategorized(rows, heading);
+  notes.push(...groupNotes);
   if (count === 0) {
     return { klasMatrix: null, error: 'No recognized WORDING/KUANTITI or LABEL/BILANGAN table found in this file.' };
   }

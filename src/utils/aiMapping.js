@@ -178,7 +178,10 @@ export function applyAiMapping(ir, mapping) {
     }
   });
   listRowsByHeading.forEach((rows, heading) => {
-    if (rows.length) Object.assign(categorized, wordingRowsToCategorized(rows, heading).categorized);
+    if (!rows.length) return;
+    const grouped = wordingRowsToCategorized(rows, heading);
+    Object.assign(categorized, grouped.categorized);
+    notes.push(...grouped.notes);
   });
   ir.blocks.filter((b) => b.truncated).forEach((b) => notes.push(`Sheet "${b.name}": only the first 400 rows / 60 columns were sent to the AI — please add anything beyond that by hand.`));
   ir.blocks.filter((b) => !seen.has(b.name)).forEach((b) => notes.push(`Sheet "${b.name}": the AI didn't read this sheet — please add its data by hand if needed.`));
