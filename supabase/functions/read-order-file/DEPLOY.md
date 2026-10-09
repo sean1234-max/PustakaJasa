@@ -27,7 +27,7 @@ following are optional:
 |---|---|---|
 | `READER_MODEL` | `claude-sonnet-5-5` | main model |
 | `READER_ESCALATE_MODEL` | `claude-opus-5-5` | second try when the first answer is unusable or unsure |
-| `READER_ROLES` | `salesman` | comma list of roles allowed to call it |
+| `READER_ROLES` | `salesman,admin` | comma list of roles allowed to call it (admin can't reach New Order; it is allowed so the owner can test the reader) |
 | `READER_RATE_LIMIT_PER_HOUR` | `30` | per user |
 | `READER_ALLOWED_ORIGINS` | (any) | comma list, e.g. the production Vercel domain |
 
@@ -41,7 +41,7 @@ supabase functions deploy check-engraving-text   # now also respects the site-wi
 ## 4. Switch on in the website (Vercel env)
 
 - `VITE_AI_READER_ENABLED=1`
-- `VITE_AI_READER_ROLES=salesman` (must match `READER_ROLES`)
+- `VITE_AI_READER_ROLES=salesman` (must be a role listed in `READER_ROLES`)
 
 Redeploy the site. When an Excel import skips sheets, the salesman sees a
 **Read N skipped sheet(s) with AI** button under the import message.

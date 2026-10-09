@@ -23,7 +23,7 @@ const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
 const MODEL = Deno.env.get('READER_MODEL') ?? 'claude-sonnet-5-5';
 const ESCALATE_MODEL = Deno.env.get('READER_ESCALATE_MODEL') ?? 'claude-opus-5-5';
-const ALLOWED_ROLES = (Deno.env.get('READER_ROLES') ?? 'salesman').split(',').map((s) => s.trim());
+const ALLOWED_ROLES = (Deno.env.get('READER_ROLES') ?? 'salesman,admin').split(',').map((s) => s.trim());
 const RATE_LIMIT_PER_HOUR = Number(Deno.env.get('READER_RATE_LIMIT_PER_HOUR') ?? '30');
 const ALLOWED_ORIGINS = (Deno.env.get('READER_ALLOWED_ORIGINS') ?? '').split(',').map((s) => s.trim()).filter(Boolean);
 const MAX_IR_CHARS = 120_000;
