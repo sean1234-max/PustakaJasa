@@ -505,7 +505,7 @@ export default function StoreAdminOrderDetail() {
                       urgentOrder.js. No override control. */}
                   {shipmentDateDraft && isUrgentShipment(malaysiaToday(), shipmentDateDraft) && (
                     <p className="urgent-hint" style={{ gridColumn: '1 / -1', margin: 0 }}>
-                      ⚡ This Shipment Date is less than 5 working days away — the order will be marked Urgent once approved.
+                      ⚡ This Shipment Date is within 7 days of approving today — the order will be marked Urgent once approved.
                     </p>
                   )}
                 </>

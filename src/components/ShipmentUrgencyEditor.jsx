@@ -38,7 +38,11 @@ export default function ShipmentUrgencyEditor({ order }) {
     setOpen(false);
   };
 
-  const dateUrgent = date ? isUrgentShipment(malaysiaToday(), date) : false;
+  // Urgent counts from the approval day, which isn't stored — so the hint
+  // only runs before approval ("if approved today"); afterwards it's left
+  // to Production.
+  const showHint = order.status === 'Reviewing Order' && !!date;
+  const dateUrgent = showHint && isUrgentShipment(malaysiaToday(), date);
   const unchanged = date && order.shipmentDate
     && formatDate(date) === formatDate(toMalaysiaDay(order.shipmentDate)) && urgent === !!order.urgent;
 
@@ -62,8 +66,8 @@ export default function ShipmentUrgencyEditor({ order }) {
               </label>
             </div>
           </div>
-          {date && dateUrgent !== urgent && (
-            <p className="urgent-hint">By this date the order would count as {dateUrgent ? 'urgent' : 'not urgent'} — tick or untick Urgent yourself if needed.</p>
+          {showHint && dateUrgent !== urgent && (
+            <p className="urgent-hint">If approved today, this date would count as {dateUrgent ? 'urgent' : 'not urgent'} — tick or untick Urgent yourself if needed.</p>
           )}
           {order.urgentSheetSyncedAt && !urgent && (
             <p className="hint-text">This order will be removed from the urgent Google Sheet.</p>

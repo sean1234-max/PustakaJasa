@@ -1,37 +1,28 @@
-// "Urgent" = fewer than 5 Mon-Fri working days between "today" (the
-// moment Shipment Date is first saved, at approval time) and the
-// Shipment Date itself. Weekends are skipped; public holidays are NOT
-// excluded — purely date-driven, no manual override. Snapshotted once
-// at approval (see approveOrder / approveAndSetInvoiceId in
-// src/state/AppState.jsx) and never recomputed afterward.
-//
-// Boundary semantics: counts weekdays strictly AFTER fromDate up to and
-// INCLUDING toDate — i.e. the half-open interval (fromDate, toDate].
-// fromDate itself is never counted. Worked example: approved on a
-// Monday, Shipment Date the FOLLOWING Monday -> Tue,Wed,Thu,Fri,Mon = 5
-// working days = NOT urgent (5 is not < 5); any earlier date is urgent.
-function dayOnly(d) {
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+import { parseDisplayDate, toMalaysiaDay } from '../data/catalog';
+
+// "Urgent" = the Shipment Date falls within 7 calendar days of the day the
+// salesman APPROVES the order, that day counting as day 1 (Sean,
+// 2026-10-09): approved on the 7th → shipping on the 13th or earlier is
+// urgent, the 14th is not. Weekends and public holidays count like any
+// other day. Snapshotted at approval (Sales approves / Store Admin approves
+// with the invoice — src/state/AppState.jsx); Production can change it by
+// hand afterwards.
+export const URGENT_WINDOW_DAYS = 7;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// A calendar day from a picked Date, a "05 Oct 2026" display date, or a
+// stored ISO Shipment Date (its Malaysian day).
+function calendarDay(v) {
+  if (!v) return null;
+  if (v instanceof Date) return new Date(v.getFullYear(), v.getMonth(), v.getDate());
+  return parseDisplayDate(v) || toMalaysiaDay(v);
 }
 
-export function countWorkingDaysBetween(fromDate, toDate) {
-  const from = dayOnly(fromDate);
-  const to = dayOnly(toDate);
-  if (to <= from) return 0;
-  let count = 0;
-  const cur = new Date(from);
-  cur.setDate(cur.getDate() + 1);
-  while (cur <= to) {
-    const dow = cur.getDay(); // 0 = Sun, 6 = Sat
-    if (dow !== 0 && dow !== 6) count++;
-    cur.setDate(cur.getDate() + 1);
-  }
-  return count;
-}
-
-export function isUrgentShipment(fromDate, shipmentDate) {
-  if (!fromDate || !shipmentDate) return false;
-  return countWorkingDaysBetween(fromDate, shipmentDate) < 5;
+export function isUrgentShipment(approvedOn, shipmentDate) {
+  const approved = calendarDay(approvedOn);
+  const ship = calendarDay(shipmentDate);
+  if (!approved || !ship) return false;
+  return Math.round((ship - approved) / DAY_MS) < URGENT_WINDOW_DAYS;
 }
 
 export function prioritizeUrgentOrders(orders) {
