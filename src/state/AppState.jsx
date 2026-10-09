@@ -1792,8 +1792,12 @@ export function AppStateProvider({ children }) {
   const submitPendingAddOn = useCallback(async () => {
     const st = stateRef.current;
     const addOnOrder = st.orders.find((o) => o.id === st.addOnOrderId);
-    // Exactly what was added to the add-on cart (addOnAddToCart).
-    const newItems = st.addOnCart.map((ci) => ({ ...ci }));
+    // Exactly what was added to the add-on cart (addOnAddToCart). An item
+    // added before its Excel finished uploading gets the upload now, so
+    // Production can still download it.
+    const newItems = st.addOnCart.map((ci) => (
+      ci.importFile || !st.addOnImportFilePath ? { ...ci } : { ...ci, importFile: st.addOnImportFilePath }
+    ));
     if (newItems.length === 0) {
       flashToast('updateToast', 'No add-on items to submit.');
       return false;
