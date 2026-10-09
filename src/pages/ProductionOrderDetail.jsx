@@ -14,7 +14,6 @@ import { getExportableCategories, splitOrderCategories, getOrderJenisPlakGroups,
 import { downloadTextFile } from '../utils/downloadBlob';
 import { getInvoiceItems } from '../utils/orderBatches';
 import ImportFileButtons from '../components/ImportFileButtons';
-import { addonImportFiles } from '../utils/importFiles';
 import ShipmentUrgencyEditor from '../components/ShipmentUrgencyEditor';
 import { getAiFileHelperStatus, startAiFileHelperJob, getAiFileHelperJob } from '../lib/aiFileHelper';
 import { getOrderChangeStamp } from '../utils/orderStamp';
@@ -229,16 +228,6 @@ export default function ProductionOrderDetail() {
           .filter((blk) => !isFiltered || !blk.jenisPlak || sliceItems.some((it) => it.jenisPlak === blk.jenisPlak)),
       }));
   }, [effectiveOrder, isFiltered, viewInvoiceId, state.plakCatalog]);
-  // A submitted add-on waiting for (or past) Production's review (0085).
-  const addonBlocks = useMemo(() => {
-    const items = order?.pendingAddonItems || [];
-    if (!isAddonInFlight(order) || items.length === 0) return [];
-    const addonOrder = { ...order, items };
-    const { anugerah, selempang } = splitOrderCategories(addonOrder);
-    return [...anugerah, ...selempang]
-      .filter((cat) => items.some((it) => it.categoryKey === cat.key))
-      .flatMap((cat) => reconstructBlocksForCategory(addonOrder, cat.key, state.plakCatalog).blocks);
-  }, [order, state.plakCatalog]);
   const [printedAt, setPrintedAt] = useState(null);
   // Deferred a tick so the new printedAt is in the print-only DOM first.
   const handlePrint = () => { setPrintedAt(new Date().toISOString()); setTimeout(() => window.print(), 0); };
@@ -387,37 +376,21 @@ export default function ProductionOrderDetail() {
             </div>
           </div>
         )}
+        {/* A submitted add-on (Tambahan) — reviewed like the order itself:
+            Edit Order (download / upload its Excel there), then Done Review. */}
         {isAddonInFlight(order) && (
           <div className="confirm-panel" style={{ marginBottom: 'var(--space-4)' }}>
-            <div className="card-kicker">Tambahan (Add-On)</div>
-            <p className="hint-text" style={{ margin: 'var(--space-2) 0', fontWeight: 600 }}>
+            <p className="hint-text" style={{ margin: '0 0 var(--space-3)', fontWeight: 600 }}>
               {order.pendingAddonStatus === 'reviewed'
-                ? 'Add-on reviewed — waiting for the salesman to approve it.'
-                : 'Check this add-on, then click Done Review (Add-On) so Sales can approve it.'}
+                ? 'Tambahan (add-on) review done — waiting for the salesman to approve. You can still edit it until then.'
+                : 'Check this Tambahan (add-on) — wording, line order, quantities, Jenis Plak. Fix anything with Edit Order, then click Done Review so Sales can approve it.'}
             </p>
-            <table className="table" style={{ margin: 'var(--space-2) 0', background: '#fff' }}>
-              <thead><tr><th>Category</th><th>Jenis Plak</th><th style={{ width: 80 }}>QTY</th><th style={{ width: 100 }}>Harga</th></tr></thead>
-              <tbody>
-                {(order.pendingAddonItems || []).map((it) => (
-                  <tr key={it.id}>
-                    <td>{it.categoryLabel}</td>
-                    <td>{it.jenisPlak}</td>
-                    <td>{it.qty}</td>
-                    <td>RM {(Number(it.harga) || 0).toFixed(2)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {addonBlocks.map((blk, i) => <OrderCategoryBlock key={i} blk={blk} editable={READONLY} />)}
-            <div style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap', margin: 'var(--space-3) 0' }}>
-              <button type="button" className="btn btn-secondary" onClick={() => navigate(`/production/orders/${order.id}/edit?addon=1`)}>Edit Add-On</button>
-              {addonImportFiles(order).length > 0 && (
-                <ImportFileButtons order={{ ...order, id: `${order.id}-TAMBAHAN`, importFiles: addonImportFiles(order) }} buttonClassName="btn btn-secondary" errorClassName="login-error" />
+            <div style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
+              <button type="button" className="btn btn-secondary" onClick={() => navigate(`/production/orders/${order.id}/edit?addon=1`)}>Edit Order</button>
+              {order.pendingAddonStatus === 'pending' && (
+                <ConfirmButton label="Done Review" question="Finished reviewing this Tambahan? The salesman can approve it after this." onConfirm={() => markAddOnReviewed(order.id)} />
               )}
             </div>
-            {order.pendingAddonStatus === 'pending' && (
-              <ConfirmButton label="Done Review (Add-On)" question="Finished reviewing this add-on? The salesman can approve it after this." onConfirm={() => markAddOnReviewed(order.id)} />
-            )}
           </div>
         )}
         {isFiltered && (

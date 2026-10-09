@@ -1,12 +1,12 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import {
   CATEGORIES, ACTIVE_CATEGORIES, formatDate, standardUnitPrice, getCategorySubjects, matrixCellKey, customMatrixLabelKey,
-  deliveryStageForShipmentDate, SELEMPANG_CODE, isReviewed, isAddonInFlight,
+  deliveryStageForShipmentDate, isReviewed, isAddonInFlight,
   resolveCategory, categoriesUsedByItems, isDynamicCategoryKey, malaysiaToday, malaysiaDayIso,
 } from '../data/catalog';
 import { buildInitialRowsByBlock, buildInitialColumnsByBlock, buildInitialPlakRows } from '../data/formDefaults';
 import {
-  computeBlocks, snapshotDetail, noopUpdaters, buildDraftFromOrder,
+  computeBlocks, buildDraftFromOrder,
 } from '../utils/computeBlocks';
 import {
   parseFormAnugerahExcel, matchJenisPlakPath, deriveKlasMatrixSectionLines, populateMatrixSectionBlock,
@@ -1717,54 +1717,46 @@ export function AppStateProvider({ children }) {
     }
     // An order Production already reviewed goes back for review (0085).
     const reReview = isReviewed(order) ? { reviewedAt: null } : {};
-    const originalById = new Map((order.items || []).map((it) => [it.id, it]));
-    const categoriesUsed = categoriesUsedByItems(order.items);
+    // Same blocks → items conversion as Add to Cart (buildCategoryCartItems),
+    // so every category — ORDER LAIN-LAIN / TOKOH's per-row Jenis Plak too —
+    // comes back exactly as a fresh order would.
+    const draft = {
+      lineValues: st.amendLineValues, matrixValues: st.amendMatrixValues, rowsByBlock: st.amendRowsByBlock,
+      plakRows: st.amendPlakRows, columnsByBlock: st.amendColumnsByBlock, plakCatalog: st.plakCatalog, schoolLanguage: st.schoolLanguage,
+    };
     const newItems = [];
-    categoriesUsed.forEach((cat) => {
-      const { blocks, isMatrix, isDynamicMatrix } = computeBlocks(
-        cat.key, st.amendLineValues, st.amendMatrixValues, st.amendRowsByBlock, st.amendPlakRows, st.amendColumnsByBlock, noopUpdaters, st.plakCatalog, st.schoolLanguage,
-      );
-      const visibleCount = st.amendVisibleBlocksByCategory[cat.key] || 1;
-      blocks.slice(0, visibleCount).forEach((blk) => {
-        // SELEMPANG has no plak rows — one combined item, its acara/warna
-        // rows carried in `detail.rows`. Amend only lets the teacher change
-        // KUANTITI (EDITABLE.rowDesc is false), so warna stays valid.
-        if (cat.selempang) {
-          const prior = (order.items || []).find((it) => it.categoryKey === cat.key);
-          const rows = (blk.rows || []).filter((r) => Number(r.qty) > 0 && r.warnaResolved && (r.acara || '').trim());
-          if (rows.length === 0) return;
-          const totalQty = rows.reduce((s, r) => s + Number(r.qty), 0);
-          const unitPrice = blk.selempangUnitPrice;
-          newItems.push({
-            id: prior?.id || crypto.randomUUID(),
-            jenisPlak: SELEMPANG_CODE, qty: totalQty, unitPrice, harga: unitPrice * totalQty,
-            categoryLabel: cat.label, categoryKey: cat.key, blockIdx: blk.idx,
-            detail: { rows: rows.map((r) => ({ id: r.id, acara: r.acara.trim(), warna: r.warnaResolved.warna, warnaCode: r.warnaResolved.code, qty: String(r.qty) })) },
-            ...(prior?.batch ? { batch: prior.batch } : {}),
-          });
-          return;
-        }
-        blk.plakRows.forEach((pr) => {
-          if (!pr.jenisPlak || !pr.qty) return;
-          const prior = originalById.get(pr.id);
-          newItems.push({
-            id: pr.id, jenisPlak: pr.jenisPlak, qty: pr.qty, harga: pr.rawHarga, unitPrice: pr.unitPrice,
-            categoryLabel: blk.qtyLabel, categoryKey: cat.key, blockIdx: blk.idx,
-            detail: snapshotDetail(cat.key, blk.idx, isMatrix, isDynamicMatrix, st.amendLineValues, st.amendMatrixValues, st.amendRowsByBlock, st.amendColumnsByBlock),
-            ...(prior?.batch ? { batch: prior.batch } : {}),
-            ...(prior?.originalUnitPrice != null ? { originalUnitPrice: prior.originalUnitPrice } : {}),
-          });
-        });
-      });
-    });
+    for (const cat of categoriesUsedByItems(order.items)) {
+      const built = buildCategoryCartItems(draft, cat.key);
+      if (built.error) {
+        flashToast('updateToast', `${cat.label}: ${built.error}`);
+        return { ok: false };
+      }
+      if (built.items) newItems.push(...built.items);
+    }
+    if (newItems.length === 0) {
+      flashToast('updateToast', 'Nothing to save — the order would have no plaques left.');
+      return { ok: false };
+    }
     const amendedTotal = newItems.reduce((sum, it) => sum + it.harga, 0);
+    // Stock follows the change (it was taken at submit).
+    const { deduct, restore } = stockDiff(order.items, newItems);
+    const realStock = !isTestOrderId(order.id);
+    try {
+      if (realStock) await deductPlakStock(deduct);
+    } catch (err) {
+      console.error('Failed to take stock for an amend:', err);
+      flashToast('updateToast', describeStockError(err));
+      return { ok: false };
+    }
     try {
       await updateOrder(st.amendOrderId, { items: newItems, totalAmount: amendedTotal, ...reReview });
     } catch (err) {
       console.error('Failed to save amend to Supabase:', err);
+      if (realStock) restorePlakStock(deduct).catch((e) => console.error('Failed to give stock back after a failed amend:', e));
       flashToast('updateToast', describeOrderWriteError(err, 'update'));
       return { ok: false };
     }
+    if (realStock) restorePlakStock(restore).catch((err) => console.error('Failed to give back stock after an amend:', err));
     patch((latest) => ({
       orders: latest.orders.map((o) => (o.id === st.amendOrderId ? { ...o, items: newItems, totalAmount: amendedTotal, ...reReview } : o)),
     }));
