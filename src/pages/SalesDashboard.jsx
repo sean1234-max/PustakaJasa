@@ -24,7 +24,7 @@ const FILTERS = [
 ];
 
 export default function SalesDashboard() {
-  const { state } = useAppState();
+  const { state, openAmend, openAddOn } = useAppState();
   const navigate = useNavigate();
   const [filter, setFilter] = useState(FILTERS[0].status);
   // A Sales Manager's `state.orders` already contains every salesman's
@@ -97,6 +97,10 @@ export default function SalesDashboard() {
         {filteredOrders.map((ord) => {
           const readyToApprove = ord.status === 'Reviewing Order' && !!ord.reviewedAt;
           const pendingReview = readyToApprove || (filter === ADDON_FILTER && isAddonInFlight(ord));
+          // Before approval: Update Details; after: Add On only (Sean, 2026-10-09).
+          const isOwn = !state.isSalesManager || ord.salesmanId === state.userAuthId;
+          const canAmend = isOwn && ord.status === 'Reviewing Order';
+          const canAddOn = isOwn && ['Salesman Approved', 'In Production'].includes(ord.status) && !isAddonInFlight(ord);
 
           return (
             <div key={ord.id} className="card order-card">
@@ -139,10 +143,16 @@ export default function SalesDashboard() {
                 RM {ord.totalAmount.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
 
-              <div className="order-card-actions">
-                <button type="button" className="btn btn-primary btn-block" onClick={() => navigate(`/sales/orders/${ord.id}`)}>
+              <div className="order-card-actions" style={{ display: 'flex', gap: 'var(--space-2)' }}>
+                <button type="button" className="btn btn-primary" style={{ flex: 1 }} onClick={() => navigate(`/sales/orders/${ord.id}`)}>
                   {filter === ADDON_FILTER ? 'Review Add-On' : pendingReview ? 'Approve Order' : 'View Summary'}
                 </button>
+                {canAmend && (
+                  <button type="button" className="btn btn-secondary" style={{ flex: 1 }} onClick={() => { openAmend(ord); navigate(`/amend/${ord.id}`); }}>Update Details</button>
+                )}
+                {canAddOn && (
+                  <button type="button" className="btn btn-secondary" style={{ flex: 1 }} onClick={() => { openAddOn(ord); navigate(`/addon/${ord.id}`); }}>Add On</button>
+                )}
               </div>
             </div>
           );
