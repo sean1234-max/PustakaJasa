@@ -1,8 +1,8 @@
-// Writes an urgent order's row to an external Google Sheet (one row per
-// order, see below) — first when Store Admin saves the Invoice Number
-// (src/state/AppState.jsx's attemptUrgentSheetSync), then again whenever its
-// total changes afterwards (add-on approved, amend), so the Sheet's
-// amount and 2.5% commission stay current. Management totals it per
+// Keeps an urgent order's row in an external Google Sheet (one row per
+// order, see below) — written when Store Admin saves the Invoice Number
+// (src/state/AppState.jsx's attemptUrgentSheetSync), refreshed whenever its
+// total or Shipment Date changes, and removed when Production marks the
+// order Normal (updateShipmentAndUrgency). Management totals it per
 // salesman at month-end.
 //
 // Only the order ID is taken from the request; every value is read from
@@ -148,7 +148,6 @@ Deno.serve(async (req) => {
     .eq('id', orderId)
     .maybeSingle();
   if (orderError || !order) return jsonResponse({ error: 'Order not found.' }, 404);
-  if (!order.urgent) return jsonResponse({ error: 'This order is not urgent.' }, 400);
   const amount = Number(order.total_amount) || 0;
   const commission = Math.round(amount * URGENT_COMMISSION_RATE * 100) / 100;
   const row = [
@@ -179,6 +178,33 @@ Deno.serve(async (req) => {
   const ids: string[][] = (await idsResp.json()).values || [];
   let rowNumber = 0;
   ids.forEach((r, i) => { if (r[0] === order.id) rowNumber = i + 1; });
+
+  // No longer urgent: delete only the row(s) whose Order ID is exactly this
+  // order's — bottom-up so earlier indexes stay valid. Nothing else moves.
+  if (!order.urgent) {
+    const matches = ids.map((r, i) => (r[0] === order.id ? i : -1)).filter((i) => i >= 0).reverse();
+    if (matches.length === 0) return jsonResponse({ ok: true, removed: 0 });
+    const tabTitle = tab.replace(/^'|'$/g, '').replace(/''/g, "'");
+    const metaResp = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}?fields=sheets.properties(sheetId,title)`, { headers });
+    if (!metaResp.ok) {
+      console.error('Google Sheets metadata read failed:', metaResp.status, await metaResp.text());
+      return jsonResponse({ error: 'Could not read the tracking sheet. Please try again.' }, 502);
+    }
+    const sheetId = ((await metaResp.json()).sheets || []).find((sh: { properties: { title: string } }) => sh.properties.title === tabTitle)?.properties.sheetId;
+    if (sheetId == null) return jsonResponse({ error: 'The tracking sheet tab was not found.' }, 502);
+    const delResp = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}:batchUpdate`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        requests: matches.map((i) => ({ deleteDimension: { range: { sheetId, dimension: 'ROWS', startIndex: i, endIndex: i + 1 } } })),
+      }),
+    });
+    if (!delResp.ok) {
+      console.error('Google Sheets row delete failed:', delResp.status, await delResp.text());
+      return jsonResponse({ error: 'Could not remove the order from the tracking sheet. Please try again.' }, 502);
+    }
+    return jsonResponse({ ok: true, removed: matches.length });
+  }
 
   const writeResp = rowNumber
     ? await fetch(`${sheetsBase}/${encodeURIComponent(`${tab}!A${rowNumber}:J${rowNumber}`)}?valueInputOption=USER_ENTERED`, {

@@ -28,7 +28,7 @@ import { supabase } from '../lib/supabaseClient';
 import { uploadOrderImportFile, getOrderImportUrl } from '../lib/storageApi';
 import { withImportFile, orderImportFields } from '../utils/importFiles';
 import { syncUrgentOrderToSheet } from '../lib/urgentSheetApi';
-import { isUrgentShipment } from '../utils/urgentOrder';
+import { isUrgentShipment, urgentSheetAction, SHIPMENT_EDITABLE_STATUSES } from '../utils/urgentOrder';
 import { fetchCustomTypoWords } from '../lib/typoWordsApi';
 import { setCustomTypoWords } from '../utils/typoCheck';
 import { normalizeSplitQty, stockDiff } from '../utils/orderBatches';
@@ -2233,6 +2233,43 @@ export function AppStateProvider({ children }) {
     }
   }, [patch]);
 
+  // Production: fix a wrong Shipment Date and/or the Urgent flag (Sean,
+  // 2026-10-09). The order is saved first; the urgent Google Sheet then
+  // follows — its row updated, added (urgent + invoiced) or removed (no
+  // longer urgent). A Sheet failure never undoes the save; the message lands
+  // in sheetSyncErrors and the result.
+  const updateShipmentAndUrgency = useCallback(async (orderId, shipmentDate, urgent) => {
+    const order = stateRef.current.orders.find((o) => o.id === orderId);
+    if (!order || !SHIPMENT_EDITABLE_STATUSES.includes(order.status)) {
+      return { ok: false, message: 'This order can no longer have its shipment date changed.' };
+    }
+    const fields = { ...storedDays({ shipmentDate }), urgent };
+    try {
+      await updateOrder(orderId, fields);
+    } catch (err) {
+      console.error('Failed to save shipment date / urgency:', err);
+      return { ok: false, message: describeOrderWriteError(err, 'update') };
+    }
+    patch((latest) => ({ orders: latest.orders.map((o) => (o.id === orderId ? { ...o, ...fields } : o)) }));
+
+    const action = urgentSheetAction({ urgent, wasSynced: !!order.urgentSheetSyncedAt, hasInvoice: !!order.invoiceId });
+    if (!action) return { ok: true };
+    try {
+      await syncUrgentOrderToSheet({ orderId });
+      const urgentSheetSyncedAt = action === 'sync' ? new Date().toISOString() : null;
+      await updateOrder(orderId, { urgentSheetSyncedAt });
+      patch((latest) => ({
+        orders: latest.orders.map((o) => (o.id === orderId ? { ...o, urgentSheetSyncedAt } : o)),
+        sheetSyncErrors: { ...latest.sheetSyncErrors, [orderId]: undefined },
+      }));
+      return { ok: true, sheet: action };
+    } catch (err) {
+      console.error('Urgent-order Sheet update failed:', err);
+      patch((latest) => ({ sheetSyncErrors: { ...latest.sheetSyncErrors, [orderId]: err.message } }));
+      return { ok: true, sheetError: `Saved, but the urgent Google Sheet could not be updated: ${err.message}` };
+    }
+  }, [patch]);
+
   const retryUrgentSheetSync = useCallback((orderId) => {
     const order = stateRef.current.orders.find((o) => o.id === orderId);
     if (order) attemptUrgentSheetSync(order);
@@ -2932,7 +2969,7 @@ export function AppStateProvider({ children }) {
     openAmend, updateAmend,
     openAddOn, submitPendingAddOn, cancelPendingAddOn, rejectAddOn, approveAddOn, approveOrder, setInvoiceId, approveAndSetInvoiceId,
     setJenisPlakInvoiceGroup, renameInvoiceNumber,
-    retryUrgentSheetSync,
+    retryUrgentSheetSync, updateShipmentAndUrgency,
     cancelOrder,
     reassignSalesman,
     uploadCorrectedExcel, loadCorrectedExcelPreview,

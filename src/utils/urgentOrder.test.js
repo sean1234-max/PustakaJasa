@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  countWorkingDaysBetween, isUrgentShipment, prioritizeUrgentOrders, urgentCommission, summarizeUrgentCommission,
+  countWorkingDaysBetween, isUrgentShipment, prioritizeUrgentOrders, urgentCommission, summarizeUrgentCommission, urgentSheetAction,
 } from './urgentOrder';
 
 // 2026-09-21 is a Monday.
@@ -109,5 +109,17 @@ describe('urgent commission', () => {
       { month: 'Oct 2026', commission: 75, salesmen: [{ name: 'fida', count: 2, amount: 3000, commission: 75 }] },
       { month: 'Sep 2026', commission: 10, salesmen: [{ name: 'joyce', count: 1, amount: 400, commission: 10 }] },
     ]);
+  });
+});
+
+describe('urgentSheetAction', () => {
+  it('removes the Sheet row once an order in it is no longer urgent', () => {
+    expect(urgentSheetAction({ urgent: false, wasSynced: true, hasInvoice: true })).toBe('remove');
+    expect(urgentSheetAction({ urgent: false, wasSynced: false, hasInvoice: true })).toBeNull();
+  });
+  it('syncs an urgent order already in the Sheet or already invoiced; otherwise waits for the invoice', () => {
+    expect(urgentSheetAction({ urgent: true, wasSynced: true, hasInvoice: true })).toBe('sync');
+    expect(urgentSheetAction({ urgent: true, wasSynced: false, hasInvoice: true })).toBe('sync');
+    expect(urgentSheetAction({ urgent: true, wasSynced: false, hasInvoice: false })).toBeNull();
   });
 });

@@ -14,6 +14,7 @@ import { getExportableCategories, splitOrderCategories, getOrderJenisPlakGroups,
 import { downloadTextFile } from '../utils/downloadBlob';
 import { getInvoiceItems } from '../utils/orderBatches';
 import ImportFileButtons from '../components/ImportFileButtons';
+import ShipmentUrgencyEditor from '../components/ShipmentUrgencyEditor';
 import { getAiFileHelperStatus, startAiFileHelperJob, getAiFileHelperJob } from '../lib/aiFileHelper';
 import { getOrderChangeStamp } from '../utils/orderStamp';
 
@@ -398,6 +399,7 @@ export default function ProductionOrderDetail() {
               <div><div className="dim">Date Placed</div><div>{order.datePlaced}</div></div>
               <div><div className="dim">Total Amount</div><div>RM {(isFiltered ? effectiveTotalAmount : order.totalAmount).toFixed(2)}</div></div>
             </div>
+            <ShipmentUrgencyEditor order={order} />
             {/* Not shown here before this — an import-derived note (a KIV
                 line, a wording-only plaque parked here for now) landed in
                 this SAME field but had nowhere to actually surface for
