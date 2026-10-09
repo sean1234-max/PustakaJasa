@@ -14,6 +14,7 @@ import { getExportableCategories, splitOrderCategories, getOrderJenisPlakGroups,
 import { downloadTextFile } from '../utils/downloadBlob';
 import { getInvoiceItems } from '../utils/orderBatches';
 import ImportFileButtons from '../components/ImportFileButtons';
+import { addonImportFiles } from '../utils/importFiles';
 import ShipmentUrgencyEditor from '../components/ShipmentUrgencyEditor';
 import { getAiFileHelperStatus, startAiFileHelperJob, getAiFileHelperJob } from '../lib/aiFileHelper';
 import { getOrderChangeStamp } from '../utils/orderStamp';
@@ -408,6 +409,12 @@ export default function ProductionOrderDetail() {
               </tbody>
             </table>
             {addonBlocks.map((blk, i) => <OrderCategoryBlock key={i} blk={blk} editable={READONLY} />)}
+            <div style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap', margin: 'var(--space-3) 0' }}>
+              <button type="button" className="btn btn-secondary" onClick={() => navigate(`/production/orders/${order.id}/edit?addon=1`)}>Edit Add-On</button>
+              {addonImportFiles(order).length > 0 && (
+                <ImportFileButtons order={{ ...order, id: `${order.id}-TAMBAHAN`, importFiles: addonImportFiles(order) }} buttonClassName="btn btn-secondary" errorClassName="login-error" />
+              )}
+            </div>
             {order.pendingAddonStatus === 'pending' && (
               <ConfirmButton label="Done Review (Add-On)" question="Finished reviewing this add-on? The salesman can approve it after this." onConfirm={() => markAddOnReviewed(order.id)} />
             )}

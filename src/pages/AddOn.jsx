@@ -18,9 +18,9 @@ const DRAFT_FIELDS = {
 // Only for the Tambahan upload's own importFormAnugerahExcelInto call — the
 // manual-editing DRAFT_FIELDS above doesn't need `category` (createDraftUpdaters
 // never touches it), but the import function does (see AppState.jsx).
-// `remark`/`importFilePath`/`importFileName` are left undefined — no
-// addOnRemark/addOnImportFilePath field exists.
-const ADDON_IMPORT_FIELDS = { ...DRAFT_FIELDS, category: 'addOnCategory' };
+// `remark` is left undefined (no add-on remark); the uploaded file is kept
+// (addOnImportFilePath) so Production can download it when reviewing.
+const ADDON_IMPORT_FIELDS = { ...DRAFT_FIELDS, category: 'addOnCategory', importFilePath: 'addOnImportFilePath', importFileName: 'addOnImportFileName' };
 
 const EDITABLE = { lines: true, rowDesc: true, rowQty: true, addRemoveRows: true, matrix: true, jenisPlak: true };
 

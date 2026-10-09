@@ -1,15 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import Nav from '../components/Nav';
 import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import { useAppState } from '../state/useAppState';
-import { ACTIVE_CATEGORIES, filterHiddenPlakCatalog, isDynamicCategoryKey, resolveCategory } from '../data/catalog';
+import { ACTIVE_CATEGORIES, filterHiddenPlakCatalog, isDynamicCategoryKey, resolveCategory, isAddonInFlight } from '../data/catalog';
 import { computeBlocks } from '../utils/computeBlocks';
 import { createDraftUpdaters } from '../utils/draftUpdaters';
 import { saveOrderImportAs } from '../lib/storageApi';
 import { buildOrderImportFilename } from '../utils/exportCsv';
-import { orderImportFiles } from '../utils/importFiles';
+import { orderImportFiles, addonImportFiles } from '../utils/importFiles';
 
 // Production's own scratch draft (AppState's prodExcel* fields — the same
 // ones the corrected-Excel parse fills).
@@ -25,12 +25,14 @@ const EDITABLE = { lines: true, rowDesc: true, rowQty: true, addRemoveRows: true
 // the same form a teacher fills, every field editable — or filled from a
 // corrected copy of the teacher's Excel. Save rebuilds the order's lines,
 // quantities, prices, total and stock (AppState's saveProductionEdit).
+// With ?addon=1 it edits the submitted add-on (Tambahan) the same way.
 export default function ProductionEditOrder() {
   const {
     state, patch, ensureOrderLoaded, openProductionEdit, loadExcelIntoProductionEdit, saveProductionEdit,
   } = useAppState();
   const { id } = useParams();
   const navigate = useNavigate();
+  const addOn = useSearchParams()[0].get('addon') === '1';
   const order = state.orders.find((o) => o.id === id);
   const [message, setMessage] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -41,11 +43,12 @@ export default function ProductionEditOrder() {
   // update of the order — that would wipe unsaved edits).
   const openedFor = useRef(null);
   useEffect(() => {
-    if (order && openedFor.current !== order.id) {
-      openedFor.current = order.id;
-      openProductionEdit(order);
+    const key = order && `${order.id}${addOn ? ':addon' : ''}`;
+    if (order && openedFor.current !== key) {
+      openedFor.current = key;
+      openProductionEdit(addOn ? { ...order, items: order.pendingAddonItems || [] } : order);
     }
-  }, [order, openProductionEdit]);
+  }, [order, addOn, openProductionEdit]);
 
   const updaters = useMemo(() => createDraftUpdaters(patch, DRAFT_FIELDS), [patch]);
   const visiblePlakCatalog = useMemo(() => filterHiddenPlakCatalog(state.plakCatalog), [state.plakCatalog]);
@@ -65,12 +68,12 @@ export default function ProductionEditOrder() {
   if (!order) return null;
   const back = () => navigate(`/production/orders/${order.id}`);
 
-  if (order.status !== 'Reviewing Order') {
+  if (addOn ? !isAddonInFlight(order) : order.status !== 'Reviewing Order') {
     return (
       <div className="screen-wrap">
         <Nav />
         <div className="card elev-md">
-          <p className="hint-text">{order.id} is no longer being reviewed ({order.status}) — it can’t be edited here.</p>
+          <p className="hint-text">{addOn ? `${order.id} has no add-on waiting for review` : `${order.id} is no longer being reviewed (${order.status})`} — it can’t be edited here.</p>
           <button type="button" className="btn btn-ghost" onClick={back}>← Back to the order</button>
         </div>
       </div>
@@ -90,11 +93,13 @@ export default function ProductionEditOrder() {
       : { ok: false, text: res.message || 'Could not read this file.' });
   };
 
-  // Every Excel the teacher uploaded for this order (usually one).
+  // Every Excel the teacher uploaded for this order / add-on (usually one).
+  const sourceFiles = addOn ? addonImportFiles(order) : orderImportFiles(order);
+  const nameOrder = addOn ? { ...order, id: `${order.id}-TAMBAHAN` } : order;
   const handleDownload = async () => {
-    const files = orderImportFiles(order);
+    const files = sourceFiles;
     for (let i = 0; i < files.length; i++) {
-      if (!(await saveOrderImportAs(files[i].path, buildOrderImportFilename(order, files[i], i)))) {
+      if (!(await saveOrderImportAs(files[i].path, buildOrderImportFilename(nameOrder, files[i], i)))) {
         setMessage({ ok: false, text: 'Could not download the teacher’s Excel right now. Please try again.' });
         return;
       }
@@ -104,7 +109,7 @@ export default function ProductionEditOrder() {
   const handleSave = async () => {
     if (busy) return;
     setBusy(true);
-    const res = await saveProductionEdit(order.id);
+    const res = await saveProductionEdit(order.id, { addOn });
     setBusy(false);
     if (res.ok) back();
     else setMessage({ ok: false, text: res.message });
@@ -114,7 +119,7 @@ export default function ProductionEditOrder() {
     <div className="screen-wrap">
       <Nav />
       <div className="card elev-md">
-        <div className="card-kicker">Edit Order — {order.id}</div>
+        <div className="card-kicker">{addOn ? 'Edit Tambahan (Add-On)' : 'Edit Order'} — {order.id}</div>
         <div className="card-title" style={{ marginBottom: 'var(--space-2)' }}>{order.sekolah || 'Fix this order'}</div>
         <p className="hint-text" style={{ margin: '0 0 var(--space-4)' }}>
           Change anything — wording, line order, quantities, Jenis Plak — then Save. Prices use the website price list;
@@ -123,8 +128,8 @@ export default function ProductionEditOrder() {
         </p>
 
         <div style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap', marginBottom: 'var(--space-4)' }}>
-          {order.importFilePath && (
-            <button type="button" className="btn btn-secondary" onClick={handleDownload}>⬇ Download teacher’s Excel</button>
+          {sourceFiles.length > 0 && (
+            <button type="button" className="btn btn-secondary" onClick={handleDownload}>⬇ Download {addOn ? 'Tambahan' : 'teacher’s'} Excel</button>
           )}
           <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => fileInput.current?.click()}>⬆ Upload corrected Excel</button>
           <input ref={fileInput} type="file" accept=".xlsx,.xls" style={{ display: 'none' }} onChange={handleExcel} />

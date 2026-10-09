@@ -25,6 +25,13 @@ export function orderImportFields(st) {
   };
 }
 
+// The Excel(s) a submitted add-on was imported from (each add-on item
+// carries its `importFile`, like a cart item).
+export function addonImportFiles(order) {
+  const paths = [...new Set((order?.pendingAddonItems || []).map((it) => it.importFile).filter(Boolean))];
+  return paths.map((path) => ({ path, name: 'tambahan.xlsx' }));
+}
+
 // Every uploaded file on a saved order — older orders only have the single
 // import_file_path.
 export function orderImportFiles(order) {

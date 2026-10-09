@@ -320,6 +320,7 @@ function initialState() {
 
     addOnOrderId: null,
     addOnCart: [],
+    addOnImportFilePath: null, addOnImportFileName: null,
     addOnCategory: null,
     addOnLineValues: {},
     addOnMatrixValues: {},
@@ -787,7 +788,7 @@ export function AppStateProvider({ children }) {
       return {
         ...st,
         ...draftToAddOn(view),
-        addOnCart: [...st.addOnCart.filter((ci) => !touchedKeys.has(ci.categoryKey)), ...allItems],
+        addOnCart: [...st.addOnCart.filter((ci) => !touchedKeys.has(ci.categoryKey)), ...withImportFile(allItems, st.addOnImportFilePath)],
         cartToast: `Added ${allItems.length} item(s) to cart.`,
       };
     });
@@ -1774,7 +1775,7 @@ export function AppStateProvider({ children }) {
 
   const openAddOn = useCallback((ord) => {
     patch((st) => ({
-      addOnOrderId: ord.id, addOnCategory: null, addOnCart: [],
+      addOnOrderId: ord.id, addOnCategory: null, addOnCart: [], addOnImportFilePath: null, addOnImportFileName: null,
       addOnLineValues: {}, addOnMatrixValues: {},
       addOnRowsByBlock: buildInitialRowsByBlock(st.schoolLanguage), addOnColumnsByBlock: buildInitialColumnsByBlock(), addOnPlakRows: buildInitialPlakRows(),
       addOnNextRowId: 1000, addOnNextPlakRowId: 1000, addOnNextColumnId: 1000, addOnVisibleBlocksByCategory: {},
@@ -2747,11 +2748,15 @@ export function AppStateProvider({ children }) {
   // (stockDiff). Every role's pages show the result straight away. A
   // corrected-Excel overlay left from before is dropped — the order itself
   // is now the corrected version.
-  const saveProductionEdit = useCallback(async (orderId) => {
+  // `addOn`: saves over the submitted add-on (pendingAddonItems) instead —
+  // Production reviewing a Tambahan the same way as an order (Sean,
+  // 2026-10-09). Its stock follows the difference too; the order's own
+  // items/total are untouched.
+  const saveProductionEdit = useCallback(async (orderId, { addOn = false } = {}) => {
     const st = stateRef.current;
     const order = st.orders.find((o) => o.id === orderId);
-    if (!order || order.status !== 'Reviewing Order') {
-      return { ok: false, message: 'Only an order that is still being reviewed can be edited here.' };
+    if (addOn ? !isAddonInFlight(order) : (!order || order.status !== 'Reviewing Order')) {
+      return { ok: false, message: addOn ? 'This order has no add-on waiting for review.' : 'Only an order that is still being reviewed can be edited here.' };
     }
     const f = PROD_EXCEL_IMPORT_FIELDS;
     const draft = {
@@ -2767,7 +2772,8 @@ export function AppStateProvider({ children }) {
     }
     if (items.length === 0) return { ok: false, message: 'Nothing to save — the order would have no plaques left.' };
     const totalAmount = items.reduce((sum, it) => sum + it.harga, 0);
-    const { deduct, restore } = stockDiff(order.items, items);
+    const before = addOn ? order.pendingAddonItems : order.items;
+    const { deduct, restore } = stockDiff(before, items);
     const realStock = !isTestOrderId(order.id);
     try {
       if (realStock) await deductPlakStock(deduct);
@@ -2775,10 +2781,14 @@ export function AppStateProvider({ children }) {
       console.error('Failed to take stock for a Production edit:', err);
       return { ok: false, message: describeStockError(err) };
     }
-    const fields = {
-      items, totalAmount, priceAdjusted: false,
-      correctedImportFilePath: null, correctedImportFileName: null, correctedImportUploadedAt: null,
-    };
+    // An edited add-on keeps pointing at the Excel it came from.
+    const addonFile = addOn ? (order.pendingAddonItems || []).find((it) => it.importFile)?.importFile : null;
+    const fields = addOn
+      ? { pendingAddonItems: withImportFile(items, addonFile), pendingAddonStatus: 'pending' }
+      : {
+        items, totalAmount, priceAdjusted: false,
+        correctedImportFilePath: null, correctedImportFileName: null, correctedImportUploadedAt: null,
+      };
     try {
       await updateOrder(orderId, fields);
     } catch (err) {
