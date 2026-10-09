@@ -796,8 +796,6 @@ input.catalog-admin-code { padding: 6px 8px; }
 
   .print-details-section { break-before: page; page-break-before: always; }
   .print-category-break { break-before: page; page-break-before: always; }
-  /* OrderPrintout: the add-on half of a split print (Sean, 2026-10-09). */
-  .print-tambahan-banner { margin-top: 24px; border-top: 3px solid #000; border-bottom: 3px solid #000; padding: 6px; text-align: center; font-size: 24px; font-weight: 800; letter-spacing: 4px; }
   .print-only .table tr { break-inside: avoid; page-break-inside: avoid; }
 
   /* Compact print typography — a category with the Reference Sample box
@@ -928,3 +926,6 @@ input.catalog-admin-code { padding: 6px 8px; }
   padding: 5px 8px;
   white-space: nowrap;
 }
+
+/* TAMBAHAN divider — split print (OrderPrintout) and the add-on cart (AddOnSummary). */
+.print-tambahan-banner { margin-top: 24px; border-top: 3px solid #000; border-bottom: 3px solid #000; padding: 6px; text-align: center; font-size: 24px; font-weight: 800; letter-spacing: 4px; }

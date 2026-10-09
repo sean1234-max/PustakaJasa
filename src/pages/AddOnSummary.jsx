@@ -3,7 +3,14 @@ import { useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import { useAppState } from '../state/useAppState';
 import { CATEGORIES, getStockStatus, categoriesUsedByItems, isDynamicCategoryKey } from '../data/catalog';
-import { computeBlocks, noopUpdaters } from '../utils/computeBlocks';
+import { computeBlocks, noopUpdaters, reconstructBlocksForCategory } from '../utils/computeBlocks';
+import { splitOrderCategories } from '../utils/exportCsv';
+import OrderCategoryBlock from '../components/OrderCategoryBlock';
+
+const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: false, matrix: false, jenisPlak: false };
+
+// The add-on's "cart" (Sean, 2026-10-09): the original order (price table +
+// details) on top, then TAMBAHAN with the add-on's own table + details.
 
 export default function AddOnSummary() {
   const { state, submitPendingAddOn } = useAppState();
@@ -15,8 +22,9 @@ export default function AddOnSummary() {
   // draft — mirrors submitPendingAddOn's own item-building loop
   // (src/state/AppState.jsx) so this preview always matches exactly what
   // that function is about to submit.
-  const addOnSummaryItems = useMemo(() => {
+  const { items: addOnSummaryItems, blocks: addOnBlocks } = useMemo(() => {
     const items = [];
+    const usedBlocks = [];
     // A renamed/duplicated template sheet from the original order's own
     // import has no entry in the static CATEGORIES list — see
     // submitPendingAddOn's matching fix in AppState.jsx (this preview must
@@ -30,14 +38,17 @@ export default function AddOnSummary() {
           if (rows.length === 0) return;
           const qty = rows.reduce((s, r) => s + Number(r.qty), 0);
           items.push({ jenisPlak: 'SELEMPANG', qty, harga: qty * (blk.selempangUnitPrice || 0), categoryLabel: cat.label });
+          usedBlocks.push({ key: `${cat.key}::${blk.idx}`, blk });
           return;
         }
+        const before = items.length;
         blk.plakRows.forEach((pr) => {
           if (pr.jenisPlak && pr.qty) items.push({ jenisPlak: pr.jenisPlak, qty: pr.qty, harga: pr.rawHarga, categoryLabel: blk.qtyLabel });
         });
+        if (items.length > before) usedBlocks.push({ key: `${cat.key}::${blk.idx}`, blk });
       });
     });
-    return items;
+    return { items, blocks: usedBlocks };
   }, [order, state.addOnLineValues, state.addOnMatrixValues, state.addOnRowsByBlock, state.addOnPlakRows, state.addOnColumnsByBlock, state.plakCatalog, state.schoolLanguage]);
 
   const stockViolation = useMemo(() => addOnSummaryItems
@@ -46,6 +57,14 @@ export default function AddOnSummary() {
       return status && Number(it.qty) > status.maxOrderable ? { ...it, maxOrderable: status.maxOrderable } : null;
     })
     .find(Boolean), [addOnSummaryItems, state.plakCatalog]);
+
+  const originalBlocks = useMemo(() => {
+    if (!order) return [];
+    const { anugerah, selempang } = splitOrderCategories(order);
+    return [...anugerah, ...selempang].flatMap((cat) => (
+      reconstructBlocksForCategory(order, cat.key, state.plakCatalog).blocks.map((blk) => ({ key: `${cat.key}::${blk.idx}`, blk }))
+    ));
+  }, [order, state.plakCatalog]);
 
   const handleSubmit = async () => {
     if (submitting || stockViolation) return;
@@ -68,7 +87,7 @@ export default function AddOnSummary() {
       <Nav />
       <div className="card elev-md">
         <div className="card-kicker">Add On — {order.id}</div>
-        <div className="card-title" style={{ marginBottom: 'var(--space-6)' }}>Order Summary</div>
+        <div className="card-title" style={{ marginBottom: 'var(--space-6)' }}>Cart</div>
 
         <div className="card-kicker">Original Order</div>
         <table className="table" style={{ margin: 'var(--space-3) 0 var(--space-6)' }}>
@@ -78,10 +97,12 @@ export default function AddOnSummary() {
             <tr><td /><td><strong>SUBTOTAL</strong></td><td><strong>{originalTotalQty}</strong></td><td><strong>RM {originalTotalHarga.toFixed(2)}</strong></td></tr>
           </tbody>
         </table>
+        <div className="card-kicker">Order Details — Original Order</div>
+        {originalBlocks.map(({ key, blk }) => <OrderCategoryBlock key={key} blk={blk} editable={READONLY} hideEmptyRows />)}
 
-        <div className="card-kicker">Tambahan (Add-On)</div>
+        <div className="print-tambahan-banner" style={{ margin: 'var(--space-8) 0 var(--space-4)' }}>TAMBAHAN</div>
         <p className="hint-text" style={{ marginTop: 0 }}>
-          These add-on items won&apos;t be added to the order yet — Sales needs to review and approve them first (they may adjust pricing).
+          These add-on items won&apos;t be added to the order yet — Production reviews them, then Sales approves them (they may adjust pricing).
         </p>
         <table className="table" style={{ margin: 'var(--space-3) 0 var(--space-6)' }}>
           <thead><tr><th>Category</th><th>Jenis Plak</th><th style={{ width: 110 }}>QTY</th><th style={{ width: 130 }}>Harga</th></tr></thead>
@@ -102,6 +123,8 @@ export default function AddOnSummary() {
             <tr><td /><td><strong>SUBTOTAL</strong></td><td><strong>{addOnTotalQty}</strong></td><td><strong>RM {addOnTotalHarga.toFixed(2)}</strong></td></tr>
           </tbody>
         </table>
+        {addOnBlocks.length > 0 && <div className="card-kicker">Order Details — Tambahan</div>}
+        {addOnBlocks.map(({ key, blk }) => <OrderCategoryBlock key={key} blk={blk} editable={READONLY} hideEmptyRows />)}
 
         <div className="combined-total">
           <span className="dim">Estimated Total After Approval:</span> <strong>RM {(originalTotalHarga + addOnTotalHarga).toFixed(2)}</strong>
