@@ -3,6 +3,9 @@
 // skipped. Input is the sheets' structure-map text (src/utils/fileIr.js);
 // output is a MAPPING of where things are (schema.ts) — never values. The
 // browser reads every value back from the file itself (aiMapping.js).
+// With `kind: "pdf"` the input is a text PDF's structure map
+// (src/utils/pdfIr.js) and the answer is segment references
+// (pdfSchema.ts), checked and expanded by src/utils/pdfMapping.js.
 //
 // Stability first (owner, 2026-10-07):
 //   - same structure-map text + same pipeline version -> the stored answer
@@ -14,8 +17,10 @@
 
 import Anthropic from 'npm:@anthropic-ai/sdk';
 import { createClient } from 'npm:@supabase/supabase-js@2';
-import { MAPPING_SCHEMA, MAPPING_VERSION, validateMapping, type Mapping } from './schema.ts';
+import { MAPPING_SCHEMA, MAPPING_VERSION, validateMapping } from './schema.ts';
 import { PROMPT_VERSION, SYSTEM_PROMPT, buildUserPrompt } from './prompt.ts';
+import { PDF_SCHEMA, PDF_SCHEMA_VERSION, validatePdfReading } from './pdfSchema.ts';
+import { PDF_PROMPT_VERSION, PDF_SYSTEM_PROMPT, buildPdfUserPrompt } from './pdfPrompt.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
@@ -29,6 +34,16 @@ const ALLOWED_ORIGINS = (Deno.env.get('READER_ALLOWED_ORIGINS') ?? '').split(','
 const MAX_IR_CHARS = 120_000;
 const MAX_SHEETS = 30;
 const PIPELINE_VERSION = `m${MAPPING_VERSION}-p${PROMPT_VERSION}`;
+const PDF_PIPELINE_VERSION = `pdf-m${PDF_SCHEMA_VERSION}-p${PDF_PROMPT_VERSION}`;
+
+// The two kinds of input this reader takes: Excel sheets the rule reader
+// skipped (phase 1) and text PDFs (phase 2). Same cache, rate limit,
+// budget and escalation; each has its own schema, prompt and version.
+type Kind = {
+  pipeline: string; schema: unknown; system: string; user: (ir: string) => string;
+  // ok + unsure (escalate) from the model's parsed answer
+  check: (v: unknown) => { ok: true; value: unknown; unsure: boolean } | { ok: false; error: string };
+};
 
 // US$ per million tokens: [input, output]. Cache writes bill 1.25x input,
 // cache reads 0.1x input.
@@ -64,15 +79,15 @@ async function sha256Hex(text: string): Promise<string> {
 
 const anthropic = new Anthropic();
 
-async function callModel(model: string, effort: 'medium' | 'high', irText: string) {
+async function callModel(kind: Kind, model: string, effort: 'medium' | 'high', irText: string) {
   const response = await anthropic.beta.messages.create({
     model,
     max_tokens: 16000,
     betas: ['server-side-fallback-2026-07-01'],
     fallbacks: 'default',
-    output_config: { effort, format: { type: 'json_schema', schema: MAPPING_SCHEMA } },
-    system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
-    messages: [{ role: 'user', content: buildUserPrompt(irText) }],
+    output_config: { effort, format: { type: 'json_schema', schema: kind.schema } },
+    system: [{ type: 'text', text: kind.system, cache_control: { type: 'ephemeral' } }],
+    messages: [{ role: 'user', content: kind.user(irText) }],
   }) as unknown as {
     model: string; stop_reason: string; usage: Usage;
     content: { type: string; text?: string }[];
@@ -104,15 +119,32 @@ Deno.serve(async (req) => {
   try { body = await req.json(); } catch { return json({ error: 'Invalid request body.' }, 400); }
   const fileName = typeof body.fileName === 'string' ? body.fileName.slice(0, 200) : 'file';
   const irText = typeof body.irText === 'string' ? body.irText : '';
+  const isPdf = body.kind === 'pdf';
   const sheetNames = Array.isArray(body.sheetNames) ? body.sheetNames.filter((s): s is string => typeof s === 'string').slice(0, MAX_SHEETS) : [];
-  if (!irText || sheetNames.length === 0) return json({ error: 'Nothing to read.' }, 400);
-  if (irText.length > MAX_IR_CHARS) return json({ status: 'too-large', message: 'These sheets are too large for the AI reader — please add them by hand.' });
+  if (!irText || (!isPdf && sheetNames.length === 0)) return json({ error: 'Nothing to read.' }, 400);
+  if (irText.length > MAX_IR_CHARS) return json({ status: 'too-large', message: isPdf ? 'This PDF is too large for the AI reader — please add it by hand.' : 'These sheets are too large for the AI reader — please add them by hand.' });
+  const kind: Kind = isPdf
+    ? {
+      pipeline: PDF_PIPELINE_VERSION, schema: PDF_SCHEMA, system: PDF_SYSTEM_PROMPT, user: buildPdfUserPrompt,
+      check: (v) => {
+        const c = validatePdfReading(v);
+        return c.ok ? { ok: true, value: c.value, unsure: c.value.groups.some((g) => g.confidence === 'low') } : c;
+      },
+    }
+    : {
+      pipeline: PIPELINE_VERSION, schema: MAPPING_SCHEMA, system: SYSTEM_PROMPT, user: buildUserPrompt,
+      check: (v) => {
+        const c = validateMapping(v, sheetNames);
+        return c.ok ? { ok: true, value: c.value, unsure: c.value.blocks.some((b) => b.confidence === 'low') } : c;
+      },
+    };
+  const PIPELINE = kind.pipeline;
 
   const inputSha = await sha256Hex(irText);
 
   // Same input, same pipeline -> same answer, no model call.
   const { data: cached } = await admin.from('file_read_runs')
-    .select('id, mapping').eq('created_by', user.id).eq('input_sha256', inputSha).eq('pipeline_version', PIPELINE_VERSION)
+    .select('id, mapping').eq('created_by', user.id).eq('input_sha256', inputSha).eq('pipeline_version', PIPELINE)
     .eq('status', 'succeeded').order('created_at', { ascending: true }).limit(1).maybeSingle();
   if (cached?.mapping) return json({ status: 'succeeded', runId: cached.id, mapping: cached.mapping, cached: true });
 
@@ -126,13 +158,13 @@ Deno.serve(async (req) => {
     return !error && Array.isArray(data) && data[0]?.blocked === true;
   };
   if (await budgetBlocked()) {
-    await admin.from('file_read_runs').insert({ created_by: user.id, file_name: fileName, input_sha256: inputSha, pipeline_version: PIPELINE_VERSION, status: 'blocked' });
+    await admin.from('file_read_runs').insert({ created_by: user.id, file_name: fileName, input_sha256: inputSha, pipeline_version: PIPELINE, status: 'blocked' });
     return json({ status: 'blocked', message: "This month's AI budget is used up — please add these sheets by hand. It resets on the 1st." });
   }
 
   const started = Date.now();
   const { data: run } = await admin.from('file_read_runs')
-    .insert({ created_by: user.id, file_name: fileName, input_sha256: inputSha, pipeline_version: PIPELINE_VERSION, model: MODEL })
+    .insert({ created_by: user.id, file_name: fileName, input_sha256: inputSha, pipeline_version: PIPELINE, model: MODEL })
     .select('id').single();
   const runId = run?.id as string | undefined;
   let costCents = 0;
@@ -152,24 +184,26 @@ Deno.serve(async (req) => {
 
   try {
     let modelUsed = MODEL;
-    let res = await callModel(MODEL, 'medium', irText);
+    let res = await callModel(kind, MODEL, 'medium', irText);
     add(res.servedBy, res.usage);
-    let check = validateMapping(res.parsed, sheetNames);
+    let check = kind.check(res.parsed);
     // Escalate once to the stronger model when the first answer is unusable
-    // or the model itself was unsure about a sheet.
-    const unsure = check.ok && check.value.blocks.some((b) => b.confidence === 'low');
-    if ((!check.ok || unsure) && !(await budgetBlocked())) {
+    // or the model itself was unsure about a sheet / batch — unless the
+    // first call already took long enough that a second one could run past
+    // the function's time limit (a long PDF).
+    const unsure = check.ok && check.unsure;
+    if ((!check.ok || unsure) && Date.now() - started < 50_000 && !(await budgetBlocked())) {
       modelUsed = ESCALATE_MODEL;
-      const res2 = await callModel(ESCALATE_MODEL, 'high', irText);
+      const res2 = await callModel(kind, ESCALATE_MODEL, 'high', irText);
       add(res2.servedBy, res2.usage);
-      const check2 = validateMapping(res2.parsed, sheetNames);
+      const check2 = kind.check(res2.parsed);
       if (check2.ok) { res = res2; check = check2; }
     }
     if (!check.ok) {
       await finish({ status: 'failed', model: modelUsed, error: `${res.stopReason}: ${check.error}`.slice(0, 500) });
-      return json({ status: 'failed', runId, message: 'The AI could not read these sheets — please add them by hand.' });
+      return json({ status: 'failed', runId, message: isPdf ? 'The AI could not read this PDF — please add the order by hand.' : 'The AI could not read these sheets — please add them by hand.' });
     }
-    const mapping: Mapping = check.value;
+    const mapping = check.value;
     await finish({ status: 'succeeded', model: modelUsed, mapping });
     return json({ status: 'succeeded', runId, mapping, cached: false });
   } catch (err) {

@@ -4,6 +4,12 @@ AI sheet reader, phase 1 of the universal file-reader plan. It reads only the
 Excel sheets the rule-based reader skipped. The model returns a mapping
 (cell references) and the browser reads the values out of the file itself.
 
+Phase 2 adds text PDFs (`kind: "pdf"`, pdfSchema.ts / pdfPrompt.ts). The
+browser pulls the PDF's text with pdf.js (src/utils/pdfIr.js) and checks the
+model's segment references against it (src/utils/pdfMapping.js). With the
+flag on, the allowed roles can upload a .pdf on New Order. Scans and photos
+have no text and are refused.
+
 Nothing below has been run against production yet. Do the steps in order.
 
 ## 1. Database (migration 0085)

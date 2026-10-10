@@ -73,10 +73,13 @@ export default function NewOrderStep2() {
   // the matching category tab(s) for review here on Step 2 — never adds
   // straight to cart, so a parsing mistake never reaches an order
   // un-reviewed.
+  // Text PDFs are read by the AI reader (pdfImport.js), so only offered
+  // to the roles allowed to use it.
+  const pdfAllowed = canUseAiReader(state.role);
   const handleImportFile = async (file) => {
     if (!file || importing) return;
-    if (!/\.(xlsx|docx)$/i.test(file.name)) {
-      setImportStatus({ ok: false, message: 'Please upload an .xlsx or .docx file.' });
+    if (!(pdfAllowed ? /\.(xlsx|docx|pdf)$/i : /\.(xlsx|docx)$/i).test(file.name)) {
+      setImportStatus({ ok: false, message: pdfAllowed ? 'Please upload an .xlsx, .docx or .pdf file.' : 'Please upload an .xlsx or .docx file.' });
       return;
     }
     setImporting(true);
@@ -417,7 +420,7 @@ export default function NewOrderStep2() {
           <input
             ref={fileInputRef}
             type="file"
-            accept=".xlsx,.docx"
+            accept={pdfAllowed ? '.xlsx,.docx,.pdf' : '.xlsx,.docx'}
             style={{ display: 'none' }}
             onChange={(e) => {
               handleImportFile(e.target.files && e.target.files[0]);
@@ -441,7 +444,7 @@ export default function NewOrderStep2() {
             </svg>
             <div>
               <div className="image-drop-title">{importing ? 'Reading…' : 'Import Order File'}</div>
-              <div className="image-drop-sub">Drag & drop your filled-in FORM ANUGERAH .xlsx or WORDING .docx here, or click to browse</div>
+              <div className="image-drop-sub">Drag & drop your filled-in FORM ANUGERAH .xlsx or WORDING .docx{pdfAllowed ? ' (or a PDF order list)' : ''} here, or click to browse</div>
             </div>
           </div>
           {importStatus && (

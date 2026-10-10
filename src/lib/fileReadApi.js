@@ -24,6 +24,20 @@ export async function readSheetsWithAi({ fileName, irText, sheetNames }) {
   }
 }
 
+// Text PDFs (phase 2): irText is the PDF's structure map (pdfIr.js); the
+// answer is segment references (pdfMapping.js). Same shape as above.
+export async function readPdfWithAi({ fileName, irText }) {
+  const fail = 'The AI reader is not available right now — please add this order by hand.';
+  try {
+    const { data, error } = await supabase.functions.invoke('read-order-file', { body: { kind: 'pdf', fileName, irText } });
+    if (error || !data) return { ok: false, message: fail };
+    if (data.status === 'succeeded' && data.mapping) return { ok: true, reading: data.mapping, cached: !!data.cached, runId: data.runId };
+    return { ok: false, message: data.message || 'The AI could not read this PDF — please add the order by hand.' };
+  } catch {
+    return { ok: false, message: fail };
+  }
+}
+
 // Admin banner (AiBudgetBanner.jsx). Resolves to null on any error.
 export async function getAiBudgetStatus() {
   try {

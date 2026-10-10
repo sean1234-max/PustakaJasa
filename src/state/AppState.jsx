@@ -15,7 +15,8 @@ import { parseWordingDocx } from '../utils/docxImport';
 import * as XLSX from 'xlsx';
 import { buildWorkbookIr, renderIrText } from '../utils/fileIr';
 import { applyAiMapping } from '../utils/aiMapping';
-import { readSheetsWithAi } from '../lib/fileReadApi';
+import { readSheetsWithAi, canUseAiReader } from '../lib/fileReadApi';
+import { parsePdfOrder } from '../utils/pdfImport';
 import { checkColumnTotals, checkExpansionTotals, checkLevelBreakdownMatch, checkAliranKelasTotals } from '../utils/importChecks';
 import { frontPgToFunctionDetails } from '../utils/frontPgDetails';
 import { buildCategoryCartItems } from './categoryCartItems';
@@ -792,7 +793,15 @@ export function AppStateProvider({ children }) {
     if (!parsed) {
       try {
         const buffer = await file.arrayBuffer();
-        parsed = /\.docx$/i.test(file.name) ? await parseWordingDocx(buffer) : parseFormAnugerahExcel(buffer);
+        if (/\.pdf$/i.test(file.name)) {
+          // PDF orders go through the AI reader (pdfImport.js), so only
+          // for the roles allowed to use it.
+          parsed = canUseAiReader(stateRef.current.role)
+            ? await parsePdfOrder(buffer, file.name)
+            : { error: 'PDF orders are not available yet — please upload an .xlsx or .docx file.' };
+        } else {
+          parsed = /\.docx$/i.test(file.name) ? await parseWordingDocx(buffer) : parseFormAnugerahExcel(buffer);
+        }
       } catch (err) {
         console.error('Failed to read uploaded order file:', err);
         return { ok: false, message: 'Could not read this file. Please try again.' };
