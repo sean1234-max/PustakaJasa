@@ -74,7 +74,7 @@ describe('applyAiMapping', () => {
     expect(Object.keys(res.categorized)).toEqual([key('MATRIX'), key('ANUGERAH KEDUDUKAN KELAS'), key('ANUGERAH KHAS')]);
     const [kelas] = res.categorized[key('ANUGERAH KEDUDUKAN KELAS')];
     expect(kelas.jenisPlak).toBe('PK 1');
-    expect(kelas.classes).toEqual([{ tahunFrom: 'TAHUN 1', tahunTo: 'TAHUN 1', namaKelas: 'MAWAR', subjects: [{ name: 'KUANTITI', qty: 2 }] }]);
+    expect(kelas.classes).toEqual([{ tahunFrom: '', tahunTo: '', namaKelas: 'TAHUN 1 MAWAR', eline2: '', subjects: [{ name: 'KUANTITI', qty: 2 }] }]);
     const [mp] = res.categorized[key('MATRIX')];
     expect(mp.lines).toEqual({ 2: 'ANUGERAH MATA PELAJARAN TERBAIK' });
     expect(mp.jenisPlak).toBe('SM-1');
@@ -114,7 +114,7 @@ describe('applyAiMapping', () => {
     const res = applyAiMapping(ir3, { blocks: [block('EVENT'), block('AWARD')], questions: [] });
     const [event] = res.categorized[key('MURID CEMERLANG')];
     expect(event.lines).toEqual({ 0: 'MAJLIS ANUGERAH KECEMERLANGAN 2026', 2: 'MURID CEMERLANG' });
-    expect(event.classes.map((c) => [c.namaKelas, c.subjects[0].qty])).toEqual([['BESTARI', 3], ['CERDAS', 2]]);
+    expect(event.classes.map((c) => [c.namaKelas, c.subjects[0].qty])).toEqual([['TAHUN 6 BESTARI', 3], ['TAHUN 6 CERDAS', 2]]);
     const [award] = res.categorized[key('ANUGERAH TOKOH')];
     expect(award.lines).toEqual({ 2: 'ANUGERAH TOKOH' });
     expect(award.classes.reduce((n, c) => n + c.subjects.reduce((m, s) => m + s.qty, 0), 0)).toBe(5);

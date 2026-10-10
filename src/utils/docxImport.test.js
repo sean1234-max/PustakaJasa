@@ -86,14 +86,17 @@ describe('parseWordingDocx', () => {
     const [kelas] = res.categorized[key('ANUGERAH KEDUDUKAN KELAS')];
     expect(kelas.lines).toEqual({ 0: 'MAJLIS ANUGERAH CEMERLANG 2025', 2: 'ANUGERAH KEDUDUKAN KELAS' });
     expect(kelas.jenisPlak).toBe('PK 020 C');
+    // Line 2 -> EVENT LINE 1 (namaKelas), line 3 -> EVENT LINE 2 (eline2).
+    const col = (namaKelas, eline2, qty) => ({ tahunFrom: '', tahunTo: '', namaKelas, eline2, subjects: [{ name: 'KUANTITI', qty }] });
     expect(kelas.classes).toEqual([
-      { tahunFrom: 'TAHUN 1', tahunTo: 'TAHUN 1', namaKelas: 'MAWAR', subjects: [{ name: 'TEMPAT PERTAMA', qty: 1 }, { name: 'TEMPAT KEDUA', qty: 1 }] },
-      { tahunFrom: 'TAHUN 1', tahunTo: 'TAHUN 1', namaKelas: 'MELUR', subjects: [{ name: 'TEMPAT PERTAMA', qty: 1 }] },
-      { tahunFrom: 'TAHUN 2', tahunTo: 'TAHUN 2', namaKelas: 'MAWAR', subjects: [{ name: 'TEMPAT PERTAMA', qty: 1 }] },
+      col('TAHUN 1 MAWAR', 'TEMPAT PERTAMA', 1),
+      col('TAHUN 1 MAWAR', 'TEMPAT KEDUA', 1),
+      col('TAHUN 1 MELUR', 'TEMPAT PERTAMA', 1),
+      col('TAHUN 2 MAWAR', 'TEMPAT PERTAMA', 1),
     ]);
     const [tokoh] = res.categorized[key('ANUGERAH KHAS TOKOH')];
     expect(tokoh.jenisPlak).toBe('4942');
-    expect(tokoh.classes).toEqual([{ tahunFrom: '', tahunTo: '', namaKelas: 'PELAJAR LELAKI 2024', subjects: [{ name: 'KUANTITI', qty: 1 }] }]);
+    expect(tokoh.classes).toEqual([col('PELAJAR LELAKI 2024', '', 1)]);
     expect(res.notes).toEqual([]);
   });
 
@@ -110,7 +113,7 @@ describe('parseWordingDocx', () => {
     expect(Object.keys(res.categorized)).toEqual([key('PBD TERBAIK KELAS KHAS TAHUN 2025/2026'), key('ANUGERAH AKADEMIK TERBAIK')]);
     const [pbd] = res.categorized[key('PBD TERBAIK KELAS KHAS TAHUN 2025/2026')];
     expect(pbd.jenisPlak).toBe('19540 B');
-    expect(pbd.classes).toEqual([{ tahunFrom: '', tahunTo: '', namaKelas: '', subjects: [{ name: 'KUANTITI', qty: 30 }] }]);
+    expect(pbd.classes).toEqual([{ tahunFrom: '', tahunTo: '', namaKelas: '', eline2: '', subjects: [{ name: 'KUANTITI', qty: 30 }] }]);
   });
 
   it('keeps one title with two different codes as two awards', async () => {
@@ -162,23 +165,44 @@ describe('parseWordingDocx', () => {
   });
 });
 
-describe('Word section -> Step 2 block', () => {
-  it('fills the same block shape a renamed PPKI/MP THP sheet does', async () => {
+describe('Word section -> engraved fields', () => {
+  // Word wording -> Step 2 block -> production CSV, the same path a real
+  // import and export take.
+  async function csvRows(rowsXml, heading = 'MAJLIS ANUGERAH 2025') {
     const { populateMatrixSectionBlock } = await import('./excelImport');
-    const buf = await makeDocx(para('MAJLIS ANUGERAH 2025') + table([
-      ['BIL', 'WORDING', 'KUANTITI', 'KOD HADIAH'],
-      ['1', 'ANUGERAH KEDUDUKAN KELAS\nTAHUN 1 MAWAR\nTEMPAT PERTAMA', '1', ''],
-    ]));
-    const res = await parse(buf);
-    const k = key('ANUGERAH KEDUDUKAN KELAS');
-    const dest = { newLineValues: {}, newMatrixValues: {}, newRowsByBlock: {}, newColumnsByBlock: {}, newPlakRows: {} };
-    const ids = { nextRowId: 1, nextColumnId: 1, nextPlakRowId: 1 };
-    populateMatrixSectionBlock(res.categorized[k][0], `${k}::0`, [], ids, dest, []);
-    expect(dest.newLineValues[`${k}::0::0`]).toBe('MAJLIS ANUGERAH 2025');
-    expect(dest.newLineValues[`${k}::0::2`]).toBe('ANUGERAH KEDUDUKAN KELAS');
-    expect(dest.newLineValues[`${k}::0::3`]).toBe('TAHUN 1 MAWAR');
-    expect(dest.newRowsByBlock[`${k}::0`].map((r) => r.desc)).toEqual(['TEMPAT PERTAMA']);
-    expect(dest.newColumnsByBlock[`${k}::0`].map((c) => c.namaKelas)).toEqual(['MAWAR']);
-    expect(Object.values(dest.newMatrixValues)).toEqual(['1']);
+    const { buildCsvRows } = await import('./exportCsv');
+    const res = await parse(await makeDocx(para(heading) + table([['BIL', 'WORDING', 'KUANTITI', 'KOD HADIAH'], ...rowsXml])));
+    return Object.entries(res.categorized).flatMap(([k, [section]]) => {
+      const dest = { newLineValues: {}, newMatrixValues: {}, newRowsByBlock: {}, newColumnsByBlock: {}, newPlakRows: {} };
+      populateMatrixSectionBlock(section, `${k}::0`, [], { nextRowId: 1, nextColumnId: 1, nextPlakRowId: 1 }, dest, []);
+      const item = { id: k, categoryKey: k, blockIdx: 0, jenisPlak: 'X', detail: { lines: dest.newLineValues, rows: dest.newRowsByBlock[`${k}::0`], columns: dest.newColumnsByBlock[`${k}::0`], matrix: dest.newMatrixValues } };
+      return buildCsvRows({ items: [item] }, k, [item]).rows.map((r) => ({ tajuk: r[0], position: r[2], line1: r[3], line2: r[4], order: r[7] }));
+    });
+  }
+
+  it('engraves line 1 / 2 / 3 as POSITION / EVENT LINE 1 / EVENT LINE 2, in that order', async () => {
+    const rows = await csvRows([
+      ['1', 'ANUGERAH KEDUDUKAN KELAS\nTAHUN 1 MAWAR\nTEMPAT PERTAMA', '2', 'PK 1'],
+      ['2', 'PBD TERBAIK\nKELAS KHAS\nTAHUN 2025/2026', '1', 'PK 2'],
+    ]);
+    const one = { tajuk: 'MAJLIS ANUGERAH 2025', order: 'event_header|position|event_line_1|event_line_2' };
+    // "ANUGERAH ..." POSITION gets the house two-line break (acaraBreak.js),
+    // as every order's ACARA does.
+    expect(rows).toEqual([
+      { ...one, position: 'ANUGERAH\nKEDUDUKAN KELAS', line1: 'TAHUN 1 MAWAR', line2: 'TEMPAT PERTAMA' },
+      { ...one, position: 'ANUGERAH\nKEDUDUKAN KELAS', line1: 'TAHUN 1 MAWAR', line2: 'TEMPAT PERTAMA' },
+      { ...one, position: 'PBD TERBAIK', line1: 'KELAS KHAS', line2: 'TAHUN 2025/2026' },
+    ]);
+  });
+
+  it('keeps a 4-line cell in order: the first two lines are a two-line POSITION', async () => {
+    const rows = await csvRows([
+      ['1', 'ANUGERAH\nAKADEMIK TERBAIK\nKELAS KHAS\nTAHUN 2025/2026', '1', 'PK 1'],
+      ['2', 'ANUGERAH KHAS TOKOH\nPELAJAR LELAKI 2024', '1', 'PK 1'],
+    ]);
+    expect(rows.map(({ position, line1, line2 }) => [position, line1, line2])).toEqual([
+      ['ANUGERAH\nAKADEMIK TERBAIK', 'KELAS KHAS', 'TAHUN 2025/2026'],
+      ['ANUGERAH\nKHAS TOKOH', 'PELAJAR LELAKI 2024', ''],
+    ]);
   });
 });

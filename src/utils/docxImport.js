@@ -208,10 +208,37 @@ function findHeading(body) {
   return '';
 }
 
+// A WORDING cell's lines, top to bottom, as the plaque engraves them. A
+// one-line cell holding everything ("ANUGERAH ... TAHUN 1 UTHMAN TEMPAT
+// PERTAMA") is split only where classifyWordingLines would split it.
+function wordingLinesOf(lines) {
+  if (lines.length !== 1) return lines;
+  const m = lines[0].match(INLINE_TAHUN_RE);
+  if (!m || !m[1].trim()) return lines;
+  const p = m[2].match(PLACING_RE);
+  return p && TAHUN_LINE_RE.test(p[1]) ? [m[1].trim(), p[1].trim(), p[2].trim()] : [m[1].trim(), m[2].trim()];
+}
+
+// The engraved fields, in the cell's own order (owner, 2026-10-10): line 1
+// -> POSITION, line 2 -> EVENT LINE 1, line 3 -> EVENT LINE 2. A 4+ line
+// cell ("ANUGERAH / AKADEMIK TERBAIK / KELAS ... / TAHUN 2025/2026") keeps
+// its last two lines as the event lines and the rest as a multi-line
+// POSITION. Nothing is moved between lines, so the plaque reads exactly
+// as the teacher typed it.
+export function wordingFields(inputLines) {
+  const lines = wordingLinesOf(inputLines);
+  if (lines.length <= 3) return { position: lines[0] || '', eventLine1: lines[1] || '', eventLine2: lines[2] || '' };
+  return { position: lines.slice(0, -2).join('\n'), eventLine1: lines[lines.length - 2], eventLine2: lines[lines.length - 1] };
+}
+
 // Groups wording rows ({ lines, qty, kod }) into one KLAS_MATRIX-shaped
-// section per award (title + plaque code), each under its own dynamic
-// category key. Shared with aiMapping.js, so a Word table and an
-// AI-mapped Excel list land on Step 2 exactly the same way.
+// section per award (POSITION + plaque code), each under its own dynamic
+// category key. Each distinct EVENT LINE 1 + 2 pair is one column (Nama
+// Kelas + the column's own event line 2) with a single KUANTITI row, so
+// exportCsv.js's buildPbdMatrixRows engraves position / event_line_1 /
+// event_line_2 exactly as wordingFields read them. Shared with
+// aiMapping.js, so a Word table and an AI-mapped Excel list land on
+// Step 2 exactly the same way.
 export function wordingRowsToCategorized(rows, heading = '') {
   // Group by award title + plaque code. One title with two different codes
   // is two awards (each block carries one Jenis Plak) — both kept, each
@@ -220,7 +247,7 @@ export function wordingRowsToCategorized(rows, heading = '') {
   const groups = new Map();
   const codesByTitle = new Map();
   rows.forEach(({ lines, qty, kod }) => {
-    const { title, tahun, namaKelas, subjectName } = classifyWordingLines(lines);
+    const { position: title, eventLine1, eventLine2 } = wordingFields(lines);
     const gk = `${title}\u0000${kod}`;
     let g = groups.get(gk);
     if (!g) {
@@ -230,16 +257,14 @@ export function wordingRowsToCategorized(rows, heading = '') {
       if (!codesByTitle.has(title)) codesByTitle.set(title, new Set());
       codesByTitle.get(title).add(kod);
     }
-    const classKey = `${tahun}||${namaKelas}`;
+    const classKey = `${eventLine1}\u0000${eventLine2}`;
     let cls = g.classesByKey.get(classKey);
     if (!cls) {
-      cls = { tahunFrom: tahun, tahunTo: tahun, namaKelas, subjects: [] };
+      cls = { tahunFrom: '', tahunTo: '', namaKelas: eventLine1, eline2: eventLine2, subjects: [{ name: 'KUANTITI', qty: 0 }] };
       g.classesByKey.set(classKey, cls);
       g.classOrder.push(classKey);
     }
-    const existing = cls.subjects.find((s) => s.name === subjectName);
-    if (existing) existing.qty += qty;
-    else cls.subjects.push({ name: subjectName, qty });
+    cls.subjects[0].qty += qty;
   });
 
   // Rows with no plaque code can't be priced or made. Say so, and point out
@@ -254,7 +279,7 @@ export function wordingRowsToCategorized(rows, heading = '') {
   });
   const uncoded = new Map();
   rows.filter((r) => !r.kod).forEach(({ lines, qty }) => {
-    const title = classifyWordingLines(lines).title;
+    const title = wordingFields(lines).position.replace(/\n/g, ' ');
     const u = uncoded.get(title) ?? { qty: 0, dupCodes: new Set() };
     u.qty += qty;
     codesByWording.get(lines.join('\n')).forEach((c) => u.dupCodes.add(c));
@@ -268,7 +293,8 @@ export function wordingRowsToCategorized(rows, heading = '') {
   const categorized = {};
   groupOrder.forEach((gk) => {
     const g = groups.get(gk);
-    const label = codesByTitle.get(g.title).size > 1 && g.kod ? `${g.title} (${g.kod})` : g.title;
+    const name = g.title.replace(/\n/g, ' ');
+    const label = codesByTitle.get(g.title).size > 1 && g.kod ? `${name} (${g.kod})` : name;
     const lines = { 2: g.title };
     if (heading) lines[0] = heading;
     const section = {
