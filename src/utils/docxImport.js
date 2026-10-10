@@ -231,6 +231,41 @@ export function wordingFields(inputLines) {
   return { position: lines.slice(0, -2).join('\n'), eventLine1: lines[lines.length - 2], eventLine2: lines[lines.length - 1] };
 }
 
+// Name lists (owner, 2026-10-10): a 4+ line label whose default POSITION
+// would be different on almost every plaque (it holds the student's name, e.g.
+// "ANUGERAH / KEPIMPINAN MURID CEMERLANG / <NAME> / KETUA PENGAWAS /
+// LEMBAGA PENGAWAS SEKOLAH") would make one tab per student. Instead the
+// leading lines most plaques share with others are POSITION (the award), the
+// next line is EVENT LINE 1 (the name) and the rest, one per line, EVENT
+// LINE 2 (the multi-line "jawatan / unit / kelas" box). Still top to
+// bottom in the label's own order. Returns one fields object per row.
+function wordingFieldsForRows(rows) {
+  const lineSets = rows.map(({ lines }) => wordingLinesOf(lines));
+  const distinct = [...new Set(lineSets.map((l) => l.join('\n')))].map((k) => k.split('\n'));
+  const positionCount = new Map();
+  distinct.forEach((l) => {
+    const p = wordingFields(l).position;
+    positionCount.set(p, (positionCount.get(p) || 0) + 1);
+  });
+  // Per label length: the first line where most labels differ from every
+  // other label is the name line; the lines above it are the award.
+  const nameLineByLength = new Map();
+  [...new Set(distinct.map((l) => l.length))].filter((len) => len >= 4).forEach((len) => {
+    const same = distinct.filter((l) => l.length === len);
+    if (same.length < 2) return;
+    for (let i = 1; i <= len - 2; i++) {
+      const unique = same.filter((l) => same.filter((o) => o[i] === l[i]).length === 1).length;
+      if (unique * 2 > same.length) { nameLineByLength.set(len, i); return; }
+    }
+  });
+  return lineSets.map((lines) => {
+    const def = wordingFields(lines);
+    const n = nameLineByLength.get(lines.length);
+    if (n == null || positionCount.get(def.position) > 1) return def;
+    return { position: lines.slice(0, n).join('\n'), eventLine1: lines[n], eventLine2: lines.slice(n + 1).join('\n') };
+  });
+}
+
 // Groups wording rows ({ lines, qty, kod }) into one KLAS_MATRIX-shaped
 // section per award (POSITION + plaque code), each under its own dynamic
 // category key. Each distinct EVENT LINE 1 + 2 pair is one column (Nama
@@ -246,8 +281,9 @@ export function wordingRowsToCategorized(rows, heading = '') {
   const groupOrder = [];
   const groups = new Map();
   const codesByTitle = new Map();
-  rows.forEach(({ lines, qty, kod }) => {
-    const { position: title, eventLine1, eventLine2 } = wordingFields(lines);
+  const fieldsByRow = wordingFieldsForRows(rows);
+  rows.forEach(({ qty, kod }, ri) => {
+    const { position: title, eventLine1, eventLine2 } = fieldsByRow[ri];
     const gk = `${title}\u0000${kod}`;
     let g = groups.get(gk);
     if (!g) {
@@ -278,8 +314,9 @@ export function wordingRowsToCategorized(rows, heading = '') {
     if (kod) codesByWording.get(wk).add(kod);
   });
   const uncoded = new Map();
-  rows.filter((r) => !r.kod).forEach(({ lines, qty }) => {
-    const title = wordingFields(lines).position.replace(/\n/g, ' ');
+  rows.forEach(({ lines, qty, kod }, ri) => {
+    if (kod) return;
+    const title = fieldsByRow[ri].position.replace(/\n/g, ' ');
     const u = uncoded.get(title) ?? { qty: 0, dupCodes: new Set() };
     u.qty += qty;
     codesByWording.get(lines.join('\n')).forEach((c) => u.dupCodes.add(c));

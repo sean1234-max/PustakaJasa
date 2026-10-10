@@ -205,4 +205,17 @@ describe('Word section -> engraved fields', () => {
       ['ANUGERAH\nKHAS TOKOH', 'PELAJAR LELAKI 2024', ''],
     ]);
   });
+
+  it('puts a name list on one tab: shared award lines, then name, then the rest', async () => {
+    const rows = await csvRows([
+      ['1', 'ANUGERAH\nKEPIMPINAN MURID\nMURID SATU\nKETUA PENGAWAS\nLEMBAGA PENGAWAS', '1', 'PK 1'],
+      ['2', 'ANUGERAH\nKEPIMPINAN MURID\nMURID DUA\nPENGERUSI\nPRS', '1', 'PK 1'],
+      ['3', 'ANUGERAH\nKHIDMAT BAKTI\nMURID TIGA\nBENDAHARI\nBADAR', '1', 'PK 1'],
+    ]);
+    expect(rows.map(({ position, line1, line2 }) => [position, line1, line2])).toEqual([
+      ['ANUGERAH\nKEPIMPINAN MURID', 'MURID SATU', 'KETUA PENGAWAS\nLEMBAGA PENGAWAS'],
+      ['ANUGERAH\nKEPIMPINAN MURID', 'MURID DUA', 'PENGERUSI\nPRS'],
+      ['ANUGERAH\nKHIDMAT BAKTI', 'MURID TIGA', 'BENDAHARI\nBADAR'],
+    ]);
+  });
 });
