@@ -12,6 +12,11 @@ import {
   parseFormAnugerahExcel, matchJenisPlakPath, deriveKlasMatrixSectionLines, populateMatrixSectionBlock,
 } from '../utils/excelImport';
 import { parseWordingDocx } from '../utils/docxImport';
+import * as XLSX from 'xlsx';
+import { buildWorkbookIr, renderIrText } from '../utils/fileIr';
+import { applyAiMapping } from '../utils/aiMapping';
+import { readSheetsWithAi, canUseAiReader } from '../lib/fileReadApi';
+import { parsePdfOrder } from '../utils/pdfImport';
 import { checkColumnTotals, checkExpansionTotals, checkLevelBreakdownMatch, checkAliranKelasTotals } from '../utils/importChecks';
 import { frontPgToFunctionDetails } from '../utils/frontPgDetails';
 import { buildCategoryCartItems } from './categoryCartItems';
@@ -805,11 +810,10 @@ export function AppStateProvider({ children }) {
   // TOKOH, the native "KLAS MATRIX" sheet — see excelImport.js) or a Word
   // "WORDING / KUANTITI / KOD HADIAH" order table (see docxImport.js), a
   // completely different real-world shape some schools use instead. Both
-  // parsers return the exact same `{ klasMatrix: { sections } }` shape, so
+  // parsers return the same `{ categorized, klasMatrix }` shape, so
   // whichever one matches the file's own extension feeds the same merge
-  // step below — every recognized award, regardless of source format,
-  // lands in KLAS_MATRIX (see excelImport.js's header comment for why one
-  // destination beats splitting across categories). Deliberately REPLACES
+  // step below (a Word award lands in its own dynamic category, see
+  // docxImport.js). Deliberately REPLACES
   // rather than merges KLAS_MATRIX's own draft — this is meant to be the
   // teacher's starting point (see NewOrderStep2's "Import from Excel"
   // button), not layered on top of whatever's already there. Never adds
@@ -836,14 +840,26 @@ export function AppStateProvider({ children }) {
   // today). Only wired into the `parsed.categorized` branch below — the
   // legacy KLAS_MATRIX branch is inactive for the current catalog (see the
   // klasMatrixActive check) and isn't a realistic AddOn target.
-  const importFormAnugerahExcelInto = useCallback(async (file, fields, { applyFilter } = {}) => {
-    let parsed;
-    try {
-      const buffer = await file.arrayBuffer();
-      parsed = /\.docx$/i.test(file.name) ? await parseWordingDocx(buffer) : parseFormAnugerahExcel(buffer);
-    } catch (err) {
-      console.error('Failed to read uploaded order file:', err);
-      return { ok: false, message: 'Could not read this file. Please try again.' };
+  // `parsedOverride` (the AI sheet reader below) skips reading the file
+  // and the backup upload — the file was already read and uploaded once.
+  const importFormAnugerahExcelInto = useCallback(async (file, fields, { applyFilter, parsedOverride } = {}) => {
+    let parsed = parsedOverride;
+    if (!parsed) {
+      try {
+        const buffer = await file.arrayBuffer();
+        if (/\.pdf$/i.test(file.name)) {
+          // PDF orders go through the AI reader (pdfImport.js), so only
+          // for the roles allowed to use it.
+          parsed = canUseAiReader(stateRef.current.role)
+            ? await parsePdfOrder(buffer, file.name)
+            : { error: 'PDF orders are not available yet — please upload an .xlsx or .docx file.' };
+        } else {
+          parsed = /\.docx$/i.test(file.name) ? await parseWordingDocx(buffer) : parseFormAnugerahExcel(buffer);
+        }
+      } catch (err) {
+        console.error('Failed to read uploaded order file:', err);
+        return { ok: false, message: 'Could not read this file. Please try again.' };
+      }
     }
     if (parsed.error) {
       return { ok: false, message: parsed.error };
@@ -1380,6 +1396,12 @@ export function AppStateProvider({ children }) {
     // format at all (excelImport.js's unrecognizedSheets) — surfaced so the
     // teacher/production knows to check it by hand, instead of that data
     // silently not appearing anywhere.
+    // Anything a Word order table had that docxImport.js couldn't place with
+    // certainty (an unreadable quantity, a row with no wording, a JUMLAH
+    // that disagrees) — shown for the teacher to check, never guessed.
+    if (parsed.notes?.length) {
+      parsed.notes.forEach((text) => warnings.push({ type: 'truncated', text }));
+    }
     if (parsed.unrecognizedSheets?.length) {
       parsed.unrecognizedSheets.forEach((name) => {
         warnings.push({ type: 'truncated', text: `Couldn't recognize the format of sheet "${name}" — please check it and add its data by hand if needed.` });
@@ -1432,7 +1454,7 @@ export function AppStateProvider({ children }) {
     // items already added from it still point at it (`importFile`). No
     // AddOn-side equivalent (fields.importFilePath undefined there) —
     // skipped entirely for that flow.
-    if (fields.importFilePath) {
+    if (fields.importFilePath && !parsedOverride) {
       uploadOrderImportFile(file).then((res) => {
         if (res) {
           patch((latest) => ({
@@ -1449,7 +1471,13 @@ export function AppStateProvider({ children }) {
     // the time an `await`-continuation right after this resolves (that
     // race is exactly what silently emptied every category the very first
     // time parseCorrectedExcelIntoItems read stateRef.current here).
-    return { ok: true, message: `Imported — ${messages.join('; ')}. Please review carefully before adding to cart.`, warnings, draft: finalState };
+    // Sheets the rule-based reader skipped — what the AI sheet reader can
+    // be offered for (NewOrderStep2.jsx).
+    const skippedSheets = [...new Set([
+      ...(parsed.unrecognizedSheets || []),
+      ...(!klasMatrixActive && parsed.klasMatrix ? parsed.klasMatrix.sections.map((sec) => sec.sourceSheet).filter(Boolean) : []),
+    ])];
+    return { ok: true, message: `Imported — ${messages.join('; ')}. Please review carefully before adding to cart.`, warnings, draft: finalState, skippedSheets };
   }, [patch]);
 
   // Thin, zero-behavior-change wrapper for the existing New Order call site
@@ -1459,6 +1487,33 @@ export function AppStateProvider({ children }) {
     (file) => importFormAnugerahExcelInto(file, NEW_ORDER_IMPORT_FIELDS),
     [importFormAnugerahExcelInto],
   );
+
+  // AI sheet reader (universal file-reader plan, phase 1): the sheets of an
+  // already-imported Excel file that the rule-based reader skipped are
+  // sent — as their structure map, never as typed values — to the
+  // read-order-file function, which answers with WHERE things are. The
+  // values are then read from the file itself (aiMapping.js) and added to
+  // the draft as new tabs, alongside what the rules already imported.
+  // Returns { ok, message, warnings }; never throws.
+  const readSkippedSheetsWithAi = useCallback(async (file, sheetNames) => {
+    let ir;
+    try {
+      const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+      ir = buildWorkbookIr(wb, sheetNames);
+    } catch (err) {
+      console.error('AI reader could not open the file:', err);
+      return { ok: false, message: 'Could not read this file. Please try again.' };
+    }
+    if (ir.blocks.length === 0) return { ok: false, message: 'Those sheets are empty — nothing to read.' };
+    const res = await readSheetsWithAi({ fileName: file.name, irText: renderIrText(ir), sheetNames: ir.blocks.map((b) => b.name) });
+    if (!res.ok) return { ok: false, message: res.message };
+    const { categorized, notes } = applyAiMapping(ir, res.mapping);
+    if (Object.keys(categorized).length === 0) {
+      return { ok: false, message: 'The AI found no order rows in those sheets.', warnings: notes.map((text) => ({ type: 'truncated', text })) };
+    }
+    const result = await importFormAnugerahExcelInto(file, NEW_ORDER_IMPORT_FIELDS, { parsedOverride: { categorized, notes } });
+    return { ...result, message: `AI-read sheets imported — ${Object.keys(categorized).length} new tab(s). Check every AI-read tab carefully against the file before adding to cart.` };
+  }, [importFormAnugerahExcelInto]);
 
   const removeFromCart = useCallback((id) => {
     patch((st) => ({ cart: st.cart.filter((c) => c.id !== id) }));
@@ -3043,7 +3098,7 @@ export function AppStateProvider({ children }) {
   const value = {
     state, patch, today: TODAY, login, logout,
     resetCurrentCategory, startNewOrder, addToCart, addAllToCart, removeFromCart, editCartCategory, submitOrder, reorderOrder,
-    importFormAnugerahExcel, importFormAnugerahExcelInto,
+    importFormAnugerahExcel, importFormAnugerahExcelInto, readSkippedSheetsWithAi,
     openAmend, updateAmend,
     openAddOn, addOnAddToCart, removeFromAddOnCart, submitPendingAddOn, cancelPendingAddOn, rejectAddOn, approveAddOn, approveOrder, setInvoiceId, approveAndSetInvoiceId,
     setJenisPlakInvoiceGroup, renameInvoiceNumber,

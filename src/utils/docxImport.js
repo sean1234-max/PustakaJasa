@@ -1,28 +1,38 @@
 import JSZip from 'jszip';
+import { makeDynamicCategoryKey } from '../data/catalog';
 
 // A second real-world order shape, completely different from any Excel
-// template: a Word table of individual "WORDING / KUANTITI / KOD HADIAH"
-// rows, one row per plaque, where the WORDING cell itself is 1-3 lines of
-// text stacked on top of each other (a genuine Word line break inside the
-// cell, not separate cells) — e.g.
-//   ANUGERAH KEDUDUKAN KELAS
-//   TAHUN 1 UTHMAN
-//   TEMPAT PERTAMA
+// template: a Word table with one row per plaque (or per set of plaques).
+// Two header layouts are read, both by their own header labels, never by
+// column position:
+//   BIL | WORDING | KUANTITI | KOD HADIAH | WARNA
+//     The WORDING cell is 1-3 lines stacked on top of each other (a real
+//     Word line break inside the cell) — e.g.
+//       ANUGERAH KEDUDUKAN KELAS
+//       TAHUN 1 UTHMAN
+//       TEMPAT PERTAMA
+//   NO. | KOD HADIAH | LABEL | BILANGAN | CATATAN
+//     The LABEL cell is the award wording, BILANGAN is "30 SET", and
+//     KOD HADIAH is "CODE: 19540 B RM 33" (prefix and price are noise).
 // Several consecutive rows commonly share the same award title and the same
 // Tahun/Nama Kelas, differing only in their own third line (TEMPAT KEDUA,
 // KETIGA, ...) — those really are ONE class's several award "columns", the
-// same shape KLAS_MATRIX already models as one class row with several
-// subject columns. A real document also mixes in variants of this same
-// 1-3-line shape (see classifyWordingLines below), and often splits one
-// long award list across several separate Word tables purely because of a
-// page break — those get merged back into ONE section by matching on the
-// award title text (line 1), not by table boundaries.
+// same shape a KLAS_MATRIX-style block models as one class row with
+// several subject columns. A long award list is often split across several
+// Word tables purely by a page break — rows are grouped by the award title
+// text (line 1), not by table boundaries.
 //
-// Feeds the exact same { klasMatrix: { sections } } shape
-// excelImport.js's parseFormAnugerahExcel produces, so AppState.jsx's
-// importFormAnugerahExcel can hand either kind of file to the same merge
-// step — see the header comment there and in excelImport.js for why every
-// shape lands in one place (KLAS_MATRIX).
+// Each award (title + plaque code) becomes its OWN dynamic category
+// (catalog.js's makeDynamicCategoryKey('KLAS_MATRIX', title)) — the same
+// route excelImport.js uses for a renamed PPKI/MP-THP-shaped sheet. The
+// retired KLAS_MATRIX catch-all itself is never used: anything landing
+// there is skipped (AppState.jsx), which is why .docx uploads used to read
+// nothing at all.
+//
+// Wording is copied exactly as typed. Anything the parser can't place with
+// certainty (a quantity it can't read, a row with a quantity but no
+// wording, a JUMLAH/TOTAL row that disagrees with the rows above it) is
+// returned in `notes` for the teacher to check, never guessed.
 
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 
@@ -30,11 +40,8 @@ function directChildren(el, ns, localName) {
   return Array.from(el.childNodes).filter((child) => child.nodeType === 1 && child.namespaceURI === ns && child.localName === localName);
 }
 
-// A table cell's own text, paragraph by paragraph (each w:p is its own
-// printed line, and a run split across several w:r/w:t runs — or an
-// explicit w:br/w:cr line break inside one paragraph — still belongs to
-// that same line) — joined with '\n' so classifyWordingLines below can
-// split back into the cell's own individual lines.
+// A paragraph's own text: every w:t run, with an explicit w:br/w:cr line
+// break inside one paragraph kept as '\n'. A w:tab becomes a space.
 function paragraphText(p) {
   let text = '';
   const walk = (node) => {
@@ -44,6 +51,8 @@ function paragraphText(p) {
         text += child.textContent;
       } else if (child.namespaceURI === W_NS && (child.localName === 'br' || child.localName === 'cr')) {
         text += '\n';
+      } else if (child.namespaceURI === W_NS && child.localName === 'tab') {
+        text += ' ';
       } else {
         walk(child);
       }
@@ -55,10 +64,20 @@ function paragraphText(p) {
 function cellText(tc) {
   return directChildren(tc, W_NS, 'p').map(paragraphText).join('\n');
 }
+function cellLines(tc) {
+  return cellText(tc).split('\n').map((s) => s.replace(/\s+/g, ' ').trim()).filter(Boolean);
+}
+function headerLabel(tc) {
+  return cellText(tc).replace(/\s+/g, ' ').replace(/[:.*]/g, '').trim().toUpperCase();
+}
 
-// Finds the header row (whichever row actually carries a "WORDING" cell —
-// not assumed to always be row 0) and the column each label sits in. A
-// table with no "WORDING" cell at all isn't this shape and is skipped.
+const WORDING_LABELS = ['WORDING', 'LABEL'];
+const QTY_LABELS = ['KUANTITI', 'BILANGAN', 'QTY', 'KUANTITI (UNIT)', 'UNIT'];
+const KOD_LABELS = ['KOD HADIAH', 'KOD', 'KOD PLAK', 'JENIS PLAK', 'CODE'];
+
+// Finds the header row (whichever row actually carries a WORDING/LABEL
+// cell — not assumed to always be row 0) and the column each label sits
+// in. A table with no such cell isn't an order table and is skipped.
 function findWordingHeader(rows) {
   for (let ri = 0; ri < rows.length; ri++) {
     const cells = directChildren(rows[ri], W_NS, 'tc');
@@ -66,17 +85,38 @@ function findWordingHeader(rows) {
     let qtyCol = -1;
     let kodCol = -1;
     cells.forEach((tc, ci) => {
-      const t = cellText(tc).trim().toUpperCase();
-      if (t === 'WORDING') wordingCol = ci;
-      else if (t === 'KUANTITI') qtyCol = ci;
-      else if (t === 'KOD HADIAH' || t === 'KOD') kodCol = ci;
+      const t = headerLabel(tc);
+      if (wordingCol < 0 && WORDING_LABELS.includes(t)) wordingCol = ci;
+      else if (qtyCol < 0 && QTY_LABELS.includes(t)) qtyCol = ci;
+      else if (kodCol < 0 && KOD_LABELS.includes(t)) kodCol = ci;
     });
-    if (wordingCol >= 0) return { headerRow: ri, wordingCol, qtyCol, kodCol };
+    if (wordingCol >= 0 && qtyCol >= 0) return { headerRow: ri, wordingCol, qtyCol, kodCol };
   }
   return null;
 }
 
-function readWordingRows(tbl) {
+// "30 SET", "1", " 2 unit " -> the leading whole number; anything else
+// (blank, "-", "SATU", "2.5") -> null, never a guess.
+export function parseDocxQty(raw) {
+  const m = String(raw || '').trim().match(/^(\d+)(?!\s*[.,]\d)(\s*[A-Za-z]+)?\.?$/);
+  return m ? Number(m[1]) : null;
+}
+
+// "CODE: 19540 B RM 33" -> "19540 B". Only the "CODE:" prefix and an
+// "RM nn" price are dropped; the code itself is left for the catalog
+// matcher (excelImport.js's matchJenisPlakPath) to place or reject.
+export function cleanDocxPlakCode(raw) {
+  return String(raw || '')
+    .replace(/\s+/g, ' ')
+    .replace(/^\s*(KOD|CODE)\s*:\s*/i, '')
+    .replace(/\bRM\s*\d+(?:[.,]\d+)?\b/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+const TOTAL_RE = /^(JUMLAH|TOTAL|JUMLAH BESAR|GRAND TOTAL)\b/i;
+
+function readTableRows(tbl, tableIdx, notes) {
   const rows = directChildren(tbl, W_NS, 'tr');
   const header = findWordingHeader(rows);
   if (!header) return [];
@@ -84,12 +124,26 @@ function readWordingRows(tbl) {
   const out = [];
   for (let ri = headerRow + 1; ri < rows.length; ri++) {
     const cells = directChildren(rows[ri], W_NS, 'tc');
-    const wordingRaw = wordingCol >= 0 && cells[wordingCol] ? cellText(cells[wordingCol]) : '';
-    const lines = wordingRaw.split('\n').map((s) => s.trim()).filter(Boolean);
-    if (lines.length === 0) continue;
-    const qtyRaw = qtyCol >= 0 && cells[qtyCol] ? cellText(cells[qtyCol]).trim() : '';
-    const kod = kodCol >= 0 && cells[kodCol] ? cellText(cells[kodCol]).trim() : '';
-    out.push({ lines, qty: Number(qtyRaw) || 0, kod });
+    const lines = cells[wordingCol] ? cellLines(cells[wordingCol]) : [];
+    const qtyRaw = cells[qtyCol] ? cellText(cells[qtyCol]).replace(/\s+/g, ' ').trim() : '';
+    const kodRaw = kodCol >= 0 && cells[kodCol] ? cellText(cells[kodCol]) : '';
+    const where = `Word table ${tableIdx + 1}, row ${ri - headerRow}`;
+    if (lines.length === 0 && !qtyRaw) continue;
+    const qty = parseDocxQty(qtyRaw);
+    if (lines.length > 0 && TOTAL_RE.test(lines[0])) {
+      out.push({ isTotal: true, qty, where });
+      continue;
+    }
+    if (lines.length === 0) {
+      notes.push(`${where}: has a quantity ("${qtyRaw}") but no wording — please add it by hand if it is needed.`);
+      continue;
+    }
+    if (qty == null) {
+      if (qtyRaw) notes.push(`${where}: couldn't read the quantity "${qtyRaw}" for "${lines.join(' / ')}" — please add it by hand.`);
+      continue;
+    }
+    if (qty <= 0) continue;
+    out.push({ lines, qty, kod: cleanDocxPlakCode(kodRaw), where });
   }
   return out;
 }
@@ -101,81 +155,248 @@ function readWordingRows(tbl) {
 //   3 lines, line 2 is "TAHUN N <class>": TAHUN 1 UTHMAN / TEMPAT PERTAMA
 //     -> tahun=TAHUN 1, namaKelas=UTHMAN, subject=TEMPAT PERTAMA
 //   3 lines, line 2 is "TAHUN N" with no class name: TAHUN 1 / ALQURAN
-//     -> tahun=TAHUN 1, namaKelas='', subject=ALQURAN (the line 3 text,
-//        a real subject name here rather than a placing)
+//     -> tahun=TAHUN 1, namaKelas='', subject=ALQURAN
 //   2 lines, line 2 is "TAHUN N <class>", no third line at all
-//     -> tahun=TAHUN N, namaKelas=<class>, subject='KUANTITI' (no real
-//        subject/position axis for this award — just one plaque per class)
-//   2 lines, line 2 does NOT look like a Tahun at all (e.g. "PELAJAR
-//   LELAKI 2024") -> there's no Tahun/Kelas axis here either; line 2 is
-//     itself the "class" (really just this row's own distinguishing
-//     label), subject='KUANTITI' — the same trick TOKOH's own award-type
-//     rows already use on the Excel side.
-const TAHUN_LINE_RE = /^TAHUN\s*([1-6])\s*(.*)$/i;
-function classifyWordingLines(lines) {
+//     -> tahun=TAHUN N, namaKelas=<class>, subject='KUANTITI'
+//   2 lines, line 2 does NOT look like a Tahun (e.g. "PELAJAR LELAKI
+//   2024") -> line 2 is itself the "class", subject='KUANTITI' — the same
+//     trick TOKOH's own award-type rows use on the Excel side.
+//   1 line holding everything ("ANUGERAH KEDUDUKAN KELAS TAHUN 1 UTHMAN
+//   TEMPAT PERTAMA") -> split only at the "TAHUN N" and at an explicit
+//     placing ("TEMPAT ..." / PERTAMA..KESEPULUH) at the very end. Anything
+//     else after "TAHUN N" stays together as the class text, so no word is
+//     ever dropped or moved by a guess.
+// "TAHUN 2025" / "TAHUN 2025/2026" is a year, never a Tahun level.
+const TAHUN_LINE_RE = /^TAHUN\s*([1-6])(?![\d/])\s*(.*)$/i;
+const INLINE_TAHUN_RE = /^(.*?)\s+(TAHUN\s*[1-6](?![\d/]).*)$/i;
+const PLACING_RE = /^(.*?)\s+((?:TEMPAT\s+)?(?:PERTAMA|KEDUA|KETIGA|KEEMPAT|KELIMA|KEENAM|KETUJUH|KELAPAN|KESEMBILAN|KESEPULUH))$/i;
+
+export function classifyWordingLines(inputLines) {
+  let lines = inputLines;
+  if (lines.length === 1) {
+    const m = lines[0].match(INLINE_TAHUN_RE);
+    if (m && m[1].trim()) {
+      const rest = m[2];
+      const p = rest.match(PLACING_RE);
+      lines = p && TAHUN_LINE_RE.test(p[1]) ? [m[1].trim(), p[1].trim(), p[2].trim()] : [m[1].trim(), rest.trim()];
+    }
+  }
   const title = lines[0];
   const rest = lines.slice(1);
   if (rest.length === 0) return { title, tahun: '', namaKelas: '', subjectName: 'KUANTITI' };
   const m = rest[0].match(TAHUN_LINE_RE);
   if (m) {
-    return { title, tahun: `TAHUN ${m[1]}`, namaKelas: (m[2] || '').trim(), subjectName: rest.length >= 2 ? rest[1] : 'KUANTITI' };
+    return { title, tahun: `TAHUN ${m[1]}`, namaKelas: (m[2] || '').trim(), subjectName: rest.length >= 2 ? rest.slice(1).join(' ') : 'KUANTITI' };
   }
-  if (rest.length >= 2) return { title, tahun: '', namaKelas: rest[0], subjectName: rest[1] };
+  if (rest.length >= 2) return { title, tahun: '', namaKelas: rest[0], subjectName: rest.slice(1).join(' ') };
   return { title, tahun: '', namaKelas: rest[0], subjectName: 'KUANTITI' };
 }
 
+// The event heading typed above the first order table ("MAJLIS ANUGERAH
+// ... 2025"), copied verbatim into TAJUK BESAR. Only a body paragraph that
+// names the event (MAJLIS / HARI ANUGERAH / ANUGERAH ...) counts; with
+// none, TAJUK BESAR stays blank for the teacher to type.
+const HEADING_RE = /\b(MAJLIS|HARI ANUGERAH|ANUGERAH|PERSEMBAHAN|颁奖|典礼)\b/i;
+function findHeading(body) {
+  for (const child of Array.from(body.childNodes)) {
+    if (child.nodeType !== 1 || child.namespaceURI !== W_NS) continue;
+    if (child.localName === 'tbl') return '';
+    if (child.localName !== 'p') continue;
+    const text = paragraphText(child).replace(/\s+/g, ' ').trim();
+    if (text && HEADING_RE.test(text)) return text;
+  }
+  return '';
+}
+
+// A WORDING cell's lines, top to bottom, as the plaque engraves them. A
+// one-line cell holding everything ("ANUGERAH ... TAHUN 1 UTHMAN TEMPAT
+// PERTAMA") is split only where classifyWordingLines would split it.
+function wordingLinesOf(lines) {
+  if (lines.length !== 1) return lines;
+  const m = lines[0].match(INLINE_TAHUN_RE);
+  if (!m || !m[1].trim()) return lines;
+  const p = m[2].match(PLACING_RE);
+  return p && TAHUN_LINE_RE.test(p[1]) ? [m[1].trim(), p[1].trim(), p[2].trim()] : [m[1].trim(), m[2].trim()];
+}
+
+// The engraved fields, in the cell's own order (owner, 2026-10-10): line 1
+// -> POSITION, line 2 -> EVENT LINE 1, line 3 -> EVENT LINE 2. A 4+ line
+// cell ("ANUGERAH / AKADEMIK TERBAIK / KELAS ... / TAHUN 2025/2026") keeps
+// its last two lines as the event lines and the rest as a multi-line
+// POSITION. Nothing is moved between lines, so the plaque reads exactly
+// as the teacher typed it.
+export function wordingFields(inputLines) {
+  const lines = wordingLinesOf(inputLines);
+  if (lines.length <= 3) return { position: lines[0] || '', eventLine1: lines[1] || '', eventLine2: lines[2] || '' };
+  return { position: lines.slice(0, -2).join('\n'), eventLine1: lines[lines.length - 2], eventLine2: lines[lines.length - 1] };
+}
+
+// Name lists (owner, 2026-10-10): a 4+ line label whose default POSITION
+// would be different on almost every plaque (it holds the student's name, e.g.
+// "ANUGERAH / KEPIMPINAN MURID CEMERLANG / <NAME> / KETUA PENGAWAS /
+// LEMBAGA PENGAWAS SEKOLAH") would make one tab per student. Instead the
+// leading lines most plaques share with others are POSITION (the award), the
+// next line is EVENT LINE 1 (the name) and the rest, one per line, EVENT
+// LINE 2 (the multi-line "jawatan / unit / kelas" box). Still top to
+// bottom in the label's own order. Returns one fields object per row.
+function wordingFieldsForRows(rows) {
+  const lineSets = rows.map(({ lines }) => wordingLinesOf(lines));
+  const distinct = [...new Set(lineSets.map((l) => l.join('\n')))].map((k) => k.split('\n'));
+  const positionCount = new Map();
+  distinct.forEach((l) => {
+    const p = wordingFields(l).position;
+    positionCount.set(p, (positionCount.get(p) || 0) + 1);
+  });
+  // Per label length: the first line where most labels differ from every
+  // other label is the name line; the lines above it are the award.
+  const nameLineByLength = new Map();
+  [...new Set(distinct.map((l) => l.length))].filter((len) => len >= 4).forEach((len) => {
+    const same = distinct.filter((l) => l.length === len);
+    if (same.length < 2) return;
+    for (let i = 1; i <= len - 2; i++) {
+      const unique = same.filter((l) => same.filter((o) => o[i] === l[i]).length === 1).length;
+      if (unique * 2 <= same.length) continue;
+      // A name list carries per-person lines below the name (post, unit).
+      // When those are the same on every label ("KELAS ... / TAHUN
+      // 2025/2026") the different line is an award title, not a name.
+      const tails = new Set(same.map((l) => l.slice(i + 1).join('\n')));
+      if (tails.size > 1) nameLineByLength.set(len, i);
+      return;
+    }
+  });
+  return lineSets.map((lines) => {
+    const def = wordingFields(lines);
+    const n = nameLineByLength.get(lines.length);
+    if (n == null || positionCount.get(def.position) > 1) return def;
+    return { position: lines.slice(0, n).join('\n'), eventLine1: lines[n], eventLine2: lines.slice(n + 1).join('\n') };
+  });
+}
+
+// Groups wording rows ({ lines, qty, kod }) into one KLAS_MATRIX-shaped
+// section per award (POSITION + plaque code), each under its own dynamic
+// category key. Each distinct EVENT LINE 1 + 2 pair is one column (Nama
+// Kelas + the column's own event line 2) with a single KUANTITI row, so
+// exportCsv.js's buildPbdMatrixRows engraves position / event_line_1 /
+// event_line_2 exactly as wordingFields read them. Shared with
+// aiMapping.js, so a Word table and an AI-mapped Excel list land on
+// Step 2 exactly the same way.
+export function wordingRowsToCategorized(rows, heading = '') {
+  // Group by award title + plaque code. One title with two different codes
+  // is two awards (each block carries one Jenis Plak) — both kept, each
+  // labelled with its own code so neither silently takes the other's.
+  const groupOrder = [];
+  const groups = new Map();
+  const codesByTitle = new Map();
+  const fieldsByRow = wordingFieldsForRows(rows);
+  rows.forEach(({ qty, kod }, ri) => {
+    const { position: title, eventLine1, eventLine2 } = fieldsByRow[ri];
+    const gk = `${title}\u0000${kod}`;
+    let g = groups.get(gk);
+    if (!g) {
+      g = { title, kod, classesByKey: new Map(), classOrder: [] };
+      groups.set(gk, g);
+      groupOrder.push(gk);
+      if (!codesByTitle.has(title)) codesByTitle.set(title, new Set());
+      codesByTitle.get(title).add(kod);
+    }
+    const classKey = `${eventLine1}\u0000${eventLine2}`;
+    let cls = g.classesByKey.get(classKey);
+    if (!cls) {
+      cls = { tahunFrom: '', tahunTo: '', namaKelas: eventLine1, eline2: eventLine2, subjects: [{ name: 'KUANTITI', qty: 0 }] };
+      g.classesByKey.set(classKey, cls);
+      g.classOrder.push(classKey);
+    }
+    cls.subjects[0].qty += qty;
+  });
+
+  // Rows with no plaque code can't be priced or made. Say so, and point out
+  // when the same wording is also listed WITH a code (often a draft table
+  // the teacher forgot to delete) so it isn't silently made twice.
+  const notes = [];
+  const codesByWording = new Map();
+  rows.forEach(({ lines, kod }) => {
+    const wk = lines.join('\n');
+    if (!codesByWording.has(wk)) codesByWording.set(wk, new Set());
+    if (kod) codesByWording.get(wk).add(kod);
+  });
+  const uncoded = new Map();
+  rows.forEach(({ lines, qty, kod }, ri) => {
+    if (kod) return;
+    const title = fieldsByRow[ri].position.replace(/\n/g, ' ');
+    const u = uncoded.get(title) ?? { qty: 0, dupCodes: new Set() };
+    u.qty += qty;
+    codesByWording.get(lines.join('\n')).forEach((c) => u.dupCodes.add(c));
+    uncoded.set(title, u);
+  });
+  uncoded.forEach((u, title) => {
+    const dup = u.dupCodes.size ? ` The same wording is also listed with code ${[...u.dupCodes].join(', ')} — it may be a leftover copy; delete whichever is not needed.` : '';
+    notes.push(`"${title}": ${u.qty} plaque(s) have no plaque code (KOD) — please pick the Jenis Plak by hand.${dup}`);
+  });
+
+  const categorized = {};
+  groupOrder.forEach((gk) => {
+    const g = groups.get(gk);
+    const name = g.title.replace(/\n/g, ' ');
+    const label = codesByTitle.get(g.title).size > 1 && g.kod ? `${name} (${g.kod})` : name;
+    const lines = { 2: g.title };
+    if (heading) lines[0] = heading;
+    const section = {
+      lines,
+      classes: g.classOrder.map((k) => g.classesByKey.get(k)),
+      jenisPlak: g.kod,
+      sourceSheet: label,
+    };
+    categorized[makeDynamicCategoryKey('KLAS_MATRIX', label)] = [section];
+  });
+
+  return { categorized, count: groupOrder.length, notes };
+}
+
+const BAD_FILE = 'Could not read this file — please make sure it is a valid .docx file.';
+
 // Top-level entry point — same return shape as excelImport.js's
-// parseFormAnugerahExcel (`{ klasMatrix: { sections } } | { error } `), so
-// AppState.jsx merges either file type through the same code path. Every
-// award title (line 1 of the WORDING cell) becomes its own section,
-// regardless of which physical Word table(s) it appears across — a long
-// award list commonly gets split into several tables purely by a page
-// break, which isn't a real section boundary. Never throws.
-export async function parseWordingDocx(arrayBuffer) {
+// parseFormAnugerahExcel (`{ categorized, notes } | { error }`), so
+// AppState.jsx/addOnDiff.js merge either file type through the same code
+// path. `DOMParser` is injectable for tests (node has none). Never throws.
+export async function parseWordingDocx(arrayBuffer, { DOMParser: DP = globalThis.DOMParser } = {}) {
   let zip;
   try {
     zip = await JSZip.loadAsync(arrayBuffer);
   } catch {
-    return { klasMatrix: null, error: 'Could not read this file — please make sure it is a valid .docx file.' };
+    return { klasMatrix: null, error: BAD_FILE };
   }
   const xmlFile = zip.file('word/document.xml');
-  if (!xmlFile) return { klasMatrix: null, error: 'Could not read this file — please make sure it is a valid .docx file.' };
+  if (!xmlFile) return { klasMatrix: null, error: BAD_FILE };
   const xmlText = await xmlFile.async('text');
-  const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
-  if (doc.getElementsByTagName('parsererror').length > 0) {
-    return { klasMatrix: null, error: 'Could not read this file — please make sure it is a valid .docx file.' };
+  const doc = new DP().parseFromString(xmlText, 'application/xml');
+  if (!doc || !doc.documentElement || doc.getElementsByTagName('parsererror').length > 0) {
+    return { klasMatrix: null, error: BAD_FILE };
   }
+  const body = doc.getElementsByTagNameNS(W_NS, 'body')[0];
+  const heading = body ? findHeading(body) : '';
 
-  const sectionOrder = [];
-  const sectionsByTitle = new Map();
-  Array.from(doc.getElementsByTagNameNS(W_NS, 'tbl')).forEach((tbl) => {
-    readWordingRows(tbl).forEach(({ lines, qty, kod }) => {
-      if (qty <= 0) return;
-      const { title, tahun, namaKelas, subjectName } = classifyWordingLines(lines);
-      let section = sectionsByTitle.get(title);
-      if (!section) {
-        section = { lines: { 0: title }, classesByKey: new Map(), classOrder: [], jenisPlak: '' };
-        sectionsByTitle.set(title, section);
-        sectionOrder.push(title);
+  const notes = [];
+  const rows = [];
+  Array.from(doc.getElementsByTagNameNS(W_NS, 'tbl')).forEach((tbl, tableIdx) => {
+    const tableRows = [];
+    readTableRows(tbl, tableIdx, notes).forEach((r) => {
+      if (!r.isTotal) { tableRows.push(r); return; }
+      // A JUMLAH/TOTAL row checks only its own table's rows above it.
+      const sum = tableRows.reduce((s, x) => s + x.qty, 0);
+      if (r.qty != null && r.qty !== sum) {
+        notes.push(`${r.where}: the file's JUMLAH/TOTAL says ${r.qty}, but the rows above it add up to ${sum} — please check nothing is missing.`);
       }
-      if (!section.jenisPlak && kod) section.jenisPlak = kod;
-      const classKey = `${tahun}||${namaKelas}`;
-      let cls = section.classesByKey.get(classKey);
-      if (!cls) {
-        cls = { tahunFrom: tahun, tahunTo: tahun, namaKelas, subjects: [] };
-        section.classesByKey.set(classKey, cls);
-        section.classOrder.push(classKey);
-      }
-      cls.subjects.push({ name: subjectName, qty });
     });
+    rows.push(...tableRows);
   });
 
-  const sections = sectionOrder.map((title) => {
-    const s = sectionsByTitle.get(title);
-    return { lines: s.lines, classes: s.classOrder.map((k) => s.classesByKey.get(k)), jenisPlak: s.jenisPlak };
-  });
-  if (sections.length === 0) {
-    return { klasMatrix: null, error: 'No recognized WORDING/KUANTITI table found in this file.' };
+  const { categorized, count, notes: groupNotes } = wordingRowsToCategorized(rows, heading);
+  notes.push(...groupNotes);
+  if (count === 0) {
+    return { klasMatrix: null, error: 'No recognized WORDING/KUANTITI or LABEL/BILANGAN table found in this file.' };
   }
-  return { klasMatrix: { sections } };
+
+  if (!heading) notes.push('No event heading (MAJLIS ...) was found above the table — please type the TAJUK BESAR by hand.');
+
+  return { categorized, notes, klasMatrix: null };
 }
