@@ -218,4 +218,15 @@ describe('Word section -> engraved fields', () => {
       ['ANUGERAH\nKHIDMAT BAKTI', 'MURID TIGA', 'BENDAHARI\nBADAR'],
     ]);
   });
+
+  it('keeps single-plaque awards with the same lines below as normal awards', async () => {
+    const rows = await csvRows([
+      ['1', 'ANUGERAH\nAKADEMIK TERBAIK\nKELAS KHAS\nTAHUN 2025/2026', '1', 'PK 1'],
+      ['2', 'ANUGERAH\nSAHSIAH TERPUJI\nKELAS KHAS\nTAHUN 2025/2026', '1', 'PK 1'],
+    ]);
+    expect(rows.map(({ position, line1, line2 }) => [position, line1, line2])).toEqual([
+      ['ANUGERAH\nAKADEMIK TERBAIK', 'KELAS KHAS', 'TAHUN 2025/2026'],
+      ['ANUGERAH\nSAHSIAH TERPUJI', 'KELAS KHAS', 'TAHUN 2025/2026'],
+    ]);
+  });
 });

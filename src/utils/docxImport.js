@@ -255,7 +255,13 @@ function wordingFieldsForRows(rows) {
     if (same.length < 2) return;
     for (let i = 1; i <= len - 2; i++) {
       const unique = same.filter((l) => same.filter((o) => o[i] === l[i]).length === 1).length;
-      if (unique * 2 > same.length) { nameLineByLength.set(len, i); return; }
+      if (unique * 2 <= same.length) continue;
+      // A name list carries per-person lines below the name (post, unit).
+      // When those are the same on every label ("KELAS ... / TAHUN
+      // 2025/2026") the different line is an award title, not a name.
+      const tails = new Set(same.map((l) => l.slice(i + 1).join('\n')));
+      if (tails.size > 1) nameLineByLength.set(len, i);
+      return;
     }
   });
   return lineSets.map((lines) => {
