@@ -364,24 +364,28 @@ export default function SalesOrderSummary() {
                       </tr>
                     </thead>
                     <tbody>
-                      {addOnRows.map((it) => (
-                        <tr key={it.id}>
-                          <td>{it.categoryLabel}</td>
-                          <td>{it.jenisPlak}</td>
-                          <td>
-                            <input
-                              className="input"
-                              type="number"
-                              min="0"
-                              step="0.01"
-                              value={addOnPriceDrafts[it.id]}
-                              onChange={(e) => setAddOnPrice(it.id, e.target.value)}
-                            />
-                          </td>
-                          <td>{it.qty}</td>
-                          <td><strong>RM {it.harga.toFixed(2)}</strong></td>
-                        </tr>
-                      ))}
+                      {addOnRows.map((it) => {
+                        // Red like PriceTable once the price differs from the website's.
+                        const adjusted = it.unitPrice !== standardUnitPrice(it.jenisPlak, state.plakCatalog);
+                        return (
+                          <tr key={it.id}>
+                            <td>{it.categoryLabel}</td>
+                            <td>{it.jenisPlak}</td>
+                            <td>
+                              <input
+                                className={`input${adjusted ? ' amount-adjusted' : ''}`}
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={addOnPriceDrafts[it.id]}
+                                onChange={(e) => setAddOnPrice(it.id, e.target.value)}
+                              />
+                            </td>
+                            <td>{it.qty}</td>
+                            <td><strong className={adjusted ? 'amount-adjusted' : undefined}>RM {it.harga.toFixed(2)}</strong></td>
+                          </tr>
+                        );
+                      })}
                       <tr><td /><td /><td /><td><strong>SUBTOTAL</strong></td><td><strong>RM {addOnTotalHarga.toFixed(2)}</strong></td></tr>
                     </tbody>
                   </table>
