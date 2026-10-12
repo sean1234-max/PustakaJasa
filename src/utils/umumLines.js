@@ -3,7 +3,7 @@
 // line shows red on screen), exportCsv.js (CSV columns + line_order).
 //
 // Sean's rules (2026-10-02):
-//   - A line marked MERAH is the position; a MAJLIS / school / year line
+//   - A line marked MERAH is the position; a MAJLIS / school / bare-year line
 //     (keywords below) is the TAJUK BESAR wherever it sits, else ① is; the
 //     rest, top to bottom, are event_line_1 / event_line_2. The plaque is
 //     still stacked in the CONTOH's own order (CSV line_order).
@@ -25,11 +25,17 @@ export const UMUM_SLOTS = ['0', '1', '2', '3'];
 // Stored in the umumRed line when the teacher unticks the red line.
 export const UMUM_NO_RED = 'none';
 
-const HEADER_RE = /\b(MAJLIS|HARI|SEKOLAH|SK|SJK|SJKC|SJKT|SMK|SMJK|SMKA|KOLEJ|(19|20)\d{2})\b|学校|典礼|颁奖|华小/i;
+const HEADER_RE = /\b(MAJLIS|HARI|SEKOLAH|SK|SJK|SJKC|SJKT|SMK|SMJK|SMKA|KOLEJ)\b|学校|典礼|颁奖|华小/i;
+// A year joins the TAJUK BESAR only on a line of its own ("2026"); "TAHUN
+// 2026" is a line of its own (Sean, 2026-10-12 — ORDER LAIN-LAIN only).
+const YEAR_ONLY_RE = /^\s*(19|20)\d{2}\s*$/;
+// Nor is a line with a year ("TAHUN 2026") ever the guessed position — the
+// next line is taken instead (only when nothing is marked MERAH).
+const HAS_YEAR_RE = /\b(19|20)\d{2}\b/;
 const POSITION_RE = /\b(ANUGERAH|TOKOH|JOHAN|NAIB|TEMPAT|PERTAMA|KEDUA|KETIGA|JUARA|TERBAIK)\b|冠军|亚军|季军|第.{1,3}名|奖/i;
 
 function kindOf(text) {
-  if (HEADER_RE.test(text)) return 'header';
+  if (HEADER_RE.test(text) || YEAR_ONLY_RE.test(text)) return 'header';
   if (POSITION_RE.test(text)) return 'position';
   return '';
 }
@@ -61,7 +67,7 @@ export function umumSlotFields(contoh, redSlot) {
     if (headerRun.length) assign(headerRun, 'event_header');
     else if (redSlot !== slots[0]) assign([slots[0]], 'event_header');
   } else {
-    if (!slots.some((s) => kinds[s])) {
+    if (!slots.some((s) => kinds[s] || HAS_YEAR_RE.test(contoh[s]))) {
       slots.forEach((s, i) => { out[s] = ['event_header', 'position', 'event_line_1', 'event_line_2'][i]; });
       return out;
     }
@@ -69,7 +75,8 @@ export function umumSlotFields(contoh, redSlot) {
     if (!taken.size && !kinds[slots[0]]) assign([slots[0]], 'event_header');
     assign(firstRun(slots, kinds, 'position', taken), 'position');
     if (!Object.values(out).includes('position')) {
-      const first = slots.find((s) => !taken.has(s));
+      const left = slots.filter((s) => !taken.has(s));
+      const first = left.find((s) => !HAS_YEAR_RE.test(contoh[s])) || left[0];
       if (first) assign([first], 'position');
     }
   }

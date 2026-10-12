@@ -86,3 +86,22 @@ describe('MERAH line + a MAJLIS line further down (ORD-0026)', () => {
     expect(umumSlotFields({ 0: 'TOKOH MURID', 1: 'PRA IBNU', 2: 'NAMA' }, '0')).toEqual({ 0: 'position', 1: 'event_line_1', 2: 'event_line_2' });
   });
 });
+
+describe('umumSlotFields — year lines (Sean, 2026-10-12)', () => {
+  it('"TAHUN 2026" stays its own line, not joined to the TAJUK BESAR', () => {
+    expect(umumSlotFields(lines('MAJLIS APRESIASI PRASEKOLAH', 'TAHUN 2026', 'ANUGERAH MATA PELAJARAN BAHASA MELAYU TERBAIK'), '2'))
+      .toEqual({ 0: 'event_header', 1: 'event_line_1', 2: 'position' });
+  });
+
+  it('a bare "2026" still joins the TAJUK BESAR', () => {
+    expect(umumSlotFields(lines('MAJLIS APRESIASI PRASEKOLAH', ' 2026 ', 'ANUGERAH TERBAIK'), '2'))
+      .toEqual({ 0: 'event_header', 1: 'event_header', 2: 'position' });
+  });
+
+  it('with nothing marked MERAH, a "TAHUN 2026" line is never the guessed position', () => {
+    expect(umumSlotFields(lines('MAJLIS APRESIASI PRASEKOLAH', 'TAHUN 2026', 'PENGAKAP')))
+      .toEqual({ 0: 'event_header', 1: 'event_line_1', 2: 'position' });
+    expect(umumSlotFields(lines('KARNIVAL', 'TAHUN 2026', 'PENGAKAP')))
+      .toEqual({ 0: 'event_header', 1: 'event_line_1', 2: 'position' });
+  });
+});
