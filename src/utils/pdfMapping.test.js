@@ -15,6 +15,7 @@ const pages = [{
     item('PK 200 – 2 pcs', 70, 300),
     item('JOHAN', 90, 330), item('NAIB JOHAN', 300, 330),
     item('BAHASA', 80, 345), item('MELAYU', 125, 345), item('BAHASA MELAYU', 300, 345),
+    item('2 MAWAR – 5', 70, 400), item('2 MELUR – 6', 250, 400), item('9 KELAS x', 400, 400),
   ],
 }];
 
@@ -43,6 +44,7 @@ describe('pdfIr', () => {
     expect(ir.segments.map((s) => s.text)).toEqual([
       'PK 100 – 7 pcs', 'MAJLIS ANUGERAH CONTOH 2026', 'PELAJAR CEMERLANG', '1 MAWAR',
       '1 MAWAR – 3', '1 MELUR – 4', 'PK 200 – 2 pcs', 'JOHAN', 'NAIB JOHAN', 'BAHASA', 'MELAYU', 'BAHASA MELAYU',
+      '2 MAWAR – 5', '2 MELUR – 6', '9 KELAS x',
     ]);
     expect(renderPdfIrText(ir)).toContain('y=200: [p1s5 x=70] 1 MAWAR – 3  [p1s6 x=250] 1 MELUR – 4');
   });
@@ -100,11 +102,15 @@ describe('applyPdfReading', () => {
     expect(notes.some((n) => /"PK 200": a label's wording didn't match/.test(n))).toBe(true);
   });
 
-  it('points out a list item on a used row that the AI skipped', () => {
+  it('points out a list item in a used row and column that the AI skipped', () => {
     const r = structuredClone(reading);
-    r.groups[0].labels[0][1] = ['p1s5|1 MAWAR|3|p1s5', 'p1s4'];
+    r.groups[0].labels[0][1] = ['p1s5|1 MAWAR|3|p1s5', 'p1s6|1 MELUR|4|p1s6', 'p1s13|2 MAWAR|5|p1s13'];
+    r.groups[0].total = null;
     const { notes } = applyPdfReading(ir, r);
-    expect(notes.some((n) => n.includes('skipped 1 item(s)') && n.includes('"1 MELUR – 4"'))).toBe(true);
+    const skipped = notes.find((n) => /skipped/.test(n));
+    // "9 KELAS x" is beside the list, not in its columns.
+    expect(skipped).toContain('skipped 1 item(s)');
+    expect(skipped).toContain('"2 MELUR – 6"');
     expect(applyPdfReading(ir, reading).notes.some((n) => /skipped/.test(n))).toBe(false);
   });
 
@@ -115,5 +121,56 @@ describe('applyPdfReading', () => {
     const { categorized } = applyPdfReading(ir, r);
     const johan = Object.values(categorized).find((secs) => secs[0].lines[2] === 'JOHAN')[0];
     expect(johan.classes[0].subjects[0].qty).toBe(2);
+  });
+});
+
+// Made-up "sample + table" page: one sample label, a TAHUN column, a class
+// list, a printed range and a subject printed over two lines.
+const tablePages = [{
+  page: 1, width: 600, height: 800, items: [
+    item('ANUGERAH CONTOH 2026', 150, 100), // p1s1
+    item('MATA PELAJARAN TERBAIK', 150, 115), // p1s2
+    item('1 MAWAR', 180, 130), // p1s3
+    item('PENDIDIKAN JASMANI &', 60, 160), item('1 – 3', 260, 160), item('MAWAR', 350, 160), // p1s4-6
+    item('KESIHATAN', 60, 172), item('MELUR', 350, 172), item('6', 450, 172), // p1s7-9
+    item('SEJARAH', 60, 190), item('MAWAR', 350, 190), item('6', 450, 190), // p1s10-12
+    item('NILAM TERBAIK', 150, 250), item('TAHUN 1', 150, 265), // p1s13-14
+    item('1', 260, 280), item('2', 300, 280), item('2', 260, 295), item('3', 300, 295), // p1s15-18
+  ],
+}];
+
+describe('applyPdfReading — ranges, pieces and two-line items', () => {
+  const ir = buildPdfIr(tablePages);
+  const group = (labels, total = null) => ({ name: 'X', code: null, total, each: null, tajuk: ['p1s1'], labels, confidence: 'high', note: null });
+
+  it('expands a printed range and joins it with the class into one engraved line', () => {
+    const r = { groups: [group([[['p1s2'], ['p1s4+p1s7'], ['p1s5#1-3'], ['&', 'p1s6', 'p1s8']]], { ref: 'p1s9', value: 6 })], questions: [] };
+    const { categorized, notes } = applyPdfReading(ir, r);
+    const [sec] = Object.values(categorized)[0];
+    expect(sec.classes.map((c) => c.eline2)).toEqual(['1 MAWAR', '1 MELUR', '2 MAWAR', '2 MELUR', '3 MAWAR', '3 MELUR']);
+    expect(sec.classes[0].namaKelas).toBe('PENDIDIKAN JASMANI & KESIHATAN');
+    expect(notes.some((n) => /says .* in total|1 plaque per item|for every combination|skipped/.test(n))).toBe(false);
+  });
+
+  it('refuses a range that is not printed in the segment', () => {
+    const r = { groups: [group([[['p1s2'], ['p1s10'], ['p1s5#1-6']]])], questions: [] };
+    expect(applyPdfReading(ir, r).bad).toBe(1);
+  });
+
+  it('refuses a "+" item whose second part is not below the first', () => {
+    const r = { groups: [group([[['p1s2'], ['p1s7+p1s4']]])], questions: [] };
+    expect(applyPdfReading(ir, r).bad).toBe(1);
+  });
+
+  it('reads the years from the table cells with their counts', () => {
+    const r = { groups: [group([[['p1s13'], ['p1s14|TAHUN'], ['&', 'p1s15||2|p1s17', 'p1s16||3|p1s18']]])], questions: [] };
+    const [sec] = Object.values(applyPdfReading(ir, r).categorized)[0];
+    expect(sec.classes.map((c) => [c.namaKelas, c.subjects[0].qty])).toEqual([['TAHUN 1', 2], ['TAHUN 2', 3]]);
+  });
+
+  it('warns when a printed count is multiplied by another list', () => {
+    const r = { groups: [group([[['p1s2'], ['p1s10||6|p1s12'], ['p1s6', 'p1s8']]])], questions: [] };
+    const { notes } = applyPdfReading(ir, r);
+    expect(notes.some((n) => /a count printed in the PDF was used for every combination of another list \(12 plaques/.test(n))).toBe(true);
   });
 });

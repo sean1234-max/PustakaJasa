@@ -7,10 +7,10 @@
 // using it. Bump PDF_SCHEMA_VERSION whenever this shape changes (it is part
 // of the cache key).
 
-export const PDF_SCHEMA_VERSION = '2';
+export const PDF_SCHEMA_VERSION = '3';
 
 const nullableString = { anyOf: [{ type: 'string' }, { type: 'null' }] };
-const REF_DESC = 'A segment id like "p1s12", or a run of segments on the same printed line like "p2s10-p2s11".';
+const REF_DESC = 'A segment id like "p1s12", a run of segments on the same printed line like "p2s10-p2s11", or one item printed over two lines like "p1s64+p1s66".';
 const REF_VALUE = (desc: string) => ({
   anyOf: [{ type: 'null' }, {
     type: 'object', additionalProperties: false, required: ['ref', 'value'],
@@ -22,7 +22,9 @@ const REF_VALUE = (desc: string) => ({
 // lines, and output length is what makes a reading slow and costly): a
 // label is a list of lines, a line a list of options, an option one string
 // "REF" (the whole segment) or "REF|TEXT" (only TEXT, a part of it) or
-// "REF|TEXT|QTY|QTYREF" (TEXT may be empty = whole segment).
+// "REF|TEXT|QTY|QTYREF" (TEXT may be empty = whole segment) or "REF#1-6"
+// (each number of a range printed in REF). A line whose first option is
+// "&" joins onto the line before it (one engraved line from two pieces).
 export const PDF_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -48,7 +50,7 @@ export const PDF_SCHEMA = {
           labels: {
             type: 'array',
             description: 'Each label: its engraved lines below the tajuk, top to bottom. Each line: its options. One option = a fixed line; several = the line varies (one plaque per option).',
-            items: { type: 'array', items: { type: 'array', items: { type: 'string', description: '"REF", "REF|TEXT" or "REF|TEXT|QTY|QTYREF".' } } },
+            items: { type: 'array', items: { type: 'array', items: { type: 'string', description: '"REF", "REF|TEXT", "REF|TEXT|QTY|QTYREF", "REF#1-6" (a printed range), or "&" as a line\'s first option (join onto the line before).' } } },
           },
           confidence: { type: 'string', enum: ['high', 'medium', 'low'] },
           note: { ...nullableString, description: 'One short sentence for the teacher if something needs checking, else null.' },
@@ -66,7 +68,9 @@ type Group = {
 };
 export type PdfReading = { groups: Group[]; questions: string[] };
 
-const REF_RE = /^p\d+s\d+(-p\d+s\d+)?$/;
+const RUN = 'p\\d+s\\d+(-p\\d+s\\d+)?';
+const REF_RE = new RegExp(`^${RUN}(\\+${RUN}){0,3}$`);
+const OPTION_REF_RE = new RegExp(`^${RUN}(\\+${RUN}){0,3}(#\\d+-\\d+)?$`);
 
 // Shape re-check (a refusal or truncation must not slip through). Whether
 // each ref and quoted text really exists is checked in the browser, which
@@ -78,11 +82,18 @@ export function validatePdfReading(value: unknown): { ok: true; value: PdfReadin
   for (const g of v.groups) {
     if (!Array.isArray(g.labels) || !Array.isArray(g.tajuk)) return { ok: false, error: 'bad group' };
     const refs = [...g.tajuk, g.code?.ref, g.total?.ref, g.each?.ref];
+    const optionRefs: string[] = [];
     for (const label of g.labels) {
       if (!Array.isArray(label) || label.some((ln) => !Array.isArray(ln))) return { ok: false, error: 'bad label' };
-      label.forEach((ln) => ln.forEach((o) => { const [ref, , , qtyRef] = String(o).split('|'); refs.push(ref, qtyRef || undefined); }));
+      label.forEach((ln) => ln.forEach((o, i) => {
+        if (o === '&' && i === 0) return;
+        const [ref, , , qtyRef] = String(o).split('|');
+        optionRefs.push(ref);
+        refs.push(qtyRef || undefined);
+      }));
     }
     if (refs.some((r) => r != null && !REF_RE.test(r))) return { ok: false, error: 'bad ref' };
+    if (optionRefs.some((r) => !OPTION_REF_RE.test(r))) return { ok: false, error: 'bad ref' };
   }
   return { ok: true, value: v };
 }

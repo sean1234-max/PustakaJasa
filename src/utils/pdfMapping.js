@@ -13,7 +13,9 @@ import { cleanDocxPlakCode, wordingRowsToCategorized } from './docxImport';
 //
 // Each label becomes Word-style rows ({ lines, qty, kod }): a line with
 // several options is one plaque per option, two such lines multiply
-// (subjects x years). Tajuk lines become the TAJUK BESAR; the rest follow
+// (subjects x years). A printed range ("1 – 6") stands for each number in
+// it, and a line can be built from pieces ("TAHUN" + the year) — the
+// pattern the file's sample label shows, not text the AI makes up. Tajuk lines become the TAJUK BESAR; the rest follow
 // the owner's in-order Word mapping (docxImport.js wordingFields).
 
 const MAX_PLAQUES_PER_LABEL = 2000;
@@ -25,30 +27,56 @@ const norm = (s) => String(s || '')
   .trim()
   .toUpperCase();
 
-// "p2s10-p2s11" -> the segments (one printed line), or null.
+// "p2s10-p2s11" (a run on one printed line) or "p1s64+p1s66" (one item
+// printed over two lines, the next part a little lower) -> the segments,
+// or null.
 function makeSegmentReader(ir) {
   const byId = new Map(ir.segments.map((s, i) => [s.id, { ...s, i }]));
-  const segs = (ref) => {
-    if (typeof ref !== 'string') return null;
+  const run = (ref) => {
     const [a, b = a] = ref.split('-');
     const s = byId.get(a);
     const e = byId.get(b);
     if (!s || !e || s.page !== e.page || e.i < s.i || e.i - s.i > 20) return null;
     return ir.segments.slice(s.i, e.i + 1);
   };
+  const segs = (ref) => {
+    if (typeof ref !== 'string' || !ref) return null;
+    const parts = ref.split('+');
+    if (parts.length > 4) return null;
+    const runs = parts.map(run);
+    if (runs.some((r) => !r)) return null;
+    for (let i = 1; i < runs.length; i++) {
+      const a = runs[i - 1][runs[i - 1].length - 1];
+      const b = runs[i][0];
+      if (b.page !== a.page || b.y <= a.y || b.y - a.y > 50) return null;
+    }
+    return runs.flat();
+  };
   const read = (ref) => segs(ref)?.map((x) => x.text).join(' ') ?? null;
   return { read, segs };
 }
 
-// A list the AI expanded (a line with several options) whose printed rows
-// hold text it did not use: most likely a list item it skipped. Returns the
-// skipped texts, in reading order.
-function skippedListItems(ir, listSegs, usedIds) {
-  const rows = new Set(listSegs.map((s) => `${s.page}:${s.y}`));
+// Text the AI did not use inside a list it expanded (a line with several
+// options): on a row that holds list items, in one list's own column,
+// from its first row to just below its last one (the item after the last
+// one it took). Most likely a list item it skipped. Counts and notes printed beside a list ("8 KELAS x",
+// "48 MURID x") are in other columns and don't count. Returns the skipped
+// texts, in reading order.
+const LIST_ROW_GAP = 40;
+
+function skippedListItems(ir, lists, usedIds) {
+  const rows = new Set(lists.flat().map((l) => `${l.page}:${l.y}`));
+  const inList = (s) => rows.has(`${s.page}:${s.y}`) && lists.some((list) => {
+    const mine = list.filter((l) => l.page === s.page);
+    if (!mine.length) return false;
+    const ys = mine.map((l) => l.y);
+    return s.y >= Math.min(...ys) && s.y <= Math.max(...ys) + LIST_ROW_GAP
+      && mine.some((l) => Math.abs(l.x - s.x) <= 25);
+  });
   const out = [];
   let prev = null;
   ir.segments.forEach((s, i) => {
-    if (usedIds.has(s.id) || !rows.has(`${s.page}:${s.y}`)) return;
+    if (usedIds.has(s.id) || !inList(s)) return;
     // Next to the last one on the same line: one item split in two.
     if (prev && prev.i === i - 1 && prev.page === s.page && prev.y === s.y) out[out.length - 1] += ` ${s.text}`;
     else out.push(s.text);
@@ -61,6 +89,13 @@ function hasNumber(text, value) {
   return new RegExp(`(^|[^\\d])${value}([^\\d]|$)`).test(text);
 }
 
+// "1 - 6", "1 – 6", "4 HINGGA 6" printed in the segment.
+function hasRange(text, from, to) {
+  return new RegExp(`(^|[^\\d])${from}\\s*(-|HINGGA|SAMPAI|TO)\\s*${to}([^\\d]|$)`).test(norm(text));
+}
+
+const MAX_RANGE = 30;
+
 function cartesian(lists) {
   return lists.reduce((acc, list) => acc.flatMap((a) => list.map((x) => [...a, x])), [[]]);
 }
@@ -69,20 +104,33 @@ export function applyPdfReading(ir, reading) {
   const notes = [];
   const { read, segs } = makeSegmentReader(ir);
   const usedIds = new Set();
-  const listSegs = [];
-  const markUsed = (ref) => (segs(ref) || []).forEach((x) => usedIds.add(x.id));
+  const lists = [];
   const rowsByHeading = new Map();
   let bad = 0;
 
-  // One option ("REF", "REF|TEXT" or "REF|TEXT|QTY|QTYREF" — see
-  // pdfSchema.ts) -> its engraved text + own qty, or null when the AI's
-  // ref, quote or number doesn't hold up.
-  const optionOf = (raw) => {
-    const [ref, part = '', qtyRaw = '', qtyRef = ''] = String(raw ?? '').split('|');
+  // REF without a "#1-6" range suffix.
+  const baseRef = (ref) => String(ref ?? '').split('#')[0];
+  const markUsed = (ref) => (segs(baseRef(ref)) || []).forEach((x) => usedIds.add(x.id));
+
+  // One option ("REF", "REF|TEXT", "REF|TEXT|QTY|QTYREF" or a printed
+  // range "REF#1-6" — see pdfSchema.ts) -> its engraved text(s) + own qty,
+  // or null when the AI's ref, quote, number or range doesn't hold up. A
+  // range gives one option per number in it.
+  const optionsOf = (raw) => {
+    const [refRaw, part = '', qtyRaw = '', qtyRef = ''] = String(raw ?? '').split('|');
+    const [ref, range] = String(refRaw).split('#');
     const seg = read(ref);
     if (seg == null) return null;
     markUsed(ref);
     markUsed(qtyRef);
+    if (range != null) {
+      const m = /^(\d+)-(\d+)$/.exec(range);
+      if (!m || part.trim() || qtyRaw.trim()) return null;
+      const from = Number(m[1]);
+      const to = Number(m[2]);
+      if (to <= from || to - from > MAX_RANGE || !hasRange(seg, from, to)) return null;
+      return Array.from({ length: to - from + 1 }, (_, k) => ({ text: String(from + k), qty: null }));
+    }
     let text = seg;
     if (part.trim()) {
       if (!norm(seg).includes(norm(part))) return null;
@@ -94,7 +142,18 @@ export function applyPdfReading(ir, reading) {
       const qSeg = read(qtyRef || ref);
       if (!Number.isInteger(qty) || qty < 0 || qSeg == null || !hasNumber(qSeg, qty)) return null;
     }
-    return { text: text.replace(/\s+/g, ' ').trim(), qty };
+    return [{ text: text.replace(/\s+/g, ' ').trim(), qty }];
+  };
+
+  // A label line: its options, and whether it joins onto the line before
+  // it (first option "&": pieces of one engraved line, e.g. "TAHUN" + the
+  // year). null when any option fails.
+  const lineOf = (ln) => {
+    const raw = Array.isArray(ln) ? ln : [];
+    const join = raw[0] === '&';
+    const opts = (join ? raw.slice(1) : raw).map(optionsOf);
+    if (opts.length === 0 || opts.some((o) => o == null)) return null;
+    return { join, raw: join ? raw.slice(1) : raw, opts: opts.flat() };
   };
 
   (reading?.groups || []).forEach((g, gi) => {
@@ -115,6 +174,7 @@ export function applyPdfReading(ir, reading) {
 
     let sum = 0;
     let assumedOne = 0;
+    let multiplied = false;
     const rows = [];
     let each = 1;
     if (g.each) {
@@ -123,18 +183,20 @@ export function applyPdfReading(ir, reading) {
       else notes.push(`${where}: the AI gave a count per label that isn't in the file — 1 per label was used; please check.`);
     }
     (g.labels || []).forEach((label) => {
-      const lines = (Array.isArray(label) ? label : []).map((ln) => (Array.isArray(ln) ? ln : []).map(optionOf));
+      const lines = (Array.isArray(label) ? label : []).map(lineOf);
       if (lines.length === 0) return;
-      if (lines.some((opts) => opts.length === 0 || opts.some((o) => o == null))) {
+      if (lines.some((l) => l == null)) {
         bad++;
         notes.push(`${where}: a label's wording didn't match the file, so it was left out — please add it by hand.`);
         return;
       }
-      const varies = lines.some((opts) => opts.length > 1);
-      label.forEach((ln, i) => {
-        if (lines[i].length > 1) ln.forEach((o) => listSegs.push(...(segs(String(o).split('|')[0]) || [])));
+      const varies = lines.some((l) => l.opts.length > 1);
+      lines.forEach((l) => {
+        if (l.opts.length > 1) lists.push(l.raw.flatMap((o) => segs(baseRef(String(o).split('|')[0])) || []));
       });
-      const combos = cartesian(lines);
+      // A count printed for one option, multiplied by another varying line.
+      if (lines.some((l, i) => l.opts.some((o) => o.qty != null) && lines.some((m, j) => j !== i && m.opts.length > 1 && m.opts.every((o) => o.qty == null)))) multiplied = true;
+      const combos = cartesian(lines.map((l) => l.opts));
       if (combos.length > MAX_PLAQUES_PER_LABEL) { bad++; notes.push(`${where}: a list was too long to expand — please add it by hand.`); return; }
       combos.forEach((combo) => {
         const qtys = combo.map((o) => o.qty).filter((q) => q != null);
@@ -142,25 +204,33 @@ export function applyPdfReading(ir, reading) {
         if (varies && qtys.length === 0 && !g.each) assumedOne++;
         if (qty <= 0) return;
         sum += qty;
-        rows.push({ lines: combo.map((o) => o.text).filter(Boolean), qty, kod });
+        const text = [];
+        combo.forEach((o, i) => {
+          if (!o.text) return;
+          if (lines[i].join && text.length) text[text.length - 1] += ` ${o.text}`;
+          else text.push(o.text);
+        });
+        rows.push({ lines: text, qty, kod });
       });
     });
 
-    if (assumedOne > 0) notes.push(`${where}: the PDF gives no quantity for its list, so 1 plaque per item was used (${assumedOne} plaques) — please check the quantities.`);
+    let totalMatches = false;
     if (g.total) {
       const seg = read(g.total.ref);
       if (seg == null || !hasNumber(seg, g.total.value)) {
         notes.push(`${where}: the total the AI gave isn't in the file — please check the quantities.`);
       } else if (g.total.value !== sum) {
         notes.push(`${where}: the PDF says ${g.total.value} in total, but the labels add up to ${sum} — please check nothing is missing or extra.`);
-      }
+      } else totalMatches = true;
     }
+    if (assumedOne > 0 && !totalMatches) notes.push(`${where}: the PDF gives no quantity for its list, so 1 plaque per item was used (${assumedOne} plaques) — please check the quantities.`);
+    if (multiplied && !totalMatches) notes.push(`${where}: a count printed in the PDF was used for every combination of another list (${sum} plaques in all) — please check the quantities.`);
     if (!rowsByHeading.has(heading)) rowsByHeading.set(heading, []);
     rowsByHeading.get(heading).push(...rows);
   });
 
-  [...(reading?.groups || []).flatMap((g) => [...(g.tajuk || []), g.code?.ref, g.total?.ref, g.each?.ref])].forEach(markUsed);
-  const skipped = skippedListItems(ir, listSegs, usedIds);
+  (reading?.groups || []).flatMap((g) => [...(g.tajuk || []), g.code?.ref, g.total?.ref, g.each?.ref]).forEach(markUsed);
+  const skipped = skippedListItems(ir, lists, usedIds);
   if (skipped.length) {
     notes.push(`The AI may have skipped ${skipped.length} item(s) in the PDF's lists: ${skipped.slice(0, 8).map((t) => `"${t}"`).join(', ')}${skipped.length > 8 ? ', …' : ''} — please check and add them by hand if they are needed.`);
   }
