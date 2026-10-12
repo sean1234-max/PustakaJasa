@@ -174,3 +174,27 @@ describe('applyPdfReading — ranges, pieces and two-line items', () => {
     expect(notes.some((n) => /a count printed in the PDF was used for every combination of another list \(12 plaques/.test(n))).toBe(true);
   });
 });
+
+describe('applyPdfReading — name lists', () => {
+  const ir = buildPdfIr([{ page: 1, width: 600, height: 800, items: [
+    item('MAJLIS CONTOH 2026', 150, 100), item('NAMA CONTOH', 150, 115), item('ANUGERAH BINTANG CERIA', 150, 130), // p1s1-3
+    item('1) BINTANG CERIA', 60, 200), item('MURID SATU', 300, 200), // p1s4-5
+    item('MURID DUA', 300, 215), // p1s6
+    item('2) WIRA PAGI', 60, 230), item('MURID TIGA', 300, 230), // p1s7-8
+  ] }]);
+  const group = (labels) => ({ name: 'X', code: null, total: null, each: null, tajuk: ['p1s1'], labels, names: true, confidence: 'high', note: null });
+
+  it('puts each award on one tab with the names, engraved name first', () => {
+    const r = { groups: [group([
+      [['p1s5', 'p1s6'], ['p1s3|ANUGERAH'], ['&', 'p1s4|BINTANG CERIA']],
+      [['p1s8'], ['p1s3|ANUGERAH'], ['&', 'p1s7|WIRA PAGI']],
+    ])], questions: [] };
+    const { categorized } = applyPdfReading(ir, r);
+    const tabs = Object.values(categorized).map(([sec]) => [sec.lines[2], sec.nameFirst, sec.classes.map((c) => c.namaKelas)]);
+    expect(tabs).toEqual([
+      ['ANUGERAH BINTANG CERIA', true, ['MURID SATU', 'MURID DUA']],
+      ['ANUGERAH WIRA PAGI', true, ['MURID TIGA']],
+    ]);
+  });
+});
+

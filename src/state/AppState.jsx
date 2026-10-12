@@ -16,7 +16,7 @@ import * as XLSX from 'xlsx';
 import { buildWorkbookIr, renderIrText } from '../utils/fileIr';
 import { applyAiMapping } from '../utils/aiMapping';
 import { readSheetsWithAi, canUseAiReader } from '../lib/fileReadApi';
-import { parsePdfOrder } from '../utils/pdfImport';
+import { parseDocxOrderWithAi, parsePdfOrder } from '../utils/pdfImport';
 import { checkColumnTotals, checkExpansionTotals, checkLevelBreakdownMatch, checkAliranKelasTotals } from '../utils/importChecks';
 import { frontPgToFunctionDetails } from '../utils/frontPgDetails';
 import { buildCategoryCartItems } from './categoryCartItems';
@@ -801,6 +801,12 @@ export function AppStateProvider({ children }) {
             : { error: 'PDF orders are not available yet — please upload an .xlsx or .docx file.' };
         } else {
           parsed = /\.docx$/i.test(file.name) ? await parseWordingDocx(buffer) : parseFormAnugerahExcel(buffer);
+          // A Word order without a table the rules know (a sample label
+          // and a name list, ...) goes to the AI reader, for the roles
+          // allowed to use it.
+          if (parsed.error && /\.docx$/i.test(file.name) && canUseAiReader(stateRef.current.role)) {
+            parsed = await parseDocxOrderWithAi(buffer, file.name, parsed.error);
+          }
         }
       } catch (err) {
         console.error('Failed to read uploaded order file:', err);

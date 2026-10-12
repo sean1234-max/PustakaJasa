@@ -182,6 +182,10 @@ export function applyPdfReading(ir, reading) {
       if (Number.isInteger(g.each.value) && g.each.value > 0 && seg != null && hasNumber(seg, g.each.value)) each = g.each.value;
       else notes.push(`${where}: the AI gave a count per label that isn't in the file — 1 per label was used; please check.`);
     }
+    // A name list (the AI's `names`): each label starts with the person's
+    // name and the award is below it — engraved name first, one tab per
+    // award.
+    const nameFirst = g.names === true;
     (g.labels || []).forEach((label) => {
       const lines = (Array.isArray(label) ? label : []).map(lineOf);
       if (lines.length === 0) return;
@@ -210,7 +214,7 @@ export function applyPdfReading(ir, reading) {
           if (lines[i].join && text.length) text[text.length - 1] += ` ${o.text}`;
           else text.push(o.text);
         });
-        rows.push({ lines: text, qty, kod });
+        rows.push({ lines: text, qty, kod, nameFirst });
       });
     });
 

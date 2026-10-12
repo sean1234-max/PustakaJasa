@@ -2323,7 +2323,9 @@ export function deriveKlasMatrixSectionLines(section) {
   // slot on a draggableReferenceSample category (PPKI, MP THP 1/1 (Kalau
   // ada kelas)) — a teacher would see the derived line first and an empty,
   // easy-to-miss TAJUK BESAR pushed to the back.
-  const baseOrder = section.isAliran || section.isAliranKelas ? ALIRAN_REF_ORDER : DEFAULT_REF_ORDER;
+  // ALIRAN, and a Word/PDF name list engraved name first (docxImport.js's
+  // nameFirst): slot 3 (the per-plaque line) above slot 2 (the award).
+  const baseOrder = section.isAliran || section.isAliranKelas || section.nameFirst ? ALIRAN_REF_ORDER : DEFAULT_REF_ORDER;
   lines.refOrder = baseOrder.filter((slot) => slot === '0' || lines[slot]).join(',');
   return lines;
 }

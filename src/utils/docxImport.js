@@ -264,7 +264,14 @@ function wordingFieldsForRows(rows) {
       return;
     }
   });
-  return lineSets.map((lines) => {
+  return lineSets.map((lines, ri) => {
+    // A label that starts with the name ("<NAME> / ANUGERAH BINTANG
+    // BERSINAR", marked by the AI reader — pdfMapping.js): the award below
+    // it is POSITION, the name EVENT LINE 1, and the tab engraves the name
+    // first.
+    if (rows[ri].nameFirst && lines.length >= 2) {
+      return { position: lines.slice(1).join('\n'), eventLine1: lines[0], eventLine2: '', nameFirst: true };
+    }
     const def = wordingFields(lines);
     const n = nameLineByLength.get(lines.length);
     if (n == null || positionCount.get(def.position) > 1) return def;
@@ -289,11 +296,11 @@ export function wordingRowsToCategorized(rows, heading = '') {
   const codesByTitle = new Map();
   const fieldsByRow = wordingFieldsForRows(rows);
   rows.forEach(({ qty, kod }, ri) => {
-    const { position: title, eventLine1, eventLine2 } = fieldsByRow[ri];
-    const gk = `${title}\u0000${kod}`;
+    const { position: title, eventLine1, eventLine2, nameFirst = false } = fieldsByRow[ri];
+    const gk = `${title}\u0000${kod}\u0000${nameFirst}`;
     let g = groups.get(gk);
     if (!g) {
-      g = { title, kod, classesByKey: new Map(), classOrder: [] };
+      g = { title, kod, nameFirst, classesByKey: new Map(), classOrder: [] };
       groups.set(gk, g);
       groupOrder.push(gk);
       if (!codesByTitle.has(title)) codesByTitle.set(title, new Set());
@@ -346,6 +353,8 @@ export function wordingRowsToCategorized(rows, heading = '') {
       jenisPlak: g.kod,
       sourceSheet: label,
     };
+    // The name (EVENT LINE 1) is engraved above the award (POSITION).
+    if (g.nameFirst) section.nameFirst = true;
     categorized[makeDynamicCategoryKey('KLAS_MATRIX', label)] = [section];
   });
 
