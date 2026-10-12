@@ -104,4 +104,16 @@ describe('umumSlotFields — year lines (Sean, 2026-10-12)', () => {
     expect(umumSlotFields(lines('KARNIVAL', 'TAHUN 2026', 'PENGAKAP')))
       .toEqual({ 0: 'event_header', 1: 'event_line_1', 2: 'position' });
   });
+
+  it('every line a title and nothing MERAH (ORD-0015): ① TAJUK BESAR, then line 1 / line 2, no position', () => {
+    expect(umumSlotFields(lines('MAJLIS APRESIASI PRA SEKOLAH', 'SK SERI CHERAS', '2026')))
+      .toEqual({ 0: 'event_header', 1: 'event_line_1', 2: 'event_line_2' });
+    expect(umumSlotFields(lines('SAMBUTAN HARI LAHIR', 'PRASEKOLAH SK SERI CHERAS', '2026')))
+      .toEqual({ 0: 'event_header', 1: 'event_line_1', 2: 'event_line_2' });
+  });
+
+  it('a MERAH line still makes the position even when every line looks like a title', () => {
+    expect(umumSlotFields(lines('MAJLIS APRESIASI PRA SEKOLAH', 'SK SERI CHERAS', '2026'), '1'))
+      .toEqual({ 0: 'event_header', 1: 'position', 2: 'event_line_1' });
+  });
 });

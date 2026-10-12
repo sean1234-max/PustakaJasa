@@ -71,13 +71,20 @@ export function umumSlotFields(contoh, redSlot) {
       slots.forEach((s, i) => { out[s] = ['event_header', 'position', 'event_line_1', 'event_line_2'][i]; });
       return out;
     }
-    assign(firstRun(slots, kinds, 'header', taken), 'event_header');
-    if (!taken.size && !kinds[slots[0]]) assign([slots[0]], 'event_header');
-    assign(firstRun(slots, kinds, 'position', taken), 'position');
-    if (!Object.values(out).includes('position')) {
-      const left = slots.filter((s) => !taken.has(s));
-      const first = left.find((s) => !HAS_YEAR_RE.test(contoh[s])) || left[0];
-      if (first) assign([first], 'position');
+    // Every line looks like a title (MAJLIS / SK / 2026 …) and none is marked
+    // MERAH: ① is the TAJUK BESAR and the rest are line 1 / line 2 — no
+    // position (Sean, 2026-10-12; SEAN.jsx makes its T_H_L1_L2 template).
+    if (slots.length > 1 && slots.every((s) => kinds[s] === 'header')) {
+      assign([slots[0]], 'event_header');
+    } else {
+      assign(firstRun(slots, kinds, 'header', taken), 'event_header');
+      if (!taken.size && !kinds[slots[0]]) assign([slots[0]], 'event_header');
+      assign(firstRun(slots, kinds, 'position', taken), 'position');
+      if (!Object.values(out).includes('position')) {
+        const left = slots.filter((s) => !taken.has(s));
+        const first = left.find((s) => !HAS_YEAR_RE.test(contoh[s])) || left[0];
+        if (first) assign([first], 'position');
+      }
     }
   }
   const rest = slots.filter((s) => !taken.has(s));
