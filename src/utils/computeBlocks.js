@@ -1,5 +1,5 @@
 import {
-  CATEGORIES, flattenPlakCatalog, getCategorySubjects, getCategoryColumns, tahunRangeYears,
+  CATEGORIES, flattenPlakCatalog, priceInFlatCatalog, getCategorySubjects, getCategoryColumns, tahunRangeYears,
   getCustomMatrixRowIds, customMatrixLabelKey, matrixCellKey, CUSTOM_MATRIX_LABEL_SUFFIX, TOKOH_ROW_FIELDS, UMUM_ROW_FIELDS,
   getCategoryLinePlaceholders, getCategoryPositionLine2Placeholder,
   getCategoryTahunPlaceholder, getCategoryNamaKelasPlaceholder,
@@ -91,10 +91,7 @@ export function snapshotDetail(catKey, blockIdx, isMatrix, isDynamicMatrix, line
 // dynamicMatrix categories (PBD) — pass {} for anything else.
 export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, plakRowsMap, columnsByBlockMap, updaters, plakCatalog, schoolLanguage = 'SK') {
   const flatPrices = flattenPlakCatalog(plakCatalog);
-  const priceFor = (code) => {
-    const entry = flatPrices.find((p) => p.code === code);
-    return entry ? entry.price : null;
-  };
+  const priceFor = (code) => priceInFlatCatalog(flatPrices, code);
   const currentCat = resolveCategory(catKey) || CATEGORIES[0];
   const isMatrix = currentCat.mode === 'matrix';
   const isDynamicMatrix = currentCat.mode === 'dynamicMatrix';

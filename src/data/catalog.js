@@ -924,8 +924,17 @@ export function getStockStatus(code, plakCatalogTree) {
 // against to flag a discount/markup. Takes the live catalog tree since
 // prices are Production-editable, not fixed at build time.
 export function standardUnitPrice(code, plakCatalogTree) {
-  const entry = flattenPlakCatalog(plakCatalogTree).find((p) => p.code === code);
-  return entry ? entry.price : null;
+  return priceInFlatCatalog(flattenPlakCatalog(plakCatalogTree), code);
+}
+
+// A code whose node has children isn't a leaf itself — SELEMPANG's colours
+// (0050 MERAH, …) sit under it — so it takes the one price its leaves share
+// (RM40 for every colour); null when they differ or nothing matches.
+export function priceInFlatCatalog(flat, code) {
+  const entry = flat.find((p) => p.code === code);
+  if (entry) return entry.price;
+  const prices = [...new Set(flat.filter((p) => p.code.startsWith(`${code} / `)).map((p) => p.price))];
+  return prices.length === 1 ? prices[0] : null;
 }
 
 // A tracked code auto-hides from teachers once it's down to

@@ -366,3 +366,22 @@ describe('isKelasSubject', () => {
     expect(kelasListLabel(undefined)).toBe('Moral Kelas');
   });
 });
+
+describe('standardUnitPrice', () => {
+  const tree = [
+    { code: 'PKC 246', price: 12 },
+    { code: 'SELEMPANG', price: 40, children: [{ code: '0050 MERAH', price: 0 }, { code: '0051 KUNING', price: 0 }] },
+    { code: 'MIX', price: 10, children: [{ code: 'A', price: 0 }, { code: 'B', price: 5 }] },
+  ];
+
+  it('finds a leaf, and a parent like SELEMPANG by the price its colours share', () => {
+    expect(standardUnitPrice('PKC 246', tree)).toBe(12);
+    expect(standardUnitPrice('SELEMPANG', tree)).toBe(40);
+    expect(standardUnitPrice('SELEMPANG / 0050 MERAH', tree)).toBe(40);
+  });
+
+  it('gives no price when a parent\'s children differ or the code is unknown', () => {
+    expect(standardUnitPrice('MIX', tree)).toBeNull();
+    expect(standardUnitPrice('NOPE', tree)).toBeNull();
+  });
+});
