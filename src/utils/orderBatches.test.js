@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getOrderInvoiceSlices, getInvoiceItems, normalizeSplitQty, stockDiff, applyPriceDrafts } from './orderBatches';
+import { getOrderInvoiceSlices, getInvoiceItems, normalizeSplitQty, stockDiff, applyPriceDrafts, sortMedalColours } from './orderBatches';
 
 describe('getOrderInvoiceSlices', () => {
   it('un-split order: one slice, using the order\'s own invoiceId/totalAmount/status unchanged, totalQty summed from items', () => {
@@ -207,5 +207,28 @@ describe('applyPriceDrafts', () => {
   it('rejects a negative or non-numeric price', () => {
     expect(applyPriceDrafts(items, { a: '-1' }).error).toBeTruthy();
     expect(applyPriceDrafts(items, { a: 'abc' }).error).toBeTruthy();
+  });
+});
+
+describe('sortMedalColours', () => {
+  const codes = (rows) => sortMedalColours(rows.map((jenisPlak) => ({ jenisPlak }))).map((r) => r.jenisPlak);
+
+  it('puts each product\'s GOLD, SILVER, BRONZE together in that order (ORD-0047)', () => {
+    expect(codes([
+      'SELEMPANG',
+      'MP399 / BRONZE / BASE WITHOUT COVER', 'MP399 / GOLD / BASE WITHOUT COVER', 'MP399 / SILVER / BASE WITHOUT COVER',
+      'MP393 / BRONZE / BASE WITHOUT COVER', 'MP393 / SILVER / BASE WITHOUT COVER', 'MP393 / GOLD / BASE WITHOUT COVER',
+      'DECO LIGHT',
+    ])).toEqual([
+      'SELEMPANG',
+      'MP399 / GOLD / BASE WITHOUT COVER', 'MP399 / SILVER / BASE WITHOUT COVER', 'MP399 / BRONZE / BASE WITHOUT COVER',
+      'MP393 / GOLD / BASE WITHOUT COVER', 'MP393 / SILVER / BASE WITHOUT COVER', 'MP393 / BRONZE / BASE WITHOUT COVER',
+      'DECO LIGHT',
+    ]);
+  });
+
+  it('keeps different bases apart and leaves codes without a colour where they were', () => {
+    expect(codes(['FD 251 / BRONZE', 'PKC 246', 'FD 251 / GOLD', 'MP399 / SILVER / BASE A', 'MP399 / GOLD / BASE B']))
+      .toEqual(['FD 251 / GOLD', 'FD 251 / BRONZE', 'PKC 246', 'MP399 / SILVER / BASE A', 'MP399 / GOLD / BASE B']);
   });
 });

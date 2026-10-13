@@ -202,6 +202,31 @@ export function groupItemsByBatch(items) {
     }));
 }
 
+// Price-table order for medal colours (Sean, 2026-10-13): the same product's
+// GOLD / SILVER / BRONZE rows sit together, gold first, then silver, then
+// bronze — "MP393 / BRONZE / BASE A" groups with "MP393 / GOLD / BASE A".
+// Products keep the order they first appear in; anything without a colour is
+// untouched.
+const MEDAL_RANK = { GOLD: 0, SILVER: 1, BRONZE: 2 };
+export function sortMedalColours(rows) {
+  const parse = (row) => {
+    const parts = String(row.jenisPlak || '').split(' / ');
+    const i = parts.findIndex((p) => MEDAL_RANK[p.trim().toUpperCase()] !== undefined);
+    if (i === -1) return { base: null, rank: 0 };
+    return { base: parts.filter((_, k) => k !== i).join(' / '), rank: MEDAL_RANK[parts[i].trim().toUpperCase()] };
+  };
+  const firstSeen = new Map();
+  const keyed = rows.map((row, index) => {
+    const { base, rank } = parse(row);
+    const group = base === null ? `#${index}` : base;
+    if (!firstSeen.has(group)) firstSeen.set(group, index);
+    return { row, index, rank, groupStart: firstSeen.get(group) };
+  });
+  return keyed
+    .sort((a, b) => a.groupStart - b.groupStart || a.rank - b.rank || a.index - b.index)
+    .map((k) => k.row);
+}
+
 // Production's price adjustment while reviewing (Sean, 2026-10-09):
 // `drafts` maps item id → new price per unit. A changed item gets its new
 // unitPrice/harga and remembers the price it had before

@@ -1,6 +1,6 @@
 import { Fragment } from 'react';
 import { standardUnitPrice, SELEMPANG_CODE } from '../data/catalog';
-import { groupItemsByBatch, combineByJenisPlak } from '../utils/orderBatches';
+import { groupItemsByBatch, combineByJenisPlak, sortMedalColours } from '../utils/orderBatches';
 
 // Shared by SalesOrderSummary (editable, for the pre-approval price
 // review) and OrderDetails (always read-only, the teacher's own printable
@@ -38,9 +38,9 @@ export default function PriceTable({
     <>
       {groups.map((group, gi) => {
         const groupHarga = group.items.reduce((sum, it) => sum + it.harga, 0);
-        const displayItems = combineJenisPlak
+        const displayItems = sortMedalColours(combineJenisPlak
           ? combineByJenisPlak(group.items, { splitByPrice: true })
-          : group.items.map((it) => ({ ...it, key: it.id, ids: [it.id] }));
+          : group.items.map((it) => ({ ...it, key: it.id, ids: [it.id] })));
         return (
           <div key={group.batch}>
             {multiGroup && <div className="card-kicker" style={{ marginTop: gi === 0 ? 0 : 'var(--space-6)' }}>{group.label}</div>}
