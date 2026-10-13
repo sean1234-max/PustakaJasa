@@ -86,8 +86,9 @@ export default function ProductionDashboard() {
   const { state, today, markProductionDone, markTypingDone, markReviewDone, markAddOnReviewed } = useAppState();
   const navigate = useNavigate();
   // The team's own accounts (kesin, sean …) open on Reviewing Order — their
-  // first job; the manager keeps In Production (Sean, 2026-10-07).
-  const [tab, setTab] = useState(state.isProductionManager ? 'active' : 'reviewing');
+  // first job (Sean, 2026-10-07); the manager (production@pjsb.com) opens on
+  // Typing (Sean, 2026-10-13).
+  const [tab, setTab] = useState(state.isProductionManager ? 'typing' : 'reviewing');
   // Lets Production see, at a glance, everything due out on one shipment
   // date — useful across all three tabs (what's coming up in Pending
   // Invoice, what's ready to ship today, what already went out).
