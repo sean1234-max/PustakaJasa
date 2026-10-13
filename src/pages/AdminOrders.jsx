@@ -24,6 +24,37 @@ function startOfDay(d) {
   return copy;
 }
 
+// 1% of the order amounts (Sean, 2026-10-13) — cancelled orders left out.
+const SUMMARY_RATE = 0.01;
+const formatRM = (n) => `RM ${n.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+function StatTile({ label, value, strong = false }) {
+  return (
+    <div className={`rounded-lg border px-4 py-3 ${strong ? 'bg-primary-container border-primary-container' : 'bg-surface-container-lowest border-outline-variant'}`}>
+      <div className={`text-body-sm ${strong ? 'text-on-primary-container' : 'text-on-surface-variant'}`}>{label}</div>
+      <div className={`text-2xl font-bold ${strong ? 'text-white' : 'text-on-surface'}`}>{value}</div>
+    </div>
+  );
+}
+
+// Every order, whatever the filters below are set to.
+function OrdersSummary({ orders }) {
+  const counts = Object.fromEntries(ORDER_STATUSES.map((s) => [s, orders.filter((o) => o.status === s).length]));
+  const totalAmount = orders.filter((o) => o.status !== 'Cancelled').reduce((sum, o) => sum + (Number(o.totalAmount) || 0), 0);
+  return (
+    <section className="bg-surface-container-lowest border border-outline-variant rounded-xl p-5 shadow-sm mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
+        <StatTile label="Total Orders" value={orders.length} strong />
+        {ORDER_STATUSES.map((s) => <StatTile key={s} label={s} value={counts[s]} />)}
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+        <StatTile label="Total Amount (excluding Cancelled)" value={formatRM(totalAmount)} />
+        <StatTile label="1% of Total Amount" value={formatRM(totalAmount * SUMMARY_RATE)} strong />
+      </div>
+    </section>
+  );
+}
+
 function Select({ label, value, onChange, children }) {
   return (
     <div className="flex flex-col gap-2">
@@ -97,6 +128,7 @@ export default function AdminOrders() {
 
   return (
     <AdminLayout title="Orders" subtitle="Every order across every school.">
+      <OrdersSummary orders={orders} />
       <section className="bg-surface-container-lowest border border-outline-variant rounded-xl p-5 shadow-sm mb-10">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 items-end">
           <Select label="School" value={schoolFilter} onChange={(e) => setSchoolFilter(e.target.value)}>
