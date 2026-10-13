@@ -287,17 +287,46 @@ function wordingFieldsForRows(rows) {
 // event_line_2 exactly as wordingFields read them. Shared with
 // aiMapping.js, so a Word table and an AI-mapped Excel list land on
 // Step 2 exactly the same way.
-export function wordingRowsToCategorized(rows, heading = '') {
+export function wordingRowsToCategorized(rows, heading = '', { keepOrder = false } = {}) {
   // Group by award title + plaque code. One title with two different codes
   // is two awards (each block carries one Jenis Plak) — both kept, each
   // labelled with its own code so neither silently takes the other's.
+  // keepOrder (the AI reader): when an award is listed, then an award that
+  // appears only there, then the first award again (items 4-5 ANUGERAH
+  // MURID, item 6 RISING STAR, items 7-8 ANUGERAH MURID), the later part gets
+  // its own numbered tab so the tabs — and the CSV — follow the file's order.
+  // Awards that alternate all the way through (PERTAMA / KEDUA / KETIGA for
+  // each class) are a table, and keep one tab each, as before.
   const groupOrder = [];
   const groups = new Map();
   const codesByTitle = new Map();
   const fieldsByRow = wordingFieldsForRows(rows);
+  const keyOf = (ri) => {
+    const { position: title, nameFirst = false } = fieldsByRow[ri];
+    return `${title}\u0000${rows[ri].kod}\u0000${nameFirst}`;
+  };
+  const firstRow = new Map();
+  const finalRow = new Map();
+  rows.forEach((_, ri) => {
+    const k = keyOf(ri);
+    if (!firstRow.has(k)) firstRow.set(k, ri);
+    finalRow.set(k, ri);
+  });
+  const lastRow = new Map();
+  const latestRun = new Map();
+  let run = 0;
   rows.forEach(({ qty, kod }, ri) => {
     const { position: title, eventLine1, eventLine2, nameFirst = false } = fieldsByRow[ri];
-    const gk = `${title}\u0000${kod}\u0000${nameFirst}`;
+    const baseKey = keyOf(ri);
+    let gk = baseKey;
+    if (keepOrder) {
+      const prev = lastRow.get(baseKey);
+      // Broken off by an award listed only in between (never before, never after).
+      const broken = prev != null && [...firstRow].some(([k, r]) => r > prev && finalRow.get(k) < ri);
+      if (prev == null || broken) latestRun.set(baseKey, `${baseKey}\u0000${++run}`);
+      gk = latestRun.get(baseKey);
+      lastRow.set(baseKey, ri);
+    }
     let g = groups.get(gk);
     if (!g) {
       g = { title, kod, nameFirst, classesByKey: new Map(), classOrder: [] };
@@ -344,7 +373,9 @@ export function wordingRowsToCategorized(rows, heading = '') {
   groupOrder.forEach((gk) => {
     const g = groups.get(gk);
     const name = g.title.replace(/\n/g, ' ');
-    const label = codesByTitle.get(g.title).size > 1 && g.kod ? `${name} (${g.kod})` : name;
+    const base = codesByTitle.get(g.title).size > 1 && g.kod ? `${name} (${g.kod})` : name;
+    let label = base;
+    for (let n = 2; categorized[makeDynamicCategoryKey('KLAS_MATRIX', label)]; n++) label = `${base} (${n})`;
     const lines = { 2: g.title };
     if (heading) lines[0] = heading;
     const section = {

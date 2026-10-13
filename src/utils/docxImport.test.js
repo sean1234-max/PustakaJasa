@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import JSZip from 'jszip';
 import { DOMParser } from '@xmldom/xmldom';
-import { parseWordingDocx, classifyWordingLines, parseDocxQty, cleanDocxPlakCode } from './docxImport';
+import { parseWordingDocx, classifyWordingLines, parseDocxQty, cleanDocxPlakCode, wordingRowsToCategorized } from './docxImport';
 import { makeDynamicCategoryKey } from '../data/catalog';
 
 const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -228,5 +228,29 @@ describe('Word section -> engraved fields', () => {
       ['ANUGERAH\nAKADEMIK TERBAIK', 'KELAS KHAS', 'TAHUN 2025/2026'],
       ['ANUGERAH\nSAHSIAH TERPUJI', 'KELAS KHAS', 'TAHUN 2025/2026'],
     ]);
+  });
+});
+
+describe('wordingRowsToCategorized — keepOrder (AI reader)', () => {
+  const r = (award, line) => ({ lines: [award, line], qty: 1, kod: '' });
+  const tabs = (rows) => Object.values(wordingRowsToCategorized(rows, 'MAJLIS', { keepOrder: true }).categorized)
+    .map(([s]) => `${s.sourceSheet}: ${s.classes.map((c) => c.namaKelas).join(', ')}`);
+
+  it('gives an award listed again after one that never returns its own tab, so the file order stays', () => {
+    expect(tabs([r('MURID CEMERLANG', 'PAGI'), r('RISING STAR', 'SUKAN'), r('MURID CEMERLANG', 'PETANG')])).toEqual([
+      'MURID CEMERLANG: PAGI', 'RISING STAR: SUKAN', 'MURID CEMERLANG (2): PETANG',
+    ]);
+  });
+
+  it('keeps one tab per award when the awards alternate all through (a table)', () => {
+    expect(tabs([r('PERTAMA', '4 A'), r('KEDUA', '4 A'), r('PERTAMA', '4 B'), r('KEDUA', '4 B')])).toEqual([
+      'PERTAMA: 4 A, 4 B', 'KEDUA: 4 A, 4 B',
+    ]);
+  });
+
+  it('groups by award as before without keepOrder', () => {
+    const rows = [r('MURID CEMERLANG', 'PAGI'), r('RISING STAR', 'SUKAN'), r('MURID CEMERLANG', 'PETANG')];
+    expect(Object.values(wordingRowsToCategorized(rows, 'MAJLIS').categorized).map(([s]) => s.sourceSheet))
+      .toEqual(['MURID CEMERLANG', 'RISING STAR']);
   });
 });

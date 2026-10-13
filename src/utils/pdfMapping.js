@@ -105,7 +105,7 @@ export function applyPdfReading(ir, reading) {
   const { read, segs } = makeSegmentReader(ir);
   const usedIds = new Set();
   const lists = [];
-  const rowsByHeading = new Map();
+  const runs = [];
   let bad = 0;
 
   // REF without a "#1-6" range suffix.
@@ -229,8 +229,10 @@ export function applyPdfReading(ir, reading) {
     }
     if (assumedOne > 0 && !totalMatches) notes.push(`${where}: the PDF gives no quantity for its list, so 1 plaque per item was used (${assumedOne} plaques) — please check the quantities.`);
     if (multiplied && !totalMatches) notes.push(`${where}: a count printed in the PDF was used for every combination of another list (${sum} plaques in all) — please check the quantities.`);
-    if (!rowsByHeading.has(heading)) rowsByHeading.set(heading, []);
-    rowsByHeading.get(heading).push(...rows);
+    // Runs of labels under one heading, in the file's order.
+    const last = runs[runs.length - 1];
+    if (last && last.heading === heading) last.rows.push(...rows);
+    else runs.push({ heading, rows });
   });
 
   (reading?.groups || []).flatMap((g) => [...(g.tajuk || []), g.code?.ref, g.total?.ref, g.each?.ref]).forEach(markUsed);
@@ -241,11 +243,11 @@ export function applyPdfReading(ir, reading) {
 
   const categorized = {};
   let count = 0;
-  rowsByHeading.forEach((rows, heading) => {
+  runs.forEach(({ rows, heading }) => {
     if (!rows.length) return;
-    const grouped = wordingRowsToCategorized(rows, heading);
+    const grouped = wordingRowsToCategorized(rows, heading, { keepOrder: true });
     Object.entries(grouped.categorized).forEach(([key, sections]) => {
-      // Same award under two different headings: its own tab, numbered.
+      // Same award again further down the file: its own tab, numbered.
       let k = key;
       for (let n = 2; categorized[k]; n++) {
         sections[0].sourceSheet = `${sections[0].sourceSheet.replace(/ \(\d+\)$/, '')} (${n})`;
@@ -256,7 +258,7 @@ export function applyPdfReading(ir, reading) {
     count += grouped.count;
     notes.push(...grouped.notes);
   });
-  if (count > 0 && [...rowsByHeading.keys()].every((h) => !h)) notes.push('No event heading was found on the labels — please type the TAJUK BESAR by hand.');
+  if (count > 0 && runs.every((r) => !r.heading)) notes.push('No event heading was found on the labels — please type the TAJUK BESAR by hand.');
   if (ir.truncated) notes.push('This PDF is very long — only the first part was sent to the AI; please add anything after that by hand.');
   (reading?.questions || []).forEach((q) => notes.push(String(q)));
   return { categorized, notes, count, bad };
