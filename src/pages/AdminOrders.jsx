@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import AdminLayout from '../components/AdminLayout';
 import { useAppState } from '../state/useAppState';
-import { ORDER_STATUSES, statusPillStyle, malaysiaToday } from '../data/catalog';
+import { ORDER_STATUSES, statusPillStyle, malaysiaToday, invoiceLabel } from '../data/catalog';
 
 const DATE_OPTIONS = ['All Time', 'Today', 'This Week', 'This Month', 'Custom Range'];
 // Stable empty fallback so the useMemos below don't see a fresh [] every
@@ -207,7 +207,7 @@ export default function AdminOrders() {
                   </div>
                   <div>
                     <span className="block text-body-sm text-on-surface-variant mb-0.5">Invoice Number</span>
-                    <span className="block text-body-md text-on-surface font-medium truncate">{ord.invoiceId || '—'}</span>
+                    <span className="block text-body-md text-on-surface font-medium truncate">{invoiceLabel(ord) || '—'}</span>
                   </div>
                 </div>
               </button>

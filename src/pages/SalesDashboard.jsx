@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import { useAppState } from '../state/useAppState';
-import { statusPillStyle, isAddonInFlight, formatDate, toMalaysiaDay } from '../data/catalog';
+import { statusPillStyle, isAddonInFlight, formatDate, toMalaysiaDay, invoiceLabel } from '../data/catalog';
 import { matchesOrderSearch } from '../utils/orderSearch';
 import OrderUrgentBadge from '../components/OrderUrgentBadge';
 import { prioritizeUrgentOrders } from '../utils/urgentOrder';
@@ -112,7 +112,7 @@ export default function SalesDashboard() {
                       <tr key={ord.id}>
                         <td>{ord.id}</td>
                         <td>{ord.sekolah || '—'}</td>
-                        <td>{[ord.invoiceId, ...(ord.invoiceGroups || []).map((g) => g.invoiceId)].filter(Boolean).join(', ') || '—'}</td>
+                        <td>{[ord.invoiceId, ...(ord.invoiceGroups || []).map((g) => g.invoiceId)].filter(Boolean).map((inv) => invoiceLabel(ord, inv)).join(', ') || '—'}</td>
                         <td>{ord.shipmentDate ? formatDate(toMalaysiaDay(ord.shipmentDate)) : '—'}</td>
                         <td><span className="status-pill" style={statusPillStyle(ord.status)}>{ord.status}</span></td>
                         <td>
@@ -196,7 +196,7 @@ export default function SalesDashboard() {
                     <div><div className="dim">Sales</div><div>{ord.sales || '—'}</div></div>
                   </div>
 
-                  <div className="order-card-invoice"><span className="dim">Invoice Number:</span> {ord.invoiceId || '—'}</div>
+                  <div className="order-card-invoice"><span className="dim">Invoice Number:</span> {invoiceLabel(ord) || '—'}</div>
                   <div className="dim" style={{ fontSize: 11 }}>Total Amount</div>
                   <div className={`order-card-total${ord.priceAdjusted ? ' amount-adjusted' : ''}`}>
                     RM {ord.totalAmount.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}

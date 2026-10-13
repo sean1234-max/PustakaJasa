@@ -6,7 +6,7 @@ import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import PriceTable from '../components/PriceTable';
 import DatePicker from '../components/DatePicker';
 import { useAppState } from '../state/useAppState';
-import { statusPillStyle, formatDate, standardUnitPrice, toMalaysiaDay, malaysiaToday, isReviewed } from '../data/catalog';
+import { statusPillStyle, formatDate, standardUnitPrice, toMalaysiaDay, malaysiaToday, isReviewed, invoiceLabel, invoiceSetByNote } from '../data/catalog';
 import { reconstructBlocksForCategory } from '../utils/computeBlocks';
 import { splitOrderCategories, getInvoiceIdForJenisPlak } from '../utils/exportCsv';
 import { combineByJenisPlak, getInvoiceItems, partialSplitQty } from '../utils/orderBatches';
@@ -79,8 +79,9 @@ function InvoiceNumberList({ order, invoiceIds, renameInvoiceNumber, onRenamed }
         </>
       ) : (
         <>
-          <span>{inv}</span>
+          <span>{invoiceLabel(order, inv)}</span>
           <button type="button" className="btn btn-ghost" onClick={() => { setEditing(inv); setDraft(inv); }}>Edit</button>
+          {inv === order.invoiceId && invoiceSetByNote(order) && <span className="dim">{invoiceSetByNote(order)}</span>}
         </>
       )}
     </div>

@@ -5,7 +5,7 @@ import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import OrderPrintout from '../components/OrderPrintout';
 import { useAppState } from '../state/useAppState';
-import { STATUS_STAGES, statusPillStyle, formatDate, standardUnitPrice, toMalaysiaDay, isAddonInFlight, addonStageText } from '../data/catalog';
+import { STATUS_STAGES, statusPillStyle, formatDate, standardUnitPrice, toMalaysiaDay, isAddonInFlight, addonStageText, invoiceLabel } from '../data/catalog';
 import CancelOrderControl from '../components/CancelOrderControl';
 import { reconstructBlocksForCategory } from '../utils/computeBlocks';
 import { splitOrderCategories } from '../utils/exportCsv';
@@ -92,7 +92,7 @@ export default function OrderDetails() {
   if (!order) return null;
 
   const idx = STATUS_STAGES.indexOf(sliceStatus);
-  const invoiceIdLabel = idx >= 2 ? (viewInvoiceId || order.invoiceId || `INV-${order.id.replace('ORD-', '')}`) : '-';
+  const invoiceIdLabel = idx >= 2 ? (invoiceLabel(order, viewInvoiceId || order.invoiceId) || `INV-${order.id.replace('ORD-', '')}`) : '-';
 
   const totalQty = priceRows.reduce((sum, it) => sum + (Number(it.qty) || 0), 0);
   const totalHarga = priceRows.reduce((sum, it) => sum + it.harga, 0);

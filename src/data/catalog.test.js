@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  flattenPlakCatalog, standardUnitPrice, tahunRangeYears,
+  flattenPlakCatalog, standardUnitPrice, tahunRangeYears, invoiceLabel, invoiceSetByNote,
   stockZoneFor, getStockStatus, statusPillStyle, STATUS_STAGES, ORDER_STATUSES,
   deliveryStageForShipmentDate, resolveSelempangWarna, isKelasSubject, kelasListLabel,
   MALAY_ORDINALS, ordinalToNum, numToOrdinal,
@@ -383,5 +383,31 @@ describe('standardUnitPrice', () => {
   it('gives no price when a parent\'s children differ or the code is unknown', () => {
     expect(standardUnitPrice('MIX', tree)).toBeNull();
     expect(standardUnitPrice('NOPE', tree)).toBeNull();
+  });
+});
+
+describe('invoiceLabel', () => {
+  const order = {
+    invoiceId: 'DWI-26100001', invoiceSetAt: '2026-10-09T02:00:00Z',
+    invoiceGroups: [{ invoiceId: 'DWI-26100002', invoicedAt: '2026-10-11T17:30:00Z' }],
+  };
+
+  it('adds the day it was entered, Malaysia time, as d/m/yy', () => {
+    expect(invoiceLabel(order)).toBe('DWI-26100001 (9/10/26)');
+    // 17:30 UTC on 11 Oct is 01:30 on 12 Oct in Malaysia
+    expect(invoiceLabel(order, 'DWI-26100002')).toBe('DWI-26100002 (12/10/26)');
+  });
+
+  it('shows just the number when no date was recorded, and nothing when there is no number', () => {
+    expect(invoiceLabel({ invoiceId: 'DWI-1' })).toBe('DWI-1');
+    expect(invoiceLabel({ invoiceId: null })).toBe(null);
+  });
+});
+
+describe('invoiceSetByNote', () => {
+  it('names Production / Admin, not Store Admin', () => {
+    expect(invoiceSetByNote({ invoiceSetByRole: 'production', invoiceSetByName: 'Siti' })).toBe('Entered by Production (Siti)');
+    expect(invoiceSetByNote({ invoiceSetByRole: 'store_admin', invoiceSetByName: 'Amy' })).toBe('');
+    expect(invoiceSetByNote({})).toBe('');
   });
 });

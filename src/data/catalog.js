@@ -1056,6 +1056,30 @@ export const addonStageText = (order) => (order?.pendingAddonStatus === 'reviewe
 // stage-tab dashboards) but included here for status filter dropdowns.
 export const ORDER_STATUSES = [...STATUS_STAGES, 'Cancelled'];
 
+// "DWI-26100001 (9/10/26)" — an Invoice Number with the day it was entered
+// (Sean, 2026-10-13): orders.invoice_set_at for the order's own number
+// (stamped by the database, 0086), a split invoice's own `invoicedAt`
+// otherwise. Malaysia time. No date recorded (invoiced before 0086) → just
+// the number. Works on an invoice slice too (it carries the order's fields).
+const INVOICE_DATE_FMT = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kuala_Lumpur', day: 'numeric', month: 'numeric', year: '2-digit' });
+export function invoiceLabel(order, invoiceId = order?.invoiceId) {
+  if (!invoiceId) return invoiceId;
+  const group = (order?.invoiceGroups || []).find((g) => g.invoiceId === invoiceId);
+  const at = group ? group.invoicedAt : order?.invoiceSetAt;
+  const d = at ? new Date(at) : null;
+  if (!d || Number.isNaN(d.getTime())) return invoiceId;
+  const part = (type) => INVOICE_DATE_FMT.formatToParts(d).find((p) => p.type === type)?.value;
+  return `${invoiceId} (${Number(part('day'))}/${Number(part('month'))}/${part('year')})`;
+}
+
+// Who entered the order's Invoice Number, when it wasn't Store Admin — e.g.
+// "Entered by Production (Siti)" (Production Manager can enter one, 0086).
+export function invoiceSetByNote(order) {
+  if (!order?.invoiceSetByRole || order.invoiceSetByRole === 'store_admin') return '';
+  const role = { production: 'Production', admin: 'Admin', salesman: 'Salesman' }[order.invoiceSetByRole] || order.invoiceSetByRole;
+  return `Entered by ${role}${order.invoiceSetByName ? ` (${order.invoiceSetByName})` : ''}`;
+}
+
 export const STATUS_BG = ['#e4ecf2', '#c9daea', '#5980a6', '#2f5878', '#2f6b4f', '#1d1f20'];
 export const STATUS_TEXT = ['#1d1f20', '#1d1f20', '#fff', '#fff', '#fff', '#fff'];
 

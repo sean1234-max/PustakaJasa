@@ -8,7 +8,7 @@ import CorrectedExcelControl from '../components/CorrectedExcelControl';
 import PriceTable from '../components/PriceTable';
 import OrderPrintout from '../components/OrderPrintout';
 import { useAppState } from '../state/useAppState';
-import { statusPillStyle, formatDate, MANUAL_MAX_QTY, deliveryStageForShipmentDate, toMalaysiaDay, malaysiaToday, isReviewed, isAddonInFlight } from '../data/catalog';
+import { statusPillStyle, formatDate, MANUAL_MAX_QTY, deliveryStageForShipmentDate, toMalaysiaDay, malaysiaToday, isReviewed, isAddonInFlight, invoiceLabel, invoiceSetByNote } from '../data/catalog';
 import { reconstructOrderDetailGroups, reconstructBlocksForCategory, noopUpdaters } from '../utils/computeBlocks';
 import { getExportableCategories, splitOrderCategories, getOrderJenisPlakGroups, getPlakProductionMode, summarizeRowsForManual, buildCsvRows, rowsToCsv, buildCategoryCsvFilename, combineCsvRows, buildCombinedCsvFilename, validateExport, getInvoiceIdForJenisPlak, getPartialSplitNotes } from '../utils/exportCsv';
 import { downloadTextFile } from '../utils/downloadBlob';
@@ -16,6 +16,7 @@ import { getInvoiceItems } from '../utils/orderBatches';
 import ImportFileButtons from '../components/ImportFileButtons';
 import ShipmentUrgencyEditor from '../components/ShipmentUrgencyEditor';
 import ProductionPriceEditor from '../components/ProductionPriceEditor';
+import ProductionInvoiceEntry from '../components/ProductionInvoiceEntry';
 import { getAiFileHelperStatus, startAiFileHelperJob, getAiFileHelperJob } from '../lib/aiFileHelper';
 import { getOrderChangeStamp } from '../utils/orderStamp';
 
@@ -465,7 +466,9 @@ export default function ProductionOrderDetail() {
             <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Invoice</div>
             <div style={{ marginTop: 'var(--space-2)' }}>
               <div className="dim">Invoice Number</div>
-              <div>{(isFiltered ? viewInvoiceId : order.invoiceId) || 'Not assigned yet — Store Admin handles this.'}</div>
+              <div>{invoiceLabel(order, isFiltered ? viewInvoiceId : order.invoiceId) || 'Not assigned yet — Store Admin handles this.'}</div>
+              {order.invoiceId && invoiceSetByNote(order) && <div className="dim">{invoiceSetByNote(order)}</div>}
+              <ProductionInvoiceEntry order={order} />
             </div>
             {state.productionToast && <p className="hint-text" style={{ marginTop: 'var(--space-2)' }}>{state.productionToast}</p>}
 

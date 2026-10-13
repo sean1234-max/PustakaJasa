@@ -3,11 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import ConfirmButton from '../components/ConfirmButton';
 import { useAppState } from '../state/useAppState';
-import { statusPillStyle, formatDate, deliveryStageForShipmentDate, getLowStockAlerts, toMalaysiaDay, malaysiaToday, isAddonInFlight } from '../data/catalog';
+import { statusPillStyle, formatDate, deliveryStageForShipmentDate, getLowStockAlerts, toMalaysiaDay, malaysiaToday, isAddonInFlight, invoiceLabel } from '../data/catalog';
 import { getOrderChangeStamp } from '../utils/orderStamp';
 import { getOrderInvoiceSlices } from '../utils/orderBatches';
 import { prioritizeUrgentOrders } from '../utils/urgentOrder';
 import OrderUrgentBadge from '../components/OrderUrgentBadge';
+import ProductionInvoiceEntry from '../components/ProductionInvoiceEntry';
 
 // Production works 'In Production' orders (invoice number or not — that's
 // Store Admin's job now, see supabase/migrations/0036_add_invoicing_role.sql
@@ -249,7 +250,8 @@ export default function ProductionDashboard() {
                 </div>
               </div>
 
-              <div className="order-card-invoice"><span className="dim">Invoice ID:</span> {ord.invoiceId || '—'}</div>
+              <div className="order-card-invoice"><span className="dim">Invoice ID:</span> {invoiceLabel(ord) || '—'}</div>
+              {tab === 'approved' && <ProductionInvoiceEntry order={ord} />}
               <div className="dim" style={{ fontSize: 11 }}>Total Amount</div>
               <div className={`order-card-total${ord.priceAdjusted ? ' amount-adjusted' : ''}`}>RM {ord.totalAmount.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
 

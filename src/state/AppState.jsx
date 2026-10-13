@@ -2404,7 +2404,7 @@ export function AppStateProvider({ children }) {
         // Stamped with the order's current status (same reasoning as
         // approveAndSetInvoiceId above) so this newly-split-off invoice
         // starts tracking its own production/delivery status right away.
-        return [...withoutKeys, withSplitQty({ invoiceId: normalized, jenisPlakList: keys, status: order.status }, qtyByJenisPlak)];
+        return [...withoutKeys, withSplitQty({ invoiceId: normalized, jenisPlakList: keys, status: order.status, invoicedAt: new Date().toISOString() }, qtyByJenisPlak)];
       })();
     try {
       await updateOrder(orderId, { invoiceGroups: newGroups });
@@ -2525,7 +2525,7 @@ export function AppStateProvider({ children }) {
       // marks it done independently — see getOrderInvoiceSlices's fallback
       // (src/utils/orderBatches.js), which only exists for groups created
       // before this existed.
-      normalizedGroups.push(withSplitQty({ invoiceId: gNorm, jenisPlakList: keys, status: 'In Production' }, split.qtyByJenisPlak));
+      normalizedGroups.push(withSplitQty({ invoiceId: gNorm, jenisPlakList: keys, status: 'In Production', invoicedAt: new Date().toISOString() }, split.qtyByJenisPlak));
     });
     if (qtyError) {
       flashToast('productionToast', qtyError);

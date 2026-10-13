@@ -7,7 +7,7 @@ import PriceTable from '../components/PriceTable';
 import OrderPrintout from '../components/OrderPrintout';
 import DatePicker from '../components/DatePicker';
 import { useAppState } from '../state/useAppState';
-import { statusPillStyle, standardUnitPrice, formatDate, defaultShipmentDate, toMalaysiaDay, malaysiaToday, isReviewed, isAddonInFlight } from '../data/catalog';
+import { statusPillStyle, standardUnitPrice, formatDate, defaultShipmentDate, toMalaysiaDay, malaysiaToday, isReviewed, isAddonInFlight, invoiceLabel } from '../data/catalog';
 import CancelOrderControl from '../components/CancelOrderControl';
 import ReassignSalesmanControl from '../components/ReassignSalesmanControl';
 import { reconstructBlocksForCategory } from '../utils/computeBlocks';
@@ -277,7 +277,7 @@ export default function SalesOrderSummary() {
                 {/* Every other order-viewing screen (teacher, Store Admin,
                     Production) already shows this on screen — it used to be
                     printed-only here. */}
-                <div><div className="dim">Invoice Number</div><div>{order.invoiceId || '—'}</div></div>
+                <div><div className="dim">Invoice Number</div><div>{invoiceLabel(order) || '—'}</div></div>
                 {order.sekolah && <div><div className="dim">Sekolah</div><div>{order.sekolah}</div></div>}
                 {order.sales && <div><div className="dim">Sales</div><div>{order.sales}</div></div>}
                 {order.createdBySalesman && <div><div className="dim">Placed by</div><div>Salesman {order.snapshot?.placedBy || ''}</div></div>}

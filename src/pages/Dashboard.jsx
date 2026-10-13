@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import { useAppState } from '../state/useAppState';
-import { STATUS_STAGES, statusPillStyle, isReviewed, isAddonInFlight, addonStageText } from '../data/catalog';
+import { STATUS_STAGES, statusPillStyle, isReviewed, isAddonInFlight, addonStageText, invoiceLabel } from '../data/catalog';
 import { getOrderInvoiceSlices } from '../utils/orderBatches';
 import { prioritizeUrgentOrders } from '../utils/urgentOrder';
 import OrderUrgentBadge from '../components/OrderUrgentBadge';
@@ -92,7 +92,7 @@ export default function Dashboard() {
       <div className="order-grid">
         {filteredOrders.map((ord) => {
           const idx = STATUS_STAGES.indexOf(ord.status);
-          const invoiceIdLabel = idx >= 2 ? (ord.invoiceId || `INV-${ord.id.replace('ORD-', '')}`) : '-';
+          const invoiceIdLabel = idx >= 2 ? (invoiceLabel(ord) || `INV-${ord.id.replace('ORD-', '')}`) : '-';
           const canAddOn = (idx === 1 || idx === 2) && !isAddonInFlight(ord);
           const isCompleted = ord.status === 'Completed';
           // Update Details stays open until the salesman approves; changing an

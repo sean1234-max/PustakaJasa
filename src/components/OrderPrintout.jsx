@@ -1,6 +1,6 @@
 import OrderCategoryBlock from './OrderCategoryBlock';
 import PriceTable from './PriceTable';
-import { formatDate, formatDateTime, toMalaysiaDay } from '../data/catalog';
+import { formatDate, formatDateTime, toMalaysiaDay, invoiceLabel } from '../data/catalog';
 import { groupItemsByBatch } from '../utils/orderBatches';
 import { splitOrderCategories } from '../utils/exportCsv';
 import { reconstructBlocksForCategory } from '../utils/computeBlocks';
@@ -67,7 +67,7 @@ export default function OrderPrintout({
           {/* Invoice Number, Shipment Date and Function Date stacked in one
               cell, not spread across the two-column grid. */}
           <div>
-            <div className="dim">Invoice Number</div><div>{invoiceId || '-'}</div>
+            <div className="dim">Invoice Number</div><div>{invoiceLabel(order, invoiceId) || '-'}</div>
             {(order.shipmentDate || order.functionDate) && (
               <div style={{ marginTop: 'var(--space-2)' }}>
               {order.shipmentDate && <><div className="dim">Shipment Date</div><div>{formatDate(toMalaysiaDay(order.shipmentDate))}</div></>}

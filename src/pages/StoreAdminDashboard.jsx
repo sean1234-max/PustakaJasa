@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import { useAppState } from '../state/useAppState';
-import { STATUS_STAGES, statusPillStyle } from '../data/catalog';
+import { STATUS_STAGES, statusPillStyle, invoiceLabel, invoiceSetByNote } from '../data/catalog';
 import { getOrderChangeStamp } from '../utils/orderStamp';
 import { getOrderInvoiceSlices } from '../utils/orderBatches';
 import { fetchMyAssignedSalesmen, fetchAllSalesmen } from '../lib/ordersApi';
@@ -205,7 +205,8 @@ export default function StoreAdminDashboard() {
                 <div><div className="dim">Order Type</div><div>{stamp ? 'Original + Tambahan' : 'Original'}</div></div>
               </div>
 
-              <div className="order-card-invoice"><span className="dim">Invoice Number:</span> {ord.invoiceId || '—'}</div>
+              <div className="order-card-invoice"><span className="dim">Invoice Number:</span> {invoiceLabel(ord) || '—'}</div>
+              {ord.invoiceId && invoiceSetByNote(ord) && <div className="dim" style={{ fontSize: 11 }}>{invoiceSetByNote(ord)}</div>}
               <div className="dim" style={{ fontSize: 11 }}>Total Amount</div>
               <div className={`order-card-total${ord.priceAdjusted ? ' amount-adjusted' : ''}`}>RM {ord.totalAmount.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
 

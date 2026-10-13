@@ -4,7 +4,7 @@ import AdminLayout from '../components/AdminLayout';
 import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import { useAppState } from '../state/useAppState';
-import { statusPillStyle, formatDate, toMalaysiaDay } from '../data/catalog';
+import { statusPillStyle, formatDate, toMalaysiaDay, invoiceLabel, invoiceSetByNote } from '../data/catalog';
 import CancelOrderControl from '../components/CancelOrderControl';
 import { reconstructOrderDetailGroups, reconstructBlocksForCategory } from '../utils/computeBlocks';
 import { getExportableCategories, splitOrderCategories, getOrderJenisPlakGroups, buildCsvRows, rowsToCsv, buildCategoryCsvFilename, combineCsvRows, buildCombinedCsvFilename, validateExport } from '../utils/exportCsv';
@@ -187,7 +187,8 @@ export default function AdminOrderDetail() {
             {order.invoiceId ? (
               <div>
                 <span className="text-body-sm text-on-surface-variant block mb-0.5">Invoice ID</span>
-                <span className="text-body-md text-on-surface">{order.invoiceId}</span>
+                <span className="text-body-md text-on-surface">{invoiceLabel(order)}</span>
+                {invoiceSetByNote(order) && <span className="text-body-sm text-on-surface-variant block">{invoiceSetByNote(order)}</span>}
               </div>
             ) : (
               <div className="max-w-md">
