@@ -101,7 +101,10 @@ export default function AdminOrderDetail() {
   // if any group is itself blocked (validateExport), same rule as the
   // per-group export.
   const combinedRows = combineCsvRows(jenisPlakExport);
-  const combinedOk = jenisPlakExport.length > 0 && jenisPlakExport.every((g) => g.check.ok) && combinedRows.length > 0;
+  // A group still all "Reserved" (no names yet) is skipped, not blocking (same as ProductionOrderDetail).
+  const combinedOk = jenisPlakExport.length > 0
+    && jenisPlakExport.every((g) => g.check.ok || (g.csvData.rows.length === 0 && g.csvData.reservedCount > 0))
+    && combinedRows.length > 0;
   const handleExportCombined = () => {
     if (!combinedOk) return;
     const csv = rowsToCsv(combinedRows);

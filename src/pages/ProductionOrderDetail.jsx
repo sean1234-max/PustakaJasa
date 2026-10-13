@@ -279,9 +279,14 @@ export default function ProductionOrderDetail() {
 
   // Every (category, Jenis Plak) group's rows, one file — blocked outright
   // if any group is itself blocked (validateExport), same "never let bad
-  // data leave the app" rule as the per-group export.
+  // data leave the app" rule as the per-group export. A group whose every
+  // plaque is still "Reserved" (no names yet) is skipped instead of
+  // blocking the rest (Sean, 2026-10-13) — it's generated later, once the
+  // names are in.
+  const isAllReserved = (g) => g.csvData.rows.length === 0 && g.csvData.reservedCount > 0;
+  const reservedGroups = jenisPlakExport.filter((g) => g.csvData.reservedCount > 0);
   const combinedRows = combineCsvRows(jenisPlakExport);
-  const combinedOk = jenisPlakExport.length > 0 && jenisPlakExport.every((g) => g.check.ok) && combinedRows.length > 0;
+  const combinedOk = jenisPlakExport.length > 0 && jenisPlakExport.every((g) => g.check.ok || isAllReserved(g)) && combinedRows.length > 0;
   const handleExportCombined = () => {
     if (!combinedOk) return;
     const csv = rowsToCsv(combinedRows);
@@ -514,6 +519,12 @@ export default function ProductionOrderDetail() {
                     <p className="hint-text" style={{ marginTop: 4 }}>
                       Every group above, in one file — each row still carries its own Category and Jenis Plak column. Disabled if any group below is blocked.
                     </p>
+                    {reservedGroups.length > 0 && (
+                      <p className="hint-text" style={{ marginTop: 4, color: '#8a6d00', fontWeight: 600 }}>
+                        Still RESERVED (no name yet) — left out of the CSV / AI file this time:{' '}
+                        {reservedGroups.map((g) => `${g.categoryLabel} – ${g.jenisPlak} (${g.csvData.reservedCount})`).join(', ')}.
+                      </p>
+                    )}
                     <button
                       type="button" className="btn" style={{ marginTop: 8 }}
                       disabled={!combinedOk || aiFileBusy} onClick={handleGenerateAiFile}
@@ -552,7 +563,9 @@ export default function ProductionOrderDetail() {
                             <td>
                               {mode === 'manual'
                                 ? <span className="pill-manual">Buat Manual</span>
-                                : check.ok ? csvData.rows.length : <span style={{ color: '#b0392e', fontWeight: 700 }}>blocked</span>}
+                                : check.ok ? csvData.rows.length
+                                  : isAllReserved(group) ? <span style={{ color: '#8a6d00', fontWeight: 700 }}>reserved</span>
+                                    : <span style={{ color: '#b0392e', fontWeight: 700 }}>blocked</span>}
                             </td>
                             <td>
                               {mode === 'manual' ? (

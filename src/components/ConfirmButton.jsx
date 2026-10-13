@@ -5,7 +5,7 @@ import { useState } from 'react';
 // this page from creating additional dialogs") — confirm() then just returns
 // false, and Done Review looked dead (Sean, 2026-10-03).
 export default function ConfirmButton({
-  label, question, confirmLabel = 'Yes', onConfirm, className = 'btn btn-primary', style, disabled, title,
+  label, question, confirmLabel = 'Yes', cancelLabel = 'Cancel', onConfirm, className = 'btn btn-primary', style, disabled, title,
 }) {
   const [asking, setAsking] = useState(false);
   if (!asking) {
@@ -20,7 +20,7 @@ export default function ConfirmButton({
       <span className="hint-text" style={{ margin: 0, fontWeight: 600 }}>{question}</span>
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
         <button type="button" className="btn btn-primary" onClick={() => { setAsking(false); onConfirm(); }}>{confirmLabel}</button>
-        <button type="button" className="btn btn-ghost" onClick={() => setAsking(false)}>Cancel</button>
+        <button type="button" className="btn btn-ghost" onClick={() => setAsking(false)}>{cancelLabel}</button>
       </div>
     </div>
   );

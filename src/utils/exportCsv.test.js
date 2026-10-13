@@ -981,3 +981,19 @@ describe('buildOrderImportFilename', () => {
     expect(buildOrderImportFilename({ id: 'ORD-0001', sekolah: 'SK A/B', sales: '', importFilePath: 'u/a.docx' })).toBe('ORD-0001-SK A-B.docx');
   });
 });
+
+describe('countReservedPlaques', () => {
+  it('counts the plaques whose NAMA MURID is still Reserved', async () => {
+    const { countReservedPlaques } = await import('./exportCsv');
+    const order = {
+      items: [
+        { detail: { rows: [{ namaMurid: 'RESERVED', qty: '1' }] } },
+        { detail: { rows: [{ namaMurid: ' reserved ', qty: '2' }] } },
+        { detail: { rows: [{ namaMurid: 'ALI BIN ABU', qty: '1' }] } },
+        { detail: { rows: null } },
+      ],
+    };
+    expect(countReservedPlaques(order)).toBe(3);
+    expect(countReservedPlaques({ items: [] })).toBe(0);
+  });
+});

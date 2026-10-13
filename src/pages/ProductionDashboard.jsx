@@ -6,6 +6,7 @@ import { useAppState } from '../state/useAppState';
 import { statusPillStyle, formatDate, deliveryStageForShipmentDate, getLowStockAlerts, toMalaysiaDay, malaysiaToday, isAddonInFlight, invoiceLabel } from '../data/catalog';
 import { getOrderChangeStamp } from '../utils/orderStamp';
 import { getOrderInvoiceSlices } from '../utils/orderBatches';
+import { countReservedPlaques } from '../utils/exportCsv';
 import { prioritizeUrgentOrders } from '../utils/urgentOrder';
 import OrderUrgentBadge from '../components/OrderUrgentBadge';
 import ProductionInvoiceEntry from '../components/ProductionInvoiceEntry';
@@ -207,6 +208,7 @@ export default function ProductionDashboard() {
       <div className="order-grid">
         {filteredOrders.map((ord) => {
           const stamp = getOrderChangeStamp(ord);
+          const reserved = countReservedPlaques(ord);
 
           return (
             <div key={ord._sliceKey} className="card order-card">
@@ -227,6 +229,9 @@ export default function ProductionDashboard() {
                   <span className="status-pill" style={statusPillStyle(ord.status)}>
                     {ord.status === 'In Production' && !ord.typedAt ? 'Typing' : ord.status}
                   </span>
+                  {reserved > 0 && (
+                    <span className="status-pill" style={{ background: '#fff4ce', color: '#8a6d00' }}>RESERVED ×{reserved}</span>
+                  )}
                   {ord.status === 'Reviewing Order' && ord.reviewedAt && (
                     <span className="status-pill" style={{ background: '#dcefe3', color: '#2f6b4f' }}>✓ Review Done</span>
                   )}
@@ -308,7 +313,13 @@ export default function ProductionDashboard() {
                       label={ord.invoiceId ? 'Done' : 'Awaiting Invoice'} style={{ flex: 1 }}
                       disabled={!ord.invoiceId}
                       title={!ord.invoiceId ? 'Waiting for Store Admin to assign an Invoice Number' : undefined}
-                      question={`Mark as done? Status → "${deliveryStageForShipmentDate(ord.shipmentDate, malaysiaToday())}".`}
+                      // An order with names still "Reserved" asks whether those plaques were made too
+                      // (they're left out of the AI file until the names come — Sean, 2026-10-13).
+                      question={reserved > 0
+                        ? `This order has ${reserved} RESERVED plaque(s) (no name when it was ordered). Have the reserved plaques been done too? Status → "${deliveryStageForShipmentDate(ord.shipmentDate, malaysiaToday())}".`
+                        : `Mark as done? Status → "${deliveryStageForShipmentDate(ord.shipmentDate, malaysiaToday())}".`}
+                      confirmLabel={reserved > 0 ? 'Yes, all done' : 'Yes'}
+                      cancelLabel={reserved > 0 ? 'No, not yet' : 'Cancel'}
                       onConfirm={() => markProductionDone(ord.id, ord.invoiceId)}
                     />
                   </>

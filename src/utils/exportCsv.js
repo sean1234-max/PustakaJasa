@@ -100,6 +100,14 @@ export function isReservedName(name) {
   return typeof name === 'string' && name.trim().toLowerCase() === 'reserved';
 }
 
+// How many plaques on this order still carry a "Reserved" name — asked about
+// before Production marks the order done (Sean, 2026-10-13).
+export function countReservedPlaques(order) {
+  return (order?.items || []).reduce((sum, it) => sum + (it.detail?.rows || [])
+    .filter((r) => isReservedName(r.namaMurid))
+    .reduce((n, r) => n + (Number(r.qty) || 0), 0), 0);
+}
+
 // Categories actually present in this order's items, in catalog order (any
 // sheet-derived dynamic category appended after — see
 // catalog.js's categoriesUsedByItems) — gives Production stable, ordered
