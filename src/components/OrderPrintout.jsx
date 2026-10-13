@@ -91,7 +91,7 @@ export default function OrderPrintout({
         <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>
           {split ? `${first.label} — ` : ''}Jenis Plak / Price per Unit / QTY / Harga
         </div>
-        <PriceTable editable={false} priceDrafts={{}} setPrice={() => {}} {...(split ? batchTable(first.items) : priceTable)} />
+        <PriceTable editable={false} priceDrafts={{}} setPrice={() => {}} showSelempangLines {...(split ? batchTable(first.items) : priceTable)} />
       </div>
 
       <PrintDetails groups={split ? batchBlockGroups(first.items) : catBlockGroups} title={split ? `Order Details — ${first.label}` : 'Order Details'} flow={split} />
@@ -101,7 +101,7 @@ export default function OrderPrintout({
           <div className="print-tambahan-banner">{batch.label.toUpperCase()}</div>
           <div className="print-summary-section">
             <div className="card-kicker" style={{ marginTop: 'var(--space-3)' }}>{batch.label} — Jenis Plak / Price per Unit / QTY / Harga</div>
-            <PriceTable editable={false} priceDrafts={{}} setPrice={() => {}} {...batchTable(batch.items)} />
+            <PriceTable editable={false} priceDrafts={{}} setPrice={() => {}} showSelempangLines {...batchTable(batch.items)} />
           </div>
           <PrintDetails groups={batchBlockGroups(batch.items)} title={`Order Details — ${batch.label}`} flow />
         </div>

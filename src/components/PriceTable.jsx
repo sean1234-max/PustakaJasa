@@ -1,4 +1,5 @@
-import { standardUnitPrice } from '../data/catalog';
+import { Fragment } from 'react';
+import { standardUnitPrice, SELEMPANG_CODE } from '../data/catalog';
 import { groupItemsByBatch, combineByJenisPlak } from '../utils/orderBatches';
 
 // Shared by SalesOrderSummary (editable, for the pre-approval price
@@ -23,8 +24,9 @@ import { groupItemsByBatch, combineByJenisPlak } from '../utils/orderBatches';
 // one combined line and one price.
 export default function PriceTable({
   rows, editable, priceDrafts, setPrice, plakCatalog, totalQty, totalHarga, priceAdjusted,
-  hideCategory = false, combineJenisPlak = false,
+  hideCategory = false, combineJenisPlak = false, showSelempangLines = false,
 }) {
+  const columnCount = (hideCategory ? 0 : 1) + 1 + 3;
   const groups = groupItemsByBatch(rows);
   const multiGroup = groups.length > 1;
   // Shown only for rows that actually had a price change captured (see
@@ -56,8 +58,13 @@ export default function PriceTable({
               <tbody>
                 {displayItems.map((it) => {
                   const adjusted = it.unitPrice !== standardUnitPrice(it.jenisPlak, plakCatalog);
+                  // The printed order lists each Selempang's ACARA / WARNA under its row (Sean, 2026-10-13).
+                  const selempangLines = showSelempangLines && it.jenisPlak === SELEMPANG_CODE
+                    ? group.items.filter((x) => it.ids.includes(x.id)).flatMap((x) => x.detail?.rows || [])
+                    : [];
                   return (
-                    <tr key={it.key}>
+                    <Fragment key={it.key}>
+                    <tr>
                       {!hideCategory && <td>{it.categoryLabel}</td>}
                       <td>{it.jenisPlak}</td>
                       {anyOriginalPrice && (
@@ -105,6 +112,15 @@ export default function PriceTable({
                         </strong>
                       </td>
                     </tr>
+                    {selempangLines.map((r, i) => (
+                      // eslint-disable-next-line react/no-array-index-key -- display-only list, rows have no stable id across items
+                      <tr key={`${it.key}-sel-${i}`} className="selempang-line">
+                        <td colSpan={columnCount + (anyOriginalPrice ? 1 : 0)} style={{ paddingLeft: 'var(--space-6)', fontSize: '0.9em' }}>
+                          ↳ {r.acara || '—'} · {r.warna}{r.warnaCode ? ` (${r.warnaCode})` : ''} · {r.qty}
+                        </td>
+                      </tr>
+                    ))}
+                    </Fragment>
                   );
                 })}
                 <tr>
