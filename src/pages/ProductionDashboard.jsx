@@ -6,7 +6,7 @@ import { useAppState } from '../state/useAppState';
 import { statusPillStyle, formatDate, deliveryStageForShipmentDate, getLowStockAlerts, toMalaysiaDay, malaysiaToday, isAddonInFlight, invoiceLabel } from '../data/catalog';
 import { getOrderChangeStamp } from '../utils/orderStamp';
 import { getOrderInvoiceSlices } from '../utils/orderBatches';
-import { countReservedPlaques } from '../utils/exportCsv';
+import { countReservedPlaques, needsKiv } from '../utils/exportCsv';
 import { prioritizeUrgentOrders } from '../utils/urgentOrder';
 import OrderUrgentBadge from '../components/OrderUrgentBadge';
 import ProductionInvoiceEntry from '../components/ProductionInvoiceEntry';
@@ -49,15 +49,24 @@ const TABS = [
   // after Done Review until the salesman approves it.
   { key: 'addon', label: 'Add-On Review', match: (o) => o._primarySlice && isAddonInFlight(o) },
   { key: 'approved', label: 'Salesman Approved', match: (o) => o.status === 'Salesman Approved' },
-  { key: 'typing', label: 'Typing', match: (o) => o.status === 'In Production' && !o.typedAt },
-  { key: 'active', label: 'In Production', match: (o) => o.status === 'In Production' && !!o.typedAt },
-  { key: 'waiting', label: 'Waiting for Shipment', match: (o) => o.status === 'Waiting for Shipment' },
-  { key: 'shipped', label: 'Shipped', match: (o) => o.status === 'Shipped' },
+  // An order with "Reserved" plaques (no names yet) also waits in KIV (Sean,
+  // 2026-10-13): after Done Typing it stays in Typing with a DONE badge, and
+  // only reaches In Production once KIV is Done too. One that already went
+  // further (e.g. Completed before KIV existed) shows only in KIV until then.
+  { key: 'typing', label: 'Typing', match: (o) => o.status === 'In Production' && (!o.typedAt || needsKiv(o)) },
+  {
+    key: 'kiv',
+    label: 'KIV',
+    match: (o) => o._primarySlice && needsKiv(o) && ['In Production', 'Waiting for Shipment', 'Shipped', 'Completed'].includes(o.status),
+  },
+  { key: 'active', label: 'In Production', match: (o) => o.status === 'In Production' && !!o.typedAt && !needsKiv(o) },
+  { key: 'waiting', label: 'Waiting for Shipment', match: (o) => o.status === 'Waiting for Shipment' && !needsKiv(o) },
+  { key: 'shipped', label: 'Shipped', match: (o) => o.status === 'Shipped' && !needsKiv(o) },
   {
     key: 'completed',
     label: 'Completed',
     match: (o, today) => {
-      if (o.status !== 'Completed') return false;
+      if (o.status !== 'Completed' || needsKiv(o)) return false;
       const days = daysSinceShipmentDate(o.shipmentDate, today);
       return days !== null && days <= 3;
     },
@@ -85,7 +94,7 @@ function shipmentDateKey(shipmentDate) {
 }
 
 export default function ProductionDashboard() {
-  const { state, today, markProductionDone, markTypingDone, markReviewDone, markAddOnReviewed } = useAppState();
+  const { state, today, markProductionDone, markTypingDone, markReviewDone, markAddOnReviewed, markKivDone } = useAppState();
   const navigate = useNavigate();
   // The team's own accounts (kesin, sean …) open on Reviewing Order — their
   // first job (Sean, 2026-10-07); the manager (production@pjsb.com) opens on
@@ -208,7 +217,8 @@ export default function ProductionDashboard() {
       <div className="order-grid">
         {filteredOrders.map((ord) => {
           const stamp = getOrderChangeStamp(ord);
-          const reserved = countReservedPlaques(ord);
+          const reserved = needsKiv(ord) ? countReservedPlaques(ord) : 0;
+          const typingDoneWaitingKiv = ord.status === 'In Production' && !!ord.typedAt && reserved > 0;
 
           return (
             <div key={ord._sliceKey} className="card order-card">
@@ -230,7 +240,10 @@ export default function ProductionDashboard() {
                     {ord.status === 'In Production' && !ord.typedAt ? 'Typing' : ord.status}
                   </span>
                   {reserved > 0 && (
-                    <span className="status-pill" style={{ background: '#fff4ce', color: '#8a6d00' }}>RESERVED ×{reserved}</span>
+                    <span className="status-pill" style={{ background: '#fff4ce', color: '#8a6d00' }}>KIV · RESERVED ×{reserved}</span>
+                  )}
+                  {tab === 'typing' && typingDoneWaitingKiv && (
+                    <span className="status-pill" style={{ background: '#d4f4f1', color: '#0f6e66' }}>DONE</span>
                   )}
                   {ord.status === 'Reviewing Order' && ord.reviewedAt && (
                     <span className="status-pill" style={{ background: '#dcefe3', color: '#2f6b4f' }}>✓ Review Done</span>
@@ -260,7 +273,7 @@ export default function ProductionDashboard() {
               <div className="dim" style={{ fontSize: 11 }}>Total Amount</div>
               <div className={`order-card-total${ord.priceAdjusted ? ' amount-adjusted' : ''}`}>RM {ord.totalAmount.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
 
-              <div className="order-card-actions" style={tab === 'active' || tab === 'typing' || tab === 'reviewing' || tab === 'addon' ? { display: 'flex', gap: 'var(--space-2)' } : undefined}>
+              <div className="order-card-actions" style={tab === 'active' || tab === 'typing' || tab === 'reviewing' || tab === 'addon' || tab === 'kiv' ? { display: 'flex', gap: 'var(--space-2)' } : undefined}>
                 {tab === 'reviewing' && (
                   <>
                     <button type="button" className="btn btn-ghost" style={{ flex: 1 }} onClick={() => navigate(`/production/orders/${ord.id}`)}>
@@ -294,10 +307,28 @@ export default function ProductionDashboard() {
                     <button type="button" className="btn btn-ghost" style={{ flex: 1 }} onClick={() => navigate(`/production/orders/${ord.id}${ord.invoiceId ? `?invoice=${encodeURIComponent(ord.invoiceId)}` : ''}`)}>
                       View Order
                     </button>
+                    {!ord.typedAt && (
+                      <ConfirmButton
+                        label="Done Typing" style={{ flex: 1 }}
+                        question={reserved > 0
+                          ? 'Finished typing? It stays here marked DONE until its Reserved plaques are done in KIV.'
+                          : 'Finished typing? It moves to In Production, ready to print.'}
+                        onConfirm={() => markTypingDone(ord.id, ord.invoiceId)}
+                      />
+                    )}
+                  </>
+                )}
+                {tab === 'kiv' && (
+                  <>
+                    <button type="button" className="btn btn-ghost" style={{ flex: 1 }} onClick={() => navigate(`/production/orders/${ord.id}`)}>
+                      View Order
+                    </button>
                     <ConfirmButton
-                      label="Done Typing" style={{ flex: 1 }}
-                      question="Finished typing? It moves to In Production, ready to print."
-                      onConfirm={() => markTypingDone(ord.id, ord.invoiceId)}
+                      label="Done" style={{ flex: 1 }}
+                      question={`The ${reserved} Reserved plaque(s) have been made with the names?`}
+                      confirmLabel="Yes, done"
+                      cancelLabel="No, not yet"
+                      onConfirm={() => markKivDone(ord.id)}
                     />
                   </>
                 )}
@@ -313,18 +344,12 @@ export default function ProductionDashboard() {
                       label={ord.invoiceId ? 'Done' : 'Awaiting Invoice'} style={{ flex: 1 }}
                       disabled={!ord.invoiceId}
                       title={!ord.invoiceId ? 'Waiting for Store Admin to assign an Invoice Number' : undefined}
-                      // An order with names still "Reserved" asks whether those plaques were made too
-                      // (they're left out of the AI file until the names come — Sean, 2026-10-13).
-                      question={reserved > 0
-                        ? `This order has ${reserved} RESERVED plaque(s) (no name when it was ordered). Have the reserved plaques been done too? Status → "${deliveryStageForShipmentDate(ord.shipmentDate, malaysiaToday())}".`
-                        : `Mark as done? Status → "${deliveryStageForShipmentDate(ord.shipmentDate, malaysiaToday())}".`}
-                      confirmLabel={reserved > 0 ? 'Yes, all done' : 'Yes'}
-                      cancelLabel={reserved > 0 ? 'No, not yet' : 'Cancel'}
+                      question={`Mark as done? Status → "${deliveryStageForShipmentDate(ord.shipmentDate, malaysiaToday())}".`}
                       onConfirm={() => markProductionDone(ord.id, ord.invoiceId)}
                     />
                   </>
                 )}
-                {tab !== 'active' && tab !== 'typing' && tab !== 'reviewing' && tab !== 'addon' && (
+                {tab !== 'active' && tab !== 'typing' && tab !== 'reviewing' && tab !== 'addon' && tab !== 'kiv' && (
                   <button type="button" className="btn btn-ghost btn-block" onClick={() => navigate(`/production/orders/${ord.id}${ord.invoiceId ? `?invoice=${encodeURIComponent(ord.invoiceId)}` : ''}`)}>
                     View Order
                   </button>

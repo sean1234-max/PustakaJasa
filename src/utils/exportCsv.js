@@ -96,16 +96,22 @@ export function getLineOrder(item, cat) {
 // like any other row — it's a real reservation — but it has no confirmed
 // engraving text, so it is kept OUT of the production CSV until the real
 // name replaces "Reserved" (via Amend / Add-On).
+// "Reserved" or "Reserve" (ORD-0013 was typed without the D), any case.
 export function isReservedName(name) {
-  return typeof name === 'string' && name.trim().toLowerCase() === 'reserved';
+  return typeof name === 'string' && /^reserved?$/i.test(name.trim());
 }
 
-// How many plaques on this order still carry a "Reserved" name — asked about
-// before Production marks the order done (Sean, 2026-10-13).
+// How many plaques on this order still carry a "Reserved" name (Sean,
+// 2026-10-13) — they're made later, in Production's KIV tab.
 export function countReservedPlaques(order) {
-  return (order?.items || []).reduce((sum, it) => sum + (it.detail?.rows || [])
+  return (order?.items || []).reduce((sum, it) => sum + (Array.isArray(it.detail?.rows) ? it.detail.rows : [])
     .filter((r) => isReservedName(r.namaMurid))
     .reduce((n, r) => n + (Number(r.qty) || 0), 0), 0);
+}
+
+// Still waiting in KIV: has Reserved plaques and Production hasn't clicked KIV Done.
+export function needsKiv(order) {
+  return !order?.kivDoneAt && countReservedPlaques(order) > 0;
 }
 
 // Categories actually present in this order's items, in catalog order (any

@@ -494,7 +494,7 @@ describe('buildCsvRows — TOKOH_SHEET NAMA MURID / Reserved', () => {
   });
 
   it('every case form of "reserved" is treated as a hold', () => {
-    ['RESERVED', 'reserved', 'Reserved', '  Reserved  '].forEach((v) => expect(isReservedName(v)).toBe(true));
+    ['RESERVED', 'reserved', 'Reserved', '  Reserved  ', 'RESERVE', 'reserve'].forEach((v) => expect(isReservedName(v)).toBe(true));
     ['Reserved for Ali', 'AHMAD', '', undefined].forEach((v) => expect(isReservedName(v)).toBe(false));
   });
 
@@ -995,5 +995,16 @@ describe('countReservedPlaques', () => {
     };
     expect(countReservedPlaques(order)).toBe(3);
     expect(countReservedPlaques({ items: [] })).toBe(0);
+  });
+});
+
+describe('needsKiv', () => {
+  it('waits in KIV while Reserved / Reserve plaques are not done', async () => {
+    const { needsKiv } = await import('./exportCsv');
+    const order = { items: [{ detail: { rows: [{ namaMurid: 'RESERVE', qty: '1' }] } }] };
+    expect(needsKiv(order)).toBe(true);
+    expect(needsKiv({ ...order, kivDoneAt: '2026-10-13T05:00:00Z' })).toBe(false);
+    expect(needsKiv({ items: [{ detail: { rows: [{ namaMurid: 'ALI', qty: '1' }] } }] })).toBe(false);
+    expect(needsKiv({ items: [{ detail: { rows: 'oops' } }] })).toBe(false);
   });
 });
