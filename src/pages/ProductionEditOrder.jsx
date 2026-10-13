@@ -7,6 +7,7 @@ import { useAppState } from '../state/useAppState';
 import { ACTIVE_CATEGORIES, filterHiddenPlakCatalog, isDynamicCategoryKey, resolveCategory, isAddonInFlight, standardUnitPrice } from '../data/catalog';
 import { computeBlocks } from '../utils/computeBlocks';
 import { createDraftUpdaters } from '../utils/draftUpdaters';
+import { buildCategoryCartItems } from '../state/categoryCartItems';
 import { saveOrderImportAs } from '../lib/storageApi';
 import { buildOrderImportFilename } from '../utils/exportCsv';
 import { orderImportFiles, addonImportFiles } from '../utils/importFiles';
@@ -36,6 +37,7 @@ export default function ProductionEditOrder() {
   const order = state.orders.find((o) => o.id === id);
   const [message, setMessage] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [showAllSheets, setShowAllSheets] = useState(false);
   const fileInput = useRef(null);
   useEffect(() => { ensureOrderLoaded(id); }, [id, ensureOrderLoaded]);
 
@@ -58,6 +60,17 @@ export default function ProductionEditOrder() {
     return [...ACTIVE_CATEGORIES, ...dynamic];
   }, [state.prodExcelVisibleBlocksByCategory]);
   const category = state.prodExcelCategory;
+  // Only the sheets this order (or an uploaded Excel) actually has data in (Sean, 2026-10-12);
+  // "Show all sheets" brings back the empty ones to add a category the teacher missed.
+  const filledTabs = useMemo(() => {
+    const draft = {
+      lineValues: state.prodExcelLineValues, matrixValues: state.prodExcelMatrixValues, rowsByBlock: state.prodExcelRowsByBlock,
+      plakRows: state.prodExcelPlakRows, columnsByBlock: state.prodExcelColumnsByBlock, plakCatalog: state.plakCatalog, schoolLanguage: state.schoolLanguage,
+    };
+    return categoryTabs.filter((cat) => cat.key === category || buildCategoryCartItems(draft, cat.key).engaged);
+  }, [categoryTabs, category, state.prodExcelLineValues, state.prodExcelMatrixValues, state.prodExcelRowsByBlock,
+    state.prodExcelPlakRows, state.prodExcelColumnsByBlock, state.plakCatalog, state.schoolLanguage]);
+  const shownTabs = showAllSheets ? categoryTabs : filledTabs;
   const { blocks: allBlocks } = useMemo(() => computeBlocks(
     category, state.prodExcelLineValues, state.prodExcelMatrixValues, state.prodExcelRowsByBlock, state.prodExcelPlakRows,
     state.prodExcelColumnsByBlock, updaters, state.plakCatalog, state.schoolLanguage,
@@ -145,7 +158,12 @@ export default function ProductionEditOrder() {
 
         <div className="card-kicker">Jenis Anugerah (Category)</div>
         <div style={{ margin: 'var(--space-3) 0 var(--space-8)' }}>
-          <CategoryTabs categories={categoryTabs} active={category} onSelect={(key) => patch({ prodExcelCategory: key })} />
+          <CategoryTabs categories={shownTabs} active={category} onSelect={(key) => patch({ prodExcelCategory: key })} />
+          {filledTabs.length < categoryTabs.length && (
+            <button type="button" className="btn btn-ghost" style={{ marginTop: 'var(--space-2)' }} onClick={() => setShowAllSheets((v) => !v)}>
+              {showAllSheets ? 'Hide empty sheets' : `Show all sheets (${categoryTabs.length - filledTabs.length} empty)`}
+            </button>
+          )}
         </div>
 
         {blocks.map((blk, i) => (
