@@ -254,6 +254,8 @@ export default function ProductionDashboard() {
                 </div>
               </div>
               {stamp && <div className="order-stamp-inline" style={{ marginTop: 'var(--space-1)' }}>{stamp}</div>}
+              {/* An order still waiting in KIV (Reserved plaques not made yet) — Sean, 2026-10-13 */}
+              {reserved > 0 && <div className="order-stamp-inline" style={{ marginTop: 'var(--space-1)' }}>SHORT SUPPLY</div>}
 
               <div className="order-card-meta" style={{ gridTemplateColumns: '1fr' }}>
                 <div><div className="dim">Sekolah</div><div>{ord.sekolah || '—'}</div></div>

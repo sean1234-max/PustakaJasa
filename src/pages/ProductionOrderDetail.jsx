@@ -10,7 +10,7 @@ import OrderPrintout from '../components/OrderPrintout';
 import { useAppState } from '../state/useAppState';
 import { statusPillStyle, formatDate, MANUAL_MAX_QTY, deliveryStageForShipmentDate, toMalaysiaDay, malaysiaToday, isReviewed, isAddonInFlight, invoiceLabel, invoiceSetByNote } from '../data/catalog';
 import { reconstructOrderDetailGroups, reconstructBlocksForCategory, noopUpdaters } from '../utils/computeBlocks';
-import { getExportableCategories, splitOrderCategories, getOrderJenisPlakGroups, getPlakProductionMode, summarizeRowsForManual, buildCsvRows, rowsToCsv, buildCategoryCsvFilename, combineCsvRows, buildCombinedCsvFilename, validateExport, getInvoiceIdForJenisPlak, getPartialSplitNotes } from '../utils/exportCsv';
+import { getExportableCategories, splitOrderCategories, getOrderJenisPlakGroups, getPlakProductionMode, summarizeRowsForManual, buildCsvRows, rowsToCsv, buildCategoryCsvFilename, combineCsvRows, buildCombinedCsvFilename, validateExport, getInvoiceIdForJenisPlak, getPartialSplitNotes, needsKiv } from '../utils/exportCsv';
 import { downloadTextFile } from '../utils/downloadBlob';
 import { getInvoiceItems } from '../utils/orderBatches';
 import ImportFileButtons from '../components/ImportFileButtons';
@@ -357,6 +357,7 @@ export default function ProductionOrderDetail() {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
             {stamp && <span className="order-stamp-inline no-print">{stamp}</span>}
+            {needsKiv(order) && <span className="order-stamp-inline no-print">SHORT SUPPLY</span>}
             {/* Corrected Excel present — every export below already reads
                 from it (see effectiveOrder), this just makes that visible
                 at a glance without opening the order. */}
