@@ -316,8 +316,11 @@ function buildMatrixRows(item, cat, header, year, positionPart1, schoolLanguage)
   // every plaque repeated "BAHASA MELAYU" up there AND printed its real
   // subject again below.
   const posSpan = findLongestWord(positionPart1, knownSubjects);
+  // The sample's own subject keeps its Alt+Enter ("ANUGERAH⏎LONJAKAN PRESTASI").
+  const sampleSubject = posSpan ? positionPart1.slice(posSpan.start, posSpan.end) : '';
+  const sameWords = (a, b) => a.replace(/\s+/g, ' ').trim().toUpperCase() === b.replace(/\s+/g, ' ').trim().toUpperCase();
   const positionFor = (subject) => (posSpan
-    ? positionPart1.slice(0, posSpan.start) + subject + positionPart1.slice(posSpan.end)
+    ? positionPart1.slice(0, posSpan.start) + (sameWords(subject, sampleSubject) ? sampleSubject : subject) + positionPart1.slice(posSpan.end)
     : positionPart1);
   // A subject already in ACARA (the teacher wanted it red) is never repeated below.
   const lines = (subject, tahun) => {

@@ -201,6 +201,19 @@ describe('CSV column remap — reference-sample lines -> CSV columns', () => {
     expect(rows.every((r) => r[3] === 'BAHASA MELAYU')).toBe(true);
   });
 
+  it('MP THP 2 (Kalau ada kelas): the sample subject keeps its Alt+Enter, other subjects replace it', () => {
+    const mk = (subject) => ({
+      id: 'm', jenisPlak: 'DECO LIGHT', qty: 1, categoryKey: 'MP2_KELAS', blockIdx: 0,
+      detail: {
+        lines: { 'MP2_KELAS::0::0': 'H', 'MP2_KELAS::0::2': 'ANUGERAH\nLONJAKAN PRESTASI', 'MP2_KELAS::0::3': 'TAHUN 1 ORION' },
+        matrix: { [customMatrixLabelKey('MP2_KELAS', 9)]: subject, [matrixCellKey('MP2_KELAS', 'custom-9', 'TAHUN 4')]: '1' },
+        namaKelasBreakdown: { 'MP2_KELAS::0::TAHUN 4::main': [{ id: 1, desc: 'ORION', qty: '1' }] },
+      },
+    });
+    const first = (subject) => buildCsvRows({ schoolLanguage: 'SK', items: [mk(subject)] }, 'MP2_KELAS', [mk(subject)]).rows[0].slice(2, 5);
+    expect(first('ANUGERAH LONJAKAN PRESTASI')).toEqual(['ANUGERAH\nLONJAKAN PRESTASI', 'TAHUN 4 ORION', '']);
+  });
+
   it('MP THP 1 (Kalau ada kelas) with a level\'s Nama Kelas breakdown: "TAHUN" prefix follows line 3\'s own CONTOH', () => {
     const mk = (line3) => ({
       id: 'm', jenisPlak: 'DECO LIGHT', qty: 1, categoryKey: 'MP1_KELAS', blockIdx: 0,
