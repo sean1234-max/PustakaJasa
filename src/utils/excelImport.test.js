@@ -512,6 +512,19 @@ describe('UMUM (万能) — import → cart → CSV', () => {
     expect(buildCsvRows({ schoolLanguage: 'SK', items }, 'UMUM', groups[0].items).rows).toHaveLength(5);
   });
 
+  it('Production\'s Order Details shows a PBD order\'s Nama Kelas breakdown', () => {
+    const item = {
+      id: 'p', qty: 2, jenisPlak: 'PKC 263', unitPrice: 12, categoryKey: 'PBD', blockIdx: 0,
+      detail: {
+        lines: { 'PBD::0::0': 'M', 'PBD::0::3': '1 ASPIRASI' },
+        matrix: { 'PBD::custom-1000::KUANTITI': '2', 'PBD::custom-1000::__label__': 'TAHUN 1' },
+        namaKelasBreakdown: { 'PBD::0::TAHUN 1::main': [{ id: 1006, qty: '1', desc: '1 ASPIRASI' }, { id: 1007, qty: '1', desc: '1 AZAM' }] },
+      },
+    };
+    const [group] = reconstructOrderDetailGroups({ items: [item] }, 'PBD', catalog);
+    expect(group.blk.levelBreakdown.map((lb) => [lb.level, lb.mainRows.map((r) => r.desc)])).toEqual([['TAHUN 1', ['1 ASPIRASI', '1 AZAM']]]);
+  });
+
   it('a row\'s own line: a word-list typo blocks Add to Cart; a line the CONTOH leaves blank is flagged', () => {
     const section = parse({ 'UMUM (万能)': umum({ rows: [
       [null, null, 'KETIGA AHUN 1', null, 3, 'PKC 263'],

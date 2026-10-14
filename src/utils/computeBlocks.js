@@ -1197,6 +1197,8 @@ export function reconstructOrderDetailGroups(order, catKey, plakCatalog, updater
       if (item.detail.matrix) Object.assign(matrixValues, item.detail.matrix);
       if (item.detail.rows) rowsByBlock[key] = item.detail.rows;
       if (item.detail.columns) columnsByBlock[key] = item.detail.columns;
+      // Nama Kelas breakdown (PBD / PPKI / MP THP kelas) — its own composite keys
+      if (item.detail.namaKelasBreakdown) Object.assign(rowsByBlock, item.detail.namaKelasBreakdown);
     }
     plakRows[key] = groupItems.map((it) => ({ id: it.id, jenisPlak: it.jenisPlak, unitPrice: it.unitPrice, posDari: it.posDari, posHingga: it.posHingga, qty: it.qty }));
 
