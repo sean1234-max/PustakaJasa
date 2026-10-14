@@ -548,6 +548,8 @@ input.catalog-admin-code { padding: 6px 8px; }
   50% { background-color: rgba(217, 140, 0, 0.35); }
 }
 .catalog-row-flash { animation: catalog-row-flash 0.5s ease-in-out 3; }
+/* Opened from KIV & ARTWORK: the RESERVE / RESERVED / KIV rows flash 3 times, then stay normal. */
+.kiv-row-flash > td { animation: catalog-row-flash 0.5s ease-in-out 3; }
 .line-num {
   width: 24px; height: 24px;
   border-radius: 50%;

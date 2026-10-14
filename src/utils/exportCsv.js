@@ -102,6 +102,17 @@ export function isReservedName(name) {
   return typeof name === 'string' && /^(reserved?|kiv)$/i.test(name.trim());
 }
 
+// "RESERVE", "RESERVED" or "KIV" as a whole word anywhere in a row's text, any case (Sean,
+// 2026-10-14) — what KIV & ARTWORK's View Order jumps to and flashes. "KIVA" doesn't count.
+export const KIV_WORD = /\b(RESERVED?|KIV)\b/i;
+export const hasKivWord = (values) => values.some((v) => typeof v === 'string' && KIV_WORD.test(v));
+
+// The first of `categoryKeys` (tab order) with an item row carrying a KIV word, or null.
+export function firstKivCategory(order, categoryKeys) {
+  return categoryKeys.find((key) => (order?.items || []).some((it) => it.categoryKey === key
+    && (Array.isArray(it.detail?.rows) ? it.detail.rows : []).some((r) => hasKivWord(Object.values(r || {}))))) || null;
+}
+
 // How many plaques on this order still carry a "Reserved" name (Sean,
 // 2026-10-13) — they're made later, in Production's KIV tab.
 export function countReservedPlaques(order) {

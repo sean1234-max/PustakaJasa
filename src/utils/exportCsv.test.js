@@ -1039,3 +1039,30 @@ describe('KIV & ARTWORK parts', () => {
     expect([needsKiv(allDone), kivInProduction(allDone)]).toEqual([false, false]);
   });
 });
+
+describe('KIV & ARTWORK View Order — which category / rows to flash', () => {
+  it('matches RESERVE, RESERVED and KIV as whole words, any case — not KIVA', async () => {
+    const { hasKivWord } = await import('./exportCsv');
+    expect(hasKivWord(['Reserve'])).toBe(true);
+    expect(hasKivWord(['RESERVED'])).toBe(true);
+    expect(hasKivWord(['kiv'])).toBe(true);
+    expect(hasKivWord(['TOKOH MURID', 'NAMA (KIV)'])).toBe(true);
+    expect(hasKivWord(['KIVA', 'PRESERVED', 'AHMAD'])).toBe(false);
+    expect(hasKivWord([null, 3, undefined])).toBe(false);
+  });
+
+  it('picks the first category in tab order with such a row, or null', async () => {
+    const { firstKivCategory } = await import('./exportCsv');
+    const order = {
+      items: [
+        { categoryKey: 'PBD', detail: { rows: [{ desc: 'TAHUN 1', namaMurid: 'ALI' }] } },
+        { categoryKey: 'TOKOH_SHEET', detail: { rows: [{ desc: 'TOKOH', namaMurid: 'reserved' }] } },
+        { categoryKey: 'KEHADIRAN', detail: { rows: [{ desc: 'KIV', qty: 2 }] } },
+      ],
+    };
+    expect(firstKivCategory(order, ['PBD', 'TOKOH_SHEET', 'KEHADIRAN'])).toBe('TOKOH_SHEET');
+    expect(firstKivCategory(order, ['KEHADIRAN', 'TOKOH_SHEET'])).toBe('KEHADIRAN');
+    expect(firstKivCategory(order, ['PBD'])).toBe(null);
+    expect(firstKivCategory({ items: [{ categoryKey: 'X' }] }, ['X'])).toBe(null);
+  });
+});

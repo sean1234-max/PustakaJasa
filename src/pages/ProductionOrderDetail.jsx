@@ -11,7 +11,7 @@ import AddOnTag from '../components/AddOnTag';
 import { useAppState } from '../state/useAppState';
 import { statusPillStyle, formatDate, MANUAL_MAX_QTY, deliveryStageForShipmentDate, toMalaysiaDay, malaysiaToday, isReviewed, isAddonInFlight, invoiceLabel, invoiceSetByNote } from '../data/catalog';
 import { reconstructOrderDetailGroups, reconstructBlocksForCategory, noopUpdaters } from '../utils/computeBlocks';
-import { getExportableCategories, splitOrderCategories, getOrderJenisPlakGroups, getPlakProductionMode, summarizeRowsForManual, buildCsvRows, rowsToCsv, buildCategoryCsvFilename, combineCsvRows, buildCombinedCsvFilename, validateExport, getInvoiceIdForJenisPlak, getPartialSplitNotes, needsKiv, kivInProduction, kivParts, isCrystalCode } from '../utils/exportCsv';
+import { getExportableCategories, splitOrderCategories, getOrderJenisPlakGroups, getPlakProductionMode, summarizeRowsForManual, buildCsvRows, rowsToCsv, buildCategoryCsvFilename, combineCsvRows, buildCombinedCsvFilename, validateExport, getInvoiceIdForJenisPlak, getPartialSplitNotes, needsKiv, kivInProduction, kivParts, isCrystalCode, firstKivCategory } from '../utils/exportCsv';
 import { downloadTextFile } from '../utils/downloadBlob';
 import { getInvoiceItems } from '../utils/orderBatches';
 import ImportFileButtons from '../components/ImportFileButtons';
@@ -21,6 +21,8 @@ import ProductionInvoiceEntry from '../components/ProductionInvoiceEntry';
 import { getAiFileHelperStatus, startAiFileHelperJob, getAiFileHelperJob } from '../lib/aiFileHelper';
 import { getOrderChangeStamp } from '../utils/orderStamp';
 
+// 3 flashes × 0.5s (index.css .kiv-row-flash), then the rows go back to normal
+const KIV_FLASH_MS = 1700;
 const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: false, matrix: false, jenisPlak: false };
 // Production may still drag the Reference Sample rows into a new order — nothing else.
 const REORDER_ONLY = { ...READONLY, lineOrder: true };
@@ -241,6 +243,28 @@ export default function ProductionOrderDetail() {
   const togglePrices = (which) => setPriceEditor((open) => (open === which ? null : which));
   // Deferred a tick so the new printedAt is in the print-only DOM first.
   const handlePrint = () => { setPrintedAt(new Date().toISOString()); setTimeout(() => window.print(), 0); };
+
+  // Opened from KIV & ARTWORK's View Order (?kiv=1, Sean 2026-10-14): straight to Order Details,
+  // the first category (tab order) with a RESERVE / RESERVED / KIV row, every such row flashing
+  // three times. Once per order — a re-render doesn't flash again; another order starts afresh.
+  const fromKiv = searchParams.get('kiv') === '1';
+  const [kivFlash, setKivFlash] = useState(false);
+  const kivHandledFor = useRef(null);
+  useEffect(() => {
+    if (!fromKiv || !effectiveOrder || kivHandledFor.current === effectiveOrder.id) return;
+    kivHandledFor.current = effectiveOrder.id;
+    const key = firstKivCategory(effectiveOrder, categories.map((c) => c.key));
+    if (!key) return;
+    setPage('details');
+    setActiveCat(key);
+    setKivFlash(true);
+  }, [fromKiv, effectiveOrder, categories]);
+  useEffect(() => {
+    if (!kivFlash) return undefined;
+    document.querySelector('.kiv-row-flash')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const t = setTimeout(() => setKivFlash(false), KIV_FLASH_MS);
+    return () => clearTimeout(t);
+  }, [kivFlash]);
 
   if (!order) return null;
 
@@ -669,7 +693,7 @@ export default function ProductionOrderDetail() {
                           <div className="card-kicker">
                             {group.blk.qtyLabel}{group.batch !== 0 ? ` — ${group.label}` : ''} — {group.jenisPlak}
                           </div>
-                          <OrderCategoryBlock blk={group.blk} editable={canReorder ? REORDER_ONLY : READONLY} />
+                          <OrderCategoryBlock blk={group.blk} editable={canReorder ? REORDER_ONLY : READONLY} flashKivRows={kivFlash} />
 
                           {check.errors.map((e) => (
                             <p key={e} className="hint-text" style={{ color: '#b0392e', fontWeight: 600 }}>⚠ {e}</p>

@@ -2,7 +2,7 @@ import { Fragment, useState, useRef, useLayoutEffect } from 'react';
 import PlakPicker from './PlakPicker';
 import SelempangBlock from './SelempangBlock';
 import { getStockStatus, MALAY_ORDINALS } from '../data/catalog';
-import { isReservedName } from '../utils/exportCsv';
+import { isReservedName, hasKivWord } from '../utils/exportCsv';
 
 const TAHUN_OPTIONS = ['TAHUN 1', 'TAHUN 2', 'TAHUN 3', 'TAHUN 4', 'TAHUN 5', 'TAHUN 6'];
 
@@ -77,7 +77,9 @@ function TypoHint({ hint, canChoose }) {
   );
 }
 
-export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmptyRows, isLastBlock, flashJenisPlak }) {
+// `flashKivRows` (Production, opened from KIV & ARTWORK): rows carrying RESERVE / RESERVED / KIV
+// flash three times (index.css .kiv-row-flash).
+export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmptyRows, isLastBlock, flashJenisPlak, flashKivRows = false }) {
   // Drag-and-drop reordering of Reference Sample rows (OTHERS — see
   // catalog.js's draggableReferenceSample / computeBlocks.js's
   // reorderReferenceSample). Only offered when actually editable — or, on
@@ -1234,7 +1236,10 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
             </thead>
             <tbody>
               {listRows.map((row) => (
-                <tr key={row.id}>
+                <tr
+                  key={row.id}
+                  className={flashKivRows && hasKivWord([row.desc, ...row.extraRefValues.map((rv) => rv.value), ...(row.tokohFields || []).map((f) => f.value)]) ? 'kiv-row-flash' : undefined}
+                >
                   {!blk.hideDescColumn && (
                     <td>
                       {editable.rowDesc

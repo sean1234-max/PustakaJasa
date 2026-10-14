@@ -336,7 +336,7 @@ export default function ProductionDashboard() {
                 )}
                 {tab === 'kiv' && (
                   <>
-                    <button type="button" className="btn btn-ghost" style={{ flex: 1 }} onClick={() => navigate(`/production/orders/${ord.id}`)}>
+                    <button type="button" className="btn btn-ghost" style={{ flex: 1 }} onClick={() => navigate(`/production/orders/${ord.id}?kiv=1`)}>
                       View Order
                     </button>
                     <ConfirmButton
