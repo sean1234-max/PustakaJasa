@@ -7,6 +7,7 @@
 
 import { SUPABASE_URL, SUPABASE_KEY } from "./config.js";
 import { mergeItem, designMeta, ID_RE, newId } from "./libitem.js";
+import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.2/+esm";
 
 const KEY = String(SUPABASE_KEY || "").trim();
 if (/^sb_secret_/.test(KEY) || /service_role/.test(atobSafe(KEY.split(".")[1] || ""))) {
@@ -32,15 +33,36 @@ async function api(method, url, body) {
 
 // ------------------------------------------------------------------ online (Supabase)
 
-// a publishable key (sb_publishable_…) is only an apikey; an older anon key is also the Bearer token
-const auth = () => (KEY.startsWith("sb_") ? { apikey: KEY } : { apikey: KEY, Authorization: "Bearer " + KEY });
+// The order website's login (same site, same saved session): supabase-js keeps the token fresh and
+// shares it with the website's tabs. Every request goes as the signed-in account, so the
+// database's rules for that account's role apply.
+export const supabase = createClient(BASE, KEY, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false } });
+async function auth() {
+  const { data } = await supabase.auth.getSession();
+  const token = data && data.session && data.session.access_token;
+  if (!token) throw new Error("Not signed in: log in on the order website first, then open Crystal Studio again.");
+  return { apikey: KEY, Authorization: "Bearer " + token };
+}
+
+// who is using the studio: { id, role, name } from the website's account, or null when not signed in
+export async function whoAmI() {
+  const { data } = await supabase.auth.getSession();
+  const user = data && data.session && data.session.user;
+  if (!user) return null;
+  const r = await sb(table("profiles", `id=eq.${user.id}&select=role,status,display_name`));
+  const p = r && r[0];
+  return p && p.status === "active" ? { id: user.id, role: p.role, name: p.display_name || "" } : null;
+}
+// Production and Admin change the designs for everyone; everyone else only their order's crystals
+export const isStaff = (me) => !!me && ["production", "admin"].includes(me.role);
 
 async function sb(path, { method = "GET", body, headers = {}, raw = false } = {}) {
+  const who = await auth();
   let r;
   try {
     r = await fetch(BASE + path, {
       method,
-      headers: { ...auth(), ...(body !== undefined && !raw ? { "Content-Type": "application/json" } : {}), ...headers },
+      headers: { ...who, ...(body !== undefined && !raw ? { "Content-Type": "application/json" } : {}), ...headers },
       body: body === undefined ? undefined : raw ? body : JSON.stringify(body),
     });
   } catch (e) {
@@ -186,7 +208,8 @@ export function onLibraryChanged(fn) {
 // ------------------------------------------------------------------ the store
 
 let localUp = null; // is the local server (server.js) running? asked once
-const local = () => (localUp ??= fetch("/api/folder").then((r) => r.ok).catch(() => false));
+// (the website answers unknown paths with its own page, so only a JSON answer means server.js)
+const local = () => (localUp ??= fetch("/api/folder").then((r) => r.ok && /json/.test(r.headers.get("content-type") || "")).catch(() => false));
 
 export const store = {
   online: ONLINE,

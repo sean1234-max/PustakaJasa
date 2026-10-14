@@ -1,14 +1,16 @@
-/* Neon dark: deep navy-black, electric blue and purple */
+/* The order website's look (src/index.css): light grey page, white panels, slate-blue accent,
+   Barlow (Sean, 2026-10-14: same theme as the website, not the colleague's neon dark) */
+@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600;700&display=swap');
 :root {
-  --bg: #070912; --panel: #0e1224; --ink: #e6e9ff; --mute: #8f97c4; --line: #252c55;
-  --acc: #3d8bff; --acc2: #a64dff; --accfg: #ffffff; --accsoft: #1a1f4a; --warn: #f5b85a; --bad: #ff6b8a;
-  --stage: #05070e; --shadow: 0 2px 18px rgba(61, 139, 255, 0.18);
-  --glow: 0 0 12px rgba(61, 139, 255, 0.55), 0 0 22px rgba(166, 77, 255, 0.3);
-  color-scheme: dark;
+  --bg: #f2f2f3; --panel: #ffffff; --ink: #1d1f20; --mute: #6b6f75; --line: #cfcfd1;
+  --acc: #45688a; --acc2: #2b4258; --accfg: #ffffff; --accsoft: #e4ecf2; --warn: #b45309; --bad: #ba1a1a;
+  --stage: #e9e9ea; --shadow: 0 4px 14px rgba(29, 31, 32, 0.12);
+  --glow: none;
+  color-scheme: light;
 }
 
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 "Barlow", system-ui, -apple-system, "Segoe UI", sans-serif; }
 .app {
   max-width: 1440px; margin: 0 auto; display: grid; gap: 12px;
   padding: max(12px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
@@ -43,7 +45,7 @@ input[type="range"] { width: 80px; accent-color: var(--acc); }
 /* header */
 header.top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 16px; white-space: nowrap; }
-.brand .mark { width: 22px; height: 22px; border-radius: 7px; background: linear-gradient(135deg, var(--acc), #8fdcdf 60%, #f2c66d); }
+.brand .mark { width: 22px; height: 22px; border-radius: 7px; background: var(--acc); }
 #designName { font-weight: 600; border-color: transparent; background: transparent; width: 230px; max-width: 100%; }
 #designName:hover, #designName:focus { border-color: var(--line); background: var(--panel); }
 
@@ -208,23 +210,3 @@ input.path {
   .tcard .thumb { height: 96px; }
   .toolbar { position: static; }
 }
-
-/* neon touches */
-body {
-  background:
-    radial-gradient(900px 500px at 0% -10%, rgba(61, 139, 255, 0.16), transparent 60%),
-    radial-gradient(900px 500px at 100% 0%, rgba(166, 77, 255, 0.14), transparent 60%),
-    var(--bg);
-  background-attachment: fixed;
-}
-.panel { border-color: var(--line); box-shadow: 0 0 0 1px rgba(61, 139, 255, 0.06), 0 6px 28px rgba(0, 0, 0, 0.45); }
-.panel-head h2 { color: #9fb4ff; text-shadow: 0 0 8px rgba(61, 139, 255, 0.45); }
-button.primary, button[aria-pressed="true"] {
-  background: linear-gradient(135deg, var(--acc), var(--acc2)); border-color: transparent; box-shadow: var(--glow);
-}
-button:hover:not(:disabled), label.btn:hover, select:hover { border-color: var(--acc2); box-shadow: 0 0 8px rgba(166, 77, 255, 0.35); }
-.brand { text-shadow: 0 0 10px rgba(61, 139, 255, 0.6); }
-.brand .mark { background: linear-gradient(135deg, var(--acc), var(--acc2)); box-shadow: var(--glow); }
-.chip.sel, .tcard[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--acc2) inset, 0 0 12px rgba(166, 77, 255, 0.35); }
-#stageWrap { box-shadow: inset 0 0 0 1px var(--line); }
-::selection { background: rgba(166, 77, 255, 0.45); }

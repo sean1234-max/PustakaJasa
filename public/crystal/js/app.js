@@ -12,10 +12,9 @@ import { fontsToShare, shareFonts } from "./font-share.js";
 import { newId } from "./libitem.js";
 import { illustratorScript } from "./illustrator.js";
 import * as editor from "./editor.js";
-import { store, fileUrl } from "./store.js";
+import { store, fileUrl, whoAmI, isStaff } from "./store.js";
 import { illustratorWindow, START_LINK } from "./to-illustrator.js";
 import { vectorJob } from "./vector-job.js";
-import { EDIT_PASSWORD_SHA256 } from "./config.js";
 import { templateFor, sources as jenisSources, contentKey, orderDesignId } from "./jenis.js";
 
 const PRINT_DPI = 300;
@@ -279,40 +278,21 @@ function renderSources() {
   $("srcDesigns").hidden = !src;
 }
 
-// opening a design the Excel row didn't pick, to change it: asks the password once (this tab)
-let unlocked = false;
-try { unlocked = sessionStorage.getItem("crystal-unlocked") === "1"; } catch (e) {}
-async function unlock() {
-  if (unlocked || !EDIT_PASSWORD_SHA256) return setAdmin(true), true;
-  const pw = await askText("Admin password (to change the designs for everyone):", { password: true, okLabel: "Unlock" });
-  if (pw == null) return false;
-  const hex = [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(pw)))].map((b) => b.toString(16).padStart(2, "0")).join("");
-  if (hex !== EDIT_PASSWORD_SHA256) { toast("Wrong password.", "bad"); return false; }
-  unlocked = true;
-  try { sessionStorage.setItem("crystal-unlocked", "1"); } catch (e) {}
-  setAdmin(true);
-  return true;
-}
-
-// Admin (🔒 Admin, the password, once per tab): sees what changes the designs for everyone —
-// Save as default template, Remove from background / Put back, the Crystal templates panel
-// (import, open any design, delete), New / Open / Save, Import Excel, the Excel column chips.
+// Production / Admin (their account on the order website) see what changes the designs for
+// everyone — Save as default template, Remove from background / Put back, the Crystal templates
+// panel (import, open any design, delete), New / Open / Save, Import Excel, the Excel column chips.
 // Everyone else only changes the crystals of the order they came from (Save for this order only).
+// (Sean, 2026-10-14: the account's role replaces the colleague's shared "Admin" password.)
+let unlocked = false; // set once in start() from the signed-in account
 function setAdmin(on) {
+  unlocked = on;
   document.body.classList.toggle("admin", on);
   if (on && S.library && S.library.length) checkFonts();
-  $("adminBtn").textContent = on ? "🔓 Admin (lock)" : "🔒 Admin";
 }
-setAdmin(unlocked);
-$("adminBtn").onclick = async () => {
-  if (unlocked) {
-    unlocked = false;
-    try { sessionStorage.removeItem("crystal-unlocked"); } catch (e) {}
-    setAdmin(false);
-    return toast("Locked: only Save for this order only is shown now.");
-  }
-  if (await unlock()) toast("Admin: Save as default template, Remove from background and the templates panel are shown.");
-};
+async function unlock() {
+  if (!unlocked) toast("Only Production can change the designs for everyone.", "bad");
+  return unlocked;
+}
 async function openTemplate(id) {
   const key = "lib|" + id;
   if (key === S.key) return;
@@ -1184,6 +1164,12 @@ window.addEventListener("beforeunload", (e) => { if (S.dirty) { e.preventDefault
 // ------------------------------------------------------------------ start
 
 (async function start() {
+  const me = await whoAmI().catch(() => null);
+  if (!me) {
+    editor.showEmpty('Please log in on the <a href="/">order website</a> first, then open Crystal Studio again.');
+    return;
+  }
+  setAdmin(isStaff(me));
   if (!(await store.ping())) {
     editor.showEmpty("This page has to be opened through the studio's own program, or it can't import or save.<br><br>" +
       "1. Stop Live Server (click <b>Port: 5500</b> at the bottom of VS Code)<br>" +
@@ -1202,7 +1188,7 @@ window.addEventListener("beforeunload", (e) => { if (S.dirty) { e.preventDefault
   if (unlocked) checkFonts(); // fonts of designs imported before, not shared yet (admin)
   // designs imported before the logo clean-up: cleaned once now (and saved)
   // (and, for those cleaned before, where their logo was: the school's logo goes there)
-  if (S.library.some((it) => it.source === "pdf" && it.original && (it.cleaned || 0) < CLEAN_VERSION)) {
+  if (unlocked && S.library.some((it) => it.source === "pdf" && it.original && (it.cleaned || 0) < CLEAN_VERSION)) {
     const fresh = S.library.some((it) => it.source === "pdf" && it.original && !it.cleaned);
     toast(fresh ? "Taking the school logos out of older designs (only this once)…" : "Finding where each design's logo goes (only this once)…");
     const n = await autoCleanAll(S.library, store.saveLibrary);
@@ -1224,15 +1210,20 @@ window.addEventListener("beforeunload", (e) => { if (S.dirty) { e.preventDefault
     S.sourceName = opened.name || "Order";
     S.order = opened.order != null && opened.order !== "" ? String(opened.order) : null;
     S.logoFrom = { logo: opened.logo, school: opened.school };
-    // a teacher (from their order page): changes this order's crystals only — no Illustrator, no Admin
-    if (opened.role === "teacher") {
+    // not Production / Admin (a teacher from their order page): this order's crystals only — their
+    // look and place, not their words (Sean, 2026-10-14: words change through Edit Order, so the
+    // order and its crystals never differ) — no Illustrator, no Admin
+    if (!unlocked) {
       document.body.classList.add("teacher");
-      unlocked = false;
-      setAdmin(false);
+      editor.lockWords(true);
       $("backToOrder").before($("saveOrder")); // the Excel panel is hidden: Save goes up top
     }
     S.origKeys = S.rows.map(contentKey);
     $("srcHint").textContent = `${S.sourceName} · ${S.rows.length} row${S.rows.length === 1 ? "" : "s"} from the order website`;
+  }
+  if (!unlocked && !S.order) {
+    editor.showEmpty("Open the crystals from your order's page on the order website (Crystal Preview → ✎ Edit).");
+    return;
   }
   // the schools' logos: each crystal gets its own (see logos.js logoPicker)
   try { const list = await store.logos(); pickLogo = logoPicker(S.logoFrom || {}, Array.isArray(list) ? list : []); } catch (e) {}

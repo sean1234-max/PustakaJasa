@@ -23,16 +23,18 @@
 .logocell input:placeholder-shown{outline:1px solid #e0338a}
 .logocell .x{position:absolute;top:4px;right:4px;border:0;background:rgba(0,0,0,.55);color:#fff;border-radius:50%;width:22px;height:22px;cursor:pointer}
 .tplnow{margin:0 0 8px}
-/* what only the admin sees (🔒 Admin, the password): changing designs for everyone */
+/* what only Production / Admin see (their account's role): changing designs for everyone */
 body:not(.admin) .admin-only{display:none !important}
-body.teacher .ai-only,body.teacher #adminBtn{display:none !important}
-/* a teacher (from their order page) only changes the words: just the crystal, its tools and Save */
+body.teacher .ai-only{display:none !important}
+/* a teacher (from their order page) changes only the look and place of the words, never the words
+   themselves (those change through Edit Order on the website): no adding, copying or deleting */
+body.teacher #addText,body.teacher #addImageBtn,body.teacher #elAddText,body.teacher #elAddCol,body.teacher #fFieldBox,body.teacher #oDup,body.teacher #oDel,body.teacher .elrow .x,body.teacher .tips{display:none !important}
 body.teacher #designName,body.teacher #xlPanel,body.teacher #colsBox{display:none !important}
 body.teacher .stagerow{grid-template-columns:minmax(0,1fr) !important}
 #teacherHint{opacity:.8}
 body:not(.teacher) #teacherHint{display:none}
 .sources .src{cursor:pointer}
-.sources .src.on{border-color:var(--acc2,var(--acc));box-shadow:0 0 8px rgba(166,77,255,.35)}
+.sources .src.on{border-color:var(--acc2,var(--acc));box-shadow:0 0 0 2px var(--accsoft)}
 .srcdesigns{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 8px}
 .sources .src .x{border:0;background:none;cursor:pointer;color:inherit;font-size:14px;padding:0 0 0 4px}
 
@@ -59,8 +61,7 @@ body:not(.teacher) #teacherHint{display:none}
     <input id="designName" value="Untitled design" aria-label="Design name" spellcheck="false" autocomplete="off">
     <span id="saveState" class="hint"></span>
     <div class="spacer"></div>
-    <button id="adminBtn" title="Change the designs for everyone (Save as default template, remove from background, import…): asks the password">🔒 Admin</button>
-    <span id="teacherHint" class="hint">Double-click a word on the crystal to change it · ‹ › for the next crystal</span>
+    <span id="teacherHint" class="hint">Click a word to change its font, size, colour or place · to change the words, use Edit Order on the website · ‹ › for the next crystal</span>
     <button id="backToOrder" hidden title="Close this tab and go back to the order on the website (its Crystal Preview already shows what you saved)">↩ Back to the order</button>
     <button class="admin-only" id="newBtn">New</button>
     <button class="admin-only" id="openBtn">Open</button>
@@ -112,7 +113,7 @@ body:not(.teacher) #teacherHint{display:none}
      <div class="tb-row">
       <div class="tg">
         <button id="addText">＋ Text</button>
-        <label class="btn">＋ Image<input type="file" id="addImage" accept="image/*"></label>
+        <label class="btn" id="addImageBtn">＋ Image<input type="file" id="addImage" accept="image/*"></label>
         <button class="admin-only" id="eraseBtn" aria-pressed="false" title="Then click the school logo, or anything else on the design's background, to take it out of this design for good">Remove from background</button>
         <button class="admin-only" id="restoreBg" title="Put back everything taken out of this design's background (the logo too)">Put back</button>
       </div>
@@ -144,7 +145,7 @@ body:not(.teacher) #teacherHint{display:none}
         <label class="mini" title="Letter spacing (1/1000 em, same as Illustrator tracking)">Spacing<input id="fSpacing" type="number" step="10"></label>
         <label class="mini" title="Leading in pt (distance between lines)">Leading<input id="fLeading" type="number" step="0.5" min="0.5"></label>
         <label class="mini" title="Outline colour and width (pt)">Outline<input id="fStroke" type="color" aria-label="Outline colour"><input id="fStrokeW" type="number" min="0" step="0.1" aria-label="Outline width"></label>
-        <label class="mini" title="Which Excel column fills this text">Column<select id="fField"></select></label>
+        <label class="mini" id="fFieldBox" title="Which Excel column fills this text">Column<select id="fField"></select></label>
       </div>
 
       <div class="tg" id="tgShape" hidden>

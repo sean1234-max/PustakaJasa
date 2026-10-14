@@ -35,7 +35,16 @@ export const isTemplateImage = (o) => !!o && !!o.data && (o.data.role === "bg" |
 const isShape = (o) => !!o && SHAPES.includes(o.type);
 
 let cv;
-const ed = { W: 600, H: 400, zoom: 1, autoFit: true, token: 0, quiet: 0, history: [], future: [], guides: [], clipboard: null, hooks: {} };
+const ed = { W: 600, H: 400, zoom: 1, autoFit: true, token: 0, quiet: 0, history: [], future: [], guides: [], clipboard: null, hooks: {}, wordsLocked: false };
+
+// Words locked (a teacher, Sean 2026-10-14): texts can be moved and restyled but not retyped,
+// added, copied or deleted — the words come from the order and change through Edit Order.
+export function lockWords(on) { ed.wordsLocked = !!on; }
+if (!fabric.IText.prototype._lockableEditing) {
+  const baseEnter = fabric.IText.prototype.enterEditing;
+  fabric.IText.prototype._lockableEditing = true;
+  fabric.IText.prototype.enterEditing = function (e) { return ed.wordsLocked ? this : baseEnter.call(this, e); };
+}
 
 // ------------------------------------------------------------------ setup
 
@@ -645,6 +654,7 @@ function normaliseTextScale(o) {
 // ------------------------------------------------------------------ adding things
 
 export async function addText(text, opts = {}) {
+  if (ed.wordsLocked) return null;
   // a new text starts in one of the crystal fonts (Teko Bold) unless told otherwise
   if (!opts.ps && !opts.css) opts = { ...opts, ps: "Teko-Bold" };
   const css = opts.ps ? await useFont(opts.ps) : opts.css || "Arial";
@@ -913,6 +923,7 @@ function unbind(o) {
 }
 
 function pasteClone(c) {
+  if (ed.wordsLocked) return;
   cv.discardActiveObject();
   c.set({ left: c.left + 8, top: c.top + 8, evented: true });
   ed.quiet++;
@@ -936,6 +947,7 @@ function duplicate() {
 }
 
 function removeSelected() {
+  if (ed.wordsLocked) return;
   const list = sel().filter((o) => !(o.data && o.data.locked));
   if (!list.length) return;
   cv.discardActiveObject();
