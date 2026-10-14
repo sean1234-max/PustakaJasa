@@ -25,6 +25,9 @@ import { groupItemsByBatch, combineByJenisPlak, sortMedalColours } from '../util
 export default function PriceTable({
   rows, editable, priceDrafts, setPrice, plakCatalog, totalQty, totalHarga, priceAdjusted,
   hideCategory = false, combineJenisPlak = false, showSelempangLines = false,
+  // optional: rows whose Jenis Plak passes canPick can be clicked (onPick(jenisPlak)) — the crystal
+  // rows, to show that crystal in the Crystal Preview below; the `picked` row is highlighted
+  canPick = null, onPick = null, picked = null,
 }) {
   const columnCount = (hideCategory ? 0 : 1) + 1 + 3;
   const groups = groupItemsByBatch(rows);
@@ -64,7 +67,12 @@ export default function PriceTable({
                     : [];
                   return (
                     <Fragment key={it.key}>
-                    <tr>
+                    <tr
+                      {...(onPick && canPick?.(it.jenisPlak) ? {
+                        onClick: () => onPick(it.jenisPlak), title: 'Show this crystal in the Crystal Preview below',
+                        style: { cursor: 'pointer', background: picked === it.jenisPlak ? 'var(--color-accent-100)' : undefined },
+                      } : {})}
+                    >
                       {!hideCategory && <td>{it.categoryLabel}</td>}
                       <td>{it.jenisPlak}</td>
                       {anyOriginalPrice && (

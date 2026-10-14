@@ -24,8 +24,9 @@ const tabs = document.getElementById("tabs");
 const params = new URLSearchParams(location.search);
 if (params.get("theme") === "dark") document.documentElement.dataset.theme = "dark";
 // who is looking, set by the order website: production (everything), teacher (can change the
-// crystals of their order, no Illustrator), view (sales: look only, no changing, no Illustrator)
-const ROLE = ["teacher", "view"].includes(params.get("role")) ? params.get("role") : "production";
+// look of their order's crystals, no Illustrator), view (sales: look only). Anything else = view.
+// (Only what the page shows: the database decides what each account may save.)
+const ROLE = ["production", "teacher"].includes(params.get("role")) ? params.get("role") : "view";
 const CAN_AI = ROLE === "production", CAN_EDIT = ROLE !== "view";
 
 const tell = (msg) => { if (window.parent !== window) window.parent.postMessage(msg, "*"); };
@@ -371,7 +372,7 @@ function showTab(g) {
     const g = slides[at].g;
     // the logo: its web address (a picture pasted into the order itself only when it's small)
     const lg = typeof logoFrom.logo === "string" && (/^https?:/.test(logoFrom.logo) || logoFrom.logo.length < 300000) ? logoFrom.logo : null;
-    window.open("./#order=" + encodeURIComponent(JSON.stringify({ name: g.jenis, order, role: ROLE, logo: lg, school: logoFrom.school, rows: g.tiles.map((t) => t.row) })), "_blank");
+    window.open("./index.html#order=" + encodeURIComponent(JSON.stringify({ name: g.jenis, order, role: ROLE, logo: lg, school: logoFrom.school, rows: g.tiles.map((t) => t.row) })), "_blank");
   };
   draw();
 }
@@ -493,7 +494,7 @@ window.addEventListener("message", (e) => {
   try {
     library = await store.listLibrary();
     // designs imported before the logo clean-up: cleaned once now (and saved)
-    if (library.some((it) => it.source === "pdf" && it.original && !it.cleaned)) {
+    if (ROLE === "production" && library.some((it) => it.source === "pdf" && it.original && !it.cleaned)) {
       out.innerHTML = `<p class="msg">Taking the school logos out of older designs (only this once)…</p>`;
       await autoCleanAll(library, store.saveLibrary);
     }

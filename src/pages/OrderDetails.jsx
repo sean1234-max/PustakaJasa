@@ -11,6 +11,7 @@ import CancelOrderControl from '../components/CancelOrderControl';
 import { reconstructBlocksForCategory } from '../utils/computeBlocks';
 import { splitOrderCategories } from '../utils/exportCsv';
 import { getInvoiceItems } from '../utils/orderBatches';
+import CrystalPreview from '../components/CrystalPreview';
 
 const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: false, matrix: false, jenisPlak: false };
 
@@ -163,6 +164,8 @@ export default function OrderDetails() {
                 <div><div className="dim">Est. Delivery</div><div>{order.deliveryDate}</div></div>
                 <div><div className="dim">Total Amount</div><div className={priceAdjusted ? 'amount-adjusted' : undefined}>RM {totalHarga.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div></div>
               </div>
+
+              <CrystalPreview order={order} role="teacher" />
 
               <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Function Details</div>
               <div className="form-grid-2" style={{ marginTop: 'var(--space-3)' }}>

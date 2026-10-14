@@ -6,6 +6,7 @@ import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import CorrectedExcelControl from '../components/CorrectedExcelControl';
 import PriceTable from '../components/PriceTable';
+import CrystalPreview from '../components/CrystalPreview';
 import OrderPrintout from '../components/OrderPrintout';
 import AddOnTag from '../components/AddOnTag';
 import { useAppState } from '../state/useAppState';
@@ -238,6 +239,7 @@ export default function ProductionOrderDetail() {
       }));
   }, [effectiveOrder, isFiltered, viewInvoiceId, state.plakCatalog]);
   const [printedAt, setPrintedAt] = useState(null);
+  const [pickedCrystal, setPickedCrystal] = useState(null); // a crystal row clicked in the price table
   // Which price table is open for adjusting: 'order' or 'addon'.
   const [priceEditor, setPriceEditor] = useState(null);
   const togglePrices = (which) => setPriceEditor((open) => (open === which ? null : which));
@@ -530,10 +532,12 @@ export default function ProductionOrderDetail() {
               rows={visibleItems} editable={false} priceDrafts={{}} setPrice={() => {}}
               plakCatalog={state.plakCatalog} totalQty={totalQty} totalHarga={effectiveTotalAmount} priceAdjusted={false}
               hideCategory combineJenisPlak
+              canPick={isCrystalCode} onPick={setPickedCrystal} picked={pickedCrystal}
             />
             {partialSplitNotes.map((note) => (
               <p key={note} className="hint-text" style={{ color: '#b45309', marginTop: 'var(--space-2)' }}>{note}</p>
             ))}
+            <CrystalPreview order={order} role="production" selected={pickedCrystal} />
 
             {selempangBlocks.length > 0 && (
               <div style={{ marginTop: 'var(--space-6)' }}>

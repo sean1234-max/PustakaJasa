@@ -12,7 +12,8 @@ import { statusPillStyle, standardUnitPrice, formatDate, defaultShipmentDate, to
 import CancelOrderControl from '../components/CancelOrderControl';
 import ReassignSalesmanControl from '../components/ReassignSalesmanControl';
 import { reconstructBlocksForCategory } from '../utils/computeBlocks';
-import { splitOrderCategories } from '../utils/exportCsv';
+import { splitOrderCategories, isCrystalCode } from '../utils/exportCsv';
+import CrystalPreview from '../components/CrystalPreview';
 import { getOrderChangeStamp } from '../utils/orderStamp';
 import { isUrgentShipment } from '../utils/urgentOrder';
 
@@ -40,6 +41,7 @@ export default function SalesOrderSummary() {
   // total_amount/stock, same boundary as the Production side.
   const [correctedItems, setCorrectedItems] = useState(null);
   const [correctedError, setCorrectedError] = useState('');
+  const [pickedCrystal, setPickedCrystal] = useState(null); // a crystal row clicked in the price table
   useEffect(() => {
     setCorrectedItems(null);
     setCorrectedError('');
@@ -339,7 +341,9 @@ export default function SalesOrderSummary() {
                 rows={rows} editable={editable} priceDrafts={priceDrafts} setPrice={setPrice}
                 plakCatalog={state.plakCatalog} totalQty={totalQty} totalHarga={totalHarga} priceAdjusted={priceAdjusted}
                 hideCategory combineJenisPlak
+                canPick={isCrystalCode} onPick={setPickedCrystal} picked={pickedCrystal}
               />
+              <CrystalPreview order={order} role="view" selected={pickedCrystal} />
               {/* SELEMPANG's rows (ACARA / WARNA / QTY) also show right here on the
                   Summary — the only category that does (Sean); every category's full
                   details stay on the Order Details tab. */}
