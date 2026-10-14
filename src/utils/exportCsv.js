@@ -96,9 +96,10 @@ export function getLineOrder(item, cat) {
 // like any other row — it's a real reservation — but it has no confirmed
 // engraving text, so it is kept OUT of the production CSV until the real
 // name replaces "Reserved" (via Amend / Add-On).
-// "Reserved" or "Reserve" (ORD-0013 was typed without the D), any case.
+// "Reserved", "Reserve" (ORD-0013 was typed without the D) or "KIV" (Sean,
+// 2026-10-14), any case.
 export function isReservedName(name) {
-  return typeof name === 'string' && /^reserved?$/i.test(name.trim());
+  return typeof name === 'string' && /^(reserved?|kiv)$/i.test(name.trim());
 }
 
 // How many plaques on this order still carry a "Reserved" name (Sean,

@@ -494,7 +494,7 @@ describe('buildCsvRows — TOKOH_SHEET NAMA MURID / Reserved', () => {
   });
 
   it('every case form of "reserved" is treated as a hold', () => {
-    ['RESERVED', 'reserved', 'Reserved', '  Reserved  ', 'RESERVE', 'reserve'].forEach((v) => expect(isReservedName(v)).toBe(true));
+    ['RESERVED', 'reserved', 'Reserved', '  Reserved  ', 'RESERVE', 'reserve', 'KIV', 'kiv', ' Kiv '].forEach((v) => expect(isReservedName(v)).toBe(true));
     ['Reserved for Ali', 'AHMAD', '', undefined].forEach((v) => expect(isReservedName(v)).toBe(false));
   });
 
