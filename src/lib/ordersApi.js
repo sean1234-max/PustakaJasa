@@ -119,6 +119,7 @@ function fromDbOrder(row) {
     plakDoneAt: row.plak_done_at || null,
     kivProductionDoneAt: row.kiv_production_done_at || null,
     salesmanDelivery: !!row.salesman_delivery,
+    parentOrderId: row.parent_order_id || null,
   };
 }
 
@@ -171,6 +172,15 @@ export async function insertOrder(order) {
 
 // Partial update — only pass the camelCase fields that changed; fields
 // absent from `patch` are left untouched in the row.
+// Sales approves a reviewed add-on: the database makes it its own order (0091) — the next
+// order number, only the add-on's items, parent_order_id = this order — and clears the pending
+// add-on here. Returns the new order's id.
+export async function approveAddonAsOrder(orderId, items, priceAdjusted) {
+  const { data, error } = await supabase.rpc('approve_addon', { p_order_id: orderId, p_items: items, p_price_adjusted: priceAdjusted });
+  if (error) throw error;
+  return data;
+}
+
 export async function updateOrder(id, patch) {
   const fullDbShape = toDbOrder({ id, ...patch });
   const dbPatch = {};

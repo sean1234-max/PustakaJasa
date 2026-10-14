@@ -7,6 +7,7 @@ import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import CorrectedExcelControl from '../components/CorrectedExcelControl';
 import PriceTable from '../components/PriceTable';
 import OrderPrintout from '../components/OrderPrintout';
+import AddOnTag from '../components/AddOnTag';
 import { useAppState } from '../state/useAppState';
 import { statusPillStyle, formatDate, MANUAL_MAX_QTY, deliveryStageForShipmentDate, toMalaysiaDay, malaysiaToday, isReviewed, isAddonInFlight, invoiceLabel, invoiceSetByNote } from '../data/catalog';
 import { reconstructOrderDetailGroups, reconstructBlocksForCategory, noopUpdaters } from '../utils/computeBlocks';
@@ -31,6 +32,10 @@ export default function ProductionOrderDetail() {
   const [searchParams] = useSearchParams();
   const order = state.orders.find((o) => o.id === id);
   useEffect(() => { ensureOrderLoaded(id); }, [id, ensureOrderLoaded]);
+  // a Tambahan's own order prints with its original order's price table (0091)
+  const parentId = order?.parentOrderId || null;
+  useEffect(() => { if (parentId) ensureOrderLoaded(parentId); }, [parentId, ensureOrderLoaded]);
+  const originalOrder = parentId ? state.orders.find((o) => o.id === parentId) || null : null;
 
   // Opened from one specific invoice's card on the Production dashboard (a
   // split order shows one card per invoice, see ProductionDashboard.jsx/
@@ -359,6 +364,7 @@ export default function ProductionOrderDetail() {
           <div>
             <div className="card-kicker">{page === 'summary' ? 'Summary' : 'Order Details'}</div>
             <div className="card-title">{order.id}</div>
+            <AddOnTag order={order} />
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
             {stamp && <span className="order-stamp-inline no-print">{stamp}</span>}
@@ -699,6 +705,7 @@ export default function ProductionOrderDetail() {
 
         {/* Print-only — see "Print Order" on the Summary page. */}
         <OrderPrintout
+          original={originalOrder}
           order={order} invoiceId={isFiltered ? viewInvoiceId : order.invoiceId} printedAt={printedAt}
           urgent={order.urgent} stamp={stamp} showSales showRemark
           priceTable={{

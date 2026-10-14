@@ -4,6 +4,7 @@ import Nav from '../components/Nav';
 import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import OrderPrintout from '../components/OrderPrintout';
+import AddOnTag from '../components/AddOnTag';
 import { useAppState } from '../state/useAppState';
 import { STATUS_STAGES, statusPillStyle, formatDate, standardUnitPrice, toMalaysiaDay, isAddonInFlight, addonStageText, invoiceLabel } from '../data/catalog';
 import CancelOrderControl from '../components/CancelOrderControl';
@@ -22,6 +23,10 @@ export default function OrderDetails() {
   const [page, setPage] = useState('summary');
 
   useEffect(() => { ensureOrderLoaded(id); }, [id, ensureOrderLoaded]);
+  // a Tambahan's own order prints with its original order's price table (0091)
+  const parentId = order?.parentOrderId || null;
+  useEffect(() => { if (parentId) ensureOrderLoaded(parentId); }, [parentId, ensureOrderLoaded]);
+  const originalOrder = parentId ? state.orders.find((o) => o.id === parentId) || null : null;
 
   // Opened from one specific invoice's card on My Orders (a split order
   // shows one card per invoice, see Dashboard.jsx/getOrderInvoiceSlices) —
@@ -129,6 +134,7 @@ export default function OrderDetails() {
           <div>
             <div className="card-kicker">{page === 'summary' ? 'Summary' : 'Order Details'}</div>
             <div className="card-title">{order.id}</div>
+            <AddOnTag order={order} />
           </div>
           <span className="status-pill" style={statusPillStyle(sliceStatus)}>{sliceStatus}</span>
         </div>
@@ -248,6 +254,7 @@ export default function OrderDetails() {
 
         {/* Print-only — see the "Print Order" button above. */}
         <OrderPrintout
+          original={originalOrder}
           order={order} invoiceId={viewInvoiceId || order.invoiceId} printedAt={order.printedAt}
           priceTable={{ rows: priceRows, plakCatalog: state.plakCatalog, totalQty, totalHarga, priceAdjusted }}
           catBlockGroups={catBlockGroups}

@@ -8,6 +8,7 @@ import { getOrderInvoiceSlices } from '../utils/orderBatches';
 import { fetchMyAssignedSalesmen, fetchAllSalesmen } from '../lib/ordersApi';
 import { prioritizeUrgentOrders } from '../utils/urgentOrder';
 import OrderUrgentBadge from '../components/OrderUrgentBadge';
+import AddOnTag from '../components/AddOnTag';
 
 // Store Admin (formerly "Invoicing Department" — role renamed 0047) can see
 // and act on every order, including ones still 'Reviewing Order' — a
@@ -182,6 +183,7 @@ export default function StoreAdminDashboard() {
                 <div>
                   <div className="order-card-label">Order ID</div>
                   <div className="order-card-id">{ord.id}</div>
+                  <AddOnTag order={ord} />
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
                   <OrderUrgentBadge urgent={ord.urgent} />

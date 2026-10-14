@@ -6,6 +6,7 @@ import { STATUS_STAGES, statusPillStyle, isReviewed, isAddonInFlight, addonStage
 import { getOrderInvoiceSlices } from '../utils/orderBatches';
 import { prioritizeUrgentOrders } from '../utils/urgentOrder';
 import OrderUrgentBadge from '../components/OrderUrgentBadge';
+import AddOnTag from '../components/AddOnTag';
 
 const FILTERS = [
   { key: 'Reviewing Order', label: 'Reviewing Order', match: (o) => o.status === 'Reviewing Order' },
@@ -93,7 +94,7 @@ export default function Dashboard() {
         {filteredOrders.map((ord) => {
           const idx = STATUS_STAGES.indexOf(ord.status);
           const invoiceIdLabel = idx >= 2 ? (invoiceLabel(ord) || `INV-${ord.id.replace('ORD-', '')}`) : '-';
-          const canAddOn = (idx === 1 || idx === 2) && !isAddonInFlight(ord);
+          const canAddOn = (idx === 1 || idx === 2) && !isAddonInFlight(ord) && !ord.parentOrderId;
           const isCompleted = ord.status === 'Completed';
           // Update Details stays open until the salesman approves; changing an
           // order Production already reviewed sends it back for review
@@ -106,6 +107,7 @@ export default function Dashboard() {
                 <div>
                   <div className="order-card-label">Order ID</div>
                   <div className="order-card-id">{ord.id}</div>
+                  <AddOnTag order={ord} />
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
                   <OrderUrgentBadge urgent={ord.urgent} />

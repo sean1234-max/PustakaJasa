@@ -17,7 +17,7 @@ import { frontPgToFunctionDetails } from '../utils/frontPgDetails';
 import { buildCategoryCartItems } from './categoryCartItems';
 import { AppStateContext } from './AppStateContext';
 import {
-  fetchOrders, fetchOrderById, insertOrder, updateOrder, nextOrderSeq, fetchAllSalesmen, reassignOrderSalesman,
+  fetchOrders, fetchOrderById, insertOrder, updateOrder, approveAddonAsOrder, nextOrderSeq, fetchAllSalesmen, reassignOrderSalesman,
 } from '../lib/ordersApi';
 import {
   fetchPlakCatalog, addPlakNode, removePlakNode, updatePlakNode, updatePlakNodeOrder, updatePlakNodeStock,
@@ -2149,32 +2149,35 @@ export function AppStateProvider({ children }) {
       }
       return it;
     });
-    const nextBatch = order.items.reduce((max, it) => Math.max(max, it.batch || 0), 0) + 1;
-    const batchedItems = withOriginalPrice.map((it) => ({ ...it, batch: nextBatch }));
-    const combinedItems = [...order.items, ...batchedItems];
-    // Recompute the whole total from combinedItems, not order.totalAmount +
-    // delta — an incremental sum inherits any rounding drift the order
-    // already carried and would then fail the server-side items<->total
-    // check (orders_amount_guard, supabase/migrations/0041).
-    const combinedTotal = combinedItems.reduce((sum, it) => sum + it.harga, 0);
-    const priceAdjusted = order.priceAdjusted || batchedItems.some((it) => it.unitPrice !== standardUnitPrice(it.jenisPlak, st.plakCatalog));
-    const fields = {
-      items: combinedItems, totalAmount: combinedTotal, priceAdjusted,
-      pendingAddonItems: null, pendingAddonStatus: null, pendingAddonRejectReason: null,
-    };
+    // Its own order from here on (0091, Sean 2026-10-14): the next order number, only the
+    // add-on's items, function details / dates / urgency of this order, straight into Typing
+    // (or KIV & ARTWORK). Store Admin bills it in AutoCount — nothing to enter on the website.
+    const priceAdjusted = withOriginalPrice.some((it) => it.unitPrice !== standardUnitPrice(it.jenisPlak, st.plakCatalog));
+    let newId;
     try {
-      await updateOrder(orderId, fields);
+      newId = await approveAddonAsOrder(orderId, withOriginalPrice, priceAdjusted);
     } catch (err) {
       console.error('Failed to approve add-on in Supabase:', err);
       flashToast('updateToast', describeOrderWriteError(err, 'approve the add-on for'));
       return { ok: false };
     }
+    let child = null;
+    try {
+      child = await fetchOrderById(newId);
+    } catch (err) {
+      console.error('Add-on approved, but its new order could not be loaded:', err);
+    }
+    const cleared = { pendingAddonItems: null, pendingAddonStatus: null, pendingAddonRejectReason: null };
     patch((latest) => ({
-      orders: latest.orders.map((o) => (o.id === orderId ? { ...o, ...fields } : o)),
+      orders: [
+        ...(child ? [child] : []),
+        ...latest.orders.map((o) => (o.id === orderId ? { ...o, ...cleared } : o)),
+      ],
     }));
-    resyncUrgentSheet(order);
-    flashToast('updateToast', 'Add-on approved and added to the order.');
-    return { ok: true };
+    // urgent like its original (same Shipment Date): its own row in the urgent Sheet
+    if (child?.urgent) resyncUrgentSheet(child);
+    flashToast('updateToast', `Add-on approved — the Tambahan is now order ${newId}.`);
+    return { ok: true, newId };
   }, [patch, flashToast, resyncUrgentSheet]);
 
   // Sales approval: `updatedItems` carries each item's (possibly

@@ -17,10 +17,17 @@ const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: f
 // (Sean, 2026-10-09): the original order's price table + details first,
 // then a TAMBAHAN divider and each add-on's own price table + details — all
 // flowing on the same page(s), no forced page breaks (Sean, 2026-10-09).
+//
+// A Tambahan's own order (0091, Sean 2026-10-14) prints for Store Admin as: its function details,
+// then the ORIGINAL order's price table only (`original`, no details), then TAMBAHAN — this
+// order's price table and details — and the grand total of both.
 export default function OrderPrintout({
   order, invoiceId, printedAt, urgent = false, stamp = null, showSales = false, showRemark = false,
-  priceTable, catBlockGroups,
+  priceTable, catBlockGroups, original = null,
 }) {
+  if (original) {
+    return <TambahanPrintout {...{ order, invoiceId, printedAt, urgent, stamp, showSales, showRemark, priceTable, catBlockGroups, original }} />;
+  }
   const batches = groupItemsByBatch(priceTable.rows);
   const split = batches.length > 1;
   const batchTable = (items) => ({
@@ -46,9 +53,42 @@ export default function OrderPrintout({
           .print-only's own font-size) since that sizing is load-bearing for
           fitting a large category on one printed page. */}
       <div className="print-summary-section">
-        {(urgent || stamp || order.salesmanDelivery || split) && (
+        <PrintHeader {...{ order, invoiceId, printedAt, urgent, stamp, showSales, showRemark, tambahan: split }} />
+
+        <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>
+          {split ? `${first.label} — ` : ''}Jenis Plak / Price per Unit / QTY / Harga
+        </div>
+        <PriceTable editable={false} priceDrafts={{}} setPrice={() => {}} showSelempangLines {...(split ? batchTable(first.items) : priceTable)} />
+      </div>
+
+      <PrintDetails groups={split ? batchBlockGroups(first.items) : catBlockGroups} title={split ? `Order Details — ${first.label}` : 'Order Details'} flow={split} />
+
+      {split && addOns.map((batch) => (
+        <div key={batch.batch}>
+          <div className="print-tambahan-banner">{batch.label.toUpperCase()}</div>
+          <div className="print-summary-section">
+            <div className="card-kicker" style={{ marginTop: 'var(--space-3)' }}>{batch.label} — Jenis Plak / Price per Unit / QTY / Harga</div>
+            <PriceTable editable={false} priceDrafts={{}} setPrice={() => {}} showSelempangLines {...batchTable(batch.items)} />
+          </div>
+          <PrintDetails groups={batchBlockGroups(batch.items)} title={`Order Details — ${batch.label}`} flow />
+        </div>
+      ))}
+      {split && (
+        <p style={{ marginTop: 'var(--space-6)', fontSize: 14 }}>
+          <strong>GRAND TOTAL (Original Order + Tambahan): RM {(Number(priceTable.totalHarga) || 0).toFixed(2)}</strong>
+        </p>
+      )}
+    </div>
+  );
+}
+
+// Order ID / printed / function details / invoice + dates / remark, with the corner stamps.
+function PrintHeader({ order, invoiceId, printedAt, urgent, stamp, showSales, showRemark, tambahan }) {
+  return (
+    <>
+        {(urgent || stamp || order.salesmanDelivery || tambahan) && (
           <div className="order-stamp-corner">
-            {split && <div className="order-stamp order-stamp-urgent">TAMBAHAN</div>}
+            {tambahan && <div className="order-stamp order-stamp-urgent">TAMBAHAN</div>}
             {urgent && <div className="order-stamp order-stamp-urgent">URGENT</div>}
             {/* The salesman delivers it himself (0079) — Store Admin doesn't
                 arrange delivery. */}
@@ -87,30 +127,36 @@ export default function OrderPrintout({
             <div>{order.remark}</div>
           </div>
         )}
+    </>
+  );
+}
 
-        <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>
-          {split ? `${first.label} — ` : ''}Jenis Plak / Price per Unit / QTY / Harga
-        </div>
-        <PriceTable editable={false} priceDrafts={{}} setPrice={() => {}} showSelempangLines {...(split ? batchTable(first.items) : priceTable)} />
+const itemsTable = (priceTable, items) => ({
+  ...priceTable,
+  rows: items,
+  totalQty: items.reduce((sum, it) => sum + (Number(it.qty) || 0), 0),
+  totalHarga: items.reduce((sum, it) => sum + (Number(it.harga) || 0), 0),
+});
+
+function TambahanPrintout({ order, invoiceId, printedAt, urgent, stamp, showSales, showRemark, priceTable, catBlockGroups, original }) {
+  const originalTable = itemsTable(priceTable, original.items || []);
+  const grandTotal = (Number(originalTable.totalHarga) || 0) + (Number(priceTable.totalHarga) || 0);
+  return (
+    <div className="print-only">
+      <div className="print-summary-section">
+        <PrintHeader {...{ order, invoiceId, printedAt, urgent, stamp, showSales, showRemark, tambahan: true }} />
+        <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Original Order ({original.id}) — Jenis Plak / Price per Unit / QTY / Harga</div>
+        <PriceTable editable={false} priceDrafts={{}} setPrice={() => {}} showSelempangLines {...originalTable} />
       </div>
-
-      <PrintDetails groups={split ? batchBlockGroups(first.items) : catBlockGroups} title={split ? `Order Details — ${first.label}` : 'Order Details'} flow={split} />
-
-      {split && addOns.map((batch) => (
-        <div key={batch.batch}>
-          <div className="print-tambahan-banner">{batch.label.toUpperCase()}</div>
-          <div className="print-summary-section">
-            <div className="card-kicker" style={{ marginTop: 'var(--space-3)' }}>{batch.label} — Jenis Plak / Price per Unit / QTY / Harga</div>
-            <PriceTable editable={false} priceDrafts={{}} setPrice={() => {}} showSelempangLines {...batchTable(batch.items)} />
-          </div>
-          <PrintDetails groups={batchBlockGroups(batch.items)} title={`Order Details — ${batch.label}`} flow />
-        </div>
-      ))}
-      {split && (
-        <p style={{ marginTop: 'var(--space-6)', fontSize: 14 }}>
-          <strong>GRAND TOTAL (Original Order + Tambahan): RM {(Number(priceTable.totalHarga) || 0).toFixed(2)}</strong>
-        </p>
-      )}
+      <div className="print-tambahan-banner">TAMBAHAN ({order.id})</div>
+      <div className="print-summary-section">
+        <div className="card-kicker" style={{ marginTop: 'var(--space-3)' }}>Tambahan — Jenis Plak / Price per Unit / QTY / Harga</div>
+        <PriceTable editable={false} priceDrafts={{}} setPrice={() => {}} showSelempangLines {...priceTable} />
+      </div>
+      <PrintDetails groups={catBlockGroups} title="Order Details — Tambahan" flow />
+      <p style={{ marginTop: 'var(--space-6)', fontSize: 14 }}>
+        <strong>GRAND TOTAL (Original Order + Tambahan): RM {grandTotal.toFixed(2)}</strong>
+      </p>
     </div>
   );
 }

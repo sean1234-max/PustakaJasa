@@ -144,14 +144,15 @@ Deno.serve(async (req) => {
   // figures in the Sheet that the order doesn't hold.
   const { data: order, error: orderError } = await callerClient
     .from('orders')
-    .select('id, invoice_id, total_amount, sales, sekolah, shipment_date, function_date, date_placed, urgent')
+    .select('id, invoice_id, total_amount, sales, sekolah, shipment_date, function_date, date_placed, urgent, parent_order_id')
     .eq('id', orderId)
     .maybeSingle();
   if (orderError || !order) return jsonResponse({ error: 'Order not found.' }, 404);
   const amount = Number(order.total_amount) || 0;
   const commission = Math.round(amount * URGENT_COMMISSION_RATE * 100) / 100;
   const row = [
-    order.id, order.invoice_id || '', amount, order.sales || '', order.sekolah || '',
+    // a Tambahan's own order (0091) has no invoice on the website — billed in AutoCount
+    order.id, order.invoice_id || (order.parent_order_id ? `TAMBAHAN ${order.parent_order_id}` : ''), amount, order.sales || '', order.sekolah || '',
     malaysiaDay(order.shipment_date || ''), malaysiaDay(order.function_date || ''), order.date_placed || '',
     malaysiaDateTime(new Date()), commission,
   ];

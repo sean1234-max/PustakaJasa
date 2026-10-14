@@ -5,6 +5,7 @@ import { useAppState } from '../state/useAppState';
 import { statusPillStyle, isAddonInFlight, formatDate, toMalaysiaDay, invoiceLabel } from '../data/catalog';
 import { matchesOrderSearch } from '../utils/orderSearch';
 import OrderUrgentBadge from '../components/OrderUrgentBadge';
+import AddOnTag from '../components/AddOnTag';
 import { prioritizeUrgentOrders } from '../utils/urgentOrder';
 
 // Sales works one stage at a time — filter tabs map 1:1 to STATUS_STAGES.
@@ -46,7 +47,8 @@ export default function SalesDashboard() {
     const isOwn = !state.isSalesManager || ord.salesmanId === state.userAuthId;
     return {
       canAmend: isOwn && ord.status === 'Reviewing Order',
-      canAddOn: isOwn && ['Salesman Approved', 'In Production'].includes(ord.status) && !isAddonInFlight(ord),
+      // a Tambahan's own order takes no add-on of its own — add to the original (0091)
+      canAddOn: isOwn && ['Salesman Approved', 'In Production'].includes(ord.status) && !isAddonInFlight(ord) && !ord.parentOrderId,
     };
   };
   const startAmend = (ord) => { openAmend(ord); navigate(`/amend/${ord.id}`); };
@@ -167,6 +169,7 @@ export default function SalesDashboard() {
                     <div>
                       <div className="order-card-label">Order ID</div>
                       <div className="order-card-id">{ord.id}</div>
+                      <AddOnTag order={ord} />
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
                       <OrderUrgentBadge urgent={ord.urgent} />

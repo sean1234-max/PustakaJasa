@@ -5,6 +5,7 @@ import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import PriceTable from '../components/PriceTable';
 import OrderPrintout from '../components/OrderPrintout';
+import AddOnTag from '../components/AddOnTag';
 import DatePicker from '../components/DatePicker';
 import { useAppState } from '../state/useAppState';
 import { statusPillStyle, standardUnitPrice, formatDate, defaultShipmentDate, toMalaysiaDay, malaysiaToday, isReviewed, isAddonInFlight, invoiceLabel } from '../data/catalog';
@@ -25,6 +26,10 @@ export default function SalesOrderSummary() {
   const navigate = useNavigate();
   const order = state.orders.find((o) => o.id === id);
   useEffect(() => { ensureOrderLoaded(id); }, [id, ensureOrderLoaded]);
+  // a Tambahan's own order prints with its original order's price table (0091)
+  const parentId = order?.parentOrderId || null;
+  useEffect(() => { if (parentId) ensureOrderLoaded(parentId); }, [parentId, ensureOrderLoaded]);
+  const originalOrder = parentId ? state.orders.find((o) => o.id === parentId) || null : null;
 
   // Production may have uploaded a corrected FORM ANUGERAH file for this
   // order (ProductionOrderDetail.jsx's CorrectedExcelControl) — re-parsed
@@ -65,7 +70,7 @@ export default function SalesOrderSummary() {
   const awaitingReview = reviewing && !isReviewed(order);
   const addonReviewed = order?.pendingAddonStatus === 'reviewed';
   const canAmend = reviewing;
-  const canAddOn = ['Salesman Approved', 'In Production'].includes(order?.status) && !isAddonInFlight(order);
+  const canAddOn = ['Salesman Approved', 'In Production'].includes(order?.status) && !isAddonInFlight(order) && !order?.parentOrderId;
   const editable = reviewing && isReviewed(order) && isOwn;
 
   // Shipment Date (shipmentDate) / Function Date stay editable right up to the moment of
@@ -242,6 +247,7 @@ export default function SalesOrderSummary() {
           <div>
             <div className="card-kicker">{page === 'summary' ? 'Summary' : 'Order Details'}</div>
             <div className="card-title">{order.id}</div>
+            <AddOnTag order={order} />
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
             {stamp && <span className="order-stamp-inline no-print">{stamp}</span>}
@@ -485,6 +491,7 @@ export default function SalesOrderSummary() {
 
         {/* Print-only — see the "Print Order" button, only shown once approved. */}
         <OrderPrintout
+          original={originalOrder}
           order={order} invoiceId={order.invoiceId} printedAt={order.printedAt}
           urgent={order.urgent} stamp={stamp} showSales showRemark
           priceTable={{

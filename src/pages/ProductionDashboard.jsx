@@ -9,6 +9,7 @@ import { getOrderInvoiceSlices } from '../utils/orderBatches';
 import { countReservedPlaques, needsKiv, kivParts, hasPlakPart, kivInProduction } from '../utils/exportCsv';
 import { prioritizeUrgentOrders } from '../utils/urgentOrder';
 import OrderUrgentBadge from '../components/OrderUrgentBadge';
+import AddOnTag from '../components/AddOnTag';
 import ProductionInvoiceEntry from '../components/ProductionInvoiceEntry';
 
 // Production works 'In Production' orders (invoice number or not — that's
@@ -240,6 +241,7 @@ export default function ProductionDashboard() {
                 <div>
                   <div className="order-card-label">Order ID</div>
                   <div className="order-card-id">{ord.id}</div>
+                  <AddOnTag order={ord} />
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
                   {/* Production uploaded a corrected copy of the teacher's
