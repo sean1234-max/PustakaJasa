@@ -74,16 +74,19 @@ async function download(url, dest) {
   }
 }
 
-// Downloads the originals and pictures into outDir, writes the Illustrator script there and returns
-// its path. Rows whose original can't be fetched still go (the script reports them as skipped).
-export async function writeCrystalScript({ rows, files, platform, label, quiet = false }, outDir) {
+// Downloads the originals and pictures into workDir (a scratch folder — Sean 2026-10-14: the output
+// folder gets only the .ai files), writes the Illustrator script there and returns its path. The
+// .ai files go to outDir. Rows whose original can't be fetched still go (the script reports them).
+// Pictures are embedded in the .ai, so workDir can be deleted afterwards.
+export async function writeCrystalScript({ rows, files, platform, label, quiet = false }, outDir, workDir) {
   mkdirSync(outDir, { recursive: true });
+  mkdirSync(workDir, { recursive: true });
   const two = (n) => String(n).padStart(2, '0');
   const got = new Map();
   for (const r of rows) {
     delete r.path;
     if (!got.has(r.original)) {
-      const dir = path.join(outDir, '_templates');
+      const dir = path.join(workDir, 'templates');
       mkdirSync(dir, { recursive: true });
       const dest = path.join(dir, `${path.basename(r.original, '.pdf').replace(/^orig-/, '')} - ${r.file.replace(/\.(pdf|svg)$/i, '.ai')}`);
       let err = null;
@@ -98,7 +101,7 @@ export async function writeCrystalScript({ rows, files, platform, label, quiet =
     r.images = (Array.isArray(r.images) ? r.images : []).map((im, i) => {
       const m = /^data:image\/(png|jpeg|jpg|gif|webp);base64,(.+)$/.exec(im?.src || '');
       if (!m) return null;
-      const dir = path.join(outDir, '_images');
+      const dir = path.join(workDir, 'images');
       mkdirSync(dir, { recursive: true });
       const file = path.join(dir, `${two(r.row)}-${i + 1}.${m[1] === 'jpeg' ? 'jpg' : m[1]}`);
       writeFileSync(file, Buffer.from(m[2], 'base64'));
@@ -110,32 +113,33 @@ export async function writeCrystalScript({ rows, files, platform, label, quiet =
     folder: '', outDir, keepOpen: rows.length <= 5, outline: false, quiet, rows,
     ...(platform && pieces > 1 ? { platform, keepOpen: true } : {}), ...(label ? { label } : {}),
   };
-  const script = [rows.length ? illustratorScript(job) : '#target illustrator', svgScript(files, outDir)].join('\n');
-  const scriptPath = path.join(outDir, '_make.jsx');
+  const script = [rows.length ? illustratorScript(job) : '#target illustrator', svgScript(files, workDir, outDir)].join('\n');
+  const scriptPath = path.join(workDir, 'make.jsx');
   writeFileSync(scriptPath, script, 'utf8');
   return scriptPath;
 }
 
 // Designs without an original .ai: the page sends them as .svg (words editable, artwork a picture);
-// Illustrator opens each and saves it as .ai next to it.
-function svgScript(files, outDir) {
+// Illustrator opens each (from workDir) and saves it as .ai in outDir.
+function svgScript(files, workDir, outDir) {
   if (!files.length) return '';
   const used = new Set();
   const paths = files.map((f) => {
     let name = cleanName(f.name, 120) || 'crystal';
     for (let k = 2; used.has(name.toLowerCase()); k++) name = name.replace(/( \(\d+\))?$/, ` (${k})`);
     used.add(name.toLowerCase());
-    const p = path.join(outDir, `${name}.svg`);
+    const p = path.join(workDir, `${name}.svg`);
     writeFileSync(p, f.svg);
     return p.replace(/\\/g, '/');
   });
+  const out = outDir.replace(/\\/g, '/');
   return `
 (function () {
   var files = ${JSON.stringify(paths)};
   for (var i = 0; i < files.length; i++) {
     try {
       var doc = app.open(new File(files[i]));
-      doc.saveAs(new File(files[i].replace(/\\.svg$/i, ".ai")), new IllustratorSaveOptions());
+      doc.saveAs(new File(${JSON.stringify(out)} + "/" + files[i].replace(/^.*\\//, "").replace(/\\.svg$/i, ".ai")), new IllustratorSaveOptions());
       if (i >= 5) doc.close(SaveOptions.DONOTSAVECHANGES);
     } catch (e) {}
   }

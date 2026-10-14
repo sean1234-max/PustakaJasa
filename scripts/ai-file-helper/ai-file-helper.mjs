@@ -205,9 +205,10 @@ function runIllustrator(scriptPath) {
 // report (_result.txt) comes back as the message.
 async function runCrystalJob(job, checked) {
   job.status = 'running';
+  const workDir = path.join(TEMP_DIR, `crystal-${job.id}`);
   try {
     if (!(await folderReachable(resolveAiFileDir()))) throw new Error(`This computer can't reach ${resolveAiFileDir()}`);
-    const scriptPath = await writeCrystalScript(checked, job.outputFolder);
+    const scriptPath = await writeCrystalScript(checked, job.outputFolder, workDir);
     await runIllustrator(scriptPath);
     const report = path.join(job.outputFolder, '_result.txt');
     job.message = existsSync(report) ? readFileSync(report, 'utf8') : 'Illustrator ran, but wrote no report.';
@@ -217,6 +218,12 @@ async function runCrystalJob(job, checked) {
   } catch (err) {
     job.status = 'error';
     job.message = err.stderr ? `Illustrator call failed: ${err.stderr.toString()}` : err.message;
+  } finally {
+    // only the .ai files stay in the output folder (Sean, 2026-10-14)
+    // (a file Illustrator still holds open can't be removed on Windows — left for the OS to clear)
+    for (const p of ['_result.txt', '_started.txt'].map((f) => path.join(job.outputFolder, f)).concat(workDir)) {
+      try { rmSync(p, { recursive: true, force: true }); } catch { /* best effort */ }
+    }
   }
   console.log(`[${new Date().toISOString()}] crystals ${job.outputFolder} -> ${job.status} (${job.files.length} file(s))\n${job.message}\n`);
 }
