@@ -33,6 +33,19 @@ import { breakAcaraLine } from './acaraBreak';
 // names) still fits: it becomes class rows with a single "KUANTITI" column,
 // or one class row per named subject — see the shape readers below.
 
+// Excel names a copied sheet "<name> (2)", "<name> (3)" … (Sean, 2026-10-14, ORD-0037: "MP THP 2
+// (Kalau ada kelas) (2)"). A copy of a SUBJEK x level sheet whose kind its name tells us imports as
+// that kind, in its own tab — reading its Nama Kelas list and putting each subject in the position
+// line — instead of the generic subject matrix, which reads neither.
+const SUBJECT_LEVEL_CATEGORIES = ['PPKI', 'MP1', 'MP2', 'MP1_KELAS', 'MP2_KELAS'];
+export function copiedSheetCategory(name) {
+  const m = /^(.*?)\s*\(\d+\)\s*$/.exec(String(name || ''));
+  if (!m) return null;
+  const base = m[1].trim().toUpperCase();
+  const key = Object.keys(SOURCE_SHEET_TO_CATEGORY).find((k) => k.toUpperCase() === base);
+  return key ? SOURCE_SHEET_TO_CATEGORY[key] : null;
+}
+
 const TAHUN_OPTIONS = ['TAHUN 1', 'TAHUN 2', 'TAHUN 3', 'TAHUN 4', 'TAHUN 5', 'TAHUN 6'];
 
 // Which sheets have their own dedicated real category (catalog.js) rather
@@ -2111,7 +2124,8 @@ export function parseFormAnugerahExcel(arrayBuffer) {
     const subjectLike = parseSubjectLevelSheet(ws);
     if (subjectLike) {
       subjectLike.sourceSheet = name;
-      subjectLike.dynamicCategoryKey = makeDynamicCategoryKey('KLAS_MATRIX', name);
+      const copiedFrom = copiedSheetCategory(name);
+      subjectLike.dynamicCategoryKey = makeDynamicCategoryKey(SUBJECT_LEVEL_CATEGORIES.includes(copiedFrom) ? copiedFrom : 'KLAS_MATRIX', name);
       allSections.push(subjectLike);
       return;
     }

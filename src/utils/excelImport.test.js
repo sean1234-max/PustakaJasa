@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import * as XLSX from 'xlsx';
-import { parseFormAnugerahExcel, matchJenisPlakPath, deriveKlasMatrixSectionLines, readFrontPgInfo, splitCikguPhone } from './excelImport';
+import { parseFormAnugerahExcel, copiedSheetCategory, matchJenisPlakPath, deriveKlasMatrixSectionLines, readFrontPgInfo, splitCikguPhone } from './excelImport';
 import { computeBlocks, noopUpdaters, reconstructOrderDetailGroups } from './computeBlocks';
 import { buildCategoryCartItems } from '../state/categoryCartItems';
 import { buildCsvRows, CSV_COLUMNS } from './exportCsv';
@@ -1271,5 +1271,18 @@ describe('OTHER Jenis Plak needs a price at Add to Cart (Sean, 2026-10-07)', () 
     const res = buildCategoryCartItems(st({ unitPrice: 33 }), 'LONJAKAN');
     expect(res.error).toBeUndefined();
     expect(res.items.map((it) => [it.unitPrice, it.harga])).toEqual([[33, 66]]);
+  });
+});
+
+describe('copiedSheetCategory — Excel\'s "<sheet> (2)" copies keep their sheet\'s kind (ORD-0037)', () => {
+  it('knows a copied template sheet from its name', () => {
+    expect(copiedSheetCategory('MP THP 2 (Kalau ada kelas) (2)')).toBe('MP2_KELAS');
+    expect(copiedSheetCategory('MP THP 1 (Kalau ada kelas) (3)')).toBe('MP1_KELAS');
+    expect(copiedSheetCategory('mp thp 2 (2)')).toBe('MP2');
+  });
+  it('leaves the template sheets themselves and other names alone', () => {
+    expect(copiedSheetCategory('MP THP 2 (Kalau ada kelas)')).toBe(null);
+    expect(copiedSheetCategory('PENCAPAIAN (2)')).toBe(null);
+    expect(copiedSheetCategory('')).toBe(null);
   });
 });
