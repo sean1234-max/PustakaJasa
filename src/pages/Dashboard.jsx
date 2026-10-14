@@ -12,9 +12,7 @@ const FILTERS = [
   { key: 'Reviewing Order', label: 'Reviewing Order', match: (o) => o.status === 'Reviewing Order' },
   { key: 'Salesman Approved', label: 'Salesman Approved', match: (o) => o.status === 'Salesman Approved' },
   { key: 'In Production', label: 'In Production', match: (o) => o.status === 'In Production' },
-  { key: 'Waiting for Shipment', label: 'Waiting for Shipment', match: (o) => o.status === 'Waiting for Shipment' },
-  { key: 'Shipped', label: 'Shipped', match: (o) => o.status === 'Shipped' },
-  { key: 'Delivered', label: 'Delivered', match: (o) => o.status === 'Completed' },
+  { key: 'Completed', label: 'Completed', match: (o) => o.status === 'Completed' },
 ];
 
 export default function Dashboard() {

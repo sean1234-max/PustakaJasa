@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import {
   CATEGORIES, ACTIVE_CATEGORIES, formatDate, standardUnitPrice, getCategorySubjects, matrixCellKey, customMatrixLabelKey,
-  deliveryStageForShipmentDate, isReviewed, isAddonInFlight,
+  isReviewed, isAddonInFlight,
   resolveCategory, categoriesUsedByItems, isDynamicCategoryKey, malaysiaToday, malaysiaDayIso,
 } from '../data/catalog';
 import { buildInitialRowsByBlock, buildInitialColumnsByBlock, buildInitialPlakRows } from '../data/formDefaults';
@@ -2674,20 +2674,14 @@ export function AppStateProvider({ children }) {
 
   // KIV & ARTWORK (Sean, 2026-10-14) — an order's Reserved plaques and
   // crystals, made alongside its ordinary plaques (exportCsv.js kivParts).
-  // Its own card: KIV & ARTWORK Done → In Production → Done. The order goes
-  // on to shipment once this AND its plaque card are done (whichever is last
-  // moves it — see advanceOrderToShipment / markProductionDone).
-  const advanceOrderToShipment = useCallback(async (order, extraFields = {}) => {
-    const nextStatus = deliveryStageForShipmentDate(order.shipmentDate, malaysiaToday());
-    const toastForStatus = {
-      'Waiting for Shipment': 'Production completed. Order is now waiting for shipment.',
-      Shipped: 'Production completed. Shipment Date has arrived — order is now Shipped.',
-      Completed: 'Production completed. Shipment Date has passed — order is now Completed.',
-    };
-    const fields = { ...extraFields, status: nextStatus };
+  // Its own card: KIV & ARTWORK Done → In Production → Done. The order is
+  // Completed once this AND its plaque card are done (whichever is last
+  // moves it — see completeOrder / markProductionDone).
+  const completeOrder = useCallback(async (order, extraFields = {}) => {
+    const fields = { ...extraFields, status: 'Completed' };
     await updateOrder(order.id, fields);
     patch((st) => ({ orders: st.orders.map((o) => (o.id === order.id ? { ...o, ...fields } : o)) }));
-    flashProductionToast(toastForStatus[nextStatus]);
+    flashProductionToast('Production completed. Order is now Completed.');
   }, [patch, flashProductionToast]);
 
   const markKivDone = useCallback(async (orderId) => {
@@ -2725,13 +2719,13 @@ export function AppStateProvider({ children }) {
         patch((st) => ({ orders: st.orders.map((o) => (o.id === orderId ? { ...o, kivProductionDoneAt } : o)) }));
         flashProductionToast(`${kivParts(order).join(' + ')} done — the order moves on once its plaques are done too.`);
       } else {
-        await advanceOrderToShipment(order, { kivProductionDoneAt });
+        await completeOrder(order, { kivProductionDoneAt });
       }
     } catch (err) {
       console.error('Failed to mark KIV & ARTWORK production done in Supabase:', err);
       flashProductionToast('Unable to update order status. Please try again.');
     }
-  }, [patch, flashProductionToast, advanceOrderToShipment]);
+  }, [patch, flashProductionToast, completeOrder]);
 
   const markProductionDone = useCallback(async (orderId, sliceInvoiceId) => {
     const order = stateRef.current.orders.find((o) => o.id === orderId);
@@ -2762,19 +2756,9 @@ export function AppStateProvider({ children }) {
       }
       return;
     }
-    // Status isn't always 'Waiting for Shipment': if this order's Shipment
-    // Date has already arrived (or passed) by the time Production finishes,
-    // the calendar rule sends it straight to 'Shipped' / 'Completed', the
-    // same as the daily sweep_shipped_orders job would on its next run.
-    const nextStatus = deliveryStageForShipmentDate(order.shipmentDate, malaysiaToday());
-    const toastForStatus = {
-      'Waiting for Shipment': 'Production completed. Order is now waiting for shipment.',
-      Shipped: 'Production completed. Shipment Date has arrived — order is now Shipped.',
-      Completed: 'Production completed. Shipment Date has passed — order is now Completed.',
-    };
     try {
-      await writeSlice(order, slice, { status: nextStatus });
-      flashProductionToast(toastForStatus[nextStatus]);
+      await writeSlice(order, slice, { status: 'Completed' });
+      flashProductionToast('Production completed. Order is now Completed.');
     } catch (err) {
       console.error('Failed to mark order done in Supabase:', err);
       flashProductionToast('Unable to update order status. Please try again.');

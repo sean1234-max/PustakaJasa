@@ -1031,13 +1031,10 @@ export function getLowStockAlerts(nodes) {
 //                       order.reviewedAt, the status stays) and may edit it
 //   Salesman Approved — Sales approved a reviewed order (Shipment Date, price)
 //   In Production     — Store Admin entered the Invoice Number
-//   Waiting for Shipment → Shipped → Completed — Production's Done, then the
-//                       calendar: the day the Shipment Date arrives it becomes
-//                       'Shipped', the day after 'Completed' (markProductionDone
-//                       in AppState.jsx at click time, and the daily
-//                       sweep_shipped_orders job).
+//   Completed         — Production's Done (Sean, 2026-10-14: no more
+//                       Waiting for Shipment / Shipped — migration 0092)
 export const STATUS_STAGES = [
-  'Reviewing Order', 'Salesman Approved', 'In Production', 'Waiting for Shipment', 'Shipped', 'Completed',
+  'Reviewing Order', 'Salesman Approved', 'In Production', 'Completed',
 ];
 
 // Sales / Store Admin may approve only after Production's Done Review.
@@ -1152,23 +1149,12 @@ export function defaultShipmentDate(datePlaced, today, functionDate) {
   return d;
 }
 
-// The calendar-driven part of the pipeline. Given an order's Shipment Date
-// (order.shipmentDate, stored as an ISO string) and today, returns which of the
-// three post-production stages the order belongs in:
-//   Shipment Date in the future -> 'Waiting for Shipment'
-//   Shipment Date is today       -> 'Shipped'
-//   Shipment Date has passed     -> 'Completed'
-// Kept in one place so markProductionDone (the "Mark as Done" click) and
-// the daily sweep_shipped_orders job (supabase/migrations/0056) can't drift
-// apart. A missing/unparseable date falls back to 'Waiting for Shipment' —
-// nothing should auto-ship an order with no real Shipment Date on record.
-export function deliveryStageForShipmentDate(shipmentDate, today) {
+// True once an order's Shipment Date (Malaysian calendar day) is behind
+// `today`. A missing/unparseable date never counts as passed.
+export function shipmentDatePassed(shipmentDate, today) {
   const ship = toMalaysiaDay(shipmentDate);
-  if (!ship) return 'Waiting for Shipment';
-  const now = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  if (ship > now) return 'Waiting for Shipment';
-  if (ship.getTime() === now.getTime()) return 'Shipped';
-  return 'Completed';
+  if (!ship) return false;
+  return ship < new Date(today.getFullYear(), today.getMonth(), today.getDate());
 }
 
 // Formats an ISO timestamp (e.g. orders.printed_at) in Malaysia time
