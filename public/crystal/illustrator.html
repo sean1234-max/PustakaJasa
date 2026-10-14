@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Opening in Illustrator</title>
+<!-- A small window from Crystal Studio on this PC (Start Studio.bat). The online studio or the order
+     website opens it and hands it the crystals (as Illustrator-ready .svg); it gives them to this
+     PC's server, which opens Illustrator and saves each one as .ai. A page on the internet can't
+     reach this PC by itself; this window, served by the PC, can. -->
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #070912; color: #e6e9ff;
+    font: 15px/1.5 system-ui, sans-serif; text-align: center; padding: 16px; box-sizing: border-box; }
+  .bad { color: #ff6b8a; }
+  small { color: #8f97c4; display: block; margin-top: 8px; }
+</style>
+</head>
+<body>
+<div><p id="msg">Waiting for the crystals…</p><small id="sub">Crystal Studio on this PC</small></div>
+<script>
+(async () => {
+  const msg = document.getElementById("msg"), sub = document.getElementById("sub");
+  const tell = (m) => { try { window.opener && window.opener.postMessage(m, "*"); } catch (e) {} };
+  let origins = [], v = 1, build = "";
+  try { const info = await (await fetch("/api/illustrator/svgs")).json(); origins = info.origins || []; v = info.v || 1; build = info.build || ""; } catch (e) {}
+  const allowed = (o) => o === location.origin || /^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(o) || origins.includes(o);
+  let busy = false;
+  window.addEventListener("message", async (e) => {
+    if (!e.data || e.data.type !== "crystal-illustrator-files" || busy || !allowed(e.origin) || e.source !== window.opener) return;
+    busy = true;
+    // job: crystals made from their original .ai (editable artwork and words); files: as .svg
+    const job = e.data.job && Array.isArray(e.data.job.rows) && e.data.job.rows.length ? e.data.job : null;
+    const files = Array.isArray(e.data.files) ? e.data.files : [];
+    const n = (job ? job.rows.length : 0) + files.length;
+    msg.textContent = `Opening ${n} crystal${n === 1 ? "" : "s"} in Illustrator…`;
+    const post = async (url, body) => {
+      try { return await (await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })).json(); }
+      catch (err) { return { ok: false, error: err.message }; }
+    };
+    // the original .ai files: this browser downloads the ones this PC doesn't have yet and hands them
+    // over (this PC's own downloads can fail where the browser's work, e.g. its DNS can't find the
+    // online database)
+    if (job) {
+      const seen = new Set();
+      for (const row of job.rows) {
+        const rel = row && row.original, src = row && row.originalUrl;
+        if (typeof rel !== "string" || typeof src !== "string" || seen.has(rel)) continue;
+        seen.add(rel);
+        try {
+          const q = "/api/original?path=" + encodeURIComponent(rel);
+          const have = await (await fetch(q)).json();
+          if (have.have) continue;
+          sub.textContent = "Getting the original .ai files…";
+          const got = await fetch(src);
+          if (!got.ok) continue;
+          await fetch(q, { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: await got.blob() });
+        } catch (err) {} // then this PC tries to download it itself
+      }
+      sub.textContent = "Crystal Studio on this PC";
+    }
+    const a = job ? await post("/api/illustrator", job) : null;
+    const b = files.length ? await post("/api/illustrator/svgs", { files }) : null;
+    const r = (!a ? b : !b ? a : { ok: a.ok && b.ok, folder: a.folder, error: a.error || b.error }) || { ok: false, error: "nothing to open" };
+    tell({ type: "crystal-illustrator-done", result: r });
+    if (r.ok) {
+      msg.textContent = "Illustrator is making them…";
+      sub.textContent = "Saved as .ai in " + r.folder + ". This window closes by itself when Illustrator is done.";
+      // wait for Illustrator's report (up to 5 minutes), pass it to the page, then close
+      const until = Date.now() + 300000;
+      while (Date.now() < until) {
+        await new Promise((ok) => setTimeout(ok, 2000));
+        let res = null;
+        try { res = await (await fetch("/api/illustrator/result?folder=" + encodeURIComponent(r.folder))).json(); } catch (e) {}
+        if (res && res.done) { tell({ type: "crystal-illustrator-report", text: res.text }); break; }
+      }
+      window.close();
+    } else {
+      msg.className = "bad";
+      msg.textContent = "Couldn't open Illustrator: " + (r.error || "no answer");
+    }
+  });
+  tell({ type: "crystal-illustrator-ready", v, build });
+})();
+</script>
+</body>
+</html>
