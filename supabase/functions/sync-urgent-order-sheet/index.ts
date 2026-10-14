@@ -12,7 +12,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
-const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
+const PUBLISHABLE_KEY = JSON.parse(Deno.env.get('SUPABASE_PUBLISHABLE_KEYS')!)['default'];
 
 // Google service-account credentials for the Sheets API — set via
 // `supabase secrets set`. The private key is a PEM; Deno env vars can't
@@ -123,7 +123,7 @@ Deno.serve(async (req) => {
   const authHeader = req.headers.get('Authorization');
   if (!authHeader) return jsonResponse({ error: 'Missing Authorization header.' }, 401);
 
-  const callerClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  const callerClient = createClient(SUPABASE_URL, PUBLISHABLE_KEY, {
     global: { headers: { Authorization: authHeader } },
   });
 

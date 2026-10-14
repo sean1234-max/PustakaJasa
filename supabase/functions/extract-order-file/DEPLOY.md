@@ -14,7 +14,7 @@ app yet — Batch E does that behind the `VITE_AI_IMPORT_ENABLED` flag.
      (default `6` ≈ RM30 per user per calendar month), `EXTRACT_RATE_LIMIT_PER_HOUR`
      (default `20`), `EXTRACT_PRICE_IN_USD` / `EXTRACT_PRICE_OUT_USD` (per
      million tokens, defaults `3` / `15`).
-   `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` are
+   `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEYS`, `SUPABASE_SECRET_KEYS` are
    provided automatically.
 
 ## Deploy

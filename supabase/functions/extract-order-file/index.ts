@@ -19,8 +19,8 @@ import { EXTRACTION_INPUT_SCHEMA, validateExtraction } from './schema.ts';
 import { SYSTEM_PROMPT, buildUserPrompt, buildRetryMessage } from './prompt.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
-const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
-const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+const PUBLISHABLE_KEY = JSON.parse(Deno.env.get('SUPABASE_PUBLISHABLE_KEYS')!)['default'];
+const SECRET_KEY = JSON.parse(Deno.env.get('SUPABASE_SECRET_KEYS')!)['default'];
 const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY')!;
 
 // Overridable without a code change — set as secrets if the defaults drift.
@@ -98,10 +98,10 @@ Deno.serve(async (req) => {
   const authHeader = req.headers.get('Authorization');
   if (!authHeader) return json({ error: 'Missing Authorization header.' }, 401);
 
-  const callerClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  const callerClient = createClient(SUPABASE_URL, PUBLISHABLE_KEY, {
     global: { headers: { Authorization: authHeader } },
   });
-  const adminClient = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+  const adminClient = createClient(SUPABASE_URL, SECRET_KEY);
 
   const { data: { user }, error: userError } = await callerClient.auth.getUser();
   if (userError || !user) return json({ error: 'Not authenticated.' }, 401);

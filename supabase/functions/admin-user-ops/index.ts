@@ -12,8 +12,8 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
-const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
-const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+const PUBLISHABLE_KEY = JSON.parse(Deno.env.get('SUPABASE_PUBLISHABLE_KEYS')!)['default'];
+const SECRET_KEY = JSON.parse(Deno.env.get('SUPABASE_SECRET_KEYS')!)['default'];
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -41,10 +41,10 @@ Deno.serve(async (req) => {
   // who they are), one with the service role (for the actual admin
   // operation, and to look up the caller's real role — bypassing RLS, so
   // it can't be spoofed by manipulating what the client sends).
-  const callerClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  const callerClient = createClient(SUPABASE_URL, PUBLISHABLE_KEY, {
     global: { headers: { Authorization: authHeader } },
   });
-  const adminClient = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+  const adminClient = createClient(SUPABASE_URL, SECRET_KEY);
 
   const { data: { user }, error: userError } = await callerClient.auth.getUser();
   if (userError || !user) return jsonResponse({ error: 'Not authenticated.' }, 401);

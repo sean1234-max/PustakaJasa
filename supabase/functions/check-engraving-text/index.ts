@@ -17,8 +17,8 @@ import { ISSUES_TOOL_SCHEMA, validateIssues, type CheckLine } from './schema.ts'
 import { SYSTEM_PROMPT, buildUserPrompt, buildRetryMessage } from './prompt.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
-const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
-const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+const PUBLISHABLE_KEY = JSON.parse(Deno.env.get('SUPABASE_PUBLISHABLE_KEYS')!)['default'];
+const SECRET_KEY = JSON.parse(Deno.env.get('SUPABASE_SECRET_KEYS')!)['default'];
 const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY')!;
 
 const MODEL = Deno.env.get('GRAMMAR_MODEL') ?? 'claude-haiku-4-5-20251001';
@@ -77,8 +77,8 @@ Deno.serve(async (req) => {
   const authHeader = req.headers.get('Authorization');
   if (!authHeader) return json({ error: 'Missing Authorization header.' }, 401);
 
-  const callerClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { global: { headers: { Authorization: authHeader } } });
-  const adminClient = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+  const callerClient = createClient(SUPABASE_URL, PUBLISHABLE_KEY, { global: { headers: { Authorization: authHeader } } });
+  const adminClient = createClient(SUPABASE_URL, SECRET_KEY);
 
   const { data: { user }, error: userError } = await callerClient.auth.getUser();
   if (userError || !user) return json({ error: 'Not authenticated.' }, 401);
@@ -126,6 +126,14 @@ Deno.serve(async (req) => {
     .eq('created_by', user.id).gte('created_at', monthStart);
   const spentCents = (monthRuns ?? []).reduce((s, r) => s + (Number(r.cost_usd_cents) || 0), 0);
   if (spentCents >= MONTHLY_CAP_USD * 100) {
+    await adminClient.from('ai_grammar_checks').insert({ created_by: user.id, status: 'cost_capped', lines_checked: lines.length });
+    return json({ issues: [], checked: false });
+  }
+
+  // Site-wide monthly AI cap shared by every AI feature (migration 0085).
+  // Fails open: before that migration exists the RPC just errors.
+  const { data: budget, error: budgetError } = await adminClient.rpc('ai_budget_status');
+  if (!budgetError && Array.isArray(budget) && budget[0]?.blocked === true) {
     await adminClient.from('ai_grammar_checks').insert({ created_by: user.id, status: 'cost_capped', lines_checked: lines.length });
     return json({ issues: [], checked: false });
   }
