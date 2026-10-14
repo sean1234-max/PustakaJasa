@@ -63,6 +63,8 @@ function toDbOrder(order) {
     plak_done_at: order.plakDoneAt ?? null,
     kiv_production_done_at: order.kivProductionDoneAt ?? null,
     salesman_delivery: !!order.salesmanDelivery,
+    // only "confirmed or not" is sent; the database stamps who and when (0089)
+    artwork_confirmed_at: order.artworkConfirmedAt ?? null,
   };
 }
 
@@ -119,6 +121,9 @@ function fromDbOrder(row) {
     plakDoneAt: row.plak_done_at || null,
     kivProductionDoneAt: row.kiv_production_done_at || null,
     salesmanDelivery: !!row.salesman_delivery,
+    artworkConfirmedAt: row.artwork_confirmed_at || null,
+    artworkConfirmedByName: row.artwork_confirmed_by_name || null,
+    artworkConfirmedByRole: row.artwork_confirmed_by_role || null,
     parentOrderId: row.parent_order_id || null,
   };
 }

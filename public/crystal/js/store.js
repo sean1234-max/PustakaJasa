@@ -243,6 +243,10 @@ export const store = {
   // the font list kept online (also on a PC running server.js), and adding to it (js/font-share.js)
   sharedFonts: () => (ONLINE ? online.setting("fonts", []) : Promise.resolve([])),
   addFonts: (rows, uploads = []) => (ONLINE ? online.addFonts(rows, uploads) : Promise.reject(new Error("Fonts are kept online: open Crystal Studio from its website."))),
+  // a teacher's "Save for this order only" also confirms the order's crystal artwork (Sean,
+  // 2026-10-14): only "confirmed" is sent, the database stamps who and when (0089), first time only
+  confirmArtwork: (order) => sb(table("orders", `id=eq.${encodeURIComponent(order)}`),
+    { method: "PATCH", body: { artwork_confirmed_at: new Date().toISOString() }, headers: { Prefer: "return=minimal" } }),
   // the master template: the look of the header, position and name texts on every design
   master: () => (ONLINE ? online.setting("master", {}) : api("GET", "/api/master")),
   saveMaster: (m) => (ONLINE ? online.saveSetting("master", m && typeof m === "object" && !Array.isArray(m) ? m : {}) : api("POST", "/api/master", m)).then(announce),

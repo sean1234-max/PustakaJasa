@@ -274,6 +274,9 @@ export default function ProductionDashboard() {
                 <div key={part} className="order-stamp-inline" style={{ marginTop: 'var(--space-1)' }}>{part}</div>
               ))}
               {kivPending && <div className="hint-text" style={{ margin: '4px 0 0', fontWeight: 600, color: '#8a6d00' }}>Waiting: {parts.join(' / ')}</div>}
+              {isKivCard && parts.includes('CRYSTAL') && !ord.artworkConfirmedAt && (
+                <div className="hint-text" style={{ margin: '4px 0 0', fontWeight: 600, color: '#b45309' }}>Artwork not confirmed yet</div>
+              )}
 
               <div className="order-card-meta" style={{ gridTemplateColumns: '1fr' }}>
                 <div><div className="dim">Sekolah</div><div>{ord.sekolah || '—'}</div></div>

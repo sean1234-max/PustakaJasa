@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import { useAppState } from '../state/useAppState';
 import { formatDate, getStockStatus, resolveCategory } from '../data/catalog';
+import CrystalPreview from '../components/CrystalPreview';
+import { isCrystalCode } from '../utils/exportCsv';
 
 const isSelempangItem = (ci) => resolveCategory(ci.categoryKey)?.selempang;
 
@@ -89,10 +91,23 @@ export default function Cart() {
       .find(Boolean);
   }, [groupedCartRowsByPlak, selempangQty, state.plakCatalog]);
 
-  const handleSubmit = async () => {
+  // Crystals: the artwork is checked in the preview below before the order goes in (Sean,
+  // 2026-10-14). Yes = confirmed. A teacher's No stops the submit; a salesman may submit
+  // anyway and confirm later on the order page (Confirm Artwork).
+  const hasCrystal = state.cart.some((ci) => isCrystalCode(ci.jenisPlak));
+  const draftOrder = useMemo(
+    () => ({ id: '', items: state.cart, sekolah: state.sekolah, schoolLanguage: state.schoolLanguage }),
+    [state.cart, state.sekolah, state.schoolLanguage],
+  );
+  const [askArtwork, setAskArtwork] = useState(false);
+  const [artworkNote, setArtworkNote] = useState('');
+  const isSalesman = state.role === 'salesman';
+
+  const handleSubmit = async (artworkConfirmed = false) => {
     if (state.cart.length === 0 || submitting || stockViolation) return;
+    setAskArtwork(false);
     setSubmitting(true);
-    const id = await submitOrder();
+    const id = await submitOrder({ artworkConfirmed });
     setSubmitting(false);
     if (id) navigate('/success');
   };
@@ -203,6 +218,8 @@ export default function Cart() {
           </tbody>
         </table>
 
+        {hasCrystal && <CrystalPreview order={draftOrder} role="view" showArtwork={false} />}
+
         <div className="field" style={{ margin: 'var(--space-6) 0 var(--space-8)' }}>
           <label htmlFor="cartRemark">Remark</label>
           <textarea className="input" id="cartRemark" rows={3} placeholder="Any additional notes" value={state.remark} onChange={(e) => patch({ remark: e.target.value })} />
@@ -216,10 +233,35 @@ export default function Cart() {
         <div className="row-split">
           <button type="button" className="btn btn-ghost" onClick={() => navigate('/order/step1')}>← Back to Order</button>
           {state.cartToast && <span className="toast-inline">{state.cartToast}</span>}
-          <button type="button" className="btn btn-primary" disabled={state.cart.length === 0 || submitting || !!stockViolation} onClick={handleSubmit}>
-            {submitting ? 'Submitting…' : 'Submit Order'}
-          </button>
+          {askArtwork ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxWidth: 420 }}>
+              <span className="hint-text" style={{ margin: 0, fontWeight: 600 }}>
+                This order has crystals. Is the crystal artwork in the Crystal Preview above correct (design, words, logo)?
+              </span>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                <button type="button" className="btn btn-primary" onClick={() => handleSubmit(true)}>Yes — submit</button>
+                <button
+                  type="button" className="btn btn-ghost"
+                  onClick={() => {
+                    if (isSalesman) { handleSubmit(false); return; }
+                    setAskArtwork(false);
+                    setArtworkNote('Please check the crystal artwork in the Crystal Preview first — the order can be submitted once it is correct.');
+                  }}
+                >
+                  {isSalesman ? 'No — submit, confirm later' : 'No'}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button" className="btn btn-primary" disabled={state.cart.length === 0 || submitting || !!stockViolation}
+              onClick={() => { setArtworkNote(''); if (hasCrystal) setAskArtwork(true); else handleSubmit(); }}
+            >
+              {submitting ? 'Submitting…' : 'Submit Order'}
+            </button>
+          )}
         </div>
+        {artworkNote && <p className="hint-text" style={{ color: '#b45309', fontWeight: 600, textAlign: 'right' }}>{artworkNote}</p>}
       </div>
     </div>
   );

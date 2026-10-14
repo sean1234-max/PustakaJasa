@@ -1029,6 +1029,9 @@ $("saveOrder").onclick = async () => {
   try {
     await store.saveDesign({ id: orderDesignId(S.order), name: `Order ${S.order} — its own crystals`, data: { order: S.order, custom } });
     S.dirty = false;
+    // the teacher checked and saved this order's crystals: that confirms its artwork (Production's
+    // own saves don't). Not allowed once the order is past In Production — the design still counts.
+    if (!unlocked) await store.confirmArtwork(S.order).catch((e) => console.warn("Artwork not marked confirmed:", e.message));
     toast(n ? `Saved ${n} crystal${n === 1 ? "" : "s"} for order ${S.order} only. Back to the website…`
       : `Order ${S.order} uses the default template again. Back to the website…`);
     // back to the order on the website (this tab was opened by its ✎ Edit; its preview already shows it)

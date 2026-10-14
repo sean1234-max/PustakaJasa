@@ -22,7 +22,7 @@ import { isUrgentShipment } from '../utils/urgentOrder';
 const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: false, matrix: false, jenisPlak: false };
 
 export default function SalesOrderSummary() {
-  const { state, today, approveOrder, approveAddOn, rejectAddOn, recordPrint, ensureOrderLoaded, loadCorrectedExcelPreview, openAmend, openAddOn } = useAppState();
+  const { state, today, approveOrder, approveAddOn, rejectAddOn, recordPrint, ensureOrderLoaded, loadCorrectedExcelPreview, openAmend, openAddOn, confirmArtwork } = useAppState();
   const { id } = useParams();
   const navigate = useNavigate();
   const order = state.orders.find((o) => o.id === id);
@@ -343,7 +343,7 @@ export default function SalesOrderSummary() {
                 hideCategory combineJenisPlak
                 canPick={isCrystalCode} onPick={setPickedCrystal} picked={pickedCrystal}
               />
-              <CrystalPreview order={order} role="view" selected={pickedCrystal} />
+              <CrystalPreview order={order} role="view" selected={pickedCrystal} onConfirmArtwork={() => confirmArtwork(order.id)} />
               {/* SELEMPANG's rows (ACARA / WARNA / QTY) also show right here on the
                   Summary — the only category that does (Sean); every category's full
                   details stay on the Order Details tab. */}

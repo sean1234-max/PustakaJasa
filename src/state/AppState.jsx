@@ -1529,7 +1529,8 @@ export function AppStateProvider({ children }) {
   // concurrent submissions can never collide. Returns the new order's id on
   // success, or null if the insert failed, so the caller knows whether it's
   // safe to move on.
-  const submitOrder = useCallback(async () => {
+  // artworkConfirmed: the Yes to "crystal artwork checked?" at submit (Cart, crystal orders only)
+  const submitOrder = useCallback(async ({ artworkConfirmed = false } = {}) => {
     const st = stateRef.current;
     const selectedSalesman = st.assignedSalesmen.find((s) => s.id === st.selectedSalesmanId);
     // The backend (supabase/migrations/0025_allow_multiple_salesmen_per_school.sql)
@@ -1588,6 +1589,7 @@ export function AppStateProvider({ children }) {
       logoDataUrl: st.logoDataUrl, logoFileName: st.logoFileName, logoRemark: st.logoRemark, schoolType: st.schoolType,
       ...orderImportFields(st),
       snapshot, items: st.cart.map((ci) => ({ ...ci })),
+      artworkConfirmedAt: artworkConfirmed ? new Date().toISOString() : null,
     };
 
     // Deducted before the insert so a stock failure never creates an order
@@ -2696,6 +2698,11 @@ export function AppStateProvider({ children }) {
       flashProductionToast('This order has nothing waiting in KIV & ARTWORK.');
       return;
     }
+    // crystals are made only from confirmed artwork (Sean, 2026-10-14)
+    if (kivParts(order).includes('CRYSTAL') && !order.artworkConfirmedAt) {
+      flashProductionToast('The crystal artwork is not confirmed yet — the teacher or salesman has to confirm it first.');
+      return;
+    }
     const kivDoneAt = new Date().toISOString();
     try {
       await updateOrder(orderId, { kivDoneAt });
@@ -2707,6 +2714,24 @@ export function AppStateProvider({ children }) {
     patch((st) => ({ orders: st.orders.map((o) => (o.id === orderId ? { ...o, kivDoneAt } : o)) }));
     flashProductionToast(`${kivParts(order).join(' + ')} done — now in In Production.`);
   }, [patch, flashProductionToast]);
+
+  // The crystal artwork is right (Sean, 2026-10-14): a salesman's Confirm Artwork. The database
+  // stamps who and when (0089) — read back so the page shows it. Returns an error message or null.
+  const confirmArtwork = useCallback(async (orderId) => {
+    try {
+      await updateOrder(orderId, { artworkConfirmedAt: new Date().toISOString() });
+    } catch (err) {
+      console.error('Failed to confirm the artwork in Supabase:', err);
+      return describeOrderWriteError(err, 'update');
+    }
+    try {
+      const fresh = await fetchOrderById(orderId);
+      if (fresh) patch((st) => ({ orders: st.orders.map((o) => (o.id === orderId ? fresh : o)) }));
+    } catch (err) {
+      console.error('Confirmed, but could not reload the order:', err);
+    }
+    return null;
+  }, [patch]);
 
   const markKivProductionDone = useCallback(async (orderId) => {
     const order = stateRef.current.orders.find((o) => o.id === orderId);
@@ -3136,7 +3161,7 @@ export function AppStateProvider({ children }) {
     markTypingDone,
     updateReferenceOrder,
     markReviewDone,
-    markAddOnReviewed, saveProductionPrices, markKivDone, markKivProductionDone,
+    markAddOnReviewed, saveProductionPrices, markKivDone, markKivProductionDone, confirmArtwork,
     openProductionEdit,
     loadExcelIntoProductionEdit,
     saveProductionEdit,
