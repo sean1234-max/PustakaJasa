@@ -8,6 +8,13 @@ Illustrator 跑。点的时候网站会先检查这台电脑：
 
 不需要 Supabase 密码、不需要 .env、不需要打 npm install。
 
+【Crystal（2026-10-14 起）】
+同一个 helper 也负责 crystal：在 Production 订单页的 Crystal Preview 按「Open in Illustrator (.ai)」，
+这台电脑的 Illustrator 会照模板做出每一个 crystal 的 .ai，存在
+  AI FILE 资料夹\OUTPUT\CRYSTAL\<日期 时间> - <学校 (单号)>
+做完会自动打开那个资料夹。
+以前装过 helper 的电脑，要再双击 install-windows.bat 一次，才有 crystal 功能（版本 2）。
+
 
 【Windows】
 1. 电脑要先装 Node.js（https://nodejs.org 下载 LTS，一直按下一步）。装过就跳过。
