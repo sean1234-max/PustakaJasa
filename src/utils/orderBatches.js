@@ -96,7 +96,7 @@ export function combineByJenisPlak(items, { splitByPrice = false } = {}) {
 // `status` is per-slice too: each invoice_groups entry can carry its own
 // `status` (set independently by markProductionDone — AppState.jsx — once
 // Production marks THAT invoice done) so a split order's invoices move
-// through Waiting for Shipment/Shipped/Completed on their own instead of
+// to Completed on their own instead of
 // jumping together. A group with no `status` of its own yet (never marked
 // done independently) just follows the order's own `status`, same as
 // before this existed.

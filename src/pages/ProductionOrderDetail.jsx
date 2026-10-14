@@ -10,7 +10,7 @@ import CrystalPreview from '../components/CrystalPreview';
 import OrderPrintout from '../components/OrderPrintout';
 import AddOnTag from '../components/AddOnTag';
 import { useAppState } from '../state/useAppState';
-import { statusPillStyle, formatDate, MANUAL_MAX_QTY, deliveryStageForShipmentDate, toMalaysiaDay, malaysiaToday, isReviewed, isAddonInFlight, invoiceLabel, invoiceSetByNote } from '../data/catalog';
+import { statusPillStyle, formatDate, MANUAL_MAX_QTY, shipmentDatePassed, toMalaysiaDay, malaysiaToday, isReviewed, isAddonInFlight, invoiceLabel, invoiceSetByNote } from '../data/catalog';
 import { reconstructOrderDetailGroups, reconstructBlocksForCategory, noopUpdaters } from '../utils/computeBlocks';
 import { getExportableCategories, splitOrderCategories, getOrderJenisPlakGroups, getPlakProductionMode, summarizeRowsForManual, buildCsvRows, rowsToCsv, buildCategoryCsvFilename, combineCsvRows, buildCombinedCsvFilename, validateExport, getInvoiceIdForJenisPlak, getPartialSplitNotes, needsKiv, kivInProduction, kivParts, isCrystalCode, firstKivCategory } from '../utils/exportCsv';
 import { downloadTextFile } from '../utils/downloadBlob';
@@ -115,10 +115,10 @@ export default function ProductionOrderDetail() {
   }, [order, correctedItems]);
 
   // The row order stays changeable from submit until the Shipment Date
-  // itself (same calendar rule as the Shipped/Completed status) — a teacher
-  // may phone in a change after submitting. Saved on every drop.
+  // itself — a teacher may phone in a change after submitting. Saved on
+  // every drop.
   const canReorder = !!order && order.status !== 'Cancelled'
-    && deliveryStageForShipmentDate(order.shipmentDate, malaysiaToday()) !== 'Completed';
+    && !shipmentDatePassed(order.shipmentDate, malaysiaToday());
   const [refOrderNote, setRefOrderNote] = useState('');
   const reorderUpdaters = useMemo(() => (canReorder ? {
     ...noopUpdaters,

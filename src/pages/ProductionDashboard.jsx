@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import ConfirmButton from '../components/ConfirmButton';
 import { useAppState } from '../state/useAppState';
-import { statusPillStyle, formatDate, deliveryStageForShipmentDate, getLowStockAlerts, toMalaysiaDay, malaysiaToday, isAddonInFlight, invoiceLabel } from '../data/catalog';
+import { statusPillStyle, formatDate, getLowStockAlerts, toMalaysiaDay, isAddonInFlight, invoiceLabel } from '../data/catalog';
 import { getOrderChangeStamp } from '../utils/orderStamp';
 import { getOrderInvoiceSlices } from '../utils/orderBatches';
 import { countReservedPlaques, needsKiv, kivParts, hasPlakPart, kivInProduction } from '../utils/exportCsv';
@@ -14,26 +14,8 @@ import ProductionInvoiceEntry from '../components/ProductionInvoiceEntry';
 
 // Production works 'In Production' orders (invoice number or not — that's
 // Store Admin's job now, see supabase/migrations/0036_add_invoicing_role.sql
-// and StoreAdminDashboard.jsx), then follows each order down the
-// Shipment-Date-driven tail (see markProductionDone / deliveryStageForShipmentDate).
-//
-// The Shipped/Completed/Order History split is by the calendar, not a stored
-// timestamp. For an order whose Shipment Date is S:
-//   on S            -> 'Shipped'          (Shipped tab)
-//   S+1 .. S+3      -> 'Completed'        (Completed tab — 3 days)
-//   S+4 onwards     -> 'Completed'        (Order History)
-// An order marked Done before its Shipment Date sits in 'Waiting for
-// Delivery' until the daily sweep flips it — its own tab (labelled
-// "Waiting for Shipment"), between In Production and Shipped.
-
-// Whole days from an order's Shipment Date to `today` (0 = due today,
-// positive = in the past). null when there's no parseable Shipment Date.
-function daysSinceShipmentDate(shipmentDate, today) {
-  const ship = toMalaysiaDay(shipmentDate);
-  if (!ship) return null;
-  const now = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  return Math.round((now - ship) / 86400000);
-}
+// and StoreAdminDashboard.jsx); Done makes an order Completed (Sean,
+// 2026-10-14 — no more Waiting for Shipment / Shipped / Order History).
 
 // 'reviewing' is Production's own job first (0077): open the order, fix it
 // (Edit Order) and click Done Review — Sales can only approve after that.
@@ -65,26 +47,7 @@ const TABS = [
       ? hasPlakPart(o) && !!o.typedAt && !(o._primarySlice && o.plakDoneAt)
       : kivInProduction(o)),
   },
-  { key: 'waiting', label: 'Waiting for Shipment', match: (o) => main(o) && o.status === 'Waiting for Shipment' },
-  { key: 'shipped', label: 'Shipped', match: (o) => main(o) && o.status === 'Shipped' },
-  {
-    key: 'completed',
-    label: 'Completed',
-    match: (o, today) => {
-      if (!main(o) || o.status !== 'Completed') return false;
-      const days = daysSinceShipmentDate(o.shipmentDate, today);
-      return days !== null && days <= 3;
-    },
-  },
-  {
-    key: 'history',
-    label: 'Order History',
-    match: (o, today) => {
-      if (!main(o) || o.status !== 'Completed') return false;
-      const days = daysSinceShipmentDate(o.shipmentDate, today);
-      return days === null || days >= 4;
-    },
-  },
+  { key: 'completed', label: 'Completed', match: (o) => main(o) && o.status === 'Completed' },
 ];
 
 // order.shipmentDate is stored as free-form text (see supabase/migrations/0001,
@@ -367,7 +330,7 @@ export default function ProductionDashboard() {
                         ? `${parts.join(' + ')} done?`
                         : kivPending
                           ? `Plaques done? The order moves on once its ${parts.join(' + ')} is done too.`
-                          : `Mark as done? Status → "${deliveryStageForShipmentDate(ord.shipmentDate, malaysiaToday())}".`}
+                          : 'Mark as done? Status → "Completed".'}
                       onConfirm={() => (isKivCard ? markKivProductionDone(ord.id) : markProductionDone(ord.id, ord.invoiceId))}
                     />
                   </>

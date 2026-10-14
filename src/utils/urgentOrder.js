@@ -67,9 +67,8 @@ export function summarizeUrgentCommission(orders) {
 }
 
 // Production can fix an order's Shipment Date and Urgent flag (Sean,
-// 2026-10-09) up to Waiting for Shipment — past that the daily status sweep
-// already acted on the date.
-export const SHIPMENT_EDITABLE_STATUSES = ['Reviewing Order', 'Salesman Approved', 'In Production', 'Waiting for Shipment'];
+// 2026-10-09) until the order is Completed.
+export const SHIPMENT_EDITABLE_STATUSES = ['Reviewing Order', 'Salesman Approved', 'In Production'];
 
 // What that change means for the urgent Google Sheet: 'remove' its row (no
 // longer urgent), 'sync' it (still / newly urgent and either already in the

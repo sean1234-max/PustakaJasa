@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   flattenPlakCatalog, standardUnitPrice, tahunRangeYears, invoiceLabel, invoiceSetByNote,
   stockZoneFor, getStockStatus, statusPillStyle, STATUS_STAGES, ORDER_STATUSES,
-  deliveryStageForShipmentDate, resolveSelempangWarna, isKelasSubject, kelasListLabel,
+  shipmentDatePassed, resolveSelempangWarna, isKelasSubject, kelasListLabel,
   MALAY_ORDINALS, ordinalToNum, numToOrdinal,
   CATEGORIES, makeDynamicCategoryKey, isDynamicCategoryKey, resolveCategory, categoriesUsedByItems,
   filterHiddenPlakCatalog, getLowStockAlerts,
@@ -261,25 +261,18 @@ describe('statusPillStyle', () => {
   });
 });
 
-describe('deliveryStageForShipmentDate', () => {
+describe('shipmentDatePassed', () => {
   const today = new Date(2026, 8, 10); // 10 Sep 2026, local midnight
-  // shipmentDate reaches this function as the stored string — a picked day
-  // saved as its Malaysian midnight (malaysiaDayIso); build the fixtures the
-  // same way so the test doesn't depend on the runner's timezone.
   const shipISO = (y, m, d) => malaysiaDayIso(new Date(y, m, d));
 
-  it('is Waiting for Shipment when the Shipment Date is still ahead', () => {
-    expect(deliveryStageForShipmentDate(shipISO(2026, 8, 12), today)).toBe('Waiting for Shipment');
+  it('is false up to and on the Shipment Date, true the day after', () => {
+    expect(shipmentDatePassed(shipISO(2026, 8, 12), today)).toBe(false);
+    expect(shipmentDatePassed(shipISO(2026, 8, 10), today)).toBe(false);
+    expect(shipmentDatePassed(shipISO(2026, 8, 9), today)).toBe(true);
   });
-  it('is Shipped on the Shipment Date itself', () => {
-    expect(deliveryStageForShipmentDate(shipISO(2026, 8, 10), today)).toBe('Shipped');
-  });
-  it('is Completed once the Shipment Date has passed', () => {
-    expect(deliveryStageForShipmentDate(shipISO(2026, 8, 9), today)).toBe('Completed');
-  });
-  it('falls back to Waiting for Shipment for a missing or unparseable date', () => {
-    expect(deliveryStageForShipmentDate(null, today)).toBe('Waiting for Shipment');
-    expect(deliveryStageForShipmentDate('TBD', today)).toBe('Waiting for Shipment');
+  it('is false for a missing or unparseable date', () => {
+    expect(shipmentDatePassed(null, today)).toBe(false);
+    expect(shipmentDatePassed('TBD', today)).toBe(false);
   });
 });
 
@@ -346,10 +339,9 @@ describe('Malaysia dates — the project always runs on Asia/Kuala_Lumpur', () =
     expect(toMalaysiaDay(malaysiaDayIso(day(2026, 10, 9)))).toEqual(day(2026, 10, 9));
   });
 
-  it('Shipped/Completed follow the Malaysian day of the Shipment Date', () => {
-    expect(deliveryStageForShipmentDate('2026-10-08T16:00:00.000Z', day(2026, 10, 9))).toBe('Shipped');
-    expect(deliveryStageForShipmentDate('2026-10-09T00:00:00+08:00', day(2026, 10, 8))).toBe('Waiting for Shipment');
-    expect(deliveryStageForShipmentDate('2026-10-09T00:00:00+08:00', day(2026, 10, 10))).toBe('Completed');
+  it('a passed Shipment Date follows its Malaysian day', () => {
+    expect(shipmentDatePassed('2026-10-08T16:00:00.000Z', day(2026, 10, 9))).toBe(false);
+    expect(shipmentDatePassed('2026-10-09T00:00:00+08:00', day(2026, 10, 10))).toBe(true);
   });
 });
 
