@@ -1627,6 +1627,12 @@ export function AppStateProvider({ children }) {
       return null;
     }
     patch((latest) => ({ lastOrderId: newId, orders: [newOrder, ...latest.orders], cart: [], cartToast: '', step2ImportStatus: null, step2ChoiceAnswers: {} }));
+    // who confirmed the artwork is stamped by the database (0089) — read it back for the order page
+    if (artworkConfirmed) {
+      fetchOrderById(newId)
+        .then((saved) => saved && patch((latest) => ({ orders: latest.orders.map((o) => (o.id === newId ? saved : o)) })))
+        .catch((err) => console.error('Order saved, but could not reload it:', err));
+    }
     return newId;
   }, [patch]);
 
