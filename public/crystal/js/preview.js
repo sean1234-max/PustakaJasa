@@ -13,7 +13,7 @@ import { libraryScene, setMaster, autoCleanAll, hiResBackground, logoPlace, isMi
 import { logoPicker } from "./logos.js";
 import { renderOffscreen, svgOffscreen } from "./editor.js";
 import { templateFor, contentKey, orderDesignId, TEXT_FIELDS } from "./jenis.js";
-import { illustratorWindow, START_LINK } from "./to-illustrator.js";
+import { illustratorWindow } from "./to-illustrator.js";
 import { vectorJob } from "./vector-job.js";
 
 const DPI = 150;      // sharp enough to zoom in on the words
@@ -202,13 +202,10 @@ function saveFile(blob, name) {
   setTimeout(() => URL.revokeObjectURL(a.href), 60000);
 }
 
-// Open in Illustrator: one click does it all. Crystal Studio not known to be running here (this
-// tab): the click first asks Windows to start it (crystalstudio://open, set up once by ⚙ Set up this
-// computer; Chrome asks the first time, "Always allow" stops that), then the window to it waits
-// until it's up and hands it the crystals.
+// Open in Illustrator: through the AI File helper on this computer (to-illustrator.js).
 const opened = (r, n) => (r.ok ? `Illustrator is making ${n} crystal${n === 1 ? "" : "s"}… (saved as .ai in ${r.folder})` : `Couldn't open Illustrator: ${r.error || "no answer"}`) +
-  ` [Crystal Studio ${r.build || "old"}]`;
-// Illustrator's report when it's done (passed on by Crystal Studio's window): shown next to the button
+  (r.build ? ` [${r.build}]` : "");
+// Illustrator's report when it's done (to-illustrator.js passes on the helper's): shown next to the button
 window.addEventListener("message", (e) => {
   if (!e.data || e.data.type !== "crystal-illustrator-report") return;
   const m = document.getElementById("aGenMsg");
@@ -218,7 +215,7 @@ window.addEventListener("message", (e) => {
 const everWorked = () => { try { return localStorage.getItem("crystal-ever") === "1"; } catch (e) { return false; } };
 const setWorked = () => { try { localStorage.setItem("crystal-ever", "1"); } catch (e) {} };
 
-// ai: open in Illustrator, through Crystal Studio on this PC (see to-illustrator.js), each saved as
+// ai: open in Illustrator, through the AI File helper on this PC (see to-illustrator.js), each saved as
 // .ai. Else: all crystals in one PDF.
 async function generateAll(ai) {
   if (generating) return;
@@ -230,7 +227,6 @@ async function generateAll(ai) {
   const say = (t) => { if (msg) msg.textContent = t; };
   // now, while it's a click: start Crystal Studio (it does nothing if it's already running — the
   // black window may have been closed since), and the window to it
-  if (ai) { try { location.href = START_LINK; } catch (e) {} }
   const bridge = ai ? illustratorWindow() : null;
   try {
     const files = [], used = new Set();
@@ -259,16 +255,11 @@ async function generateAll(ai) {
       const { job, without } = await vectorJob(list, order);
       const svgs = [];
       for (const i of without) svgs.push({ name: files[i].name, svg: await picture(files[i].c.it, files[i].c.g.jenis, files[i].c.t.row, 300, true) });
-      say(everWorked() ? "Opening in Illustrator…" : "Starting Crystal Studio on this computer… (if Chrome asks “Open …?”, choose Open and tick Always allow)");
+      say(everWorked() ? "Opening in Illustrator…" : "Opening in Illustrator… (the first time, Chrome asks to let this site reach this computer: choose Allow)");
       const r = await bridge.sendWhenUp({ job, files: svgs });
       if (r && !r.old) setWorked();
       if (r && r.old) return say(r.error);
-      if (r) return say(opened(r, files.length) + badNote);
-      bridge.cancel();
-      if (everWorked()) return say("Crystal Studio didn't start. Click Open in Illustrator (.ai) again.");
-      // only now: the computer isn't set up for it
-      if (msg) msg.innerHTML = `Crystal Studio didn't start on this computer. Set it up once: <a class="gen-small" href="Crystal%20Studio%20Setup.bat" download="Crystal Studio Setup.bat">⚙ Set up this computer</a> (download, double-click it), then Open in Illustrator again.`;
-      return;
+      return say(opened(r, files.length) + badNote);
     }
     // all in one PDF: a page per crystal, at its real size (pt), the picture at 300 DPI
     if (!window.jspdf) return say("Couldn't make the PDF (PDF tool not loaded).");

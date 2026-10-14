@@ -5,6 +5,9 @@
 //   GET  /status    -> is this computer's AI FILE folder (SEAN.jsx) reachable?
 //   POST /generate  -> { filename, csv } -> queue a SEAN.jsx run, returns jobId
 //   GET  /jobs/:id  -> that run's status/result
+//   POST /crystal   -> { job, files } from the Crystal Preview / Crystal Studio -> the crystals
+//                      made in Illustrator from their original .ai (crystal-job.mjs), saved under
+//                      OUTPUT/CRYSTAL/<date time> - <school (order)>; returns jobId + folder
 // The job runs on THIS computer, the one whose browser clicked the button.
 // No Supabase access and no secrets — the page sends the CSV itself. Node
 // built-ins only, so install is just "have Node.js, run the installer".
@@ -17,14 +20,17 @@ import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { checkCrystalJob, crystalOutDir, writeCrystalScript } from './crystal-job.mjs';
 
 const execFileAsync = promisify(execFile);
 
 export const PORT = 47821;
-const VERSION = 1;
+// 2: crystals too (POST /crystal) — the website asks for at least this to open crystals
+const VERSION = 2;
 const HELPER_DIR = path.dirname(fileURLToPath(import.meta.url));
 const TEMP_DIR = path.join(tmpdir(), 'pustakajasa-ai-helper');
-const MAX_BODY_BYTES = 20 * 1024 * 1024;
+// crystals can carry pictures and .svg artwork (Crystal Studio), so more room than a CSV needs
+const MAX_BODY_BYTES = 100 * 1024 * 1024;
 
 // The shared NAS folder that holds SEAN.jsx, the template .ai files and
 // OUTPUT/. Windows reaches it by UNC path; a Mac mounts the same share
@@ -195,13 +201,40 @@ function runIllustrator(scriptPath) {
   return process.platform === 'win32' ? runOnWindows(scriptPath) : runOnMac(scriptPath);
 }
 
+// Crystals: download their original .ai files, write the script, run it; Illustrator's own
+// report (_result.txt) comes back as the message.
+async function runCrystalJob(job, checked) {
+  job.status = 'running';
+  try {
+    if (!(await folderReachable(resolveAiFileDir()))) throw new Error(`This computer can't reach ${resolveAiFileDir()}`);
+    const scriptPath = await writeCrystalScript(checked, job.outputFolder);
+    await runIllustrator(scriptPath);
+    const report = path.join(job.outputFolder, '_result.txt');
+    job.message = existsSync(report) ? readFileSync(report, 'utf8') : 'Illustrator ran, but wrote no report.';
+    job.files = readdirSync(job.outputFolder).filter((n) => /\.ai$/i.test(n));
+    job.status = job.files.length ? 'done' : 'error';
+    openFolder(job.outputFolder);
+  } catch (err) {
+    job.status = 'error';
+    job.message = err.stderr ? `Illustrator call failed: ${err.stderr.toString()}` : err.message;
+  }
+  console.log(`[${new Date().toISOString()}] crystals ${job.outputFolder} -> ${job.status} (${job.files.length} file(s))\n${job.message}\n`);
+}
+
 // One Illustrator run at a time — a second click just waits its turn.
-function startJob(filename, csv) {
-  const job = { id: randomUUID(), status: 'queued', message: '', outputFolder: '', files: [] };
+function queueJob(run, outputFolder = '') {
+  const job = { id: randomUUID(), status: 'queued', message: '', outputFolder, files: [] };
   jobs.set(job.id, job);
   if (jobs.size > 50) jobs.delete(jobs.keys().next().value);
-  queue = queue.then(() => runJob(job, filename, csv));
+  queue = queue.then(() => run(job));
   return job;
+}
+const startJob = (filename, csv) => queueJob((job) => runJob(job, filename, csv));
+function startCrystalJob(body) {
+  const checked = checkCrystalJob(body);
+  // quiet: no "saved" pop-up in Illustrator holding the run open — the page shows the report
+  checked.quiet = true;
+  return queueJob((job) => runCrystalJob(job, checked), crystalOutDir(path.join(resolveAiFileDir(), 'OUTPUT'), checked.label));
 }
 
 function readBody(req) {
@@ -238,7 +271,7 @@ function startServer() {
     try {
       if (req.method === 'GET' && pathname === '/status') {
         const aiFileDir = resolveAiFileDir();
-        send(200, { ok: true, version: VERSION, platform: process.platform, aiFileDir, nasOk: await folderReachable(aiFileDir) });
+        send(200, { ok: true, version: VERSION, crystal: true, platform: process.platform, aiFileDir, nasOk: await folderReachable(aiFileDir) });
         return;
       }
       if (req.method === 'POST' && pathname === '/generate') {
@@ -248,6 +281,12 @@ function startServer() {
           return;
         }
         send(202, { jobId: startJob(body.filename, body.csv).id });
+        return;
+      }
+      if (req.method === 'POST' && pathname === '/crystal') {
+        let job;
+        try { job = startCrystalJob(JSON.parse(await readBody(req))); } catch (err) { send(400, { error: err.message }); return; }
+        send(202, { jobId: job.id, folder: job.outputFolder });
         return;
       }
       const match = pathname.match(/^\/jobs\/([\w-]+)$/);

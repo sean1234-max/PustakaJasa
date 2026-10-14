@@ -29,3 +29,41 @@ describe('sanitizeFolderName', () => {
     expect(sanitizeFolderName('..')).toBe('UNNAMED');
   });
 });
+
+describe('crystals (POST /crystal)', async () => {
+  const { checkCrystalJob, crystalOutDir, isOurOriginalUrl, cleanName } = await import('./crystal-job.mjs');
+  const { readFileSync } = await import('node:fs');
+  const url = 'https://dlzkdkxbnbhgldsvbybt.supabase.co/storage/v1/object/public/crystal/library/orig-mv7gxpvg-fio9at.pdf';
+  const row = { row: 1, file: 'R-100.ai', original: 'library/orig-mv7gxpvg-fio9at.pdf', originalUrl: url, name: 'R-100 - TOKOH MURID', qty: 5 };
+
+  it('keeps its Illustrator script identical to the website\'s (public/crystal/js/illustrator.js)', () => {
+    const here = readFileSync(new URL('./crystal-illustrator.mjs', import.meta.url), 'utf8');
+    const site = readFileSync(new URL('../../public/crystal/js/illustrator.js', import.meta.url), 'utf8');
+    expect(here).toBe(site);
+  });
+
+  it('only downloads originals from our own Supabase crystal bucket', () => {
+    expect(isOurOriginalUrl(url)).toBe(true);
+    expect(isOurOriginalUrl(url.replace('dlzkdkxbnbhgldsvbybt', 'ddjgmuvgxywzvhzhrbta'))).toBe(false);
+    expect(isOurOriginalUrl('https://evil.example/orig-x.pdf')).toBe(false);
+  });
+
+  it('accepts a proper job, keeps a valid platform and cleans the label', () => {
+    const c = checkCrystalJob({ job: { rows: [row], platform: { w: 6048, h: 1728, left: 700, right: 276, top: 72, bottom: 184, gapX: 90, gapY: 92 }, label: 'SK TEST (ORD-9008)' } });
+    expect(c.rows).toHaveLength(1);
+    expect(c.platform.w).toBe(6048);
+    expect(c.label).toBe('SK TEST (ORD-9008)');
+  });
+
+  it('refuses empty jobs, bad template names and originals from elsewhere', () => {
+    expect(() => checkCrystalJob({ job: { rows: [] } })).toThrow('Nothing to make');
+    expect(() => checkCrystalJob({ job: { rows: [{ ...row, file: '../x.ai' }] } })).toThrow('Bad template name');
+    expect(() => checkCrystalJob({ job: { rows: [{ ...row, originalUrl: 'https://evil.example/a.pdf' }] } })).toThrow('import it again');
+  });
+
+  it('names the output folder by Malaysia time and the order', () => {
+    const dir = crystalOutDir('/NAS/OUTPUT', 'SK TEST (ORD-9008)', new Date('2026-10-14T06:40:17Z'));
+    expect(dir.replace(/\\/g, '/')).toBe('/NAS/OUTPUT/CRYSTAL/2026-10-14 14-40-17 - SK TEST (ORD-9008)');
+    expect(cleanName('a/b:c*  d.', 80)).toBe('a b c d');
+  });
+});

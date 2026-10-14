@@ -13,7 +13,7 @@ import { newId } from "./libitem.js";
 import { illustratorScript } from "./illustrator.js";
 import * as editor from "./editor.js";
 import { store, fileUrl, whoAmI, isStaff } from "./store.js";
-import { illustratorWindow, START_LINK } from "./to-illustrator.js";
+import { illustratorWindow } from "./to-illustrator.js";
 import { vectorJob } from "./vector-job.js";
 import { templateFor, sources as jenisSources, contentKey, orderDesignId } from "./jenis.js";
 
@@ -837,12 +837,10 @@ window.addEventListener("message", (e) => {
 
 // As you see it, opened in Illustrator and saved as .ai: the rows as Illustrator-ready .svg (words
 // editable, artwork at print quality) go to Crystal Studio's program on this PC, which opens them
-// in Illustrator. Works from the online studio too, as long as Start Studio.bat runs on this PC.
+// in Illustrator, through this computer's AI File helper (to-illustrator.js).
 async function openInIllustrator(all) {
-  // now, while it's a click: start Crystal Studio on this PC (unless it's known to run), and the window to it
   let up = false; // worked on this computer before
   try { up = localStorage.getItem("crystal-ever") === "1"; } catch (e) {}
-  try { location.href = START_LINK; } catch (e) {} // does nothing if it's already running
   const bridge = illustratorWindow();
   const files = [], used = new Set();
   const rows = all ? [...new Set(S.rows.map((_, i) => canon(i)))] : [S.row];
@@ -870,12 +868,10 @@ async function openInIllustrator(all) {
     const f = files[i], p = await printImages(f.key, f.r);
     if (p) svgs.push({ name: f.name, svg: await editor.svgOffscreen(f.entry.state ? { state: f.entry.state, images: p.images, logo: f.entry.logo } : { scene: { ...p.sc, images: p.images }, logo: f.entry.logo }) });
   }
-  toast(up ? "Opening in Illustrator…" : "Starting Crystal Studio on this computer… (if Chrome asks “Open …?”, choose Open and tick Always allow)");
+  toast(up ? "Opening in Illustrator…" : "Opening in Illustrator… (the first time, Chrome asks to let this site reach this computer: choose Allow)");
   const r = await bridge.sendWhenUp({ job, files: svgs });
   try { if (r && !r.old) localStorage.setItem("crystal-ever", "1"); } catch (e) {}
-  if (r) return toast(r.old ? r.error : r.ok ? `Illustrator is making ${files.length}… (saved as .ai in ${r.folder}) [Crystal Studio ${r.build}]` : `Couldn't open Illustrator: ${r.error || "no answer"}`, r.ok ? "" : "bad");
-  bridge.cancel();
-  toast(up ? "Crystal Studio didn't start. Try again." : "Crystal Studio didn't start on this computer. Download › Set up this computer for Illustrator (once), then try again.", "bad");
+  return toast(r.old ? r.error : r.ok ? `Illustrator is making ${files.length}… (saved as .ai in ${r.folder}) [${r.build}]` : `Couldn't open Illustrator: ${r.error || "no answer"}`, r.ok ? "" : "bad");
 }
 
 async function doExport(kind) {
@@ -885,15 +881,6 @@ async function doExport(kind) {
   try {
     if (kind === "pdf" || kind === "pdf-all") return await exportPdf(kind === "pdf-all");
     if (kind === "open-ai" || kind === "open-ai-all") return await openInIllustrator(kind === "open-ai-all");
-    if (kind === "setup") {
-      const a = document.createElement("a");
-      a.href = "Crystal%20Studio%20Setup.bat";
-      a.download = "Crystal Studio Setup.bat";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      return toast("Double-click the downloaded file once (Windows may warn: More info › Run anyway). Then Open in Illustrator works on this computer.");
-    }
     const name = safeName(S.design.name) + (S.rows.length > 1 ? ` - row ${S.row + 1}` : "");
     if (kind === "ai" || kind === "ai-all") {
       toast("Making the Illustrator script…");

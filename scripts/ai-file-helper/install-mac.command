@@ -20,7 +20,7 @@ PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 OLD_PLIST="$HOME/Library/LaunchAgents/com.pustakajasa.ai-file-watcher.plist"
 
 mkdir -p "$DEST" "$HOME/Library/LaunchAgents"
-cp ai-file-helper.mjs "$DEST/"
+cp ai-file-helper.mjs crystal-job.mjs crystal-illustrator.mjs "$DEST/"
 
 # Retire the old watch_ai_file_jobs.js watcher this replaces, if installed.
 if [ -f "$OLD_PLIST" ]; then launchctl unload "$OLD_PLIST" 2>/dev/null; rm -f "$OLD_PLIST"; fi
