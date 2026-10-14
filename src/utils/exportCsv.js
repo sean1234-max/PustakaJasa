@@ -395,18 +395,25 @@ function buildPbdRows(item, cat, header, year, positionPart1, schoolLanguage) {
     for (let i = 0; i < qty; i++) rows.push([header, year, position, eventLine1, '']);
   };
 
+  // The year follows the Reference Sample's class line (Sean, 2026-10-14, ORD-0032): "TAHUN 1
+  // ADIL" (or no sample line) → "TAHUN 4 AMANAH"; "1 ASPIRASI" → "4 AMANAH". A class name already
+  // starting with its year ("5 ASPIRASI", "TAHUN 5 AZAM") is engraved as written.
+  const sampleLine = getLine(item, 3).trim();
+  const includeTahunWord = !sampleLine || /\bTAHUN\b/i.test(sampleLine);
   const emitForLevel = (label, rowKey) => {
     if (!label) return;
     const total = Number(matrix[matrixCellKey(cat.key, rowKey, col)]) || 0;
     if (total <= 0) return;
     const m = label.match(/TAHUN\s*([1-6])/i);
-    const tahunPrefix = m ? `TAHUN ${m[1]}` : label;
+    const tahunPrefix = m ? (includeTahunWord ? `TAHUN ${m[1]}` : m[1]) : label;
+    const hasOwnYear = (desc) => !!m && new RegExp(`^(TAHUN\\s*)?${m[1]}\\b`, 'i').test(desc);
     const list = (breakdown[`${item.categoryKey}::${item.blockIdx}::${label}::main`] || [])
       .filter((r) => (r.desc || '').trim());
     let covered = 0;
     list.forEach((r) => {
       const q = Math.max(0, Number(r.qty) || 0);
-      emit([tahunPrefix, r.desc.trim()].filter(Boolean).join(' '), q);
+      const desc = r.desc.trim();
+      emit(hasOwnYear(desc) ? desc : [tahunPrefix, desc].filter(Boolean).join(' '), q);
       covered += q;
     });
     if (covered < total) emit(tahunPrefix, total - covered);

@@ -55,6 +55,40 @@ describe('buildCsvRows — PBD (per-recipient, Nama Kelas split)', () => {
     expect(rows.filter((r) => r[3] === 'TAHUN 2 BESTARI')).toHaveLength(3);
     expect(rows.filter((r) => r[3] === 'TAHUN 2')).toHaveLength(2); // 5 − 3
   });
+
+  // ORD-0032 (Sean, 2026-10-14): the Reference Sample's class line reads "1 ASPIRASI" — the year as
+  // a bare number, no "TAHUN" — so every class follows it: "1 ASPIRASI", "4 AMANAH". A class name
+  // that already starts with its year ("5 ASPIRASI") is kept as written, never "5 5 ASPIRASI".
+  const sampled = (line3, matrix, namaKelasBreakdown) => ({
+    ...item(matrix, namaKelasBreakdown),
+    detail: { lines: { ...lines, 'PBD::0::3': line3 }, matrix, namaKelasBreakdown },
+  });
+
+  it('follows a sample class line without TAHUN: "1 ASPIRASI", not "TAHUN 1 ASPIRASI"', () => {
+    const it = sampled('1 ASPIRASI', {
+      [customMatrixLabelKey('PBD', 100)]: 'TAHUN 1',
+      [matrixCellKey('PBD', 'custom-100', 'KUANTITI')]: '3',
+    }, { 'PBD::0::TAHUN 1::main': [{ id: 1, desc: 'ASPIRASI', qty: '2' }] });
+    const { rows } = buildCsvRows({ schoolLanguage: 'SK', items: [it] }, 'PBD', [it]);
+    expect(rows.map((r) => r[3])).toEqual(['1 ASPIRASI', '1 ASPIRASI', '1']);
+  });
+
+  it('keeps a class name that already carries its year, with or without TAHUN in the sample', () => {
+    const matrix = { [customMatrixLabelKey('PBD', 100)]: 'TAHUN 5', [matrixCellKey('PBD', 'custom-100', 'KUANTITI')]: '2' };
+    const breakdown = { 'PBD::0::TAHUN 5::main': [{ id: 1, desc: '5 ASPIRASI', qty: '1' }, { id: 2, desc: 'TAHUN 5 AZAM', qty: '1' }] };
+    const bare = sampled('1 ASPIRASI', matrix, breakdown);
+    expect(buildCsvRows({ schoolLanguage: 'SK', items: [bare] }, 'PBD', [bare]).rows.map((r) => r[3])).toEqual(['5 ASPIRASI', 'TAHUN 5 AZAM']);
+    const worded = sampled('TAHUN 1 ADIL', matrix, breakdown);
+    expect(buildCsvRows({ schoolLanguage: 'SK', items: [worded] }, 'PBD', [worded]).rows.map((r) => r[3])).toEqual(['5 ASPIRASI', 'TAHUN 5 AZAM']);
+  });
+
+  it('still writes TAHUN when the sample says so', () => {
+    const it = sampled('TAHUN 1 ADIL', {
+      [customMatrixLabelKey('PBD', 100)]: 'TAHUN 4',
+      [matrixCellKey('PBD', 'custom-100', 'KUANTITI')]: '1',
+    }, { 'PBD::0::TAHUN 4::main': [{ id: 1, desc: 'AMANAH', qty: '1' }] });
+    expect(buildCsvRows({ schoolLanguage: 'SK', items: [it] }, 'PBD', [it]).rows.map((r) => r[3])).toEqual(['TAHUN 4 AMANAH']);
+  });
 });
 
 describe('CSV column remap — reference-sample lines -> CSV columns', () => {
