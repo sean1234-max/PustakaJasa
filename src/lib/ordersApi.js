@@ -60,6 +60,8 @@ function toDbOrder(order) {
     reviewed_at: order.reviewedAt ?? null,
     typed_at: order.typedAt ?? null,
     kiv_done_at: order.kivDoneAt ?? null,
+    plak_done_at: order.plakDoneAt ?? null,
+    kiv_production_done_at: order.kivProductionDoneAt ?? null,
     salesman_delivery: !!order.salesmanDelivery,
   };
 }
@@ -114,6 +116,8 @@ function fromDbOrder(row) {
     reviewedAt: row.reviewed_at || null,
     typedAt: row.typed_at || null,
     kivDoneAt: row.kiv_done_at || null,
+    plakDoneAt: row.plak_done_at || null,
+    kivProductionDoneAt: row.kiv_production_done_at || null,
     salesmanDelivery: !!row.salesman_delivery,
   };
 }

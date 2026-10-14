@@ -1008,3 +1008,34 @@ describe('needsKiv', () => {
     expect(needsKiv({ items: [{ detail: { rows: 'oops' } }] })).toBe(false);
   });
 });
+
+describe('KIV & ARTWORK parts', () => {
+  const plak = { jenisPlak: 'PKC 246', detail: { rows: [{ namaMurid: 'ALI', qty: '1' }] } };
+  const reservedTokoh = { jenisPlak: 'PKC 263', detail: { rows: [{ namaMurid: 'RESERVED', qty: '1' }] } };
+  const crystal = { jenisPlak: 'CRYSTAL / R-7 / DESIGN C', detail: { rows: [{ namaMurid: 'ABU', qty: '1' }] } };
+
+  it('names what the KIV & ARTWORK card is for', async () => {
+    const { kivParts } = await import('./exportCsv');
+    expect(kivParts({ items: [plak] })).toEqual([]);
+    expect(kivParts({ items: [plak, reservedTokoh] })).toEqual(['SHORT SUPPLY']);
+    expect(kivParts({ items: [plak, crystal] })).toEqual(['CRYSTAL']);
+    expect(kivParts({ items: [plak, reservedTokoh, crystal] })).toEqual(['SHORT SUPPLY', 'CRYSTAL']);
+  });
+
+  it('knows whether there are ordinary plaques for Typing', async () => {
+    const { hasPlakPart } = await import('./exportCsv');
+    expect(hasPlakPart({ items: [crystal] })).toBe(false);
+    expect(hasPlakPart({ items: [reservedTokoh, crystal] })).toBe(false);
+    expect(hasPlakPart({ items: [plak, crystal] })).toBe(true);
+  });
+
+  it('moves the card from KIV & ARTWORK to In Production to done', async () => {
+    const { needsKiv, kivInProduction } = await import('./exportCsv');
+    const order = { items: [plak, crystal] };
+    expect([needsKiv(order), kivInProduction(order)]).toEqual([true, false]);
+    const kivDone = { ...order, kivDoneAt: '2026-10-14T01:00:00Z' };
+    expect([needsKiv(kivDone), kivInProduction(kivDone)]).toEqual([false, true]);
+    const allDone = { ...kivDone, kivProductionDoneAt: '2026-10-14T02:00:00Z' };
+    expect([needsKiv(allDone), kivInProduction(allDone)]).toEqual([false, false]);
+  });
+});

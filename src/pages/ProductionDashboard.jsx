@@ -6,7 +6,7 @@ import { useAppState } from '../state/useAppState';
 import { statusPillStyle, formatDate, deliveryStageForShipmentDate, getLowStockAlerts, toMalaysiaDay, malaysiaToday, isAddonInFlight, invoiceLabel } from '../data/catalog';
 import { getOrderChangeStamp } from '../utils/orderStamp';
 import { getOrderInvoiceSlices } from '../utils/orderBatches';
-import { countReservedPlaques, needsKiv } from '../utils/exportCsv';
+import { countReservedPlaques, needsKiv, kivParts, hasPlakPart, kivInProduction } from '../utils/exportCsv';
 import { prioritizeUrgentOrders } from '../utils/urgentOrder';
 import OrderUrgentBadge from '../components/OrderUrgentBadge';
 import ProductionInvoiceEntry from '../components/ProductionInvoiceEntry';
@@ -42,31 +42,35 @@ function daysSinceShipmentDate(shipmentDate, today) {
 // generate the AI file, click Done Typing — then 'active', where the
 // Production head prints it and clicks Done. Every other role just sees
 // In Production.
+// Every card is either an order's main card (`_part: 'main'`) or, for an order
+// with Reserved plaques / crystals, its separate KIV & ARTWORK card (`_part:
+// 'kiv'`, Sean 2026-10-14): plaques go Typing → In Production, that part goes
+// KIV & ARTWORK → In Production — so one order can have two cards in In
+// Production, one marked SHORT SUPPLY / CRYSTAL.
+const main = (o) => o._part === 'main';
 const TABS = [
-  { key: 'reviewing', label: 'Reviewing Order', match: (o) => o.status === 'Reviewing Order' },
+  { key: 'reviewing', label: 'Reviewing Order', match: (o) => main(o) && o.status === 'Reviewing Order' },
   // A submitted add-on (0085) — one card per order (its first invoice slice),
   // whatever the order's own status. Like Reviewing Order, it stays here
   // after Done Review until the salesman approves it.
-  { key: 'addon', label: 'Add-On Review', match: (o) => o._primarySlice && isAddonInFlight(o) },
-  { key: 'approved', label: 'Salesman Approved', match: (o) => o.status === 'Salesman Approved' },
-  // An order with "Reserved" plaques (no names yet) also waits in KIV (Sean,
-  // 2026-10-13): after Done Typing it stays in Typing with a DONE badge, and
-  // only reaches In Production once KIV is Done too. One that already went
-  // further (e.g. Completed before KIV existed) shows only in KIV until then.
-  { key: 'typing', label: 'Typing', match: (o) => o.status === 'In Production' && (!o.typedAt || needsKiv(o)) },
+  { key: 'addon', label: 'Add-On Review', match: (o) => main(o) && o._primarySlice && isAddonInFlight(o) },
+  { key: 'approved', label: 'Salesman Approved', match: (o) => main(o) && o.status === 'Salesman Approved' },
+  { key: 'typing', label: 'Typing', match: (o) => main(o) && o.status === 'In Production' && hasPlakPart(o) && !o.typedAt },
+  { key: 'kiv', label: 'KIV & ARTWORK', match: (o) => o._part === 'kiv' && o.status === 'In Production' && needsKiv(o) },
   {
-    key: 'kiv',
-    label: 'KIV',
-    match: (o) => o._primarySlice && needsKiv(o) && ['In Production', 'Waiting for Shipment', 'Shipped', 'Completed'].includes(o.status),
+    key: 'active',
+    label: 'In Production',
+    match: (o) => o.status === 'In Production' && (main(o)
+      ? hasPlakPart(o) && !!o.typedAt && !(o._primarySlice && o.plakDoneAt)
+      : kivInProduction(o)),
   },
-  { key: 'active', label: 'In Production', match: (o) => o.status === 'In Production' && !!o.typedAt && !needsKiv(o) },
-  { key: 'waiting', label: 'Waiting for Shipment', match: (o) => o.status === 'Waiting for Shipment' && !needsKiv(o) },
-  { key: 'shipped', label: 'Shipped', match: (o) => o.status === 'Shipped' && !needsKiv(o) },
+  { key: 'waiting', label: 'Waiting for Shipment', match: (o) => main(o) && o.status === 'Waiting for Shipment' },
+  { key: 'shipped', label: 'Shipped', match: (o) => main(o) && o.status === 'Shipped' },
   {
     key: 'completed',
     label: 'Completed',
     match: (o, today) => {
-      if (o.status !== 'Completed' || needsKiv(o)) return false;
+      if (!main(o) || o.status !== 'Completed') return false;
       const days = daysSinceShipmentDate(o.shipmentDate, today);
       return days !== null && days <= 3;
     },
@@ -75,7 +79,7 @@ const TABS = [
     key: 'history',
     label: 'Order History',
     match: (o, today) => {
-      if (o.status !== 'Completed') return false;
+      if (!main(o) || o.status !== 'Completed') return false;
       const days = daysSinceShipmentDate(o.shipmentDate, today);
       return days === null || days >= 4;
     },
@@ -94,7 +98,7 @@ function shipmentDateKey(shipmentDate) {
 }
 
 export default function ProductionDashboard() {
-  const { state, today, markProductionDone, markTypingDone, markReviewDone, markAddOnReviewed, markKivDone } = useAppState();
+  const { state, today, markProductionDone, markTypingDone, markReviewDone, markAddOnReviewed, markKivDone, markKivProductionDone } = useAppState();
   const navigate = useNavigate();
   // The team's own accounts (kesin, sean …) open on Reviewing Order — their
   // first job (Sean, 2026-10-07); the manager (production@pjsb.com) opens on
@@ -118,13 +122,19 @@ export default function ProductionDashboard() {
   // card lands in the right tab on its own. An un-split order still comes
   // back as exactly one slice unchanged, so this is a no-op for the vast
   // majority of orders.
-  const orderSlices = useMemo(() => state.orders.flatMap((ord) => (
-    getOrderInvoiceSlices(ord, state.plakCatalog).map((slice, i) => ({
+  // ponytail: the KIV & ARTWORK card follows the order's first (default)
+  // invoice slice; a split order's other invoices only carry plaques.
+  const orderSlices = useMemo(() => state.orders.flatMap((ord) => {
+    const slices = getOrderInvoiceSlices(ord, state.plakCatalog).map((slice, i) => ({
       ...ord, invoiceId: slice.invoiceId, totalAmount: slice.totalAmount, totalQty: slice.totalQty,
       priceAdjusted: slice.priceAdjusted, status: slice.status, typedAt: slice.typedAt,
-      _sliceKey: `${ord.id}::${slice.invoiceId || 'default'}`, _primarySlice: i === 0,
-    }))
-  )), [state.orders, state.plakCatalog]);
+      _sliceKey: `${ord.id}::${slice.invoiceId || 'default'}`, _primarySlice: i === 0, _part: 'main',
+    }));
+    const kivCard = kivParts(ord).length > 0 && slices[0]
+      ? [{ ...slices[0], _sliceKey: `${slices[0]._sliceKey}::kiv`, _part: 'kiv' }]
+      : [];
+    return [...slices, ...kivCard];
+  }), [state.orders, state.plakCatalog]);
 
   const activeTab = TABS.find((t) => t.key === tab);
   const ordersInTab = orderSlices.filter((o) => activeTab.match(o, today));
@@ -217,8 +227,12 @@ export default function ProductionDashboard() {
       <div className="order-grid">
         {filteredOrders.map((ord) => {
           const stamp = getOrderChangeStamp(ord);
-          const reserved = needsKiv(ord) ? countReservedPlaques(ord) : 0;
-          const typingDoneWaitingKiv = ord.status === 'In Production' && !!ord.typedAt && reserved > 0;
+          const isKivCard = ord._part === 'kiv';
+          const parts = kivParts(ord);
+          const reserved = countReservedPlaques(ord);
+          // The main card says what its order's KIV & ARTWORK card is still waiting on.
+          const kivPending = !isKivCard && ord._primarySlice && ord.status === 'In Production'
+            && (needsKiv(ord) || kivInProduction(ord));
 
           return (
             <div key={ord._sliceKey} className="card order-card">
@@ -237,13 +251,12 @@ export default function ProductionDashboard() {
                   )}
                   <OrderUrgentBadge urgent={ord.urgent} />
                   <span className="status-pill" style={statusPillStyle(ord.status)}>
-                    {ord.status === 'In Production' && !ord.typedAt ? 'Typing' : ord.status}
+                    {isKivCard
+                      ? (needsKiv(ord) ? 'KIV & ARTWORK' : ord.status)
+                      : (ord.status === 'In Production' && !ord.typedAt ? 'Typing' : ord.status)}
                   </span>
-                  {reserved > 0 && (
-                    <span className="status-pill" style={{ background: '#fff4ce', color: '#8a6d00' }}>KIV · RESERVED ×{reserved}</span>
-                  )}
-                  {tab === 'typing' && typingDoneWaitingKiv && (
-                    <span className="status-pill" style={{ background: '#d4f4f1', color: '#0f6e66' }}>DONE</span>
+                  {isKivCard && reserved > 0 && (
+                    <span className="status-pill" style={{ background: '#fff4ce', color: '#8a6d00' }}>RESERVED ×{reserved}</span>
                   )}
                   {ord.status === 'Reviewing Order' && ord.reviewedAt && (
                     <span className="status-pill" style={{ background: '#dcefe3', color: '#2f6b4f' }}>✓ Review Done</span>
@@ -254,8 +267,11 @@ export default function ProductionDashboard() {
                 </div>
               </div>
               {stamp && <div className="order-stamp-inline" style={{ marginTop: 'var(--space-1)' }}>{stamp}</div>}
-              {/* An order still waiting in KIV (Reserved plaques not made yet) — Sean, 2026-10-13 */}
-              {reserved > 0 && <div className="order-stamp-inline" style={{ marginTop: 'var(--space-1)' }}>SHORT SUPPLY</div>}
+              {/* The KIV & ARTWORK card: SHORT SUPPLY (Reserved plaques) and/or CRYSTAL — Sean, 2026-10-14 */}
+              {isKivCard && parts.map((part) => (
+                <div key={part} className="order-stamp-inline" style={{ marginTop: 'var(--space-1)' }}>{part}</div>
+              ))}
+              {kivPending && <div className="hint-text" style={{ margin: '4px 0 0', fontWeight: 600, color: '#8a6d00' }}>Waiting: {parts.join(' / ')}</div>}
 
               <div className="order-card-meta" style={{ gridTemplateColumns: '1fr' }}>
                 <div><div className="dim">Sekolah</div><div>{ord.sekolah || '—'}</div></div>
@@ -309,15 +325,11 @@ export default function ProductionDashboard() {
                     <button type="button" className="btn btn-ghost" style={{ flex: 1 }} onClick={() => navigate(`/production/orders/${ord.id}${ord.invoiceId ? `?invoice=${encodeURIComponent(ord.invoiceId)}` : ''}`)}>
                       View Order
                     </button>
-                    {!ord.typedAt && (
-                      <ConfirmButton
-                        label="Done Typing" style={{ flex: 1 }}
-                        question={reserved > 0
-                          ? 'Finished typing? It stays here marked DONE until its Reserved plaques are done in KIV.'
-                          : 'Finished typing? It moves to In Production, ready to print.'}
-                        onConfirm={() => markTypingDone(ord.id, ord.invoiceId)}
-                      />
-                    )}
+                    <ConfirmButton
+                      label="Done Typing" style={{ flex: 1 }}
+                      question="Finished typing? It moves to In Production, ready to print."
+                      onConfirm={() => markTypingDone(ord.id, ord.invoiceId)}
+                    />
                   </>
                 )}
                 {tab === 'kiv' && (
@@ -327,7 +339,7 @@ export default function ProductionDashboard() {
                     </button>
                     <ConfirmButton
                       label="Done" style={{ flex: 1 }}
-                      question={`The ${reserved} Reserved plaque(s) have been made with the names?`}
+                      question={`${parts.join(' + ')} done? It moves to In Production.`}
                       confirmLabel="Yes, done"
                       cancelLabel="No, not yet"
                       onConfirm={() => markKivDone(ord.id)}
@@ -346,8 +358,12 @@ export default function ProductionDashboard() {
                       label={ord.invoiceId ? 'Done' : 'Awaiting Invoice'} style={{ flex: 1 }}
                       disabled={!ord.invoiceId}
                       title={!ord.invoiceId ? 'Waiting for Store Admin to assign an Invoice Number' : undefined}
-                      question={`Mark as done? Status → "${deliveryStageForShipmentDate(ord.shipmentDate, malaysiaToday())}".`}
-                      onConfirm={() => markProductionDone(ord.id, ord.invoiceId)}
+                      question={isKivCard
+                        ? `${parts.join(' + ')} done?`
+                        : kivPending
+                          ? `Plaques done? The order moves on once its ${parts.join(' + ')} is done too.`
+                          : `Mark as done? Status → "${deliveryStageForShipmentDate(ord.shipmentDate, malaysiaToday())}".`}
+                      onConfirm={() => (isKivCard ? markKivProductionDone(ord.id) : markProductionDone(ord.id, ord.invoiceId))}
                     />
                   </>
                 )}

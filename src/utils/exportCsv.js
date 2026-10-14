@@ -109,9 +109,37 @@ export function countReservedPlaques(order) {
     .reduce((n, r) => n + (Number(r.qty) || 0), 0), 0);
 }
 
-// Still waiting in KIV: has Reserved plaques and Production hasn't clicked KIV Done.
+// KIV & ARTWORK (Sean, 2026-10-13/14): the part of an order made apart from
+// the ordinary plaques — its "Reserved" plaques (SHORT SUPPLY, made once the
+// names come) and its crystals (CRYSTAL / … Jenis Plak). It runs alongside
+// Typing → In Production as its own card: KIV & ARTWORK Done (kivDoneAt) →
+// In Production → Done (kivProductionDoneAt). The order moves on to
+// shipment once both its plaque part and this part are done.
+export const isCrystalCode = (code) => /^CRYSTAL \//i.test(String(code || '').trim());
+const itemAllReserved = (it) => Array.isArray(it.detail?.rows) && it.detail.rows.length > 0
+  && it.detail.rows.every((r) => isReservedName(r.namaMurid));
+
+// What the KIV & ARTWORK card is for: SHORT SUPPLY and/or CRYSTAL ([] = none).
+export function kivParts(order) {
+  const parts = [];
+  if (countReservedPlaques(order) > 0) parts.push('SHORT SUPPLY');
+  if ((order?.items || []).some((it) => isCrystalCode(it.jenisPlak))) parts.push('CRYSTAL');
+  return parts;
+}
+
+// Has ordinary plaques for Typing (anything that isn't a crystal or wholly Reserved).
+export function hasPlakPart(order) {
+  return (order?.items || []).some((it) => !isCrystalCode(it.jenisPlak) && !itemAllReserved(it));
+}
+
+// Still waiting in the KIV & ARTWORK tab.
 export function needsKiv(order) {
-  return !order?.kivDoneAt && countReservedPlaques(order) > 0;
+  return !order?.kivDoneAt && kivParts(order).length > 0;
+}
+
+// Its KIV & ARTWORK card is in In Production, not Done yet.
+export function kivInProduction(order) {
+  return !!order?.kivDoneAt && !order.kivProductionDoneAt && kivParts(order).length > 0;
 }
 
 // Categories actually present in this order's items, in catalog order (any

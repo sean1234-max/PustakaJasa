@@ -10,7 +10,7 @@ import OrderPrintout from '../components/OrderPrintout';
 import { useAppState } from '../state/useAppState';
 import { statusPillStyle, formatDate, MANUAL_MAX_QTY, deliveryStageForShipmentDate, toMalaysiaDay, malaysiaToday, isReviewed, isAddonInFlight, invoiceLabel, invoiceSetByNote } from '../data/catalog';
 import { reconstructOrderDetailGroups, reconstructBlocksForCategory, noopUpdaters } from '../utils/computeBlocks';
-import { getExportableCategories, splitOrderCategories, getOrderJenisPlakGroups, getPlakProductionMode, summarizeRowsForManual, buildCsvRows, rowsToCsv, buildCategoryCsvFilename, combineCsvRows, buildCombinedCsvFilename, validateExport, getInvoiceIdForJenisPlak, getPartialSplitNotes, needsKiv } from '../utils/exportCsv';
+import { getExportableCategories, splitOrderCategories, getOrderJenisPlakGroups, getPlakProductionMode, summarizeRowsForManual, buildCsvRows, rowsToCsv, buildCategoryCsvFilename, combineCsvRows, buildCombinedCsvFilename, validateExport, getInvoiceIdForJenisPlak, getPartialSplitNotes, needsKiv, kivInProduction, kivParts, isCrystalCode } from '../utils/exportCsv';
 import { downloadTextFile } from '../utils/downloadBlob';
 import { getInvoiceItems } from '../utils/orderBatches';
 import ImportFileButtons from '../components/ImportFileButtons';
@@ -284,9 +284,14 @@ export default function ProductionOrderDetail() {
   // blocking the rest (Sean, 2026-10-13) — it's generated later, once the
   // names are in.
   const isAllReserved = (g) => g.csvData.rows.length === 0 && g.csvData.reservedCount > 0;
-  const reservedGroups = jenisPlakExport.filter((g) => g.csvData.reservedCount > 0);
-  const combinedRows = combineCsvRows(jenisPlakExport);
-  const combinedOk = jenisPlakExport.length > 0 && jenisPlakExport.every((g) => g.check.ok || isAllReserved(g)) && combinedRows.length > 0;
+  // Crystals are made in KIV & ARTWORK (their own generate, coming with the
+  // crystal preview page — Sean 2026-10-14), so Typing's combined CSV / AI
+  // file is the ordinary plaques only.
+  const crystalGroups = jenisPlakExport.filter((g) => isCrystalCode(g.jenisPlak));
+  const plakGroups = jenisPlakExport.filter((g) => !isCrystalCode(g.jenisPlak));
+  const reservedGroups = plakGroups.filter((g) => g.csvData.reservedCount > 0);
+  const combinedRows = combineCsvRows(plakGroups);
+  const combinedOk = plakGroups.length > 0 && plakGroups.every((g) => g.check.ok || isAllReserved(g)) && combinedRows.length > 0;
   const handleExportCombined = () => {
     if (!combinedOk) return;
     const csv = rowsToCsv(combinedRows);
@@ -357,7 +362,9 @@ export default function ProductionOrderDetail() {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
             {stamp && <span className="order-stamp-inline no-print">{stamp}</span>}
-            {needsKiv(order) && <span className="order-stamp-inline no-print">SHORT SUPPLY</span>}
+            {(needsKiv(order) || kivInProduction(order)) && kivParts(order).map((part) => (
+              <span key={part} className="order-stamp-inline no-print">{part}</span>
+            ))}
             {/* Corrected Excel present — every export below already reads
                 from it (see effectiveOrder), this just makes that visible
                 at a glance without opening the order. */}
@@ -520,6 +527,12 @@ export default function ProductionOrderDetail() {
                     <p className="hint-text" style={{ marginTop: 4 }}>
                       Every group above, in one file — each row still carries its own Category and Jenis Plak column. Disabled if any group below is blocked.
                     </p>
+                    {crystalGroups.length > 0 && (
+                      <p className="hint-text" style={{ marginTop: 4, color: '#8a6d00', fontWeight: 600 }}>
+                        CRYSTAL is made in KIV &amp; ARTWORK — left out of this CSV / AI file:{' '}
+                        {crystalGroups.map((g) => `${g.categoryLabel} – ${g.jenisPlak} (${g.totalQty})`).join(', ')}.
+                      </p>
+                    )}
                     {reservedGroups.length > 0 && (
                       <p className="hint-text" style={{ marginTop: 4, color: '#8a6d00', fontWeight: 600 }}>
                         Still RESERVED (no name yet) — left out of the CSV / AI file this time:{' '}

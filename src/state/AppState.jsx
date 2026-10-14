@@ -32,7 +32,7 @@ import { isUrgentShipment, urgentSheetAction, SHIPMENT_EDITABLE_STATUSES } from 
 import { fetchCustomTypoWords } from '../lib/typoWordsApi';
 import { setCustomTypoWords } from '../utils/typoCheck';
 import { normalizeSplitQty, stockDiff, applyPriceDrafts } from '../utils/orderBatches';
-import { needsKiv } from '../utils/exportCsv';
+import { needsKiv, kivParts, hasPlakPart, kivInProduction } from '../utils/exportCsv';
 
 // Malaysia's "today" (catalog.js's malaysiaToday — the project always runs
 // on Malaysian dates), normalized to midnight so it compares cleanly against
@@ -2669,25 +2669,66 @@ export function AppStateProvider({ children }) {
     }
   }, [writeSlice, flashProductionToast]);
 
-  // KIV Done (Sean, 2026-10-13): the order's "Reserved" plaques have been
-  // made now the names came — it can carry on to In Production (0087).
+  // KIV & ARTWORK (Sean, 2026-10-14) — an order's Reserved plaques and
+  // crystals, made alongside its ordinary plaques (exportCsv.js kivParts).
+  // Its own card: KIV & ARTWORK Done → In Production → Done. The order goes
+  // on to shipment once this AND its plaque card are done (whichever is last
+  // moves it — see advanceOrderToShipment / markProductionDone).
+  const advanceOrderToShipment = useCallback(async (order, extraFields = {}) => {
+    const nextStatus = deliveryStageForShipmentDate(order.shipmentDate, malaysiaToday());
+    const toastForStatus = {
+      'Waiting for Shipment': 'Production completed. Order is now waiting for shipment.',
+      Shipped: 'Production completed. Shipment Date has arrived — order is now Shipped.',
+      Completed: 'Production completed. Shipment Date has passed — order is now Completed.',
+    };
+    const fields = { ...extraFields, status: nextStatus };
+    await updateOrder(order.id, fields);
+    patch((st) => ({ orders: st.orders.map((o) => (o.id === order.id ? { ...o, ...fields } : o)) }));
+    flashProductionToast(toastForStatus[nextStatus]);
+  }, [patch, flashProductionToast]);
+
   const markKivDone = useCallback(async (orderId) => {
     const order = stateRef.current.orders.find((o) => o.id === orderId);
     if (!order || !needsKiv(order)) {
-      flashProductionToast('This order has nothing waiting in KIV.');
+      flashProductionToast('This order has nothing waiting in KIV & ARTWORK.');
       return;
     }
     const kivDoneAt = new Date().toISOString();
     try {
       await updateOrder(orderId, { kivDoneAt });
     } catch (err) {
-      console.error('Failed to mark KIV done in Supabase:', err);
+      console.error('Failed to mark KIV & ARTWORK done in Supabase:', err);
       flashProductionToast(describeOrderWriteError(err, 'update'));
       return;
     }
     patch((st) => ({ orders: st.orders.map((o) => (o.id === orderId ? { ...o, kivDoneAt } : o)) }));
-    flashProductionToast('KIV done — the reserved plaques are made.');
+    flashProductionToast(`${kivParts(order).join(' + ')} done — now in In Production.`);
   }, [patch, flashProductionToast]);
+
+  const markKivProductionDone = useCallback(async (orderId) => {
+    const order = stateRef.current.orders.find((o) => o.id === orderId);
+    if (!order || order.status !== 'In Production' || !kivInProduction(order)) {
+      flashProductionToast('This order’s KIV & ARTWORK part is not ready to be marked done.');
+      return;
+    }
+    if (!order.invoiceId) {
+      flashProductionToast('Waiting for Store Admin to assign an Invoice Number before this can be marked done.');
+      return;
+    }
+    const kivProductionDoneAt = new Date().toISOString();
+    try {
+      if (hasPlakPart(order) && !order.plakDoneAt) {
+        await updateOrder(orderId, { kivProductionDoneAt });
+        patch((st) => ({ orders: st.orders.map((o) => (o.id === orderId ? { ...o, kivProductionDoneAt } : o)) }));
+        flashProductionToast(`${kivParts(order).join(' + ')} done — the order moves on once its plaques are done too.`);
+      } else {
+        await advanceOrderToShipment(order, { kivProductionDoneAt });
+      }
+    } catch (err) {
+      console.error('Failed to mark KIV & ARTWORK production done in Supabase:', err);
+      flashProductionToast('Unable to update order status. Please try again.');
+    }
+  }, [patch, flashProductionToast, advanceOrderToShipment]);
 
   const markProductionDone = useCallback(async (orderId, sliceInvoiceId) => {
     const order = stateRef.current.orders.find((o) => o.id === orderId);
@@ -2704,8 +2745,18 @@ export function AppStateProvider({ children }) {
       flashProductionToast('Click Done Typing first — this order’s AI file isn’t typed yet.');
       return;
     }
-    if (needsKiv(order)) {
-      flashProductionToast('This order still has Reserved plaques — click Done in KIV first.');
+    // The KIV & ARTWORK part still being made: just mark the plaques done; the
+    // order moves on when that part's own In Production Done comes.
+    if (slice.isDefault && kivParts(order).length > 0 && !order.kivProductionDoneAt) {
+      const plakDoneAt = new Date().toISOString();
+      try {
+        await updateOrder(orderId, { plakDoneAt });
+        patch((st) => ({ orders: st.orders.map((o) => (o.id === orderId ? { ...o, plakDoneAt } : o)) }));
+        flashProductionToast(`Plaques done — the order moves on once its ${kivParts(order).join(' + ')} is done too.`);
+      } catch (err) {
+        console.error('Failed to mark plaques done in Supabase:', err);
+        flashProductionToast('Unable to update order status. Please try again.');
+      }
       return;
     }
     // Status isn't always 'Waiting for Shipment': if this order's Shipment
@@ -2725,7 +2776,7 @@ export function AppStateProvider({ children }) {
       console.error('Failed to mark order done in Supabase:', err);
       flashProductionToast('Unable to update order status. Please try again.');
     }
-  }, [writeSlice, flashProductionToast]);
+  }, [patch, writeSlice, flashProductionToast]);
 
   // Production's editor (ProductionEditOrder.jsx) while an order is being
   // reviewed — the order re-opened as a draft in Production's own scratch
@@ -3082,7 +3133,7 @@ export function AppStateProvider({ children }) {
     markTypingDone,
     updateReferenceOrder,
     markReviewDone,
-    markAddOnReviewed, saveProductionPrices, markKivDone,
+    markAddOnReviewed, saveProductionPrices, markKivDone, markKivProductionDone,
     openProductionEdit,
     loadExcelIntoProductionEdit,
     saveProductionEdit,
