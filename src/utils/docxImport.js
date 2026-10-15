@@ -287,7 +287,15 @@ function wordingFieldsForRows(rows) {
 // event_line_2 exactly as wordingFields read them. Shared with
 // aiMapping.js, so a Word table and an AI-mapped Excel list land on
 // Step 2 exactly the same way.
-export function wordingRowsToCategorized(rows, heading = '', { keepOrder = false } = {}) {
+// A subject short form after the award ("ANUGERAH PENDETA ZA'ABA (BM)",
+// "(PJPK)") tells the school which subject it is; it is not engraved
+// (owner, 2026-10-15). Words in brackets ("(TERBAIK KESELURUHAN)", a
+// "(KELAB)" line of its own) stay.
+const SUBJECT_SHORT_RE = /(\S)\s*\([A-Z]{2,4}\)\s*$/;
+const dropSubjectShortForm = (line) => String(line ?? '').replace(SUBJECT_SHORT_RE, '$1').trim();
+
+export function wordingRowsToCategorized(inputRows, heading = '', { keepOrder = false } = {}) {
+  const rows = inputRows.map((r) => ({ ...r, lines: (r.lines || []).map(dropSubjectShortForm).filter(Boolean) }));
   // Group by award title + plaque code. One title with two different codes
   // is two awards (each block carries one Jenis Plak) — both kept, each
   // labelled with its own code so neither silently takes the other's.
