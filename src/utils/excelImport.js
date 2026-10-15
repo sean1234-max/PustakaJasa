@@ -1177,7 +1177,8 @@ function parseSubjectLevelSheet(ws) {
     }
   }
 
-  return { lines, classes, jenisPlak, levelBreakdown, subjectOrder, kelasSubject };
+  // its CONTOH is the sheet's own: a row the teacher left blank stays blank (Sean, 2026-10-15)
+  return { lines, classes, jenisPlak, levelBreakdown, subjectOrder, kelasSubject, contohFromSheet: true };
 }
 
 // PBD TERBAIK's sheet has NO subject axis — just "TAHUN | KUANTITI" down
@@ -2322,7 +2323,8 @@ export function deriveKlasMatrixSectionLines(section) {
   // there's no worked TAHUN example to derive — the reference sample is
   // just TAJUK BESAR + ACARA (2 rows). Deriving slot '3' from the first
   // award would wrongly add a third, editable row echoing one honour.
-  if (firstClass && !lines['3'] && !section.positionFromNamaKelas) {
+  // Not for a PPKI / MP THP sheet: its own CONTOH decides (ORD-0059 left row 4 blank).
+  if (firstClass && !lines['3'] && !section.positionFromNamaKelas && !section.contohFromSheet) {
     const tahunText = [firstClass.tahunFrom, firstClass.namaKelas].filter(Boolean).join(' ').trim();
     // Not when it just repeats the award-name line (a TOKOH-style section
     // where the honour title IS the position, not a per-plaque class) —

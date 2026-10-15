@@ -264,21 +264,31 @@ export function buildSubjectTahunFormatter(sample, subjects, levels, classNames 
 // names and a level, in either order ("ALIRAN TAHUN 1  PPKI"): each plaque's
 // class line is written the same way (Sean, 2026-10-15, ORD-0059 — it used to
 // be always level first). null when the CONTOH has no such line.
+// The level may be written with or without "TAHUN" ("1 UM" — ORD-0059); each plaque's is
+// written the same way. `start`/`end`: where that line sits in `contoh`.
+const bareLevel = (level) => String(level).replace(/^TAHUN\s*/i, '');
 export function classLineTemplate(contoh, classNames, levels) {
   const ls = String(contoh || '').split('\n');
   const filled = (arr) => arr.some((x) => x.trim());
-  for (let i = 0; i < ls.length; i++) {
+  const candidates = [...new Set([...levels, ...levels.map(bareLevel)])].filter(Boolean);
+  let start = 0;
+  for (let i = 0; i < ls.length; start += ls[i].length + 1, i++) {
     const kelas = findLongestWord(ls[i], classNames);
-    const level = kelas && findLongestWord(ls[i], levels, kelas);
+    const level = kelas && findLongestWord(ls[i], candidates, kelas);
     if (!level) continue;
     const [a, b] = kelas.start < level.start ? [kelas, level] : [level, kelas];
     const rest = ls[i].slice(0, a.start) + ls[i].slice(a.end, b.start) + ls[i].slice(b.end);
     if (/[A-Z0-9]/i.test(rest)) continue;
     const classFirst = kelas.start < level.start;
+    const withTahun = /^TAHUN\b/i.test(ls[i].slice(level.start, level.end));
+    const form = (lvl) => (withTahun ? lvl : bareLevel(lvl));
     return {
-      make: (lvl, cls) => (classFirst ? [cls, lvl] : [lvl, cls]).filter(Boolean).join(' '),
+      // lvl: the level as the column names it ("TAHUN 4", "PPKI")
+      make: (lvl, cls) => (classFirst ? [cls, form(lvl)] : [form(lvl), cls]).filter(Boolean).join(' '),
       // the class line above the subject in the CONTOH
       above: !filled(ls.slice(0, i)) && filled(ls.slice(i + 1)),
+      start,
+      end: start + ls[i].length,
     };
   }
   return null;
@@ -309,7 +319,10 @@ function buildMatrixRows(item, cat, header, year, positionPart1, schoolLanguage)
   const knownSubjects = [...getCategorySubjects(cat, schoolLanguage), ...customSubjects];
   const classNames = Object.values(breakdown).flat().map((c) => c.desc).filter(Boolean);
   const format = buildSubjectTahunFormatter(contoh, knownSubjects, columns, classNames);
-  const classLine = classLineTemplate(contoh, classNames, columns);
+  // the class line: in the red position line itself ("ANUGERAH IBNU SINA⏎ALIRAN TAHUN 1 PPKI",
+  // ORD-0059), else in the CONTOH's subject / Tahun rows
+  const posClass = classLineTemplate(positionPart1, classNames, columns);
+  const classLine = posClass || classLineTemplate(contoh, classNames, columns);
   // The CONTOH can put its example subject on line 2 instead ("CEMERLANG⏎
   // BAHASA MELAYU", line 3 just "TAHUN 4"): that spot takes each plaque's
   // own subject, and the lines below then carry only the Tahun — otherwise
@@ -319,9 +332,12 @@ function buildMatrixRows(item, cat, header, year, positionPart1, schoolLanguage)
   // The sample's own subject keeps its Alt+Enter ("ANUGERAH⏎LONJAKAN PRESTASI").
   const sampleSubject = posSpan ? positionPart1.slice(posSpan.start, posSpan.end) : '';
   const sameWords = (a, b) => a.replace(/\s+/g, ' ').trim().toUpperCase() === b.replace(/\s+/g, ' ').trim().toUpperCase();
-  const positionFor = (subject) => (posSpan
-    ? positionPart1.slice(0, posSpan.start) + (sameWords(subject, sampleSubject) ? sampleSubject : subject) + positionPart1.slice(posSpan.end)
-    : positionPart1);
+  // Each plaque's own subject — and, when the class line is in it too, its own class line.
+  const positionFor = (subject, classText) => [
+    posSpan && { ...posSpan, text: sameWords(subject, sampleSubject) ? sampleSubject : subject },
+    posClass && classText !== undefined && { start: posClass.start, end: posClass.end, text: classText },
+  ].filter(Boolean).sort((a, b) => b.start - a.start)
+    .reduce((s, r) => s.slice(0, r.start) + r.text + s.slice(r.end), positionPart1);
   // A subject already in ACARA (the teacher wanted it red) is never repeated below.
   const lines = (subject, tahun) => {
     if (posSpan) return [tahun, ''];
@@ -342,13 +358,22 @@ function buildMatrixRows(item, cat, header, year, positionPart1, schoolLanguage)
     let covered = 0;
     classes.forEach((c) => {
       const q = Math.max(0, Number(c.qty) || 0);
-      const eventLine2 = classLine ? classLine.make(tahunLabel, c.desc.trim()) : [tahunLabel, c.desc.trim()].filter(Boolean).join(' ');
+      const eventLine2 = classLine ? classLine.make(bareCol, c.desc.trim()) : [tahunLabel, c.desc.trim()].filter(Boolean).join(' ');
+      if (posClass) {
+        for (let i = 0; i < q; i++) rows.push([header, year, positionFor(subject, eventLine2), '', '']);
+        covered += q;
+        return;
+      }
       const both = classLine && !posSpan ? (classLine.above ? [eventLine2, subject] : [subject, eventLine2]) : lines(subject, eventLine2);
       for (let i = 0; i < q; i++) rows.push([header, year, positionFor(subject), ...both]);
       covered += q;
     });
     const remainder = qty - covered;
-    for (let i = 0; i < remainder; i++) rows.push([header, year, positionFor(subject), ...lines(subject, tahunLabel)]);
+    for (let i = 0; i < remainder; i++) {
+      rows.push(posClass
+        ? [header, year, positionFor(subject, posClass.make(bareCol, '')), '', '']
+        : [header, year, positionFor(subject), ...lines(subject, tahunLabel)]);
+    }
   };
 
   // `subjectsFromImport` categories keep every subject as an editable
