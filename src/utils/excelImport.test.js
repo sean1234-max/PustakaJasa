@@ -1292,6 +1292,8 @@ describe('copiedSheetCategory — Excel\'s "<sheet> (2)" copies keep their sheet
     expect(copiedSheetCategory('MP THP 2 (Kalau ada kelas) (2)')).toBe('MP2_KELAS');
     expect(copiedSheetCategory('MP THP 1 (Kalau ada kelas) (3)')).toBe('MP1_KELAS');
     expect(copiedSheetCategory('mp thp 2 (2)')).toBe('MP2');
+    expect(copiedSheetCategory('PPKI,PRA (2)')).toBe('PPKI');
+    expect(copiedSheetCategory('PPKI (2)')).toBe('PPKI');
   });
   it('leaves the template sheets themselves and other names alone', () => {
     expect(copiedSheetCategory('MP THP 2 (Kalau ada kelas)')).toBe(null);
