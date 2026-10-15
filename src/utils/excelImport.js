@@ -136,6 +136,19 @@ function umumHasOrders(ws) {
   });
 }
 
+// A template sheet the teacher actually filled: some quantity typed in.
+// The blank template's own text (headers, sample wording) and its 0-total
+// formulas don't count.
+function sheetHasQuantities(ws) {
+  const range = sheetRange(ws);
+  for (let r = range.r1; r <= range.r2; r++) {
+    for (let c = range.c1; c <= range.c2; c++) {
+      if (cellNum(ws, r, c) > 0) return true;
+    }
+  }
+  return false;
+}
+
 function sheetHasContent(ws) {
   const range = sheetRange(ws);
   for (let r = range.r1; r <= range.r2; r++) {
@@ -2128,10 +2141,18 @@ export function parseFormAnugerahExcel(arrayBuffer) {
     if (sheetSections.length === 0 && sheetHasContent(ws)) unrecognizedSheets.push(name);
     allSections.push(...sheetSections);
   });
+  // A template sheet (fixed name) whose own reader below finds nothing,
+  // although quantities were typed into it — the teacher changed its layout.
+  // Reported like any other unread sheet (and offered to the AI reader)
+  // instead of silently vanishing from the order.
+  const unread = (sheet) => {
+    const name = wb.SheetNames.find((n) => wb.Sheets[n] === sheet);
+    if (name && sheetHasQuantities(sheet)) unrecognizedSheets.push(name);
+  };
   const ppkiSheet = findSheetAny(wb, ['PPKI', 'PPKI,PRA']);
   if (ppkiSheet) {
     const ppkiSection = parseSubjectLevelSheet(ppkiSheet);
-    if (ppkiSection) { ppkiSection.sourceSheet = 'PPKI'; allSections.push(ppkiSection); }
+    if (ppkiSection) { ppkiSection.sourceSheet = 'PPKI'; allSections.push(ppkiSection); } else unread(ppkiSheet);
   }
   // Plain "MP THP 1" / "MP THP 2" are the same fixed SUBJEK x level matrix,
   // just without the optional Nama Kelas breakdown — parseSubjectLevelSheet's
@@ -2142,38 +2163,38 @@ export function parseFormAnugerahExcel(arrayBuffer) {
     const sheet = findSheet(wb, name);
     if (!sheet) return;
     const section = parseSubjectLevelSheet(sheet);
-    if (section) { section.sourceSheet = name; allSections.push(section); }
+    if (section) { section.sourceSheet = name; allSections.push(section); } else unread(sheet);
   });
   const mpThp1KelasSheet = findSheet(wb, 'MP THP 1 (Kalau ada kelas)');
   if (mpThp1KelasSheet) {
     const mpThp1KelasSection = parseSubjectLevelSheet(mpThp1KelasSheet);
-    if (mpThp1KelasSection) { mpThp1KelasSection.sourceSheet = 'MP THP 1 (Kalau ada kelas)'; allSections.push(mpThp1KelasSection); }
+    if (mpThp1KelasSection) { mpThp1KelasSection.sourceSheet = 'MP THP 1 (Kalau ada kelas)'; allSections.push(mpThp1KelasSection); } else unread(mpThp1KelasSheet);
   }
   const mpThp2KelasSheet = findSheet(wb, 'MP THP 2 (Kalau ada kelas)');
   if (mpThp2KelasSheet) {
     const mpThp2KelasSection = parseSubjectLevelSheet(mpThp2KelasSheet);
-    if (mpThp2KelasSection) { mpThp2KelasSection.sourceSheet = 'MP THP 2 (Kalau ada kelas)'; allSections.push(mpThp2KelasSection); }
+    if (mpThp2KelasSection) { mpThp2KelasSection.sourceSheet = 'MP THP 2 (Kalau ada kelas)'; allSections.push(mpThp2KelasSection); } else unread(mpThp2KelasSheet);
   }
   const pbdSheet = findSheet(wb, 'PBD');
   if (pbdSheet) {
     const pbdSection = parsePbdSheet(pbdSheet);
-    if (pbdSection) { pbdSection.sourceSheet = 'PBD'; allSections.push(pbdSection); }
+    if (pbdSection) { pbdSection.sourceSheet = 'PBD'; allSections.push(pbdSection); } else unread(pbdSheet);
   }
   const aliranSheet = findSheet(wb, 'ALIRAN TERBAIK');
   if (aliranSheet) {
     const aliranSection = parseAliranSheet(aliranSheet);
-    if (aliranSection) { aliranSection.sourceSheet = 'ALIRAN TERBAIK'; allSections.push(aliranSection); }
+    if (aliranSection) { aliranSection.sourceSheet = 'ALIRAN TERBAIK'; allSections.push(aliranSection); } else unread(aliranSheet);
   }
   const aliranKelasSheet = findSheet(wb, 'ALIRAN TERBAIK Kalau ada kelas');
   if (aliranKelasSheet) {
     const aliranKelasSection = parseAliranKelasSheet(aliranKelasSheet);
-    if (aliranKelasSection) { aliranKelasSection.sourceSheet = 'ALIRAN TERBAIK Kalau ada kelas'; allSections.push(aliranKelasSection); }
+    if (aliranKelasSection) { aliranKelasSection.sourceSheet = 'ALIRAN TERBAIK Kalau ada kelas'; allSections.push(aliranKelasSection); } else unread(aliranKelasSheet);
   }
   [['LONJAKAN SAUJANA'], ['KEHADIRAN PENUH']].forEach(([name]) => {
     const sheet = findSheet(wb, name);
     if (!sheet) return;
     const parsed2 = parseTahunPlakRowSheet(sheet);
-    if (parsed2) { parsed2.sourceSheet = name; allSections.push(parsed2); }
+    if (parsed2) { parsed2.sourceSheet = name; allSections.push(parsed2); } else unread(sheet);
   });
 
   const klasSheet = findSheet(wb, 'KLAS MATRIX');
@@ -2212,13 +2233,13 @@ export function parseFormAnugerahExcel(arrayBuffer) {
   const tokohSheet = findSheet(wb, 'TOKOH');
   if (tokohSheet) {
     const tokohSection = parseTokohAnugerahSheet(tokohSheet);
-    if (tokohSection) { tokohSection.sourceSheet = 'TOKOH'; allSections.push(tokohSection); }
+    if (tokohSection) { tokohSection.sourceSheet = 'TOKOH'; allSections.push(tokohSection); } else unread(tokohSheet);
   }
 
   const selempangSheet = findSheet(wb, 'SELEMPANG');
   if (selempangSheet) {
     const selempangSection = parseSelempangSheet(selempangSheet);
-    if (selempangSection) { selempangSection.sourceSheet = 'SELEMPANG'; allSections.push(selempangSection); }
+    if (selempangSection) { selempangSection.sourceSheet = 'SELEMPANG'; allSections.push(selempangSection); } else unread(selempangSheet);
   }
 
   allSections.push(...findPerasmiSections(wb));

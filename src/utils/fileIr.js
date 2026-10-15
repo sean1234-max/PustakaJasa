@@ -19,6 +19,15 @@ const MAX_COLS = 60;
 
 const isPlaceholder = (s) => /^[-_\s]+$/.test(s);
 
+// A cell typed over several lines ("MAJLIS ...⏎TAHUN 2026"): its lines,
+// kept apart from the one-line text the model reads, so a heading or
+// closing line is engraved with the teacher's own line breaks.
+function cellLines(cell) {
+  if (!cell || cell.v == null || typeof cell.v !== 'string' || !/[\r\n]/.test(cell.v)) return null;
+  const lines = cell.v.split(/\r?\n|\r/).map((l) => l.replace(/\s+/g, ' ').trim()).filter(Boolean);
+  return lines.length > 1 ? lines : null;
+}
+
 function cellValue(cell) {
   if (!cell) return '';
   if (cell.v == null || cell.v === '') return '';
@@ -29,6 +38,7 @@ function cellValue(cell) {
 
 export function buildSheetIr(ws, name, { hidden = false } = {}) {
   const cells = {};
+  const cellBreaks = {};
   const formulaNoValue = [];
   let maxRow = 0;
   let maxCol = 0;
@@ -42,6 +52,8 @@ export function buildSheetIr(ws, name, { hidden = false } = {}) {
     if (cell && cell.f && (cell.v == null || cell.v === '')) formulaNoValue.push(ref);
     if (!v) return;
     cells[ref] = v;
+    const lines = cellLines(cell);
+    if (lines) cellBreaks[ref] = lines;
     maxRow = Math.max(maxRow, r + 1);
     maxCol = Math.max(maxCol, c + 1);
   });
@@ -49,7 +61,7 @@ export function buildSheetIr(ws, name, { hidden = false } = {}) {
     .filter((m) => m.s.r < MAX_ROWS_PER_SHEET && m.s.c < MAX_COLS)
     .map((m) => XLSX.utils.encode_range(m))
     .filter((range) => cells[range.split(':')[0]]);
-  return { id: `S:${name}`, kind: 'sheet', name, hidden, maxRow, maxCol, cells, merges, formulaNoValue, truncated };
+  return { id: `S:${name}`, kind: 'sheet', name, hidden, maxRow, maxCol, cells, cellBreaks, merges, formulaNoValue, truncated };
 }
 
 // `sheetNames` = the sheets to include (the ones the rule reader skipped).

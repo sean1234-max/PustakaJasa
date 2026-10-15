@@ -4,7 +4,7 @@
 // model can never mistype a name or a quantity. Bump MAPPING_VERSION
 // whenever this shape changes (it is part of the cache key).
 
-export const MAPPING_VERSION = '1';
+export const MAPPING_VERSION = '2';
 
 const nullableString = { anyOf: [{ type: 'string' }, { type: 'null' }] };
 const nullableInt = { anyOf: [{ type: 'integer' }, { type: 'null' }] };
@@ -20,13 +20,15 @@ export const MAPPING_SCHEMA = {
         type: 'object',
         additionalProperties: false,
         required: [
-          'sheet', 'role', 'titleCell', 'codeCell', 'headerRow', 'firstRow', 'lastRow',
+          'sheet', 'role', 'headingCells', 'titleCell', 'fixedCells', 'codeCell', 'headerRow', 'firstRow', 'lastRow',
           'wordingColumns', 'qtyColumn', 'codeColumn', 'labelColumn', 'classColumns', 'confidence', 'note',
         ],
         properties: {
           sheet: { type: 'string', description: 'Exact sheet name as given.' },
           role: { type: 'string', enum: ['award-list', 'class-matrix', 'ignore'] },
+          headingCells: { type: 'array', items: { type: 'string' }, description: 'A1 refs of the event heading (TAJUK BESAR, e.g. "MAJLIS ... 2026") printed on every plaque, top to bottom; [] if none.' },
           titleCell: { ...nullableString, description: 'A1 ref of the award title (ACARA), or null.' },
+          fixedCells: { type: 'array', items: { type: 'string' }, description: 'award-list: A1 refs of fixed lines printed on every plaque BELOW the row wording (e.g. "TAHNIAH DAN SYABAS"), top to bottom; [] if none. Never a placeholder like "(NAMA KELAS)".' },
           codeCell: { ...nullableString, description: 'A1 ref of ONE plaque code for the whole block, or null.' },
           headerRow: { ...nullableInt, description: 'Row number of the column headers.' },
           firstRow: { ...nullableInt, description: 'First data row (1-based).' },
@@ -57,7 +59,7 @@ export const MAPPING_SCHEMA = {
 } as const;
 
 type Block = {
-  sheet: string; role: string; titleCell: string | null; codeCell: string | null;
+  sheet: string; role: string; headingCells: string[]; titleCell: string | null; fixedCells: string[]; codeCell: string | null;
   headerRow: number | null; firstRow: number | null; lastRow: number | null;
   wordingColumns: string[]; qtyColumn: string | null; codeColumn: string | null;
   labelColumn: string | null; classColumns: string[]; confidence: string; note: string | null;

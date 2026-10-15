@@ -14,8 +14,10 @@ import { classifyWordingLines, cleanDocxPlakCode, parseDocxQty, wordingRowsToCat
 // Two block roles:
 //   award-list   one row per plaque/award: wordingColumns (top to bottom
 //                = engraving lines) + qtyColumn (+ codeColumn or codeCell,
-//                + an optional titleCell prepended as line 1). Grouped
-//                exactly like a Word order table.
+//                + an optional titleCell prepended as line 1, + the sample
+//                label's fixedCells appended, e.g. TAHNIAH DAN SYABAS).
+//                Grouped exactly like a Word order table.
+// Either role: headingCells = the sample label's TAJUK BESAR lines.
 //   class-matrix rows = subjects/placings (labelColumn), columns = classes
 //                (classColumns, class name in headerRow), qty at each
 //                crossing; one award per sheet (titleCell, codeCell).
@@ -43,6 +45,11 @@ function makeReader(block) {
   const blankFormula = new Set(block.formulaNoValue);
   return {
     text(ref) { return block.cells[ref] ?? block.cells[tl.get(ref)] ?? ''; },
+    // With the cell's own line breaks (heading / closing lines).
+    lines(ref) {
+      const at = block.cells[ref] != null ? ref : tl.get(ref);
+      return block.cellBreaks?.[at]?.join('\n') ?? this.text(ref);
+    },
     isBlankFormula(ref) { return blankFormula.has(ref); },
   };
 }
@@ -61,6 +68,9 @@ function badCols(cols) {
   return cols.filter((c) => c != null && !COL_RE.test(c));
 }
 
+const same = (a, b) => a.replace(/\s+/g, ' ').trim().toUpperCase() === b.replace(/\s+/g, ' ').trim().toUpperCase();
+const cellsText = (rd, refs) => (refs || []).map((ref) => rd.lines(ref)).filter(Boolean);
+
 function readAwardList(m, block, where, notes) {
   const rd = makeReader(block);
   const wordingCols = m.wordingColumns || [];
@@ -70,8 +80,11 @@ function readAwardList(m, block, where, notes) {
     return { rows: [], heading: '' };
   }
   const titleText = m.titleCell ? rd.text(m.titleCell) : '';
-  const heading = EVENT_HEADING_RE.test(titleText) ? titleText : '';
-  const title = heading ? '' : titleText;
+  const headingLines = cellsText(rd, m.headingCells);
+  const titleIsHeading = EVENT_HEADING_RE.test(titleText);
+  const heading = headingLines.length ? headingLines.join('\n') : (titleIsHeading ? titleText : '');
+  const title = titleIsHeading ? '' : titleText;
+  const fixed = cellsText(rd, m.fixedCells).flatMap((t) => t.split('\n'));
   const blockCode = m.codeCell ? cleanDocxPlakCode(rd.text(m.codeCell)) : '';
   const rows = [];
   let sum = 0;
@@ -101,7 +114,9 @@ function readAwardList(m, block, where, notes) {
     if (qty <= 0) continue;
     sum += qty;
     const kod = m.codeColumn ? cleanDocxPlakCode(rd.text(`${m.codeColumn}${r}`)) || blockCode : blockCode;
-    rows.push({ lines: title ? [title, ...lines] : lines, qty, kod });
+    // A row whose wording already is the title isn't engraved twice.
+    const wording = title && same(lines[0], title) ? lines.slice(1) : lines;
+    rows.push({ lines: [...(title ? [title] : []), ...wording, ...fixed], qty, kod });
   }
   return { rows, heading };
 }
@@ -140,6 +155,8 @@ function readClassMatrix(m, block, where, notes) {
   const used = classes.map((k) => k.cls).filter((cls) => cls.subjects.length > 0);
   if (used.length === 0) return null;
   const lines = { 2: title };
+  const heading = cellsText(rd, m.headingCells).join('\n');
+  if (heading) lines[0] = heading;
   return { lines, classes: used, jenisPlak: m.codeCell ? cleanDocxPlakCode(rd.text(m.codeCell)) : '' };
 }
 
@@ -156,7 +173,7 @@ export function applyAiMapping(ir, mapping) {
     const where = `Sheet "${m.sheet}"`;
     if (!block) { notes.push(`${where}: the AI named a sheet that isn't in this file — ignored.`); return; }
     if (m.role === 'ignore') { seen.add(m.sheet); return; }
-    const refs = [m.titleCell, m.codeCell].filter(Boolean);
+    const refs = [m.titleCell, m.codeCell, ...(m.headingCells || []), ...(m.fixedCells || [])].filter(Boolean);
     if (refs.some((ref) => !REF_RE.test(ref))) { notes.push(`${where}: the AI gave a cell reference that isn't valid — please add this sheet by hand.`); return; }
     if (!checkRows(m, block, where, notes)) return;
     seen.add(m.sheet);

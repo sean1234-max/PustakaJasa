@@ -131,3 +131,35 @@ describe('applyAiMapping', () => {
     expect(res.notes.some((n) => /row 5: the quantity for "ANUGERAH KHAS \/ TOKOH SUKAN" is a formula with no saved value/.test(n))).toBe(true);
   });
 });
+
+describe('applyAiMapping — sample label heading and closing line', () => {
+  const wb = workbook({
+    KEHADIRAN: { aoa: [
+      ['', '', 'MAJLIS APRESIASI\r\nTAHUN 2026'],
+      ['', '', 'KEHADIRAN PENUH'],
+      ['', '', 'TAHNIAH DAN SYABAS'],
+      ['NAMA', 'KUANTITI', 'JENIS PLAK'],
+      ['KEHADIRAN PENUH', 20, 'PK 261 A'],
+    ] },
+  });
+  const ir = buildWorkbookIr(wb, ['KEHADIRAN']);
+  const block = {
+    sheet: 'KEHADIRAN', role: 'award-list', headingCells: ['C1'], titleCell: 'C2', fixedCells: ['C3'], codeCell: null,
+    headerRow: 4, firstRow: 5, lastRow: 5, wordingColumns: ['A'], qtyColumn: 'B', codeColumn: 'C',
+    labelColumn: null, classColumns: [], confidence: 'high', note: null,
+  };
+
+  it('puts the heading on TAJUK BESAR, adds the closing line, and does not engrave the title twice', () => {
+    const { categorized } = applyAiMapping(ir, { blocks: [block], questions: [] });
+    const [section] = Object.values(categorized)[0];
+    expect(section.lines[0]).toBe('MAJLIS APRESIASI\nTAHUN 2026');
+    expect(section.lines[2]).toBe('KEHADIRAN PENUH');
+    expect(section.classes.map((c) => [c.namaKelas, c.subjects[0].qty])).toEqual([['TAHNIAH DAN SYABAS', 20]]);
+  });
+
+  it('refuses a heading ref that is not a cell', () => {
+    const { categorized, notes } = applyAiMapping(ir, { blocks: [{ ...block, headingCells: ['C1:D1'] }], questions: [] });
+    expect(categorized).toEqual({});
+    expect(notes[0]).toMatch(/cell reference that isn't valid/);
+  });
+});
