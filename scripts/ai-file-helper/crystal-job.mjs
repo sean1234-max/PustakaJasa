@@ -13,6 +13,11 @@ import { illustratorScript } from './crystal-illustrator.mjs';
 const ORIGINAL_URL = /^https:\/\/dlzkdkxbnbhgldsvbybt\.supabase\.co\/storage\/v1\/object\/public\/crystal\/library\/orig-[a-z0-9-]+\.pdf$/;
 const ORIGINAL_PATH = /^library\/orig-[a-z0-9-]+\.pdf$/;
 const PLATFORM_KEYS = ['w', 'h', 'left', 'right', 'top', 'bottom', 'gapX', 'gapY'];
+// A sheet to lay crystals on (pt): the printer's platform, or a crystal's own (the DTF sheet for
+// 80-B and R-100 — the colleague's crystalloli 9a9162c); numbers only, and a short name.
+const sheetOf = (P) => (P && typeof P === 'object' && PLATFORM_KEYS.every((k) => Number.isFinite(+P[k]) && +P[k] >= 0) && +P.w > 0 && +P.h > 0
+  ? { ...Object.fromEntries(PLATFORM_KEYS.map((k) => [k, +P[k]])), ...(typeof P.name === 'string' && /^[A-Za-z0-9 -]{1,20}$/.test(P.name) ? { name: P.name } : {}) }
+  : null);
 const MAX_ROWS = 300;
 
 export const isOurOriginalUrl = (url) => typeof url === 'string' && ORIGINAL_URL.test(url);
@@ -43,9 +48,11 @@ export function checkCrystalJob(body) {
     if (!r || typeof r.file !== 'string' || /[\\/]/.test(r.file)) throw new Error('Bad template name.');
     if (!isOurOriginalUrl(r.originalUrl) || !ORIGINAL_PATH.test(String(r.original || ''))) throw new Error(`No copy of the .ai for ${r.name || r.file} is kept online — import it again in Crystal Studio.`);
   }
-  const P = job.platform && typeof job.platform === 'object' ? job.platform : null;
-  const platform = P && PLATFORM_KEYS.every((k) => Number.isFinite(+P[k]) && +P[k] >= 0)
-    ? Object.fromEntries(PLATFORM_KEYS.map((k) => [k, +P[k]])) : null;
+  const platform = sheetOf(job.platform);
+  for (const r of rows) {
+    const own = sheetOf(r.platform);
+    if (own) r.platform = own; else delete r.platform;
+  }
   // folder: the plaques' own OUTPUT folder name (Generate AI File — Sean, 2026-10-15), or none
   return { rows, files, platform, label: cleanName(job.label, 80), folder: cleanName(job.folder, 120) };
 }

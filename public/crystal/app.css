@@ -210,3 +210,6 @@ input.path {
   .tcard .thumb { height: 96px; }
   .toolbar { position: static; }
 }
+
+/* a file button while an import runs */
+label.btn.disabled { opacity: 0.5; pointer-events: none; }

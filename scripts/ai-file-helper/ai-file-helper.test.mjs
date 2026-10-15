@@ -55,6 +55,14 @@ describe('crystals (POST /crystal)', async () => {
     expect(c.label).toBe('SK TEST (ORD-9008)');
   });
 
+  it('keeps a crystal\'s own sheet (DTF) when it is numbers and a short name, drops it otherwise', () => {
+    const dtf = { name: 'DFT', w: 822, h: 1417, left: 14, right: 14, top: 14, bottom: 14, gapX: 8.5, gapY: 8.5 };
+    const c = checkCrystalJob({ job: { rows: [{ ...row, platform: dtf }, { ...row, platform: { ...dtf, w: 'x' } }, { ...row, platform: { ...dtf, name: '<script>' } }] } });
+    expect(c.rows[0].platform).toEqual(dtf);
+    expect(c.rows[1].platform).toBeUndefined();
+    expect(c.rows[2].platform.name).toBeUndefined();
+  });
+
   it('takes the plaques\' folder name (Generate AI File), never a path', () => {
     expect(checkCrystalJob({ job: { rows: [row], folder: '(DWI-26100287) - SK TEST' } }).folder).toBe('(DWI-26100287) - SK TEST');
     expect(checkCrystalJob({ job: { rows: [row], folder: '../../etc' } }).folder).not.toMatch(/[\\/]/);

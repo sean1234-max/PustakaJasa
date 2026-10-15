@@ -1015,7 +1015,11 @@ export function hiResBackground(item, dpi) {
 // it (under it, else above): every logo cut out as a picture, named from those words when they're
 // live text. -> [{ data: png data URL, name }] in reading order. Pieces of one logo a little apart
 // (a crest and its ring) stay one logo; a white box behind them all is ignored.
-export async function extractLogos(file, progress) {
+// one: only the file's main logo — the one drawn most often (a sheet of the same logo), else the
+// biggest; crop marks and thin lines never count — named from the page's title when it has one
+// sheets: only logo sheets (the same logo drawn 4 times or more, as printed for stickers); any other
+// .ai gives nothing (out.skipped says why)
+export async function extractLogos(file, progress, { one = false, sheets = false } = {}) {
   pdfjsLib.GlobalWorkerOptions.workerSrc = PDF_WORKER;
   const bytes = new Uint8Array(await file.arrayBuffer());
   if (String.fromCharCode(...bytes.slice(0, 5)) !== "%PDF-") {
@@ -1023,6 +1027,8 @@ export async function extractLogos(file, progress) {
   }
   const doc = await pdfjsLib.getDocument({ data: bytes, fontExtraProperties: true, canvasFactory: new CanvasFactory() }).promise;
   const out = [];
+  // closed afterwards, whatever happens: many .ai files in a row mustn't stay in memory
+  try {
   for (let n = 1; n <= doc.numPages; n++) {
     progress && progress(`Finding the logos${doc.numPages > 1 ? ` — artboard ${n} of ${doc.numPages}` : ""}…`);
     const page = await doc.getPage(n);
@@ -1036,8 +1042,17 @@ export async function extractLogos(file, progress) {
     const full = makeCanvas(W, H), bare = makeCanvas(W, H);
     await page.render({ canvasContext: full.ctx, viewport: vp, background: CLEAR }).promise;
     await drawBare(page, items, bare, vp, []);
-    const boxes = logoBlobs(bare.ctx.getImageData(0, 0, W, H).data, W, H);
+    const bareData = bare.ctx.getImageData(0, 0, W, H).data;
+    // one logo per file: a sheet drawn as one block (logos touching, a background behind them all)
+    // is split into its logos first
+    let boxes = logoBlobs(bareData, W, H, { keepBig: one });
+    if (one) boxes = boxes.flatMap((b) => splitGrid(b, bareData, W));
     bare.canvas.width = bare.canvas.height = 0;
+    const allBoxes = boxes;
+    if (one) {
+      const m = mainLogo(boxes, bareData, W);
+      boxes = sheets && m.copies < 4 ? [] : m.boxes;
+    }
     // the live words, as boxes in px on this page
     const words = items.filter((it) => it.str && it.str.trim()).map((it) => {
       const [x, y] = vp.convertToViewportPoint(it.transform[4], it.transform[5]);
@@ -1058,7 +1073,10 @@ export async function extractLogos(file, progress) {
       });
       if (best) named[best.i].push(wd);
     }
-    boxes.forEach((b, i) => {
+    // the page's title (the biggest live words not under or over a logo): the name when there's one logo
+    const inAny = (wd) => allBoxes.some((b) => wd.cx > b.l && wd.cx < b.r && wd.cy > b.t && wd.cy < b.b);
+    const title = one ? pageTitle(words.filter((wd) => !inAny(wd) && !named.some((ws) => ws.includes(wd)))) : "";
+    for (const [i, b] of boxes.entries()) {
       const pad = Math.round(Math.max(b.r - b.l, b.b - b.t) * 0.03);
       const x = Math.max(0, b.l - pad), y = Math.max(0, b.t - pad), w = Math.min(W, b.r + pad) - x, h = Math.min(H, b.b + pad) - y;
       const k = Math.min(1, 800 / Math.max(w, h));
@@ -1066,18 +1084,223 @@ export async function extractLogos(file, progress) {
       c.ctx.drawImage(full.canvas, x, y, w, h, 0, 0, c.canvas.width, c.canvas.height);
       // the words in reading order: line by line (close tops), left to right
       const ws = named[i].sort((a, b2) => (Math.abs(a.t - b2.t) < (a.b - a.t) * 0.5 ? a.l - b2.l : a.t - b2.t));
-      const name = ws.map((wd) => wd.str).join(" ").replace(/\s+/g, " ").trim();
-      out.push({ data: c.canvas.toDataURL("image/png"), name, size: w * h, page: n, y: b.t, x: b.l });
+      const name = ws.map((wd) => wd.str).join(" ").replace(/\s+/g, " ").trim() || title;
+      // kept as a file in memory (a blob: address), not as a long text: hundreds of logos fit
+      const blob = await new Promise((res) => c.canvas.toBlob(res, "image/png"));
+      out.push({ data: blob ? URL.createObjectURL(blob) : c.canvas.toDataURL("image/png"), name, size: w * h, page: n, y: b.t, x: b.l });
       c.canvas.width = c.canvas.height = 0;
-    });
+    }
     full.canvas.width = full.canvas.height = 0;
+    page.cleanup();
   }
-  return out.map(({ data, name, size }) => ({ data, name, size }));
+  } finally { try { await doc.destroy(); } catch (e) {} }
+  // one logo for the whole file: of all its artboards, the biggest
+  const list = one && out.length > 1 ? [out.reduce((a, b) => (b.size > a.size ? b : a))] : out;
+  return list.map(({ data, name, size }) => ({ data, name, size }));
+}
+
+// a picture of a logo sheet (the same logo many times): -> that one logo (a canvas), else null
+export function logoFromSheetPicture(img) {
+  const k = Math.min(1, 2400 / Math.max(img.naturalWidth || 1, img.naturalHeight || 1));
+  const W = Math.max(1, Math.round((img.naturalWidth || 1) * k)), H = Math.max(1, Math.round((img.naturalHeight || 1) * k));
+  const c = makeCanvas(W, H);
+  c.ctx.drawImage(img, 0, 0, W, H);
+  const data = c.ctx.getImageData(0, 0, W, H).data;
+  const boxes = logoBlobs(data, W, H, { keepBig: true }).flatMap((b) => splitGrid(b, data, W));
+  const m = mainLogo(boxes, data, W);
+  if (m.copies < 4 || !m.boxes.length) { c.canvas.width = c.canvas.height = 0; return null; }
+  const b = m.boxes[0], pad = Math.round(Math.max(b.r - b.l, b.b - b.t) * 0.03);
+  const x = Math.max(0, b.l - pad), y = Math.max(0, b.t - pad), w = Math.min(W, b.r + pad) - x, h = Math.min(H, b.b + pad) - y;
+  const out = makeCanvas(Math.max(1, Math.round(w)), Math.max(1, Math.round(h)));
+  out.ctx.drawImage(c.canvas, x, y, w, h, 0, 0, out.canvas.width, out.canvas.height);
+  c.canvas.width = c.canvas.height = 0;
+  return out.canvas;
+}
+
+// the main logo of a page: crop marks and thin lines (little ink in their box) left out, then the
+// logo drawn most often (copies about the same size), else the biggest -> { boxes: [that one] or [], copies }
+function mainLogo(boxes, data, W) {
+  const inkOf = (b) => {
+    let n = 0;
+    const step = Math.max(1, Math.round(Math.max(b.r - b.l, b.b - b.t) / 80));
+    let all = 0;
+    for (let y = Math.round(b.t); y < b.b; y += step) for (let x = Math.round(b.l); x < b.r; x += step) {
+      all++;
+      if (isInk(data, (y * W + x) * 4, null)) n++;
+    }
+    return all ? n / all : 0;
+  };
+  const area = (b) => (b.r - b.l) * (b.b - b.t);
+  // a crop mark (an L along two edges) has nothing in its middle; a logo has
+  const middle = (b) => inkOf({ l: b.l + (b.r - b.l) * 0.3, r: b.r - (b.r - b.l) * 0.3, t: b.t + (b.b - b.t) * 0.3, b: b.b - (b.b - b.t) * 0.3 });
+  const inked = boxes.filter((b) => inkOf(b) >= 0.1 && middle(b) >= 0.03);
+  if (!inked.length) return { boxes: [], copies: 0 };
+  // and nothing much smaller than the biggest (crop marks, a small mark beside the logos)
+  const big = Math.max(...inked.map(area));
+  const real = inked.filter((b) => area(b) >= big * 0.15);
+  const same = (a, b) => Math.abs((a.r - a.l) / (b.r - b.l) - 1) < 0.06 && Math.abs((a.b - a.t) / (b.b - b.t) - 1) < 0.06;
+  let best = null;
+  for (const b of real) {
+    const copies = real.filter((o) => same(o, b)).length;
+    if (!best || copies > best.copies || (copies === best.copies && area(b) > area(best.b))) best = { b, copies };
+  }
+  return { boxes: [best.b], copies: best.copies };
+}
+
+// a box holding a grid of logos (white gaps between them across the whole box) -> its cells (each
+// cut to its ink), or [the box] when it isn't one
+// a box holding a grid of logos -> its cells (each one logo), or [the box] when it isn't one: split
+// along the gaps between them (white, or a panel's plain colour), else — logos touching, no gap — at
+// the distance the drawing repeats across the box
+// (each piece split again: a sheet cut into strips first — a column of logos — then into its logos)
+function splitGrid(b, data, W, depth = 0) {
+  const min = depth ? 2 : 4;
+  // a piece about as wide as tall, found by splitting, is one logo: not cut further
+  const ar = (b.r - b.l) / Math.max(1, b.b - b.t);
+  if (depth && ar > 0.6 && ar < 1.7) return [b];
+  const cells = depth > 3 ? null : gapCells(b, data, W, min) || repeatCells(b, data, W, min);
+  return cells ? cells.flatMap((c) => splitGrid(c, data, W, depth + 1)) : [b];
+}
+function gapCells(b, data, W, min = 4) {
+  const l = Math.round(b.l), t = Math.round(b.t), r = Math.round(b.r), bt = Math.round(b.b);
+  // a background behind all the logos (a coloured panel): the one plain colour of the lines (columns,
+  // rows) across the box that hold nothing else — the gaps between the logos — isn't ink
+  const bg = gapColour(data, W, l, t, r, bt);
+  const ink = (x, y) => isInk(data, (y * W + x) * 4, bg);
+  const step = Math.max(1, Math.round(Math.max(r - l, bt - t) / 600));
+  // runs of columns (rows) with ink, split by columns (rows) with none; a run too thin is a line
+  const runs = (n, has, len) => {
+    const out = [];
+    let start = -1;
+    for (let k = 0; k <= n; k += step) {
+      const on = k < n && has(k);
+      if (on && start < 0) start = k;
+      if (!on && start >= 0) { if (k - start >= len * 0.04) out.push([start, k]); start = -1; }
+    }
+    return out;
+  };
+  const colHas = (k) => { for (let y = t; y < bt; y += step) if (ink(l + k, y)) return true; return false; };
+  const rowHas = (k) => { for (let x = l; x < r; x += step) if (ink(x, t + k)) return true; return false; };
+  const cols = runs(r - l, colHas, r - l), rows = runs(bt - t, rowHas, bt - t);
+  if (cols.length < 2 && rows.length < 2) return null;
+  const cells = [];
+  for (const [y0, y1] of rows.length ? rows : [[0, bt - t]]) for (const [x0, x1] of cols.length ? cols : [[0, r - l]]) {
+    // cut to the ink inside the cell
+    let cl = Infinity, ct = Infinity, cr = -1, cb = -1;
+    for (let y = t + y0; y < t + y1; y += step) for (let x = l + x0; x < l + x1; x += step) {
+      if (!ink(x, y)) continue;
+      if (x < cl) cl = x; if (x > cr) cr = x; if (y < ct) ct = y; if (y > cb) cb = y;
+    }
+    if (cr >= 0) cells.push({ l: cl, t: ct, r: cr + step, b: cb + step });
+  }
+  return copiesOf(cells, data, W, min);
+}
+
+// cells -> the cells when they're copies of one logo (4 or more, most about the same size and
+// looking like the first: pieces of one logo don't), else null
+function copiesOf(cells, data, W, min = 4) {
+  if (cells.length < min) return null;
+  const size = (c) => (c.r - c.l) * (c.b - c.t), sizes = cells.map(size).sort((a, c) => a - c), mid = sizes[sizes.length >> 1];
+  const even = cells.filter((c) => Math.abs(size(c) / mid - 1) < 0.2);
+  if (even.length < cells.length * 0.6) return null;
+  const look = (c) => {
+    const v = [];
+    for (let j = 0; j < 12; j++) for (let k = 0; k < 12; k++) {
+      const x = Math.min(W - 1, Math.round(c.l + ((k + 0.5) * (c.r - c.l)) / 12)), y = Math.round(c.t + ((j + 0.5) * (c.b - c.t)) / 12), i = (y * W + x) * 4;
+      v.push(data[i], data[i + 1], data[i + 2]);
+    }
+    return v;
+  };
+  const first = look(even[0]);
+  const alike = even.filter((c) => { const v = look(c); return v.reduce((n, x, i) => n + Math.abs(x - first[i]), 0) / v.length < 30; });
+  return alike.length >= min && alike.length >= even.length * 0.6 ? cells : null;
+}
+
+// logos touching each other (round stickers packed edge to edge): the distance the drawing repeats
+// at across the box, along and down (the shift that matches it best with itself), and the box cut
+// into cells of that size -> cells, or null when it doesn't repeat
+function repeatCells(b, data, W, min = 4) {
+  const l = Math.round(b.l), t = Math.round(b.t), r = Math.round(b.r), bt = Math.round(b.b);
+  const step = Math.max(1, Math.round(Math.max(r - l, bt - t) / 400));
+  const cols = [], rows = [];
+  for (let x = l; x < r; x += step) { let n = 0; for (let y = t; y < bt; y += step) if (isInk(data, (y * W + x) * 4, null)) n++; cols.push(n); }
+  for (let y = t; y < bt; y += step) { let n = 0; for (let x = l; x < r; x += step) if (isInk(data, (y * W + x) * 4, null)) n++; rows.push(n); }
+  // the shift (in samples) that best matches the profile with itself, when it repeats 2 times or more
+  const period = (p) => {
+    const n = p.length, mean = p.reduce((a, v) => a + v, 0) / n;
+    const d = p.map((v) => v - mean), v0 = d.reduce((a, v) => a + v * v, 0);
+    if (!v0) return 0;
+    const cs = [];
+    for (let lag = 0; lag <= Math.floor(n / 2); lag++) {
+      let c = 0;
+      for (let i = 0; i + lag < n; i++) c += d[i] * d[i + lag];
+      cs.push(lag < Math.max(2, Math.floor(n / 12)) ? -1 : c / (v0 * ((n - lag) / n)));
+    }
+    const bestC = Math.max(...cs);
+    if (bestC <= 0.5) return 0;
+    // the shortest shift that matches nearly as well (twice the repeat matches too, as well)
+    for (let lag = 1; lag < cs.length - 1; lag++) if (cs[lag] >= bestC * 0.85 && cs[lag] >= cs[lag - 1] && cs[lag] >= cs[lag + 1]) return lag;
+    return cs.indexOf(bestC);
+  };
+  const px = period(cols), py = period(rows);
+  if (!px && !py) return null;
+  // both ways, else only across or only down (a repeat found the other way may be a false one)
+  for (const [qx, qy] of [[px, py], [px, 0], [0, py]]) {
+    const nx = qx ? Math.max(1, Math.round(cols.length / qx)) : 1, ny = qy ? Math.max(1, Math.round(rows.length / qy)) : 1;
+    if (nx * ny < min) continue;
+    const cw = (r - l) / nx, ch = (bt - t) / ny, cells = [];
+    // each a logo: about as wide as tall (thin slices of one flat colour would look alike too)
+    if (cw / ch < 0.5 || cw / ch > 2) continue;
+    for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) cells.push({ l: l + i * cw, t: t + j * ch, r: l + (i + 1) * cw, b: t + (j + 1) * ch });
+    const ok = copiesOf(cells, data, W, min);
+    if (ok) return ok;
+  }
+  return null;
+}
+
+// ink: drawn (not see-through), not white, and not the background colour bg ([r, g, b] or null)
+function isInk(data, i, bg) {
+  if (data[i + 3] <= 24 || (data[i] > 240 && data[i + 1] > 240 && data[i + 2] > 240)) return false;
+  return !bg || Math.abs(data[i] - bg[0]) + Math.abs(data[i + 1] - bg[1]) + Math.abs(data[i + 2] - bg[2]) > 36;
+}
+// the colour of the gaps between logos drawn on a coloured panel: of the columns and rows across the box
+// that hold one plain colour only (besides white), the colour most of them have; else null
+function gapColour(data, W, l, t, r, b) {
+  const step = Math.max(1, Math.round(Math.max(r - l, b - t) / 300));
+  const key = (i) => ((data[i] >> 4) << 8) | ((data[i + 1] >> 4) << 4) | (data[i + 2] >> 4);
+  const counts = new Map();
+  // (filled with it, mostly: a crop mark's arm across a white line isn't a gap)
+  const line = (pts) => {
+    let k0 = -1, n = 0;
+    for (const i of pts) {
+      if (!isInk(data, i, null)) continue;
+      const k = key(i);
+      if (k0 < 0) k0 = k; else if (k !== k0) return;
+      n++;
+    }
+    if (k0 >= 0 && n >= pts.length * 0.5) counts.set(k0, (counts.get(k0) || 0) + 1);
+  };
+  for (let x = l; x < r; x += step) { const pts = []; for (let y = t; y < b; y += step) pts.push((y * W + x) * 4); line(pts); }
+  for (let y = t; y < b; y += step) { const pts = []; for (let x = l; x < r; x += step) pts.push((y * W + x) * 4); line(pts); }
+  let best = null;
+  for (const [k, c] of counts) if (!best || c > best.c) best = { k, c };
+  if (!best || best.c < 3) return null;
+  return [((best.k >> 8) & 15) * 16 + 8, ((best.k >> 4) & 15) * 16 + 8, (best.k & 15) * 16 + 8];
+}
+
+// the biggest words on a page, on one line, left to right ("SJKC BALAKONG"), or ""
+function pageTitle(words) {
+  const ws = words.filter((wd) => /[A-Za-z]{2}/.test(wd.str));
+  if (!ws.length) return "";
+  const tall = (wd) => wd.b - wd.t;
+  const top = ws.reduce((a, b) => (tall(b) > tall(a) ? b : a));
+  const line = ws.filter((wd) => Math.abs(wd.cy - top.cy) < tall(top) * 0.6 && tall(wd) > tall(top) * 0.7).sort((a, b) => a.l - b.l);
+  return line.map((wd) => wd.str).join(" ").replace(/\s+/g, " ").trim().slice(0, 80);
 }
 
 // the separate pictures drawn on a page (px): ink (not white, not see-through) joined up when a
 // few px apart; boxes that overlap become one; specks and a box over nearly the whole page go
-function logoBlobs(data, W, H) {
+function logoBlobs(data, W, H, { keepBig = false } = {}) {
   const g = Math.max(2, Math.ceil(Math.max(W, H) / 700));
   const gw = Math.ceil(W / g), gh = Math.ceil(H / g);
   const ink = new Uint8Array(gw * gh);
@@ -1130,7 +1353,7 @@ function logoBlobs(data, W, H) {
   }
   const min = Math.max(W, H) * 0.02;
   // (a long thin one is words drawn as shapes — a school's name — not a logo)
-  boxes = boxes.filter((b) => b.r - b.l >= min && b.b - b.t >= min && (b.r - b.l) * (b.b - b.t) < W * H * 0.7 &&
+  boxes = boxes.filter((b) => b.r - b.l >= min && b.b - b.t >= min && (keepBig || (b.r - b.l) * (b.b - b.t) < W * H * 0.7) &&
     (b.r - b.l) / (b.b - b.t) < 3.5 && (b.b - b.t) / (b.r - b.l) < 3.5);
   // reading order: by rows (tops within half a logo), then left to right
   const avg = boxes.reduce((s, b) => s + (b.b - b.t), 0) / (boxes.length || 1);

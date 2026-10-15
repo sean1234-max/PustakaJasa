@@ -7,13 +7,25 @@ let rows = [], byPs = {}, byLabel = {};
 
 // font files kept online (PostScript name -> address), used when this computer doesn't have the font
 let files = {};
+// the free crystal fonts (SIL Open Font License, see fonts/OFL-*.txt) come with the studio, so
+// every computer shows them even without them installed or shared (fonts/install/ has them to
+// install for Illustrator); Britannic Bold isn't free to hand out: it comes from the PC, or from
+// "Share fonts"
+const BUILT_IN = Object.fromEntries(["Teko-Bold", "Playball-Regular", "KaushanScript-Regular", "GreatVibes-Regular",
+  "Montserrat-Bold", "Poppins-BoldItalic", "Oswald-Bold", "BarlowCondensed-Bold"]
+  .map((ps) => [ps, new URL(`../fonts/${ps}.woff2`, import.meta.url).href]));
 export function setFontFiles(map) { files = map && typeof map === "object" ? map : {}; }
 
 export const fontLabel = (r) => `${r[1]} ${r[2]}`.trim();
 const cssName = (ps) => "ps_" + String(ps).replace(/[^A-Za-z0-9]/g, "_");
 
-// The only fonts offered for the crystal's words (the J&E crystal's three): header, award, name.
-export const CRYSTAL_FONTS = [["Teko-Bold", "Teko", "Bold"], ["Playball-Regular", "Playball", "Regular"], ["BritannicBold", "Britannic Bold", "Regular"]];
+// The only fonts offered for the crystal's words: the J&E crystal's three (header, award, name), and
+// free ones like those on the crystal designs (brush and fine script titles, wide, italic and tall
+// narrow capitals)
+export const CRYSTAL_FONTS = [["Teko-Bold", "Teko", "Bold"], ["Playball-Regular", "Playball", "Regular"], ["BritannicBold", "Britannic Bold", "Regular"],
+  ["KaushanScript-Regular", "Kaushan Script", "Regular"], ["GreatVibes-Regular", "Great Vibes", "Regular"],
+  ["Montserrat-Bold", "Montserrat", "Bold"], ["Poppins-BoldItalic", "Poppins", "Bold Italic"],
+  ["Oswald-Bold", "Oswald", "Bold"], ["BarlowCondensed-Bold", "Barlow Condensed", "Bold"]];
 
 // rows: [[postscriptName, family, style], ...] (the font list kept online / on this PC). Only the
 // three crystal fonts are offered in the font box, whatever else is in the list.
@@ -60,7 +72,7 @@ export function useFont(ps, family, style) {
     const fam = family || (r && r[1]) || "";
     const sty = style || (r && r[2]) || "";
     const locals = [ps, `${fam} ${sty}`.trim(), fam].filter(Boolean).map((n) => `local("${n.replace(/["\\]/g, "")}")`);
-    const online = files[ps] ? [`url("${files[ps].replace(/["\\]/g, "")}")`] : [];
+    const online = [files[ps], BUILT_IN[ps]].filter(Boolean).map((u) => `url("${u.replace(/["\\]/g, "")}")`);
     const entry = { css: cssName(ps), ok: null, fallback: fam ? `"${fam.replace(/"/g, "")}", sans-serif` : "Arial" };
     entry.promise = (async () => {
       // this PC's font first, else the one kept online; a font that loads but draws no letters (a
