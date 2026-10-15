@@ -40,6 +40,7 @@ function toDbOrder(order) {
     import_file_path: order.importFilePath ?? null,
     import_file_name: order.importFileName ?? null,
     import_files: order.importFiles ?? [],
+    duplicate_check: order.duplicateCheck ?? null,
     corrected_import_file_path: order.correctedImportFilePath ?? null,
     corrected_import_file_name: order.correctedImportFileName ?? null,
     corrected_import_uploaded_at: order.correctedImportUploadedAt ?? null,
@@ -99,6 +100,7 @@ function fromDbOrder(row) {
     importFilePath: row.import_file_path || null,
     importFileName: row.import_file_name || null,
     importFiles: row.import_files || [],
+    duplicateCheck: row.duplicate_check || null,
     correctedImportFilePath: row.corrected_import_file_path || null,
     correctedImportFileName: row.corrected_import_file_name || null,
     correctedImportUploadedAt: row.corrected_import_uploaded_at || null,
@@ -170,6 +172,19 @@ export async function nextOrderSeq(prefix, minSeq) {
   const { data, error } = await supabase.rpc('next_order_seq', { p_prefix: prefix, p_min_seq: minSeq });
   if (error) throw error;
   return data;
+}
+
+// The school's orders that look like the one about to be submitted (0094): still
+// in progress, or from the same Excel file (hashes) or for the same Function Date.
+export async function findPossibleDuplicates(schoolId, functionDate, hashes) {
+  const { data, error } = await supabase.rpc('find_possible_duplicates', {
+    p_school_id: schoolId, p_function_date: storedDay(functionDate) || '', p_hashes: hashes,
+  });
+  if (error) throw error;
+  return (data || []).map((r) => ({
+    id: r.id, status: r.status, createdAt: r.created_at, submittedBy: r.submitted_by,
+    functionDate: r.function_date, totalAmount: Number(r.total_amount) || 0, reasons: r.reasons || [],
+  }));
 }
 
 export async function insertOrder(order) {
