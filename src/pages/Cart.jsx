@@ -2,8 +2,8 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import { useAppState } from '../state/useAppState';
-import { formatDate, getStockStatus, resolveCategory, toMalaysiaDay } from '../data/catalog';
-import { duplicateReasons } from '../utils/duplicateOrders';
+import { formatDate, getStockStatus, resolveCategory } from '../data/catalog';
+import DuplicateOrderModal from '../components/DuplicateOrderModal';
 
 const isSelempangItem = (ci) => resolveCategory(ci.categoryKey)?.selempang;
 
@@ -232,26 +232,7 @@ export default function Cart() {
             Stock tidak cukup untuk &quot;{stockViolation.jenisPlak}&quot;{stockViolation.categoryLabel ? ` (${stockViolation.categoryLabel})` : ''} — baki {stockViolation.maxOrderable} sahaja boleh ditempah. Sila kurangkan kuantiti atau hubungi Salesman sebelum submit.
           </p>
         )}
-        {dupes && (
-          <div className="card" style={{ borderColor: '#d98c00', background: '#fff8e6', marginBottom: 'var(--space-4)' }}>
-            <div className="card-kicker" style={{ color: '#8a6d00' }}>⚠ Possible duplicate order</div>
-            <p className="hint-text" style={{ marginTop: 0 }}>{state.sekolah} already has {dupes.length === 1 ? 'an order' : 'orders'} that look like this one:</p>
-            <ul style={{ margin: '0 0 var(--space-3)', paddingLeft: 18 }}>
-              {dupes.map((d) => (
-                <li key={d.id} className="hint-text">
-                  <strong>{d.id}</strong> — {d.status}, placed {formatDate(toMalaysiaDay(d.createdAt))} by {d.submittedBy}
-                  {d.functionDate ? `, Function ${formatDate(toMalaysiaDay(d.functionDate))}` : ''}, RM {d.totalAmount.toFixed(2)}
-                  <span style={{ color: '#b45309', fontWeight: 600 }}> · {duplicateReasons(d.reasons)}</span>
-                </li>
-              ))}
-            </ul>
-            <p className="hint-text" style={{ fontWeight: 600 }}>Is this a separate, new order?</p>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <button type="button" className="btn btn-primary" disabled={submitting} onClick={goAhead}>Yes, a separate order — submit</button>
-              <button type="button" className="btn btn-ghost" onClick={() => setDupes(null)}>No, don&apos;t submit</button>
-            </div>
-          </div>
-        )}
+        <DuplicateOrderModal sekolah={state.sekolah} orders={dupes} busy={submitting} onYes={goAhead} onNo={() => setDupes(null)} />
         <div className="row-split">
           <button type="button" className="btn btn-ghost" onClick={() => navigate('/order/step1')}>← Back to Order</button>
           {state.cartToast && <span className="toast-inline">{state.cartToast}</span>}

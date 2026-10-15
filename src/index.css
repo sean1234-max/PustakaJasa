@@ -931,3 +931,21 @@ input.catalog-admin-code { padding: 6px 8px; }
 
 /* TAMBAHAN divider — split print (OrderPrintout) and the add-on cart (AddOnSummary). */
 .print-tambahan-banner { margin-top: 24px; border-top: 3px solid #000; border-bottom: 3px solid #000; padding: 6px; text-align: center; font-size: 24px; font-weight: 800; letter-spacing: 4px; }
+
+/* A full-screen question before submitting (DuplicateOrderModal) */
+.big-dialog {
+  width: min(640px, calc(100% - 32px));
+  max-height: calc(100% - 32px);
+  border: 0;
+  border-radius: 12px;
+  padding: var(--space-8, 32px) var(--space-6, 24px);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+}
+.big-dialog::backdrop { background: rgba(0, 0, 0, 0.65); }
+.big-dialog-title { font-size: 22px; font-weight: 800; letter-spacing: 0.04em; color: #8a6d00; text-align: center; margin-bottom: var(--space-4, 16px); }
+.big-dialog-text { font-size: 17px; line-height: 1.5; margin: 0 0 var(--space-3, 12px); }
+.big-dialog-list { margin: 0 0 var(--space-5, 20px); padding-left: 20px; font-size: 16px; line-height: 1.5; }
+.big-dialog-list li + li { margin-top: 10px; }
+.big-dialog-why { color: #b45309; font-weight: 700; }
+.big-dialog-actions { display: flex; flex-direction: column; gap: 10px; }
+.big-dialog-actions .btn { font-size: 16px; padding: 14px 16px; width: 100%; }
