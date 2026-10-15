@@ -21,9 +21,9 @@ export function slotFieldsFor(cat) {
   if (cat?.aliranKedudukan) return { ...header, 3: ['position'], 2: ['event_line_1'], '2b': ['event_line_2'] };
   // PBD: ACARA (+ its second box) -> position, "TAHUN 1 <kelas>" -> line 1.
   if (cat?.mode === 'matrix' && cat.levelBreakdownAxis === 'subject') return { ...header, 2: ['position'], '2b': ['position'], 3: ['event_line_1'] };
-  // PPKI / MP THP: line 3's CONTOH lays out the subject + Tahun lines
-  // together (buildMatrixRows), so they move as one block.
-  if (cat?.mode === 'matrix') return { ...header, 2: ['position'], 3: ['event_line_1', 'event_line_2'] };
+  // PPKI / MP THP: the SUBJEK row (2b) and line 3 together are the CONTOH of the
+  // subject + Tahun lines (buildMatrixRows), so they move as one block.
+  if (cat?.mode === 'matrix') return { ...header, 2: ['position'], '2b': ['event_line_1', 'event_line_2'], 3: ['event_line_1', 'event_line_2'] };
   // LONJAKAN / KEHADIRAN (TAHUN) and TOKOH (NAMA MURID) -> line 1.
   if (cat?.positionFromRows) return { ...header, 2: ['position'], '2b': ['position'], 3: ['event_line_1'] };
   return null;
