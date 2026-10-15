@@ -10,7 +10,7 @@
 // pdfMapping.js checks every quoted text really is inside that segment
 // before anything reaches an order.
 
-export const PDF_IR_VERSION = 1;
+export const PDF_IR_VERSION = 2;
 const MAX_SEGMENTS = 4000;
 
 // pdf.js is passed in (browser: the normal build with its worker; tests:
@@ -37,8 +37,8 @@ export async function extractPdfPages(data, pdfjs) {
 
 const clean = (s) => s.replace(/\s+/g, ' ').trim();
 
-// Items -> lines (same baseline, within half a font size) -> segments (a
-// horizontal gap wider than ~1.2 font sizes starts a new segment).
+// Items -> lines (same baseline, within half a font size) -> segments (one
+// per pdf.js text item, except items that touch, which are one word).
 export function buildPdfIr(pages) {
   const segments = [];
   let truncated = false;
@@ -57,12 +57,15 @@ export function buildPdfIr(pages) {
       let cur = null;
       its.forEach((it) => {
         const gap = cur ? it.x - cur.end : Infinity;
-        if (cur && gap <= Math.max(it.size, cur.size) * 1.2) {
-          cur.text += (gap > it.size * 0.15 && !cur.text.endsWith(' ') && !it.str.startsWith(' ') ? ' ' : '') + it.str;
+        // Items that touch are one word the PDF wrote in pieces
+        // ("SAID" "I" "NA", "PKC 26" "3", "9" "9"): join them with no
+        // space. Anything further apart stays its own segment.
+        if (cur && gap <= Math.min(it.size, cur.size) * 0.15) {
+          cur.text += it.str;
           cur.end = Math.max(cur.end, it.x + it.w);
         } else {
           if (cur) segments.push(cur);
-          cur = { page, x: it.x, y: line.y, end: it.x + it.w, text: it.str };
+          cur = { page, x: it.x, y: line.y, end: it.x + it.w, size: it.size, text: it.str };
         }
       });
       if (cur) segments.push(cur);

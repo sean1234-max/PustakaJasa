@@ -198,3 +198,15 @@ describe('applyPdfReading — name lists', () => {
   });
 });
 
+
+describe('buildPdfIr word pieces', () => {
+  it('joins items that touch into one word and keeps spaced ones apart', () => {
+    const at = (str, x, w) => ({ str, x, y: 100, w, size: 12 });
+    const ir = buildPdfIr([{ page: 1, width: 600, height: 800, items: [
+      at('ANUGERAH SAID', 260.8, 82.4), at('I', 343.3, 3), at('NA ABU BAKAR', 346.3, 74.4),
+      at('=', 494.6, 6), at('9', 503.3, 6.1), at('9', 509.4, 6.1),
+      at('1', 550, 6.1), at('UM', 559, 15),
+    ] }]);
+    expect(ir.segments.map((s) => s.text)).toEqual(['ANUGERAH SAIDINA ABU BAKAR', '=', '99', '1', 'UM']);
+  });
+});
