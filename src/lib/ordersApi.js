@@ -174,11 +174,11 @@ export async function nextOrderSeq(prefix, minSeq) {
   return data;
 }
 
-// The school's orders that look like the one about to be submitted (0094): still
-// in progress, or from the same Excel file (hashes) or for the same Function Date.
-export async function findPossibleDuplicates(schoolId, functionDate, hashes) {
+// The school's orders that look like the one about to be submitted (0095): same teacher
+// (PIC name) and same Function Date.
+export async function findPossibleDuplicates(schoolId, functionDate, hashes, picName) {
   const { data, error } = await supabase.rpc('find_possible_duplicates', {
-    p_school_id: schoolId, p_function_date: storedDay(functionDate) || '', p_hashes: hashes,
+    p_school_id: schoolId, p_function_date: storedDay(functionDate) || '', p_hashes: hashes, p_pic_name: picName || '',
   });
   if (error) throw error;
   return (data || []).map((r) => ({
