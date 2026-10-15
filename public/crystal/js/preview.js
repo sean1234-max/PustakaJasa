@@ -133,14 +133,17 @@ async function picture(it, jenis, row, dpi, svg = false) {
 }
 const short = (jenis) => jenis.replace(/^\s*CRYSTAL\s*\/\s*/i, "");
 
+// every crystal of these design groups, as the ALL grid shows them (no design yet: it: null)
+const cellsOf = (groups) => groups.flatMap((g) => {
+  const it = templateFor(library, g.jenis);
+  return it ? g.tiles.map((t, i) => ({ g, it, t, i })) : [{ g, it: null, t: null, i: 0 }];
+});
+
 async function showAll(groups) {
   const my = ++job;
   slides = [];
   columns = [...new Set(allRows.flatMap((r) => Object.keys(r)))].map((k) => ({ key: k, label: k }));
-  const cells = allCells = groups.flatMap((g) => {
-    const it = templateFor(library, g.jenis);
-    return it ? g.tiles.map((t, i) => ({ g, it, t, i })) : [{ g, it: null, t: null, i: 0 }];
-  });
+  const cells = allCells = cellsOf(groups);
   const ready = cells.filter((c) => c.it).length;
   out.innerHTML = `
     <div class="abar">
@@ -222,11 +225,14 @@ const setWorked = () => { try { localStorage.setItem("crystal-ever", "1"); } cat
 // folder: save in the plaques' OUTPUT folder (the website's Generate AI File) instead of OUTPUT/CRYSTAL
 async function generateAll(ai, folder = "") {
   if (generating) return;
+  // the whole order, whichever tab / crystal is on screen (the website's Generate AI File may ask
+  // while one crystal is open — then there's no ALL grid, nor its button)
   const btn = document.getElementById(ai ? "aAi" : "aGen"), msg = document.getElementById("aGenMsg");
-  const cells = allCells.filter((c) => c.it);
+  columns = [...new Set(allRows.flatMap((r) => Object.keys(r)))].map((k) => ({ key: k, label: k }));
+  const cells = cellsOf(groupRows(allRows)).filter((c) => c.it);
   if (!cells.length) return;
   generating = true;
-  btn.disabled = true;
+  if (btn) btn.disabled = true;
   const say = (t) => { if (msg) msg.textContent = t; };
   // now, while it's a click: start Crystal Studio (it does nothing if it's already running — the
   // black window may have been closed since), and the window to it
@@ -280,7 +286,7 @@ async function generateAll(ai, folder = "") {
     say(`Done: ${files.length} crystal${files.length === 1 ? "" : "s"} in one PDF${badNote}.`);
   } finally {
     generating = false;
-    if (btn.isConnected) btn.disabled = false;
+    if (btn && btn.isConnected) btn.disabled = false;
   }
 }
 
@@ -480,7 +486,11 @@ window.addEventListener("message", (e) => {
     } else show(rows);
   }
   // the website's Generate AI File (crystals typed with the plaques — Sean, 2026-10-15)
-  if (e.data.type === "crystal-make-ai" && CAN_AI) generateAll(true, typeof e.data.folder === "string" ? e.data.folder : "");
+  if (e.data.type === "crystal-make-ai" && CAN_AI) {
+    // back to ALL first, so its progress and Illustrator's report show
+    if (tab !== ALL) { tab = ALL; at = 0; zoom = 1; show(allRows); }
+    generateAll(true, typeof e.data.folder === "string" ? e.data.folder : "");
+  }
   // the website picked a Jenis Plak (a row of its price table clicked): show that design's tab
   if (e.data.type === "crystal-select" && typeof e.data.jenis === "string") {
     const want = e.data.jenis.replace(/\s+/g, " ").trim().toUpperCase();
