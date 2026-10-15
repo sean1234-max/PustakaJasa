@@ -256,7 +256,7 @@ describe('wordingRowsToCategorized — keepOrder (AI reader)', () => {
 });
 
 describe('subject short forms', () => {
-  it('drops a bracketed subject short form but keeps bracketed words', () => {
+  it('drops a bracketed note after the award but keeps a bracket-only line', () => {
     const { categorized } = wordingRowsToCategorized([
       { lines: ['ANUGERAH PENDETA ZA’ABA (BM)', 'TAHUN 1'], qty: 1, kod: 'PKC 263' },
       { lines: ['ANUGERAH SAIDINA ABUBAKAR (TERBAIK KESELURUHAN)', 'TAHUN 1'], qty: 1, kod: 'PKC 263' },
@@ -265,7 +265,8 @@ describe('subject short forms', () => {
     const text = JSON.stringify(categorized);
     expect(text).not.toContain('(BM)');
     expect(text).toContain('PENDETA ZA’ABA');
-    expect(text).toContain('(TERBAIK KESELURUHAN)');
+    expect(text).not.toContain('(TERBAIK KESELURUHAN)');
+    expect(text).toContain('SAIDINA ABUBAKAR');
     expect(text).toContain('(KELAB)');
   });
 });
