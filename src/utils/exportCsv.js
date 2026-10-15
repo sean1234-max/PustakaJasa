@@ -3,11 +3,12 @@ import {
   getCustomMatrixRowIds, customMatrixLabelKey, matrixCellKey,
   flattenPlakCatalog, isCustomPlakCode, MANUAL_MAX_QTY, numToOrdinal,
   resolveCategory, categoriesUsedByItems,
-  isKelasSubject, DEFAULT_REF_ORDER,
+  isKelasSubject,
 } from '../data/catalog';
 import { breakAcaraLine } from './acaraBreak';
 import { partialSplitQty } from './orderBatches';
 import { UMUM_SLOTS, umumSlotFields, umumClassifyText, umumRedSlots } from './umumLines';
+import { slotFieldsFor, visibleRefSlots, applyRedLines, redLinesProblem } from './redLines';
 
 export const CSV_COLUMNS = ['event_header', 'year', 'position', 'event_line_1', 'event_line_2', 'jenis_plak', 'category', 'line_order', 'position_black'];
 
@@ -55,35 +56,13 @@ function buildUmumRows(item) {
 // computeBlocks.js's refOrder). SEAN.jsx stacks the plaque in this order.
 const DEFAULT_LINE_ORDER = ['event_header', 'position', 'event_line_1', 'event_line_2'];
 
-// Which engraved field(s) each Reference Sample row (slotId) ends up on —
-// mirrors the build*Rows mapping below. null = no draggable sample, always
-// the default order.
-function slotFieldsFor(cat) {
-  const header = { 0: ['event_header'], '0b': ['event_header'] };
-  // ALIRAN: ordinal (slot 3) -> position, ACARA -> line 1, TAHUN -> line 2.
-  if (cat?.aliranKedudukan) return { ...header, 3: ['position'], 2: ['event_line_1'], '2b': ['event_line_2'] };
-  // PBD: ACARA (+ its second box) -> position, "TAHUN 1 <kelas>" -> line 1.
-  if (cat?.mode === 'matrix' && cat.levelBreakdownAxis === 'subject') return { ...header, 2: ['position'], '2b': ['position'], 3: ['event_line_1'] };
-  // PPKI / MP THP: line 3's CONTOH lays out the subject + Tahun lines
-  // together (buildMatrixRows), so they move as one block.
-  if (cat?.mode === 'matrix') return { ...header, 2: ['position'], 3: ['event_line_1', 'event_line_2'] };
-  // LONJAKAN / KEHADIRAN (TAHUN) and TOKOH (NAMA MURID) -> line 1.
-  if (cat?.positionFromRows) return { ...header, 2: ['position'], '2b': ['position'], 3: ['event_line_1'] };
-  return null;
-}
-
 // A line with no visible row of its own (a hidden slot, or TOKOH's NAMA
 // MURID with no line-3 CONTOH) keeps its default place at the end.
 export function getLineOrder(item, cat) {
   const slotFields = cat?.umumRows ? umumFieldLists(item) : slotFieldsFor(cat);
   if (!slotFields) return DEFAULT_LINE_ORDER.join('|');
-  const lines = item.detail?.lines || {};
-  const prefix = `${item.categoryKey}::${item.blockIdx}::`;
-  const hidden = new Set((lines[`${prefix}hiddenLines`] || '').split(',').filter(Boolean));
-  const stored = (lines[`${prefix}refOrder`] || '').split(',').filter(Boolean);
   const order = [];
-  [...stored, ...(cat.defaultRefOrder || DEFAULT_REF_ORDER)]
-    .filter((slot) => !hidden.has(slot))
+  visibleRefSlots(item.detail?.lines || {}, `${item.categoryKey}::${item.blockIdx}::`, cat)
     .forEach((slot) => (slotFields[slot] || []).forEach((f) => { if (!order.includes(f)) order.push(f); }));
   DEFAULT_LINE_ORDER.forEach((f) => { if (!order.includes(f)) order.push(f); });
   return order.join('|');
@@ -826,7 +805,14 @@ export function buildCsvRows(order, categoryKey, items) {
     // position_black = "1": SEAN.jsx prints the position in black instead
     // of red (UMUM with no red line — umumLines.js).
     const positionBlack = cat?.umumRows && umumParts(item).black ? '1' : '';
-    itemRows.forEach((r) => rows.push([...r, item.jenisPlak || '', categoryLabel, lineOrder, positionBlack]));
+    // Production's MERAH ticks (redLines.js) rearrange the lines
+    const linePrefix = `${item.categoryKey}::${item.blockIdx ?? 0}::`;
+    itemRows.forEach((r) => {
+      const red = cat?.umumRows ? null : applyRedLines(r, item.detail.lines, linePrefix, cat);
+      rows.push(red
+        ? [...red.row, item.jenisPlak || '', categoryLabel, red.lineOrder, red.positionBlack]
+        : [...r, item.jenisPlak || '', categoryLabel, lineOrder, positionBlack]);
+    });
   });
 
   return { rows, skippedItemIds, reservedCount };
@@ -1027,6 +1013,11 @@ export function validateExport(order, items, plakCatalog, csvData) {
   if (skippedItemIds.length > 0) {
     errors.push(`${skippedItemIds.length} item(s) have no Reference Sample data — they would be missing from the CSV entirely. Fill them in before exporting.`);
   }
+  // Production's MERAH ticks left more black rows than the plaque has lines for.
+  [...new Set(scoped.map((it) => {
+    const cat = resolveCategory(it.categoryKey);
+    return it.detail?.lines && !cat?.umumRows ? redLinesProblem(it.detail.lines, `${it.categoryKey}::${it.blockIdx ?? 0}::`, cat) : '';
+  }).filter(Boolean))].forEach((msg) => errors.push(msg));
 
   // 2. Every item must carry a Jenis Plak that actually resolves — either a
   //    real catalog path, or a deliberate "OTHER - ..." custom pick. Raw,

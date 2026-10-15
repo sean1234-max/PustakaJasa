@@ -10,7 +10,8 @@ import CrystalPreview from '../components/CrystalPreview';
 import OrderPrintout from '../components/OrderPrintout';
 import AddOnTag from '../components/AddOnTag';
 import { useAppState } from '../state/useAppState';
-import { statusPillStyle, formatDate, MANUAL_MAX_QTY, shipmentDatePassed, toMalaysiaDay, malaysiaToday, isReviewed, isAddonInFlight, invoiceLabel, invoiceSetByNote } from '../data/catalog';
+import { statusPillStyle, formatDate, MANUAL_MAX_QTY, shipmentDatePassed, toMalaysiaDay, malaysiaToday, isReviewed, isAddonInFlight, invoiceLabel, invoiceSetByNote, resolveCategory } from '../data/catalog';
+import { redLinesProblem, RED_LINES_SUFFIX } from '../utils/redLines';
 import { reconstructOrderDetailGroups, reconstructBlocksForCategory, noopUpdaters } from '../utils/computeBlocks';
 import { getExportableCategories, splitOrderCategories, getOrderJenisPlakGroups, getPlakProductionMode, summarizeRowsForManual, buildCsvRows, rowsToCsv, buildCategoryCsvFilename, combineCsvRows, buildCombinedCsvFilename, validateExport, getInvoiceIdForJenisPlak, getPartialSplitNotes, needsKiv, kivInProduction, kivParts, isCrystalCode, firstKivCategory, crystalWithPlak } from '../utils/exportCsv';
 import { downloadTextFile } from '../utils/downloadBlob';
@@ -98,17 +99,19 @@ export default function ProductionOrderDetail() {
   // Jenis Plak table); order.totalAmount/status/pricing/stock are
   // untouched regardless, since the Summary tab and Nav still read `order`
   // itself.
-  // Production's own Reference Sample row order (updateReferenceOrder) is
-  // saved on the order's items, so it's carried over onto the re-read file.
+  // Production's own Reference Sample row order and MERAH ticks
+  // (updateReferenceOrder) are saved on the order's items, so they're carried
+  // over onto the re-read file.
   const effectiveOrder = useMemo(() => {
     if (!correctedItems) return order;
-    const savedRefOrders = Object.fromEntries((order.items || []).flatMap((it) => (
-      Object.entries(it.detail?.lines || {}).filter(([k]) => k.endsWith('::refOrder'))
+    const saved = Object.fromEntries((order.items || []).flatMap((it) => (
+      Object.entries(it.detail?.lines || {}).filter(([k]) => k.endsWith('::refOrder') || k.endsWith('::redLines'))
     )));
     const items = correctedItems.map((it) => {
-      const key = `${it.categoryKey}::${it.blockIdx ?? 0}::refOrder`;
-      return it.detail && savedRefOrders[key]
-        ? { ...it, detail: { ...it.detail, lines: { ...(it.detail.lines || {}), [key]: savedRefOrders[key] } } }
+      const prefix = `${it.categoryKey}::${it.blockIdx ?? 0}::`;
+      const own = Object.fromEntries(Object.entries(saved).filter(([k]) => k === `${prefix}refOrder` || k === `${prefix}redLines`));
+      return it.detail && Object.keys(own).length
+        ? { ...it, detail: { ...it.detail, lines: { ...(it.detail.lines || {}), ...own } } }
         : it;
     });
     return { ...order, items };
@@ -119,16 +122,25 @@ export default function ProductionOrderDetail() {
   // every drop.
   const canReorder = !!order && order.status !== 'Cancelled'
     && !shipmentDatePassed(order.shipmentDate, malaysiaToday());
+  // MERAH beside each Reference Sample row: only while reviewing (Sean, 2026-10-15)
+  const canPickRed = canReorder && order.status === 'Reviewing Order';
   const [refOrderNote, setRefOrderNote] = useState('');
   const reorderUpdaters = useMemo(() => (canReorder ? {
     ...noopUpdaters,
     onLine: async (key, value) => {
+      const isRed = key.endsWith(`::${RED_LINES_SUFFIX}`);
+      if (isRed) {
+        // more black rows than the plaque has lines for: not saved
+        const item = (order.items || []).find((it) => key.startsWith(`${it.categoryKey}::${it.blockIdx ?? 0}::`));
+        const problem = item && redLinesProblem({ ...item.detail?.lines, [key]: value }, key.slice(0, -RED_LINES_SUFFIX.length), resolveCategory(item.categoryKey));
+        if (problem) { setRefOrderNote(problem); return; }
+      }
       const ok = await updateReferenceOrder(order.id, key, value);
       setRefOrderNote(ok
-        ? 'New row order saved — export the CSV / Generate AI File again to use it.'
-        : 'Could not save the new row order. Please try again.');
+        ? `${isRed ? 'MERAH' : 'New row order'} saved — export the CSV / Generate AI File again to use it.`
+        : `Could not save the ${isRed ? 'MERAH ticks' : 'new row order'}. Please try again.`);
     },
-  } : noopUpdaters), [canReorder, order?.id, updateReferenceOrder]);
+  } : noopUpdaters), [canReorder, order, updateReferenceOrder]);
 
   const [exportNote, setExportNote] = useState('');
   const exportNoteTimer = useRef(null);
@@ -680,6 +692,7 @@ export default function ProductionOrderDetail() {
                 {canReorder && (
                   <p className="hint-text">
                     Drag a Reference Sample row number to change the line order on the plaque (allowed until the Shipment Date).
+                    {canPickRed && ' While reviewing, tick MERAH on the rows that print red — two ticked rows join into one red line (the first, then the second under it); unticked rows print black (two at most).'}
                   </p>
                 )}
                 {refOrderNote && <p className="hint-text" style={{ fontWeight: 600 }}>{refOrderNote}</p>}
@@ -704,7 +717,7 @@ export default function ProductionOrderDetail() {
                           <div className="card-kicker">
                             {group.blk.qtyLabel}{group.batch !== 0 ? ` — ${group.label}` : ''} — {group.jenisPlak}
                           </div>
-                          <OrderCategoryBlock blk={group.blk} editable={canReorder ? REORDER_ONLY : READONLY} flashKivRows={kivFlash} />
+                          <OrderCategoryBlock blk={group.blk} editable={canReorder ? { ...REORDER_ONLY, redLines: canPickRed } : READONLY} flashKivRows={kivFlash} />
 
                           {check.errors.map((e) => (
                             <p key={e} className="hint-text" style={{ color: '#b0392e', fontWeight: 600 }}>⚠ {e}</p>
