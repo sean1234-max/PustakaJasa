@@ -2,12 +2,14 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import { useAppState } from '../state/useAppState';
-import { formatDate, getStockStatus, resolveCategory } from '../data/catalog';
+import { formatDate, getStockStatus, resolveCategory, toMalaysiaDay } from '../data/catalog';
+import { duplicateReasons } from '../utils/duplicateOrders';
 
 const isSelempangItem = (ci) => resolveCategory(ci.categoryKey)?.selempang;
 
 export default function Cart() {
-  const { state, patch, today, removeFromCart, editCartCategory, submitOrder } = useAppState();
+  const { state, patch, today, removeFromCart, editCartCategory, submitOrder, checkDuplicateOrders } = useAppState();
+  const [dupes, setDupes] = useState(null); // look-alike orders shown, waiting for an answer
   const navigate = useNavigate();
   const [submitting, setSubmitting] = useState(false);
 
@@ -89,12 +91,29 @@ export default function Cart() {
       .find(Boolean);
   }, [groupedCartRowsByPlak, selempangQty, state.plakCatalog]);
 
+  const send = async (duplicateCheck) => {
+    setSubmitting(true);
+    const id = await submitOrder({ duplicateCheck });
+    setSubmitting(false);
+    if (id) navigate('/success');
+  };
+  // The school's look-alike orders first (0094): if any, the person submitting
+  // has to say it's a separate order before it goes.
   const handleSubmit = async () => {
     if (state.cart.length === 0 || submitting || stockViolation) return;
     setSubmitting(true);
-    const id = await submitOrder();
+    const found = await checkDuplicateOrders();
     setSubmitting(false);
-    if (id) navigate('/success');
+    if (found.length > 0) { setDupes(found); return; }
+    send(null);
+  };
+  const submitter = state.role === 'salesman'
+    ? `salesman ${state.assignedSalesmen.find((s) => s.id === state.userAuthId)?.name || ''}`.trim()
+    : `teacher ${state.picName || ''}`.trim();
+  const goAhead = () => {
+    const matches = dupes.map((d) => ({ id: d.id, reasons: d.reasons }));
+    setDupes(null);
+    send({ matches, confirmedBy: submitter, confirmedAt: new Date().toISOString() });
   };
 
   return (
@@ -213,10 +232,30 @@ export default function Cart() {
             Stock tidak cukup untuk &quot;{stockViolation.jenisPlak}&quot;{stockViolation.categoryLabel ? ` (${stockViolation.categoryLabel})` : ''} — baki {stockViolation.maxOrderable} sahaja boleh ditempah. Sila kurangkan kuantiti atau hubungi Salesman sebelum submit.
           </p>
         )}
+        {dupes && (
+          <div className="card" style={{ borderColor: '#d98c00', background: '#fff8e6', marginBottom: 'var(--space-4)' }}>
+            <div className="card-kicker" style={{ color: '#8a6d00' }}>⚠ Possible duplicate order</div>
+            <p className="hint-text" style={{ marginTop: 0 }}>{state.sekolah} already has {dupes.length === 1 ? 'an order' : 'orders'} that look like this one:</p>
+            <ul style={{ margin: '0 0 var(--space-3)', paddingLeft: 18 }}>
+              {dupes.map((d) => (
+                <li key={d.id} className="hint-text">
+                  <strong>{d.id}</strong> — {d.status}, placed {formatDate(toMalaysiaDay(d.createdAt))} by {d.submittedBy}
+                  {d.functionDate ? `, Function ${formatDate(toMalaysiaDay(d.functionDate))}` : ''}, RM {d.totalAmount.toFixed(2)}
+                  <span style={{ color: '#b45309', fontWeight: 600 }}> · {duplicateReasons(d.reasons)}</span>
+                </li>
+              ))}
+            </ul>
+            <p className="hint-text" style={{ fontWeight: 600 }}>Is this a separate, new order?</p>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button type="button" className="btn btn-primary" disabled={submitting} onClick={goAhead}>Yes, a separate order — submit</button>
+              <button type="button" className="btn btn-ghost" onClick={() => setDupes(null)}>No, don&apos;t submit</button>
+            </div>
+          </div>
+        )}
         <div className="row-split">
           <button type="button" className="btn btn-ghost" onClick={() => navigate('/order/step1')}>← Back to Order</button>
           {state.cartToast && <span className="toast-inline">{state.cartToast}</span>}
-          <button type="button" className="btn btn-primary" disabled={state.cart.length === 0 || submitting || !!stockViolation} onClick={handleSubmit}>
+          <button type="button" className="btn btn-primary" disabled={state.cart.length === 0 || submitting || !!stockViolation || !!dupes} onClick={handleSubmit}>
             {submitting ? 'Submitting…' : 'Submit Order'}
           </button>
         </div>

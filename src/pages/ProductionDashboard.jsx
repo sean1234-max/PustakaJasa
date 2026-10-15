@@ -10,6 +10,7 @@ import { countReservedPlaques, needsKiv, kivParts, hasPlakPart, kivInProduction 
 import { prioritizeUrgentOrders } from '../utils/urgentOrder';
 import OrderUrgentBadge from '../components/OrderUrgentBadge';
 import AddOnTag from '../components/AddOnTag';
+import { duplicateSummary } from '../utils/duplicateOrders';
 import ProductionInvoiceEntry from '../components/ProductionInvoiceEntry';
 
 // Production works 'In Production' orders (invoice number or not — that's
@@ -232,6 +233,13 @@ export default function ProductionDashboard() {
                 </div>
               </div>
               {stamp && <div className="order-stamp-inline" style={{ marginTop: 'var(--space-1)' }}>{stamp}</div>}
+              {/* submitted although it looked like another order of the school (0094) */}
+              {!isKivCard && ord.duplicateCheck && (
+                <div className="hint-text" style={{ margin: '4px 0 0', fontWeight: 600, color: '#b45309' }}>
+                  ⚠ Possible duplicate: {duplicateSummary(ord.duplicateCheck)}
+                  <div style={{ fontWeight: 400 }}>Submitted anyway by {ord.duplicateCheck.confirmedBy || '—'}</div>
+                </div>
+              )}
               {/* The KIV & ARTWORK card: SHORT SUPPLY (Reserved plaques) and/or CRYSTAL — Sean, 2026-10-14 */}
               {isKivCard && parts.map((part) => (
                 <div key={part} className="order-stamp-inline" style={{ marginTop: 'var(--space-1)' }}>{part}</div>

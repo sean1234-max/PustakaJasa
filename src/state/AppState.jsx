@@ -18,6 +18,7 @@ import { buildCategoryCartItems } from './categoryCartItems';
 import { AppStateContext } from './AppStateContext';
 import {
   fetchOrders, fetchOrderById, insertOrder, updateOrder, approveAddonAsOrder, nextOrderSeq, fetchAllSalesmen, reassignOrderSalesman,
+  findPossibleDuplicates,
 } from '../lib/ordersApi';
 import {
   fetchPlakCatalog, addPlakNode, removePlakNode, updatePlakNode, updatePlakNodeOrder, updatePlakNodeStock,
@@ -1529,7 +1530,23 @@ export function AppStateProvider({ children }) {
   // concurrent submissions can never collide. Returns the new order's id on
   // success, or null if the insert failed, so the caller knows whether it's
   // safe to move on.
-  const submitOrder = useCallback(async () => {
+  // The school's orders that look like this draft (0094) — [] when none, or when
+  // the check itself fails (it only warns; it must never stop an order).
+  const checkDuplicateOrders = useCallback(async () => {
+    const st = stateRef.current;
+    const schoolId = st.role === 'salesman' ? st.actingSchoolId : st.userAuthId;
+    if (!schoolId) return [];
+    try {
+      const hashes = orderImportFields(st).importFiles.map((f) => f.hash).filter(Boolean);
+      return await findPossibleDuplicates(schoolId, st.funcSelected, hashes);
+    } catch (err) {
+      console.error('Duplicate order check failed:', err);
+      return [];
+    }
+  }, []);
+
+  // duplicateCheck: the look-alike orders the Cart showed and who went ahead anyway.
+  const submitOrder = useCallback(async ({ duplicateCheck = null } = {}) => {
     const st = stateRef.current;
     const selectedSalesman = st.assignedSalesmen.find((s) => s.id === st.selectedSalesmanId);
     // The backend (supabase/migrations/0025_allow_multiple_salesmen_per_school.sql)
@@ -1587,6 +1604,7 @@ export function AppStateProvider({ children }) {
       ...storedDays({ shipmentDate: st.shipmentDateSelected, functionDate: st.funcSelected }),
       logoDataUrl: st.logoDataUrl, logoFileName: st.logoFileName, logoRemark: st.logoRemark, schoolType: st.schoolType,
       ...orderImportFields(st),
+      duplicateCheck,
       snapshot, items: st.cart.map((ci) => ({ ...ci })),
     };
 
@@ -3108,7 +3126,7 @@ export function AppStateProvider({ children }) {
 
   const value = {
     state, patch, today: TODAY, login, logout,
-    resetCurrentCategory, startNewOrder, addToCart, addAllToCart, removeFromCart, editCartCategory, submitOrder, reorderOrder,
+    resetCurrentCategory, startNewOrder, addToCart, addAllToCart, removeFromCart, editCartCategory, submitOrder, checkDuplicateOrders, reorderOrder,
     importFormAnugerahExcel, importFormAnugerahExcelInto,
     openAmend, updateAmend,
     openAddOn, addOnAddToCart, removeFromAddOnCart, submitPendingAddOn, cancelPendingAddOn, rejectAddOn, approveAddOn, approveOrder, setInvoiceId, approveAndSetInvoiceId,

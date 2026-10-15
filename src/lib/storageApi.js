@@ -30,7 +30,10 @@ export async function uploadOrderImportFile(file) {
       upsert: false,
     });
     if (error) { console.error('order import upload failed:', error); return null; }
-    return { path, name: String(file.name || 'order.xlsx').slice(0, 200) };
+    // the file's fingerprint: the same Excel submitted twice is a likely duplicate order (0094)
+    const digest = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
+    const hash = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+    return { path, name: String(file.name || 'order.xlsx').slice(0, 200), hash };
   } catch (err) {
     console.error('order import upload failed:', err);
     return null;

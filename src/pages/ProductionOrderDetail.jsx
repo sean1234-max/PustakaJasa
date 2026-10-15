@@ -8,6 +8,7 @@ import CorrectedExcelControl from '../components/CorrectedExcelControl';
 import PriceTable from '../components/PriceTable';
 import OrderPrintout from '../components/OrderPrintout';
 import AddOnTag from '../components/AddOnTag';
+import { duplicateReasons } from '../utils/duplicateOrders';
 import { useAppState } from '../state/useAppState';
 import { statusPillStyle, formatDate, MANUAL_MAX_QTY, shipmentDatePassed, toMalaysiaDay, malaysiaToday, isReviewed, isAddonInFlight, invoiceLabel, invoiceSetByNote, resolveCategory } from '../data/catalog';
 import { redLinesProblem, RED_LINES_SUFFIX } from '../utils/redLines';
@@ -401,6 +402,18 @@ export default function ProductionOrderDetail() {
             <div className="card-kicker">{page === 'summary' ? 'Summary' : 'Order Details'}</div>
             <div className="card-title">{order.id}</div>
             <AddOnTag order={order} />
+            {order.duplicateCheck && (
+              <div className="hint-text no-print" style={{ margin: '4px 0 0', fontWeight: 600, color: '#b45309' }}>
+                ⚠ Possible duplicate of{' '}
+                {(order.duplicateCheck.matches || []).map((m, i) => (
+                  <span key={m.id}>
+                    {i > 0 && '; '}
+                    <a href={`#/production/orders/${m.id}`}>{m.id}</a> ({duplicateReasons(m.reasons)})
+                  </span>
+                ))}
+                {' '}— submitted anyway by {order.duplicateCheck.confirmedBy || '—'}. Check before Done Review.
+              </div>
+            )}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
             {stamp && <span className="order-stamp-inline no-print">{stamp}</span>}
