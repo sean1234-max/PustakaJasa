@@ -90,7 +90,7 @@ export default function CrystalPreview({ order, role = 'view', selected = null, 
   // (re)send the rows whenever the preview is ready or the order changes
   useEffect(() => {
     if (status !== 'ready' || !order) return;
-    frame.current?.contentWindow?.postMessage({ type: 'crystal-rows', rows, order: order.id, school: order.sekolah || '' }, window.location.origin);
+    frame.current?.contentWindow?.postMessage({ type: 'crystal-rows', rows, order: order.id, school: order.sekolah || '', logo: order.logoDataUrl || null }, window.location.origin);
   }, [status, readyTick, rows, order]);
 
   // a crystal row picked in the price table: show that design and scroll to it

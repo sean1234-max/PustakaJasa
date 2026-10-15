@@ -96,8 +96,8 @@ export default function Cart() {
   // anyway and confirm later on the order page (Confirm Artwork).
   const hasCrystal = state.cart.some((ci) => isCrystalCode(ci.jenisPlak));
   const draftOrder = useMemo(
-    () => ({ id: '', items: state.cart, sekolah: state.sekolah, schoolLanguage: state.schoolLanguage }),
-    [state.cart, state.sekolah, state.schoolLanguage],
+    () => ({ id: '', items: state.cart, sekolah: state.sekolah, schoolLanguage: state.schoolLanguage, logoDataUrl: state.logoDataUrl }),
+    [state.cart, state.sekolah, state.schoolLanguage, state.logoDataUrl],
   );
   const [askArtwork, setAskArtwork] = useState(false);
   const [artworkNote, setArtworkNote] = useState('');
