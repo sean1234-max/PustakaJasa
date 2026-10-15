@@ -1530,7 +1530,7 @@ export function AppStateProvider({ children }) {
   // concurrent submissions can never collide. Returns the new order's id on
   // success, or null if the insert failed, so the caller knows whether it's
   // safe to move on.
-  // The school's orders that look like this draft (0094) — [] when none, or when
+  // The school's orders that look like this draft (0095: same teacher, same Function Date) — [] when none, or when
   // the check itself fails (it only warns; it must never stop an order).
   const checkDuplicateOrders = useCallback(async () => {
     const st = stateRef.current;
@@ -1538,7 +1538,7 @@ export function AppStateProvider({ children }) {
     if (!schoolId) return [];
     try {
       const hashes = orderImportFields(st).importFiles.map((f) => f.hash).filter(Boolean);
-      return await findPossibleDuplicates(schoolId, st.funcSelected, hashes);
+      return await findPossibleDuplicates(schoolId, st.funcSelected, hashes, st.picName);
     } catch (err) {
       console.error('Duplicate order check failed:', err);
       return [];

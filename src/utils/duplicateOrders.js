@@ -1,5 +1,7 @@
 // Duplicate order check (0094, Sean 2026-10-15): why an order looks like another.
 const REASON_TEXT = {
+  same_teacher_function_date: 'same teacher, same Function Date',
+  // 0094's, on orders flagged before 2026-10-15
   in_progress: 'still in progress',
   same_file: 'same Excel file',
   same_function_date: 'same Function Date',
