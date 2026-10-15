@@ -208,11 +208,14 @@ async function runCrystalJob(job, checked) {
   const workDir = path.join(TEMP_DIR, `crystal-${job.id}`);
   try {
     if (!(await folderReachable(resolveAiFileDir()))) throw new Error(`This computer can't reach ${resolveAiFileDir()}`);
+    // the folder may already hold the plaques' .ai (Generate AI File): count only this run's
+    const before = existsSync(job.outputFolder) ? listAiFilesWithMtime(job.outputFolder) : new Map();
     const scriptPath = await writeCrystalScript(checked, job.outputFolder, workDir);
     await runIllustrator(scriptPath);
     const report = path.join(job.outputFolder, '_result.txt');
     job.message = existsSync(report) ? readFileSync(report, 'utf8') : 'Illustrator ran, but wrote no report.';
-    job.files = readdirSync(job.outputFolder).filter((n) => /\.ai$/i.test(n));
+    const after = listAiFilesWithMtime(job.outputFolder);
+    job.files = [...after.keys()].filter((n) => before.get(n) !== after.get(n));
     job.status = job.files.length ? 'done' : 'error';
     openFolder(job.outputFolder);
   } catch (err) {
@@ -241,7 +244,10 @@ function startCrystalJob(body) {
   const checked = checkCrystalJob(body);
   // quiet: no "saved" pop-up in Illustrator holding the run open — the page shows the report
   checked.quiet = true;
-  return queueJob((job) => runCrystalJob(job, checked), crystalOutDir(path.join(resolveAiFileDir(), 'OUTPUT'), checked.label));
+  // with the plaques (Generate AI File): their own folder; else OUTPUT/CRYSTAL/<date time> - <label>
+  const outputRoot = path.join(resolveAiFileDir(), 'OUTPUT');
+  const outDir = checked.folder ? path.join(outputRoot, sanitizeFolderName(checked.folder)) : crystalOutDir(outputRoot, checked.label);
+  return queueJob((job) => runCrystalJob(job, checked), outDir);
 }
 
 function readBody(req) {

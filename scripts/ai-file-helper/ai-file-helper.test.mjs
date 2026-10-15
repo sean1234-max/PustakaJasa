@@ -55,6 +55,12 @@ describe('crystals (POST /crystal)', async () => {
     expect(c.label).toBe('SK TEST (ORD-9008)');
   });
 
+  it('takes the plaques\' folder name (Generate AI File), never a path', () => {
+    expect(checkCrystalJob({ job: { rows: [row], folder: '(DWI-26100287) - SK TEST' } }).folder).toBe('(DWI-26100287) - SK TEST');
+    expect(checkCrystalJob({ job: { rows: [row], folder: '../../etc' } }).folder).not.toMatch(/[\\/]/);
+    expect(checkCrystalJob({ job: { rows: [row] } }).folder).toBe('');
+  });
+
   it('refuses empty jobs, bad template names and originals from elsewhere', () => {
     expect(() => checkCrystalJob({ job: { rows: [] } })).toThrow('Nothing to make');
     expect(() => checkCrystalJob({ job: { rows: [{ ...row, file: '../x.ai' }] } })).toThrow('Bad template name');

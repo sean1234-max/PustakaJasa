@@ -64,8 +64,9 @@ function ArtworkStatus({ order, onConfirmArtwork }) {
   );
 }
 
-// makeAi: bump it to have the preview open every crystal in Illustrator (Production's Generate AI File).
-export default function CrystalPreview({ order, role = 'view', selected = null, onConfirmArtwork = null, showArtwork = true, makeAi = 0 }) {
+// makeAi: bump it to have the preview open every crystal in Illustrator (Production's Generate AI
+// File), saved in makeAiFolder (the plaques' OUTPUT folder) when given.
+export default function CrystalPreview({ order, role = 'view', selected = null, onConfirmArtwork = null, showArtwork = true, makeAi = 0, makeAiFolder = '' }) {
   const frame = useRef(null);
   const box = useRef(null);
   const [status, setStatus] = useState('waiting'); // waiting | ready | missing
@@ -96,8 +97,8 @@ export default function CrystalPreview({ order, role = 'view', selected = null, 
 
   useEffect(() => {
     if (status !== 'ready' || !makeAi) return;
-    frame.current?.contentWindow?.postMessage({ type: 'crystal-make-ai' }, window.location.origin);
-  }, [status, makeAi]);
+    frame.current?.contentWindow?.postMessage({ type: 'crystal-make-ai', folder: makeAiFolder }, window.location.origin);
+  }, [status, makeAi]); // eslint-disable-line react-hooks/exhaustive-deps -- only a new click sends
 
   // a crystal row picked in the price table: show that design and scroll to it
   useEffect(() => {

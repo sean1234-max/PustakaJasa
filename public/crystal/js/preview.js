@@ -219,7 +219,8 @@ const setWorked = () => { try { localStorage.setItem("crystal-ever", "1"); } cat
 
 // ai: open in Illustrator, through the AI File helper on this PC (see to-illustrator.js), each saved as
 // .ai. Else: all crystals in one PDF.
-async function generateAll(ai) {
+// folder: save in the plaques' OUTPUT folder (the website's Generate AI File) instead of OUTPUT/CRYSTAL
+async function generateAll(ai, folder = "") {
   if (generating) return;
   const btn = document.getElementById(ai ? "aAi" : "aGen"), msg = document.getElementById("aGenMsg");
   const cells = allCells.filter((c) => c.it);
@@ -255,6 +256,7 @@ async function generateAll(ai) {
         list.push({ item: f.c.it, entry: own ? { state: own, images: scene.images, logo: lg } : { scene, logo: lg }, name: f.name, qty: f.c.t.qty, design: f.c.g.jenis, header: f.c.t.row.event_header });
       }
       const { job, without } = await vectorJob(list, order);
+      if (folder) job.folder = folder;
       const svgs = [];
       for (const i of without) svgs.push({ name: files[i].name, svg: await picture(files[i].c.it, files[i].c.g.jenis, files[i].c.t.row, 300, true) });
       say(everWorked() ? "Opening in Illustrator…" : "Opening in Illustrator… (the first time, Chrome asks to let this site reach this computer: choose Allow)");
@@ -478,7 +480,7 @@ window.addEventListener("message", (e) => {
     } else show(rows);
   }
   // the website's Generate AI File (crystals typed with the plaques — Sean, 2026-10-15)
-  if (e.data.type === "crystal-make-ai" && CAN_AI) generateAll(true);
+  if (e.data.type === "crystal-make-ai" && CAN_AI) generateAll(true, typeof e.data.folder === "string" ? e.data.folder : "");
   // the website picked a Jenis Plak (a row of its price table clicked): show that design's tab
   if (e.data.type === "crystal-select" && typeof e.data.jenis === "string") {
     const want = e.data.jenis.replace(/\s+/g, " ").trim().toUpperCase();

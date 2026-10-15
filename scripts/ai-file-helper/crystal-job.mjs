@@ -46,7 +46,8 @@ export function checkCrystalJob(body) {
   const P = job.platform && typeof job.platform === 'object' ? job.platform : null;
   const platform = P && PLATFORM_KEYS.every((k) => Number.isFinite(+P[k]) && +P[k] >= 0)
     ? Object.fromEntries(PLATFORM_KEYS.map((k) => [k, +P[k]])) : null;
-  return { rows, files, platform, label: cleanName(job.label, 80) };
+  // folder: the plaques' own OUTPUT folder name (Generate AI File — Sean, 2026-10-15), or none
+  return { rows, files, platform, label: cleanName(job.label, 80), folder: cleanName(job.folder, 120) };
 }
 
 // A file from our storage -> dest. Node first; on Windows, if Node can't connect (an antivirus or
