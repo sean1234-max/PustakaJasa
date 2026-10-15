@@ -41,7 +41,8 @@ const SUBJECT_LEVEL_CATEGORIES = ['PPKI', 'MP1', 'MP2', 'MP1_KELAS', 'MP2_KELAS'
 export function copiedSheetCategory(name) {
   const m = /^(.*?)\s*\(\d+\)\s*$/.exec(String(name || ''));
   if (!m) return null;
-  const base = m[1].trim().toUpperCase();
+  // the PPKI sheet is also named "PPKI,PRA" (ORD-0059: "PPKI,PRA (2)")
+  const base = m[1].trim().toUpperCase().replace(/^PPKI,\s*PRA$/, 'PPKI');
   const key = Object.keys(SOURCE_SHEET_TO_CATEGORY).find((k) => k.toUpperCase() === base);
   return key ? SOURCE_SHEET_TO_CATEGORY[key] : null;
 }

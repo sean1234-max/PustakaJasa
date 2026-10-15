@@ -260,6 +260,30 @@ export function buildSubjectTahunFormatter(sample, subjects, levels, classNames 
 // recomputeLevelBreakdown uses) — every other subject shares the level's one
 // Nama Kelas breakdown, which is also why each of their own KUANTITI cells
 // already equals that breakdown's total (draftUpdaters.js keeps them synced).
+// The CONTOH's own class line — a line holding just one of the order's class
+// names and a level, in either order ("ALIRAN TAHUN 1  PPKI"): each plaque's
+// class line is written the same way (Sean, 2026-10-15, ORD-0059 — it used to
+// be always level first). null when the CONTOH has no such line.
+export function classLineTemplate(contoh, classNames, levels) {
+  const ls = String(contoh || '').split('\n');
+  const filled = (arr) => arr.some((x) => x.trim());
+  for (let i = 0; i < ls.length; i++) {
+    const kelas = findLongestWord(ls[i], classNames);
+    const level = kelas && findLongestWord(ls[i], levels, kelas);
+    if (!level) continue;
+    const [a, b] = kelas.start < level.start ? [kelas, level] : [level, kelas];
+    const rest = ls[i].slice(0, a.start) + ls[i].slice(a.end, b.start) + ls[i].slice(b.end);
+    if (/[A-Z0-9]/i.test(rest)) continue;
+    const classFirst = kelas.start < level.start;
+    return {
+      make: (lvl, cls) => (classFirst ? [cls, lvl] : [lvl, cls]).filter(Boolean).join(' '),
+      // the class line above the subject in the CONTOH
+      above: !filled(ls.slice(0, i)) && filled(ls.slice(i + 1)),
+    };
+  }
+  return null;
+}
+
 function buildMatrixRows(item, cat, header, year, positionPart1, schoolLanguage) {
   const rows = [];
   const matrix = item.detail?.matrix;
@@ -283,12 +307,9 @@ function buildMatrixRows(item, cat, header, year, positionPart1, schoolLanguage)
   const importedSubjects = !!cat.subjectsFromImport && getCustomMatrixRowIds(cat.key, matrix).length > 0;
   const customSubjects = getCustomMatrixRowIds(cat.key, matrix).map((rowId) => matrix[customMatrixLabelKey(cat.key, rowId)] || '').filter(Boolean);
   const knownSubjects = [...getCategorySubjects(cat, schoolLanguage), ...customSubjects];
-  const format = buildSubjectTahunFormatter(
-    contoh,
-    knownSubjects,
-    columns,
-    Object.values(breakdown).flat().map((c) => c.desc).filter(Boolean),
-  );
+  const classNames = Object.values(breakdown).flat().map((c) => c.desc).filter(Boolean);
+  const format = buildSubjectTahunFormatter(contoh, knownSubjects, columns, classNames);
+  const classLine = classLineTemplate(contoh, classNames, columns);
   // The CONTOH can put its example subject on line 2 instead ("CEMERLANG⏎
   // BAHASA MELAYU", line 3 just "TAHUN 4"): that spot takes each plaque's
   // own subject, and the lines below then carry only the Tahun — otherwise
@@ -321,8 +342,9 @@ function buildMatrixRows(item, cat, header, year, positionPart1, schoolLanguage)
     let covered = 0;
     classes.forEach((c) => {
       const q = Math.max(0, Number(c.qty) || 0);
-      const eventLine2 = [tahunLabel, c.desc.trim()].filter(Boolean).join(' ');
-      for (let i = 0; i < q; i++) rows.push([header, year, positionFor(subject), ...lines(subject, eventLine2)]);
+      const eventLine2 = classLine ? classLine.make(tahunLabel, c.desc.trim()) : [tahunLabel, c.desc.trim()].filter(Boolean).join(' ');
+      const both = classLine && !posSpan ? (classLine.above ? [eventLine2, subject] : [subject, eventLine2]) : lines(subject, eventLine2);
+      for (let i = 0; i < q; i++) rows.push([header, year, positionFor(subject), ...both]);
       covered += q;
     });
     const remainder = qty - covered;

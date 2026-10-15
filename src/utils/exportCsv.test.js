@@ -201,6 +201,21 @@ describe('CSV column remap — reference-sample lines -> CSV columns', () => {
     expect(rows.every((r) => r[3] === 'BAHASA MELAYU')).toBe(true);
   });
 
+  it('PPKI: each class line follows the CONTOH\'s own order ("ALIRAN TAHUN 1  PPKI", ORD-0059)', () => {
+    const mk = (line3) => ({
+      id: 'p', jenisPlak: 'PKC 263', qty: 1, categoryKey: 'PPKI', blockIdx: 0,
+      detail: {
+        lines: { 'PPKI::0::0': 'H', 'PPKI::0::2': 'MAJLIS', 'PPKI::0::3': line3, 'PPKI::0::hiddenLines': '1,2b', 'PPKI::0::kelasSubject': 'MORAL' },
+        matrix: { 'PPKI::custom-1::__label__': 'ANUGERAH AL-KINDI', 'PPKI::custom-1::PPKI': '2' },
+        namaKelasBreakdown: { 'PPKI::0::PPKI::main': [{ id: 1, desc: 'ALIRAN TAHUN 1', qty: '1' }, { id: 2, desc: 'ALIRAN TAHUN 2', qty: '1' }] },
+      },
+    });
+    const lines = (line3) => buildCsvRows({ schoolLanguage: 'SK', items: [mk(line3)] }, 'PPKI', [mk(line3)]).rows.map((r) => [r[3], r[4]]);
+    expect(lines('ANUGERAH IBNU SINA \nALIRAN TAHUN 1  PPKI')).toEqual([['ANUGERAH AL-KINDI', 'ALIRAN TAHUN 1 PPKI'], ['ANUGERAH AL-KINDI', 'ALIRAN TAHUN 2 PPKI']]);
+    expect(lines('BAHASA MELAYU\nPPKI ALIRAN TAHUN 1')).toEqual([['ANUGERAH AL-KINDI', 'PPKI ALIRAN TAHUN 1'], ['ANUGERAH AL-KINDI', 'PPKI ALIRAN TAHUN 2']]);
+    expect(lines('ALIRAN TAHUN 1 PPKI\nBAHASA MELAYU')).toEqual([['ALIRAN TAHUN 1 PPKI', 'ANUGERAH AL-KINDI'], ['ALIRAN TAHUN 2 PPKI', 'ANUGERAH AL-KINDI']]);
+  });
+
   it('MP THP 2 (Kalau ada kelas): the sample subject keeps its Alt+Enter, other subjects replace it', () => {
     const mk = (subject) => ({
       id: 'm', jenisPlak: 'DECO LIGHT', qty: 1, categoryKey: 'MP2_KELAS', blockIdx: 0,
