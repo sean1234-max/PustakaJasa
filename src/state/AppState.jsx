@@ -16,6 +16,7 @@ import { checkColumnTotals, checkExpansionTotals, checkLevelBreakdownMatch, chec
 import { frontPgToFunctionDetails } from '../utils/frontPgDetails';
 import { buildCategoryCartItems } from './categoryCartItems';
 import { AppStateContext } from './AppStateContext';
+import { saveCrystalDraft, clearCrystalDraft } from '../lib/crystalDraft';
 import {
   fetchOrders, fetchOrderById, insertOrder, updateOrder, approveAddonAsOrder, nextOrderSeq, fetchAllSalesmen, reassignOrderSalesman,
   findPossibleDuplicates,
@@ -33,7 +34,7 @@ import { isUrgentShipment, urgentSheetAction, SHIPMENT_EDITABLE_STATUSES } from 
 import { fetchCustomTypoWords } from '../lib/typoWordsApi';
 import { setCustomTypoWords } from '../utils/typoCheck';
 import { normalizeSplitQty, stockDiff, applyPriceDrafts } from '../utils/orderBatches';
-import { needsKiv, kivParts, hasPlakPart, kivInProduction, crystalWithPlak } from '../utils/exportCsv';
+import { needsKiv, kivParts, hasPlakPart, kivInProduction, crystalWithPlak, isCrystalCode } from '../utils/exportCsv';
 
 // Malaysia's "today" (catalog.js's malaysiaToday — the project always runs
 // on Malaysian dates), normalized to midnight so it compares cleanly against
@@ -663,6 +664,7 @@ export function AppStateProvider({ children }) {
   // Order" nav link or "Place Another Order" — every field except Sekolah,
   // which stays pinned to the account's school from login.
   const startNewOrder = useCallback(() => {
+    clearCrystalDraft(); // a new order starts with no crystal changes
     patch((st) => ({
       sales: '', picName: '', phone: '', ketuaPanitia: '', terms: '', remark: '',
       shipmentDateSelected: null, funcSelected: null,
@@ -1645,6 +1647,8 @@ export function AppStateProvider({ children }) {
       return null;
     }
     patch((latest) => ({ lastOrderId: newId, orders: [newOrder, ...latest.orders], cart: [], cartToast: '', step2ImportStatus: null, step2ChoiceAnswers: {} }));
+    // crystal changes the teacher made before submitting (Cart → Edit Crystal): onto the order now
+    if (st.cart.some((ci) => isCrystalCode(ci.jenisPlak))) saveCrystalDraft(newId).catch((err) => console.error('Order saved, but its crystal changes were not:', err));
     // who confirmed the artwork is stamped by the database (0089) — read it back for the order page
     if (artworkConfirmed) {
       fetchOrderById(newId)

@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import { useAppState } from '../state/useAppState';
 import { formatDate, getStockStatus, resolveCategory, toMalaysiaDay } from '../data/catalog';
-import CrystalPreview from '../components/CrystalPreview';
+import CrystalPreview, { crystalRowsOf } from '../components/CrystalPreview';
+import CrystalConfirmModal from '../components/CrystalConfirmModal';
 import { isCrystalCode } from '../utils/exportCsv';
 import { duplicateReasons } from '../utils/duplicateOrders';
 
@@ -104,6 +105,23 @@ export default function Cart() {
   const [askArtwork, setAskArtwork] = useState(false);
   const [artworkNote, setArtworkNote] = useState('');
   const isSalesman = state.role === 'salesman';
+  // A teacher answers in a full-screen dialog (Sean, 2026-10-15); a salesman keeps the line below.
+  const [crystalModal, setCrystalModal] = useState(false);
+  const [crystalBusy, setCrystalBusy] = useState(false);
+  const confirmCrystals = async () => {
+    setCrystalBusy(true);
+    await handleSubmit(true);
+    setCrystalBusy(false);
+    setCrystalModal(false);
+  };
+  // "No, Edit Crystal": Crystal Studio in a new tab, this cart's crystals in the link (as the
+  // Crystal Preview's ✎ Edit does); its Save is kept in this browser until the order is in.
+  const editCrystals = () => {
+    const logo = typeof state.logoDataUrl === 'string' && (/^https?:/.test(state.logoDataUrl) || state.logoDataUrl.length < 300000) ? state.logoDataUrl : null;
+    const opened = { name: 'Your order', order: '', draft: true, role: 'teacher', logo, school: state.sekolah, rows: crystalRowsOf(draftOrder) };
+    window.open(`/crystal/index.html#order=${encodeURIComponent(JSON.stringify(opened))}`, '_blank');
+    setCrystalModal(false);
+  };
 
   const send = async (artworkConfirmed, duplicateCheck) => {
     setSubmitting(true);
@@ -294,13 +312,22 @@ export default function Cart() {
           ) : (
             <button
               type="button" className="btn btn-primary" disabled={state.cart.length === 0 || submitting || !!stockViolation || !!dupes}
-              onClick={() => { setArtworkNote(''); if (hasCrystal) setAskArtwork(true); else handleSubmit(); }}
+              onClick={() => {
+                setArtworkNote('');
+                if (!hasCrystal) handleSubmit();
+                else if (isSalesman) setAskArtwork(true);
+                else setCrystalModal(true);
+              }}
             >
               {submitting ? 'Submitting…' : 'Submit Order'}
             </button>
           )}
         </div>
         {artworkNote && <p className="hint-text" style={{ color: '#b45309', fontWeight: 600, textAlign: 'right' }}>{artworkNote}</p>}
+        <CrystalConfirmModal
+          open={crystalModal} busy={crystalBusy}
+          onYes={confirmCrystals} onEdit={editCrystals} onCancel={() => setCrystalModal(false)}
+        />
       </div>
     </div>
   );

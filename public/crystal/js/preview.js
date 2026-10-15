@@ -13,6 +13,7 @@ import { libraryScene, setMaster, autoCleanAll, hiResBackground, logoPlace, isMi
 import { logoPicker } from "./logos.js";
 import { renderOffscreen, svgOffscreen } from "./editor.js";
 import { templateFor, contentKey, orderDesignId, TEXT_FIELDS } from "./jenis.js";
+import { draftCustom, DRAFT_KEY } from "./draft.js";
 import { illustratorWindow } from "./to-illustrator.js";
 import { vectorJob } from "./vector-job.js";
 
@@ -95,7 +96,8 @@ const rowKey = (jenis, row) => contentKey({ ...row, jenis_plak: jenis });
 let order = null, custom = {};
 async function loadCustom() {
   custom = {};
-  if (!order) return;
+  // no order yet (the Cart): the teacher's changes kept in this browser (draft.js)
+  if (!order) { custom = draftCustom(); return; }
   try { const d = await store.loadDesign(orderDesignId(order)); custom = (d && d.data && d.data.custom) || {}; } catch (e) { /* none yet */ }
 }
 // the school's logo (data URL, see logos.js) where this design's own logo was, or null
@@ -448,6 +450,15 @@ onLibraryChanged(reloadSoon);
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") reloadSoon(); });
 window.addEventListener("focus", reloadSoon);
 let lastMaster = {};
+
+// changed in Crystal Studio (another tab) for an order not submitted yet: shown at once
+window.addEventListener("storage", (e) => {
+  if (e.key !== DRAFT_KEY || order) return;
+  custom = draftCustom();
+  pics.clear();
+  smalls.clear();
+  if (allRows.length) show(allRows);
+});
 
 window.addEventListener("message", (e) => {
   if (e.source !== window.parent || !e.data) return;

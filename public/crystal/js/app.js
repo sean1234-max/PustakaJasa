@@ -16,6 +16,7 @@ import { store, fileUrl, whoAmI, isStaff } from "./store.js";
 import { illustratorWindow } from "./to-illustrator.js";
 import { vectorJob } from "./vector-job.js";
 import { templateFor, sources as jenisSources, contentKey, orderDesignId } from "./jenis.js";
+import { draftCustom, saveDraftCustom } from "./draft.js";
 
 const PRINT_DPI = 300;
 // same columns as the master order Excel (event_header, year, position, event_line_1, …)
@@ -999,10 +1000,11 @@ $("saveBtn").onclick = saveDesign;
 // (the website's preview then shows them; every other order keeps the default template). They're
 // kept by what each crystal says (jenis plak + words) as it came from the website.
 async function orderCustom() {
+  if (S.draft) return draftCustom(); // an order not submitted yet (draft.js)
   try { const d = await store.loadDesign(orderDesignId(S.order)); return (d && d.data && d.data.custom) || {}; } catch (e) { return {}; }
 }
 $("saveOrder").onclick = async () => {
-  if (!S.order) return;
+  if (!S.order && !S.draft) return;
   const custom = await orderCustom();
   for (const k of S.origKeys) delete custom[k]; // these crystals: as they are here now
   let n = 0;
@@ -1013,6 +1015,20 @@ $("saveOrder").onclick = async () => {
     n++;
   }
   $("saveOrder").disabled = true;
+  if (S.draft) {
+    // not submitted yet: kept in this browser; the website saves it on the order once it's in
+    try {
+      saveDraftCustom(custom);
+      S.dirty = false;
+      toast(`Saved ${n} crystal${n === 1 ? "" : "s"} for this order. Back to the website…`);
+      setTimeout(() => {
+        window.close();
+        setTimeout(() => toast("Saved. Switch back to the order website's tab: its Crystal Preview already shows it."), 400);
+      }, 1200);
+    } catch (e) { toast("Couldn't keep it in this browser: " + e.message, "bad"); }
+    $("saveOrder").disabled = false;
+    return;
+  }
   try {
     await store.saveDesign({ id: orderDesignId(S.order), name: `Order ${S.order} — its own crystals`, data: { order: S.order, custom } });
     S.dirty = false;
@@ -1199,6 +1215,7 @@ window.addEventListener("beforeunload", (e) => { if (S.dirty) { e.preventDefault
     S.rows = opened.rows.map((r) => Object.fromEntries(keys.map((k) => [k, String(r[k] ?? "")])));
     S.sourceName = opened.name || "Order";
     S.order = opened.order != null && opened.order !== "" ? String(opened.order) : null;
+    S.draft = !S.order && opened.draft === true; // from the Cart, before the order is submitted
     S.logoFrom = { logo: opened.logo, school: opened.school };
     // not Production / Admin (a teacher from their order page): this order's crystals only — their
     // look and place, not their words (Sean, 2026-10-14: words change through Edit Order, so the
@@ -1211,16 +1228,16 @@ window.addEventListener("beforeunload", (e) => { if (S.dirty) { e.preventDefault
     S.origKeys = S.rows.map(contentKey);
     $("srcHint").textContent = `${S.sourceName} · ${S.rows.length} row${S.rows.length === 1 ? "" : "s"} from the order website`;
   }
-  if (!unlocked && !S.order) {
+  if (!unlocked && !S.order && !S.draft) {
     editor.showEmpty("Open the crystals from your order's page on the order website (Crystal Preview → ✎ Edit).");
     return;
   }
   // the schools' logos: each crystal gets its own (see logos.js logoPicker)
   try { const list = await store.logos(); pickLogo = logoPicker(S.logoFrom || {}, Array.isArray(list) ? list : []); } catch (e) {}
   buildGroups();
-  if (S.order) {
+  if (S.order || S.draft) {
     $("saveOrder").hidden = false;
-    $("srcHint").textContent += ` · order ${S.order}`;
+    $("srcHint").textContent += S.draft ? " · your order (not submitted yet)" : ` · order ${S.order}`;
     // what was already changed for this order comes back, to change further
     const custom = await orderCustom();
     S.rows.forEach((r, i) => { const k = keyFor(i), st = custom[S.origKeys[i]]; if (k && st) S.edits[i + "|" + k] = st; });
