@@ -64,7 +64,8 @@ function ArtworkStatus({ order, onConfirmArtwork }) {
   );
 }
 
-export default function CrystalPreview({ order, role = 'view', selected = null, onConfirmArtwork = null, showArtwork = true }) {
+// makeAi: bump it to have the preview open every crystal in Illustrator (Production's Generate AI File).
+export default function CrystalPreview({ order, role = 'view', selected = null, onConfirmArtwork = null, showArtwork = true, makeAi = 0 }) {
   const frame = useRef(null);
   const box = useRef(null);
   const [status, setStatus] = useState('waiting'); // waiting | ready | missing
@@ -92,6 +93,11 @@ export default function CrystalPreview({ order, role = 'view', selected = null, 
     if (status !== 'ready' || !order) return;
     frame.current?.contentWindow?.postMessage({ type: 'crystal-rows', rows, order: order.id, school: order.sekolah || '', logo: order.logoDataUrl || null }, window.location.origin);
   }, [status, readyTick, rows, order]);
+
+  useEffect(() => {
+    if (status !== 'ready' || !makeAi) return;
+    frame.current?.contentWindow?.postMessage({ type: 'crystal-make-ai' }, window.location.origin);
+  }, [status, makeAi]);
 
   // a crystal row picked in the price table: show that design and scroll to it
   useEffect(() => {

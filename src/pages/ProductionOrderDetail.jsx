@@ -12,7 +12,7 @@ import AddOnTag from '../components/AddOnTag';
 import { useAppState } from '../state/useAppState';
 import { statusPillStyle, formatDate, MANUAL_MAX_QTY, shipmentDatePassed, toMalaysiaDay, malaysiaToday, isReviewed, isAddonInFlight, invoiceLabel, invoiceSetByNote } from '../data/catalog';
 import { reconstructOrderDetailGroups, reconstructBlocksForCategory, noopUpdaters } from '../utils/computeBlocks';
-import { getExportableCategories, splitOrderCategories, getOrderJenisPlakGroups, getPlakProductionMode, summarizeRowsForManual, buildCsvRows, rowsToCsv, buildCategoryCsvFilename, combineCsvRows, buildCombinedCsvFilename, validateExport, getInvoiceIdForJenisPlak, getPartialSplitNotes, needsKiv, kivInProduction, kivParts, isCrystalCode, firstKivCategory } from '../utils/exportCsv';
+import { getExportableCategories, splitOrderCategories, getOrderJenisPlakGroups, getPlakProductionMode, summarizeRowsForManual, buildCsvRows, rowsToCsv, buildCategoryCsvFilename, combineCsvRows, buildCombinedCsvFilename, validateExport, getInvoiceIdForJenisPlak, getPartialSplitNotes, needsKiv, kivInProduction, kivParts, isCrystalCode, firstKivCategory, crystalWithPlak } from '../utils/exportCsv';
 import { downloadTextFile } from '../utils/downloadBlob';
 import { getInvoiceItems } from '../utils/orderBatches';
 import ImportFileButtons from '../components/ImportFileButtons';
@@ -240,6 +240,7 @@ export default function ProductionOrderDetail() {
   }, [effectiveOrder, isFiltered, viewInvoiceId, state.plakCatalog]);
   const [printedAt, setPrintedAt] = useState(null);
   const [pickedCrystal, setPickedCrystal] = useState(null); // a crystal row clicked in the price table
+  const [crystalMakeAi, setCrystalMakeAi] = useState(0); // bumped: the Crystal Preview opens the crystals in Illustrator
   // Which price table is open for adjusting: 'order' or 'addon'.
   const [priceEditor, setPriceEditor] = useState(null);
   const togglePrices = (which) => setPriceEditor((open) => (open === which ? null : which));
@@ -315,10 +316,11 @@ export default function ProductionOrderDetail() {
   // blocking the rest (Sean, 2026-10-13) — it's generated later, once the
   // names are in.
   const isAllReserved = (g) => g.csvData.rows.length === 0 && g.csvData.reservedCount > 0;
-  // Crystals are made in KIV & ARTWORK (their own generate, coming with the
-  // crystal preview page — Sean 2026-10-14), so Typing's combined CSV / AI
-  // file is the ordinary plaques only.
+  // Crystals never go in the CSV: the Crystal Preview makes their .ai. Once their
+  // artwork is confirmed they're typed with the plaques — Generate AI File runs
+  // both (Sean, 2026-10-15); otherwise they're made from their own card.
   const crystalGroups = jenisPlakExport.filter((g) => isCrystalCode(g.jenisPlak));
+  const crystalsHere = crystalGroups.length > 0 && crystalWithPlak(order);
   const plakGroups = jenisPlakExport.filter((g) => !isCrystalCode(g.jenisPlak));
   const reservedGroups = plakGroups.filter((g) => g.csvData.reservedCount > 0);
   const combinedRows = combineCsvRows(plakGroups);
@@ -337,8 +339,9 @@ export default function ProductionOrderDetail() {
   // reach the NAS AI FILE folder, and stops with an alert if there's no
   // helper or no folder — instead of queuing a job nobody will pick up.
   const aiFileBusy = aiFileChecking || !!activeAiFileJobId;
+  const generateOk = crystalsHere ? (plakGroups.length === 0 || combinedOk) : combinedOk;
   const handleGenerateAiFile = async () => {
-    if (!combinedOk || aiFileBusy) return;
+    if (!generateOk || aiFileBusy) return;
     setAiFileErr('');
     setAiFileChecking(true);
     try {
@@ -351,6 +354,8 @@ export default function ProductionOrderDetail() {
         window.alert(`This computer can't find the AI FILE folder:\n${status.aiFileDir}`);
         return;
       }
+      if (crystalsHere) setCrystalMakeAi((n) => n + 1);
+      if (!combinedOk) return;
       const id = await startAiFileHelperJob(buildCombinedCsvFilename(order), rowsToCsv(combinedRows));
       setAiFileJob({ id, status: 'queued', message: '', files: [] });
     } catch (err) {
@@ -537,7 +542,7 @@ export default function ProductionOrderDetail() {
             {partialSplitNotes.map((note) => (
               <p key={note} className="hint-text" style={{ color: '#b45309', marginTop: 'var(--space-2)' }}>{note}</p>
             ))}
-            <CrystalPreview order={order} role="production" selected={pickedCrystal} />
+            <CrystalPreview order={order} role="production" selected={pickedCrystal} makeAi={crystalMakeAi} />
 
             {selempangBlocks.length > 0 && (
               <div style={{ marginTop: 'var(--space-6)' }}>
@@ -563,7 +568,9 @@ export default function ProductionOrderDetail() {
                     </p>
                     {crystalGroups.length > 0 && (
                       <p className="hint-text" style={{ marginTop: 4, color: '#8a6d00', fontWeight: 600 }}>
-                        CRYSTAL is made in KIV &amp; ARTWORK — left out of this CSV / AI file:{' '}
+                        {crystalsHere
+                          ? 'CRYSTAL is not in the CSV — Generate AI File also opens the crystals in Illustrator (from the Crystal Preview above): '
+                          : 'CRYSTAL is made from its own card (KIV & ARTWORK, then Typing once the artwork is confirmed) — left out of this CSV / AI file: '}
                         {crystalGroups.map((g) => `${g.categoryLabel} – ${g.jenisPlak} (${g.totalQty})`).join(', ')}.
                       </p>
                     )}
@@ -575,7 +582,7 @@ export default function ProductionOrderDetail() {
                     )}
                     <button
                       type="button" className="btn" style={{ marginTop: 8 }}
-                      disabled={!combinedOk || aiFileBusy} onClick={handleGenerateAiFile}
+                      disabled={!generateOk || aiFileBusy} onClick={handleGenerateAiFile}
                     >
                       {aiFileChecking ? 'Checking this computer…' : activeAiFileJobId ? '⏳ Generating…' : '🖨 Generate AI File'}
                     </button>

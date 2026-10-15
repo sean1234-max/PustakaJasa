@@ -1085,6 +1085,27 @@ describe('KIV & ARTWORK parts', () => {
     const allDone = { ...kivDone, kivProductionDoneAt: '2026-10-14T02:00:00Z' };
     expect([needsKiv(allDone), kivInProduction(allDone)]).toEqual([false, false]);
   });
+
+  it('confirmed crystals go with the plaques; unconfirmed ones wait in KIV, then Typing (2026-10-15)', async () => {
+    const { kivParts, crystalWithPlak, hasMainPart, kivInTyping } = await import('./exportCsv');
+    const confirmed = '2026-10-15T01:00:00Z';
+    // confirmed before typing: one card, no KIV part
+    const teacher = { items: [plak, crystal], artworkConfirmedAt: confirmed };
+    expect([crystalWithPlak(teacher), kivParts(teacher)]).toEqual([true, []]);
+    expect(hasMainPart({ items: [crystal], artworkConfirmedAt: confirmed })).toBe(true);
+    // typed together: stays together
+    expect(crystalWithPlak({ ...teacher, typedAt: confirmed, crystalTypedAt: confirmed })).toBe(true);
+    // not confirmed: its own card, in KIV & ARTWORK
+    const salesNo = { items: [plak, crystal] };
+    expect([crystalWithPlak(salesNo), kivParts(salesNo), kivInTyping(salesNo)]).toEqual([false, ['CRYSTAL'], false]);
+    expect(hasMainPart({ items: [crystal] })).toBe(false);
+    // confirmed after the plaques were typed: its own card, now in Typing
+    const late = { ...salesNo, typedAt: '2026-10-15T00:00:00Z', artworkConfirmedAt: confirmed };
+    expect([crystalWithPlak(late), kivInTyping(late)]).toEqual([false, true]);
+    // with Reserved plaques too: that card stays in KIV & ARTWORK
+    expect(kivInTyping({ ...late, items: [plak, reservedTokoh, crystal] })).toBe(false);
+    expect(kivParts({ items: [plak, reservedTokoh, crystal], artworkConfirmedAt: confirmed })).toEqual(['SHORT SUPPLY']);
+  });
 });
 
 describe('KIV & ARTWORK View Order — which category / rows to flash', () => {

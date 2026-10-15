@@ -32,7 +32,7 @@ import { isUrgentShipment, urgentSheetAction, SHIPMENT_EDITABLE_STATUSES } from 
 import { fetchCustomTypoWords } from '../lib/typoWordsApi';
 import { setCustomTypoWords } from '../utils/typoCheck';
 import { normalizeSplitQty, stockDiff, applyPriceDrafts } from '../utils/orderBatches';
-import { needsKiv, kivParts, hasPlakPart, kivInProduction } from '../utils/exportCsv';
+import { needsKiv, kivParts, hasPlakPart, kivInProduction, crystalWithPlak } from '../utils/exportCsv';
 
 // Malaysia's "today" (catalog.js's malaysiaToday — the project always runs
 // on Malaysian dates), normalized to midnight so it compares cleanly against
@@ -2671,8 +2671,10 @@ export function AppStateProvider({ children }) {
       flashProductionToast('This order is not waiting for typing.');
       return;
     }
+    const typedAt = new Date().toISOString();
     try {
-      await writeSlice(order, slice, { typedAt: new Date().toISOString() });
+      // confirmed crystals were typed with these plaques (crystalWithPlak)
+      await writeSlice(order, slice, slice.isDefault && crystalWithPlak(order) ? { typedAt, crystalTypedAt: typedAt } : { typedAt });
       flashProductionToast('Typing done — the order is now In Production, ready to print.');
     } catch (err) {
       console.error('Failed to mark typing done in Supabase:', err);

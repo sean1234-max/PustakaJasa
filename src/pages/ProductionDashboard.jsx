@@ -6,7 +6,7 @@ import { useAppState } from '../state/useAppState';
 import { statusPillStyle, formatDate, getLowStockAlerts, toMalaysiaDay, isAddonInFlight, invoiceLabel } from '../data/catalog';
 import { getOrderChangeStamp } from '../utils/orderStamp';
 import { getOrderInvoiceSlices } from '../utils/orderBatches';
-import { countReservedPlaques, needsKiv, kivParts, hasPlakPart, kivInProduction } from '../utils/exportCsv';
+import { countReservedPlaques, needsKiv, kivParts, hasMainPart, kivInProduction, kivInTyping } from '../utils/exportCsv';
 import { prioritizeUrgentOrders } from '../utils/urgentOrder';
 import OrderUrgentBadge from '../components/OrderUrgentBadge';
 import AddOnTag from '../components/AddOnTag';
@@ -38,13 +38,19 @@ const TABS = [
   // after Done Review until the salesman approves it.
   { key: 'addon', label: 'Add-On Review', match: (o) => main(o) && o._primarySlice && isAddonInFlight(o) },
   { key: 'approved', label: 'Salesman Approved', match: (o) => main(o) && o.status === 'Salesman Approved' },
-  { key: 'typing', label: 'Typing', match: (o) => main(o) && o.status === 'In Production' && hasPlakPart(o) && !o.typedAt },
-  { key: 'kiv', label: 'KIV & ARTWORK', match: (o) => o._part === 'kiv' && o.status === 'In Production' && needsKiv(o) },
+  // Confirmed crystals ride on the plaques' card (hasMainPart); a crystal card of
+  // its own waits here once confirmed (kivInTyping) — Sean, 2026-10-15.
+  {
+    key: 'typing',
+    label: 'Typing',
+    match: (o) => o.status === 'In Production' && (main(o) ? hasMainPart(o) && !o.typedAt : kivInTyping(o)),
+  },
+  { key: 'kiv', label: 'KIV & ARTWORK', match: (o) => o._part === 'kiv' && o.status === 'In Production' && needsKiv(o) && !kivInTyping(o) },
   {
     key: 'active',
     label: 'In Production',
     match: (o) => o.status === 'In Production' && (main(o)
-      ? hasPlakPart(o) && !!o.typedAt && !(o._primarySlice && o.plakDoneAt)
+      ? hasMainPart(o) && !!o.typedAt && !(o._primarySlice && o.plakDoneAt)
       : kivInProduction(o)),
   },
   { key: 'completed', label: 'Completed', match: (o) => main(o) && o.status === 'Completed' },
@@ -217,7 +223,7 @@ export default function ProductionDashboard() {
                   <OrderUrgentBadge urgent={ord.urgent} />
                   <span className="status-pill" style={statusPillStyle(ord.status)}>
                     {isKivCard
-                      ? (needsKiv(ord) ? 'KIV & ARTWORK' : ord.status)
+                      ? (kivInTyping(ord) ? 'Typing' : needsKiv(ord) ? 'KIV & ARTWORK' : ord.status)
                       : (ord.status === 'In Production' && !ord.typedAt ? 'Typing' : ord.status)}
                   </span>
                   {isKivCard && reserved > 0 && (
@@ -296,7 +302,7 @@ export default function ProductionDashboard() {
                     <ConfirmButton
                       label="Done Typing" style={{ flex: 1 }}
                       question="Finished typing? It moves to In Production, ready to print."
-                      onConfirm={() => markTypingDone(ord.id, ord.invoiceId)}
+                      onConfirm={() => (isKivCard ? markKivDone(ord.id) : markTypingDone(ord.id, ord.invoiceId))}
                     />
                   </>
                 )}

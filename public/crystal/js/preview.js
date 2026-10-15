@@ -466,6 +466,8 @@ window.addEventListener("message", (e) => {
         .then(() => show(rows));
     } else show(rows);
   }
+  // the website's Generate AI File (crystals typed with the plaques — Sean, 2026-10-15)
+  if (e.data.type === "crystal-make-ai" && CAN_AI) generateAll(true);
   // the website picked a Jenis Plak (a row of its price table clicked): show that design's tab
   if (e.data.type === "crystal-select" && typeof e.data.jenis === "string") {
     const want = e.data.jenis.replace(/\s+/g, " ").trim().toUpperCase();

@@ -131,11 +131,23 @@ export const isCrystalCode = (code) => /^CRYSTAL \//i.test(String(code || '').tr
 const itemAllReserved = (it) => Array.isArray(it.detail?.rows) && it.detail.rows.length > 0
   && it.detail.rows.every((r) => isReservedName(r.namaMurid));
 
+const hasCrystal = (order) => (order?.items || []).some((it) => isCrystalCode(it.jenisPlak));
+
+// Crystals go with the plaques — same Typing card, one Generate AI (Sean,
+// 2026-10-15) — once their artwork is confirmed, unless the plaques were typed
+// (or the crystal card moved on) before that: then they stay their own card,
+// KIV & ARTWORK until confirmed, then Typing. crystalTypedAt (0093) keeps it
+// that way after Done Typing.
+export function crystalWithPlak(order) {
+  if (!hasCrystal(order) || !order.artworkConfirmedAt) return false;
+  return !!order.crystalTypedAt || (!order.typedAt && !order.kivDoneAt);
+}
+
 // What the KIV & ARTWORK card is for: SHORT SUPPLY and/or CRYSTAL ([] = none).
 export function kivParts(order) {
   const parts = [];
   if (countReservedPlaques(order) > 0) parts.push('SHORT SUPPLY');
-  if ((order?.items || []).some((it) => isCrystalCode(it.jenisPlak))) parts.push('CRYSTAL');
+  if (hasCrystal(order) && !crystalWithPlak(order)) parts.push('CRYSTAL');
   return parts;
 }
 
@@ -144,9 +156,20 @@ export function hasPlakPart(order) {
   return (order?.items || []).some((it) => !isCrystalCode(it.jenisPlak) && !itemAllReserved(it));
 }
 
-// Still waiting in the KIV & ARTWORK tab.
+// What the order's main (Typing → In Production) card makes.
+export function hasMainPart(order) {
+  return hasPlakPart(order) || crystalWithPlak(order);
+}
+
+// The card's KIV & ARTWORK part not made yet (in the KIV & ARTWORK tab, or in
+// Typing — kivInTyping).
 export function needsKiv(order) {
   return !order?.kivDoneAt && kivParts(order).length > 0;
+}
+
+// Crystals only, artwork confirmed: that card waits in Typing, not KIV & ARTWORK.
+export function kivInTyping(order) {
+  return needsKiv(order) && !!order.artworkConfirmedAt && kivParts(order).every((p) => p === 'CRYSTAL');
 }
 
 // Its KIV & ARTWORK card is in In Production, not Done yet.
