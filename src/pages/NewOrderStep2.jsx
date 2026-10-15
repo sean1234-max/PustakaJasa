@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
+import CrystalPreview from '../components/CrystalPreview';
+import { isCrystalCode } from '../utils/exportCsv';
 import { useAppState } from '../state/useAppState';
 import { buildCategoryCartItems } from '../state/categoryCartItems';
 import {
@@ -206,6 +208,27 @@ export default function NewOrderStep2() {
       .filter(Boolean);
     return [...ACTIVE_CATEGORIES, ...dynamicCats];
   }, [state.visibleBlocksByCategory]);
+
+  // Crystals in this category's draft, per block (Sean, 2026-10-15): drawn on their designs
+  // before the block's Reference Sample — instead of it when every plaque is a crystal. Read from
+  // the same items Add to Cart makes, so a block that can't be added yet (a typo, a missing Jenis
+  // Plak) shows its Reference Sample as before until it's fixed.
+  const crystalsByBlock = useMemo(() => {
+    const res = state.category ? buildCategoryCartItems(draftForCheck, state.category) : {};
+    const byBlock = {};
+    (res.items || []).forEach((it) => {
+      const b = it.blockIdx ?? 0;
+      byBlock[b] = byBlock[b] || { all: [], crystal: [] };
+      byBlock[b].all.push(it);
+      if (isCrystalCode(it.jenisPlak)) byBlock[b].crystal.push(it);
+    });
+    return Object.fromEntries(Object.entries(byBlock)
+      .filter(([, g]) => g.crystal.length > 0)
+      .map(([b, g]) => [b, {
+        order: { id: '', items: g.crystal, sekolah: state.sekolah, schoolLanguage: state.schoolLanguage, logoDataUrl: state.logoDataUrl },
+        only: g.crystal.length === g.all.length,
+      }]));
+  }, [state.category, draftForCheck, state.sekolah, state.schoolLanguage, state.logoDataUrl]);
 
   const incompleteCategories = useMemo(() => (
     allCategories
@@ -512,6 +535,8 @@ export default function NewOrderStep2() {
               plakOptions={visiblePlakCatalog}
               isLastBlock={i === blocks.length - 1}
               flashJenisPlak={flashBlockIdx === blk.idx}
+              crystalSample={crystalsByBlock[blk.idx] && <CrystalPreview order={crystalsByBlock[blk.idx].order} role="view" showArtwork={false} />}
+              hideReferenceSample={!!crystalsByBlock[blk.idx]?.only}
             />
           </div>
         ))}

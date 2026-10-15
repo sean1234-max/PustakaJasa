@@ -79,7 +79,9 @@ function TypoHint({ hint, canChoose }) {
 
 // `flashKivRows` (Production, opened from KIV & ARTWORK): rows carrying RESERVE / RESERVED / KIV
 // flash three times (index.css .kiv-row-flash).
-export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmptyRows, isLastBlock, flashJenisPlak, flashKivRows = false }) {
+// crystalSample: the block's crystals drawn on their designs, shown before its Reference Sample;
+// hideReferenceSample: every plaque of the block is a crystal — its sample is that (Sean, 2026-10-15).
+export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmptyRows, isLastBlock, flashJenisPlak, flashKivRows = false, crystalSample = null, hideReferenceSample = false }) {
   // Drag-and-drop reordering of Reference Sample rows (OTHERS — see
   // catalog.js's draggableReferenceSample / computeBlocks.js's
   // reorderReferenceSample). Only offered when actually editable — or, on
@@ -300,6 +302,8 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
             </>
           )}
 
+          {crystalSample}
+          {!hideReferenceSample && (<>
           <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Reference Sample (Contoh)</div>
           <p className="hint-text">Fill each numbered line to match the sample layout — this tells us exactly how to place the text and sizing on the plaque.</p>
           <p className="hint-text"><span style={{ color: '#c0392b' }}>★</span> = Wording dalam column ini tak boleh ditukar.</p>
@@ -484,6 +488,7 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
               )}
             </div>
           )}
+          </>)}
         </>
       )}
 
