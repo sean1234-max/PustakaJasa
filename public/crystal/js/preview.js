@@ -489,7 +489,11 @@ window.addEventListener("message", (e) => {
   if (e.data.type === "crystal-make-ai" && CAN_AI) {
     // back to ALL first, so its progress and Illustrator's report show
     if (tab !== ALL) { tab = ALL; at = 0; zoom = 1; show(allRows); }
-    generateAll(true, typeof e.data.folder === "string" ? e.data.folder : "");
+    // tells the website once the crystals are handed to the helper (or couldn't be): it sends the
+    // plaques only then — Illustrator coming to the front sends this tab to the background, where
+    // the browser all but stops the drawing (ORD-9016)
+    const done = () => window.parent.postMessage({ type: "crystal-make-ai-sent" }, location.origin);
+    generateAll(true, typeof e.data.folder === "string" ? e.data.folder : "").then(done, done);
   }
   // the website picked a Jenis Plak (a row of its price table clicked): show that design's tab
   if (e.data.type === "crystal-select" && typeof e.data.jenis === "string") {

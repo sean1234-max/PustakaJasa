@@ -66,8 +66,11 @@ function ArtworkStatus({ order, onConfirmArtwork }) {
 
 // makeAi: bump it to have the preview open every crystal in Illustrator (Production's Generate AI
 // File), saved in makeAiFolder (the plaques' OUTPUT folder) when given.
-export default function CrystalPreview({ order, role = 'view', selected = null, onConfirmArtwork = null, showArtwork = true, makeAi = 0, makeAiFolder = '' }) {
+// onMakeAiSent: called once the crystals of a makeAi are handed to the helper (or couldn't be).
+export default function CrystalPreview({ order, role = 'view', selected = null, onConfirmArtwork = null, showArtwork = true, makeAi = 0, makeAiFolder = '', onMakeAiSent = null }) {
   const frame = useRef(null);
+  const sentRef = useRef(onMakeAiSent);
+  sentRef.current = onMakeAiSent;
   const box = useRef(null);
   const [status, setStatus] = useState('waiting'); // waiting | ready | missing
   const [height, setHeight] = useState(0);
@@ -83,6 +86,7 @@ export default function CrystalPreview({ order, role = 'view', selected = null, 
       if (e.origin !== window.location.origin || !frame.current || e.source !== frame.current.contentWindow) return;
       if (e.data?.type === 'crystal-studio-ready') { setStatus('ready'); setReadyTick((n) => n + 1); }
       if (e.data?.type === 'crystal-studio-height') setHeight(e.data.height);
+      if (e.data?.type === 'crystal-make-ai-sent') sentRef.current?.();
     };
     window.addEventListener('message', onMessage);
     const t = setTimeout(() => setStatus((s) => (s === 'waiting' ? 'missing' : s)), READY_TIMEOUT_MS);

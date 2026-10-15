@@ -29,6 +29,7 @@ const KIV_FLASH_MS = 1700;
 const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: false, matrix: false, jenisPlak: false };
 // Production may still drag the Reference Sample rows into a new order — nothing else.
 const REORDER_ONLY = { ...READONLY, lineOrder: true };
+const CRYSTAL_SEND_WAIT_MS = 3 * 60 * 1000; // Generate AI File: how long the plaques wait for the crystals to be sent
 
 export default function ProductionOrderDetail() {
   const { state, ensureOrderLoaded, loadCorrectedExcelPreview, updateReferenceOrder, markReviewDone, markAddOnReviewed } = useAppState();
@@ -254,6 +255,8 @@ export default function ProductionOrderDetail() {
   const [printedAt, setPrintedAt] = useState(null);
   const [pickedCrystal, setPickedCrystal] = useState(null); // a crystal row clicked in the price table
   const [crystalMakeAi, setCrystalMakeAi] = useState(0); // bumped: the Crystal Preview opens the crystals in Illustrator
+  const crystalSent = useRef(null); // resolves when the preview has handed the crystals to the helper
+  const [crystalPrep, setCrystalPrep] = useState(false);
   // Which price table is open for adjusting: 'order' or 'addon'.
   const [priceEditor, setPriceEditor] = useState(null);
   const togglePrices = (which) => setPriceEditor((open) => (open === which ? null : which));
@@ -367,7 +370,18 @@ export default function ProductionOrderDetail() {
         window.alert(`This computer can't find the AI FILE folder:\n${status.aiFileDir}`);
         return;
       }
-      if (crystalsHere) setCrystalMakeAi((n) => n + 1);
+      // Crystals first, while this page is still on screen: the plaques bring Illustrator to the
+      // front, and in a background tab the browser all but stops the preview drawing them
+      // (ORD-9016, Sean 2026-10-15). Plaques go once the crystals are handed over (or after 3 min).
+      if (crystalsHere) {
+        setCrystalPrep(true);
+        await new Promise((resolve) => {
+          const t = setTimeout(resolve, CRYSTAL_SEND_WAIT_MS);
+          crystalSent.current = () => { clearTimeout(t); crystalSent.current = null; resolve(); };
+          setCrystalMakeAi((n) => n + 1);
+        });
+        setCrystalPrep(false);
+      }
       if (!combinedOk) return;
       const id = await startAiFileHelperJob(buildCombinedCsvFilename(order), rowsToCsv(combinedRows));
       setAiFileJob({ id, status: 'queued', message: '', files: [] });
@@ -567,7 +581,7 @@ export default function ProductionOrderDetail() {
             {partialSplitNotes.map((note) => (
               <p key={note} className="hint-text" style={{ color: '#b45309', marginTop: 'var(--space-2)' }}>{note}</p>
             ))}
-            <CrystalPreview order={order} role="production" selected={pickedCrystal} makeAi={crystalMakeAi} makeAiFolder={buildCombinedCsvFilename(order).replace(/\.csv$/i, '')} />
+            <CrystalPreview order={order} role="production" selected={pickedCrystal} makeAi={crystalMakeAi} makeAiFolder={buildCombinedCsvFilename(order).replace(/\.csv$/i, '')} onMakeAiSent={() => crystalSent.current?.()} />
 
             {selempangBlocks.length > 0 && (
               <div style={{ marginTop: 'var(--space-6)' }}>
@@ -609,7 +623,7 @@ export default function ProductionOrderDetail() {
                       type="button" className="btn" style={{ marginTop: 8 }}
                       disabled={!generateOk || aiFileBusy} onClick={handleGenerateAiFile}
                     >
-                      {aiFileChecking ? 'Checking this computer…' : activeAiFileJobId ? '⏳ Generating…' : '🖨 Generate AI File'}
+                      {crystalPrep ? '⏳ Preparing the crystals — keep this page in front…' : aiFileChecking ? 'Checking this computer…' : activeAiFileJobId ? '⏳ Generating…' : '🖨 Generate AI File'}
                     </button>
                     <p className="hint-text" style={{ marginTop: 4 }}>
                       Runs this same combined CSV in Illustrator on this computer — it needs the AI File helper installed and the NAS AI FILE folder reachable here. Type your name when Illustrator asks.
