@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { matchesOrderSearch } from './orderSearch';
 
 const order = {
-  id: 'ORD-0023', sekolah: 'SK SG SERAI KUANG', invoiceId: 'INV-1001',
+  id: 'ORD-0023', sekolah: 'SK SG SERAI KUANG', invoiceId: 'INV-1001', sales: 'Maggie', salesmanId: '749a4a89-1701-46c2',
   invoiceGroups: [{ invoiceId: 'INV-2002', jenisPlak: ['PKC 246'] }],
 };
 
@@ -16,6 +16,16 @@ describe('matchesOrderSearch', () => {
     expect(matchesOrderSearch(order, '0023')).toBe(true);
     expect(matchesOrderSearch(order, 'inv-1001')).toBe(true);
     expect(matchesOrderSearch(order, '2002')).toBe(true);
+  });
+
+  it('matches the salesman by name or account ID', () => {
+    expect(matchesOrderSearch(order, 'magg')).toBe(true);
+    expect(matchesOrderSearch(order, '749A4A89')).toBe(true);
+  });
+
+  it('treats special characters as plain text', () => {
+    expect(matchesOrderSearch(order, '.*')).toBe(false);
+    expect(matchesOrderSearch({ ...order, sekolah: 'SK (A) & B' }, '(a) &')).toBe(true);
   });
 
   it('matches nothing for a blank query or another school', () => {

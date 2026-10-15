@@ -10,6 +10,7 @@ import { countReservedPlaques, needsKiv, kivParts, hasMainPart, kivInProduction,
 import { prioritizeUrgentOrders } from '../utils/urgentOrder';
 import OrderUrgentBadge from '../components/OrderUrgentBadge';
 import AddOnTag from '../components/AddOnTag';
+import { matchesOrderSearch } from '../utils/orderSearch';
 import { duplicateSummary } from '../utils/duplicateOrders';
 import ProductionInvoiceEntry from '../components/ProductionInvoiceEntry';
 
@@ -79,6 +80,12 @@ export default function ProductionDashboard() {
   // date — useful across all three tabs (what's coming up in Pending
   // Invoice, what's ready to ship today, what already went out).
   const [shipmentDateFilter, setShipmentDateFilter] = useState('');
+  // Search Order (Sean, 2026-10-15): Order ID, Invoice Number, school or salesman, across every
+  // tab — the orders this account may see (RLS: the manager all, a team account its salesmen's).
+  // ponytail: searches the loaded orders (fetchOrders' newest 500); add a server-side ilike
+  // search once Production sees more than that.
+  const [search, setSearch] = useState('');
+  const searchResults = search.trim() ? state.orders.filter((ord) => matchesOrderSearch(ord, search)) : null;
 
 
   const lowStockAlerts = getLowStockAlerts(state.plakCatalog);
@@ -162,6 +169,53 @@ export default function ProductionDashboard() {
         </div>
       )}
 
+      <div className="field" style={{ maxWidth: 520, marginBottom: 'var(--space-4)' }}>
+        <label htmlFor="productionOrderSearch">Search Order</label>
+        <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
+          <span aria-hidden="true" style={{ fontSize: 18 }}>🔍</span>
+          <input
+            className="input" id="productionOrderSearch" type="search" value={search} onChange={(e) => setSearch(e.target.value)}
+            placeholder="Order ID, Invoice Number, school or salesman — e.g. SK Sungai"
+            style={{ flex: 1 }}
+          />
+          {search && <button type="button" className="btn btn-ghost" onClick={() => setSearch('')}>✕ Clear</button>}
+        </div>
+      </div>
+
+      {searchResults ? (
+        <>
+          <div className="card-kicker">Search results ({searchResults.length})</div>
+          {searchResults.length === 0 ? (
+            <p className="hint-text">No order matches “{search.trim()}”.</p>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table className="table">
+                <thead>
+                  <tr><th>Order ID</th><th>Invoice Number</th><th>School</th><th>Salesman</th><th>Shipment Date</th><th>Status</th><th /></tr>
+                </thead>
+                <tbody>
+                  {searchResults.map((ord) => (
+                    <tr key={ord.id}>
+                      <td>{ord.id}</td>
+                      <td>{[ord.invoiceId, ...(ord.invoiceGroups || []).map((g) => g.invoiceId)].filter(Boolean).map((inv) => invoiceLabel(ord, inv)).join(', ') || '—'}</td>
+                      <td>{ord.sekolah || '—'}</td>
+                      <td>{ord.sales || '—'}</td>
+                      <td>{ord.shipmentDate ? formatDate(toMalaysiaDay(ord.shipmentDate)) : '—'}</td>
+                      <td><span className="status-pill" style={statusPillStyle(ord.status)}>{ord.status}</span></td>
+                      <td>
+                        <button type="button" className="btn btn-ghost" onClick={() => navigate(`/production/orders/${ord.id}${ord.invoiceId ? `?invoice=${encodeURIComponent(ord.invoiceId)}` : ''}`)}>
+                          View Order
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      ) : (
+        <>
       <div className="tabs" style={{ marginBottom: 'var(--space-4)' }}>
         {TABS.map((t) => {
           const count = orderSlices.filter((o) => t.match(o, today)).length;
@@ -359,6 +413,8 @@ export default function ProductionDashboard() {
           );
         })}
       </div>
+        </>
+      )}
     </div>
   );
 }
