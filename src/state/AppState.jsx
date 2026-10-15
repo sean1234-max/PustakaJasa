@@ -2932,8 +2932,11 @@ export function AppStateProvider({ children }) {
   // the block's lines — so every CSV / AI file for the category follows it.
   const updateReferenceOrder = useCallback(async (orderId, refOrderKey, value) => {
     const order = stateRef.current.orders.find((o) => o.id === orderId);
-    if (!order || !refOrderKey.endsWith('::refOrder')) return false;
-    const blockPrefix = refOrderKey.slice(0, -'refOrder'.length);
+    // the row order (refOrder), or Production's MERAH ticks while reviewing (redLines)
+    const field = refOrderKey.endsWith('::refOrder') ? 'refOrder'
+      : refOrderKey.endsWith('::redLines') && order?.status === 'Reviewing Order' ? 'redLines' : null;
+    if (!order || !field) return false;
+    const blockPrefix = refOrderKey.slice(0, -field.length);
     const items = (order.items || []).map((it) => (
       it.detail && `${it.categoryKey}::${it.blockIdx ?? 0}::` === blockPrefix
         ? { ...it, detail: { ...it.detail, lines: { ...(it.detail.lines || {}), [refOrderKey]: value } } }

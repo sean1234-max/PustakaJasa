@@ -430,6 +430,11 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
                     )}
                     {ln.typoHint && <TypoHint hint={ln.typoHint} canChoose={editable.lines} />}
                   </div>
+                  {ln.redPick && editable.redLines && (
+                    <label style={{ flex: 'none', marginTop: 8, fontSize: 12, color: '#c0392b', whiteSpace: 'nowrap' }}>
+                      <input type="checkbox" checked={ln.redPick.checked} onChange={ln.redPick.toggle} /> MERAH
+                    </label>
+                  )}
                   {ln.umumRed && editable.lines && (
                     <label style={{ flex: 'none', marginTop: 8, fontSize: 12, color: '#c0392b', whiteSpace: 'nowrap' }}>
                       <input type="checkbox" checked={ln.umumRed.checked} onChange={ln.umumRed.toggle} /> MERAH
@@ -451,6 +456,9 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
               ))}
             </div>
           </div>
+          {editable.redLines && blk.redLinesProblem && (
+            <p className="hint-text" style={{ color: '#b0392e', fontWeight: 600 }}>⚠ {blk.redLinesProblem}</p>
+          )}
           {editable.lines && (blk.addReferenceLine || blk.addTajukLine2) && (
             <div className="row-actions" style={{ marginTop: 'var(--space-2)', display: 'flex', gap: 8 }}>
               {blk.canAddReferenceLine && (

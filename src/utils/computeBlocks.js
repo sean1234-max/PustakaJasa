@@ -8,6 +8,7 @@ import {
 } from '../data/catalog';
 import { findPossibleTypo, replaceWord } from './typoCheck';
 import { umumSlotFields, umumRedSlots, UMUM_NO_RED } from './umumLines';
+import { storedRedSlots, redPickFor, redLinesProblem, RED_LINES_SUFFIX } from './redLines';
 
 // Assigns each Reference Sample line its displayed number, 1..N — except
 // TAJUK BESAR's own continuation line (slot 0b), which always takes slot
@@ -189,9 +190,18 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
     // Which Reference Sample rows print red: the category's own `redSlots`
     // (MP THP: ACARA only; ALIRAN: the KEDUDUKAN line) or, by default, ACARA
     // and its second box.
-    const isRedSlot = (slotId) => (currentCat.redSlots
+    // Production's own MERAH ticks (redLines.js) win over both.
+    const blockPrefix = `${catKey}::${b}::`;
+    const ownRed = umumContoh ? null : storedRedSlots(lineValues, blockPrefix);
+    const isRedSlot = (slotId) => (ownRed ? ownRed.includes(slotId) : currentCat.redSlots
       ? currentCat.redSlots.includes(slotId)
       : !!currentCat.positionFieldsRedText && (slotId === '2' || slotId === '2b'));
+    // MERAH beside a row (Production, while reviewing): ticking stores the whole list
+    const redPick = (slotId) => {
+      if (umumContoh) return null;
+      const pick = redPickFor(lineValues, blockPrefix, currentCat, slotId);
+      return pick && { checked: pick.checked, toggle: () => updaters.onLine(`${blockPrefix}${RED_LINES_SUFFIX}`, pick.value) };
+    };
     const rawLines = catLinePlaceholders.map((placeholder, i) => {
       const key = `${catKey}::${b}::${i}`;
       const slotId = `${i}`;
@@ -208,6 +218,7 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
         // catalog.js's positionFieldsRedText) since it's the position text
         // that actually gets engraved; every other line stays plain.
         redText: umumFields ? umumRed.includes(`${i}`) : isRedSlot(slotId),
+        redPick: redPick(slotId),
         // UMUM's own per-line MERAH toggle (the sheet's WARNA MERAH? column):
         // ticked = red; unticking the red line makes it black.
         umumRed: umumFields ? {
@@ -230,6 +241,7 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
         line.secondLine = {
           key: key2, slotId: '2b', placeholder: catPositionLine2Placeholder, value: lineValues[key2] || '',
           redText: isRedSlot('2b'),
+          redPick: redPick('2b'),
           onChange: (val) => updaters.onLine(key2, val),
           typoHint: typoOf(lineValues[key2]),
           // Deletable now (a named-recipient roster import — see
@@ -769,6 +781,7 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
       qtyColHeader: isMatrix ? 'QTY' : (currentCat.qtyColumnLabels?.[b] || currentCat.qtyColumnLabels?.[0] || 'QTY'),
       sampleSlotId: `sample-${catKey}-${b}`,
       lines, isMatrix, isDynamicMatrix,
+      redLinesProblem: redLinesProblem(lineValues, `${catKey}::${b}::`, currentCat),
       // Main Template's "+ Add Reference Row" (see the extraRefLines note
       // above) and the matching cap on Kuantiti's own "+ Add Row" — capped
       // at `cat.maxReferenceLines` (falls back to 5) total VISIBLE lines.
