@@ -146,6 +146,9 @@ export default function SalesDashboard() {
           <div className="order-grid">
             {filteredOrders.map((ord) => {
               const cardFilter = cardFilterOf(ord);
+              // Add-On Pending Approval: the card's amount is the Tambahan alone (Sean, 2026-10-17)
+              const addonCard = cardFilter === ADDON_FILTER;
+              const shownAmount = addonCard ? (ord.pendingAddonItems || []).reduce((n, it) => n + (Number(it.harga) || 0), 0) : ord.totalAmount;
               const readyToApprove = ord.status === 'Reviewing Order' && !!ord.reviewedAt;
               const pendingReview = readyToApprove || (cardFilter === ADDON_FILTER && isAddonInFlight(ord));
               const { canAmend, canAddOn } = actionsFor(ord);
@@ -191,9 +194,9 @@ export default function SalesDashboard() {
                   </div>
 
                   <div className="order-card-invoice"><span className="dim">Invoice Number:</span> {invoiceLabel(ord) || '—'}</div>
-                  <div className="dim" style={{ fontSize: 11 }}>Total Amount</div>
-                  <div className={`order-card-total${ord.priceAdjusted ? ' amount-adjusted' : ''}`}>
-                    RM {ord.totalAmount.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  <div className="dim" style={{ fontSize: 11 }}>{addonCard ? 'Tambahan Amount' : 'Total Amount'}</div>
+                  <div className={`order-card-total${!addonCard && ord.priceAdjusted ? ' amount-adjusted' : ''}`}>
+                    RM {shownAmount.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </div>
 
                   <div className="order-card-actions" style={{ display: 'flex', gap: 'var(--space-2)' }}>

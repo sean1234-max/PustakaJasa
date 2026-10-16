@@ -238,6 +238,12 @@ export default function ProductionDashboard() {
         {filteredOrders.map((ord) => {
           const stamp = getOrderChangeStamp(ord);
           const cardTab = cardTabOf(ord);
+          // Add-On Review: the card is the Tambahan alone — its own qty, amount, Shipment Date (Sean, 2026-10-17)
+          const addonCard = cardTab === 'addon';
+          const addonItems = addonCard ? ord.pendingAddonItems || [] : [];
+          const shownQty = addonCard ? addonItems.reduce((n, it) => n + (Number(it.qty) || 0), 0) : ord.totalQty;
+          const shownAmount = addonCard ? addonItems.reduce((n, it) => n + (Number(it.harga) || 0), 0) : ord.totalAmount;
+          const shownShip = addonCard && ord.pendingAddonShipmentDate ? ord.pendingAddonShipmentDate : ord.shipmentDate;
           const isKivCard = ord._part === 'kiv';
           const parts = kivParts(ord);
           const reserved = countReservedPlaques(ord);
@@ -293,7 +299,7 @@ export default function ProductionDashboard() {
               {isKivCard && parts.filter((part) => cardTab !== 'typing' || part !== 'SHORT SUPPLY').map((part) => (
                 <div key={part} className="order-stamp-inline" style={{ marginTop: 'var(--space-1)' }}>{part}</div>
               ))}
-              {kivPending && <div className="hint-text" style={{ margin: '4px 0 0', fontWeight: 600, color: '#8a6d00' }}>Waiting: {parts.join(' / ')}</div>}
+              {kivPending && !addonCard && <div className="hint-text" style={{ margin: '4px 0 0', fontWeight: 600, color: '#8a6d00' }}>Waiting: {parts.join(' / ')}</div>}
               {isKivCard && parts.includes('CRYSTAL') && !ord.artworkConfirmedAt && (
                 <div className="hint-text" style={{ margin: '4px 0 0', fontWeight: 600, color: '#b45309' }}>Artwork not confirmed yet</div>
               )}
@@ -304,17 +310,17 @@ export default function ProductionDashboard() {
               <div className="order-card-meta">
                 <div><div className="dim">Date Placed</div><div>{ord.datePlaced}</div></div>
                 <div><div className="dim">Sales</div><div>{ord.sales || '—'}</div></div>
-                <div><div className="dim">Shipment Date</div><div>{ord.shipmentDate ? formatDate(toMalaysiaDay(ord.shipmentDate)) : '—'}</div></div>
+                <div><div className="dim">Shipment Date</div><div>{shownShip ? formatDate(toMalaysiaDay(shownShip)) : '—'}</div></div>
                 <div>
-                  <div className="dim">Total QTY</div>
-                  <div className="order-card-qty">{ord.totalQty}</div>
+                  <div className="dim">{addonCard ? 'Tambahan QTY' : 'Total QTY'}</div>
+                  <div className="order-card-qty">{shownQty}</div>
                 </div>
               </div>
 
               <div className="order-card-invoice"><span className="dim">Invoice ID:</span> {invoiceLabel(ord) || '—'}</div>
               {cardTab === 'approved' && <ProductionInvoiceEntry order={ord} />}
-              <div className="dim" style={{ fontSize: 11 }}>Total Amount</div>
-              <div className={`order-card-total${ord.priceAdjusted ? ' amount-adjusted' : ''}`}>RM {ord.totalAmount.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+              <div className="dim" style={{ fontSize: 11 }}>{addonCard ? 'Tambahan Amount' : 'Total Amount'}</div>
+              <div className={`order-card-total${!addonCard && ord.priceAdjusted ? ' amount-adjusted' : ''}`}>RM {shownAmount.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
 
               <div className="order-card-actions" style={cardTab === 'active' || cardTab === 'typing' || cardTab === 'reviewing' || cardTab === 'addon' || cardTab === 'kiv' ? { display: 'flex', gap: 'var(--space-2)' } : undefined}>
                 {cardTab === 'reviewing' && (
@@ -333,7 +339,7 @@ export default function ProductionDashboard() {
                 )}
                 {cardTab === 'addon' && (
                   <>
-                    <button type="button" className="btn btn-ghost" style={{ flex: 1 }} onClick={() => navigate(`/production/orders/${ord.id}`)}>
+                    <button type="button" className="btn btn-ghost" style={{ flex: 1 }} onClick={() => navigate(`/production/orders/${ord.id}?addon=1`)}>
                       View Order
                     </button>
                     {ord.pendingAddonStatus === 'pending' && (

@@ -108,7 +108,10 @@ export default function ProductionOrderDetail() {
   // Opened from a KIV card in Typing (?part=kiv, Sean 2026-10-17): only what that card makes —
   // its crystals and the plaques whose Reserved names came after typing (lateNamesOrder).
   const kivCardView = searchParams.get('part') === 'kiv' && !!order;
+  // Opened from an Add-On Review card (?addon=1, Sean 2026-10-17): the Tambahan alone.
+  const addonView = searchParams.get('addon') === '1' && !!order && isAddonInFlight(order);
   const effectiveOrder = useMemo(() => {
+    if (addonView) return { ...order, items: order.pendingAddonItems || [] };
     if (kivCardView) {
       const crystals = kivParts(order).includes('CRYSTAL') ? (order.items || []).filter((it) => isCrystalCode(it.jenisPlak)) : [];
       return { ...order, items: [...crystals, ...(lateNamesOrder(order)?.items || [])] };
@@ -125,7 +128,7 @@ export default function ProductionOrderDetail() {
         : it;
     });
     return { ...order, items };
-  }, [order, correctedItems, kivCardView]);
+  }, [order, correctedItems, kivCardView, addonView]);
 
   // The row order stays changeable from submit until the Shipment Date
   // itself — a teacher may phone in a change after submitting. Saved on
@@ -513,6 +516,12 @@ export default function ProductionOrderDetail() {
           </p>
         )}
 
+        {addonView && (
+          <p className="hint-text" style={{ marginBottom: 'var(--space-3)', color: '#8a6d00', fontWeight: 600 }}>
+            TAMBAHAN — showing only this add-on{order.pendingAddonShipmentDate ? ` (Shipment Date ${formatDate(toMalaysiaDay(order.pendingAddonShipmentDate))})` : ''}.{' '}
+            <button type="button" onClick={() => navigate(`/production/orders/${order.id}`)} className="btn-link">View full order</button>
+          </p>
+        )}
         {kivCardView && (
           <p className="hint-text" style={{ marginBottom: 'var(--space-3)', color: '#8a6d00', fontWeight: 600 }}>
             KIV card — showing only what this card makes: {[kivParts(order).includes('CRYSTAL') && 'the crystals', hasLateNames(order) && 'the plaques named after typing'].filter(Boolean).join(' and ') || 'nothing yet'}.{' '}
@@ -533,7 +542,7 @@ export default function ProductionOrderDetail() {
               {order.shipmentDate && <div><div className="dim">Shipment Date</div><div>{formatDate(toMalaysiaDay(order.shipmentDate))}</div></div>}
               {order.functionDate && <div><div className="dim">Function Date</div><div>{formatDate(toMalaysiaDay(order.functionDate))}</div></div>}
               <div><div className="dim">Date Placed</div><div>{order.datePlaced}</div></div>
-              <div><div className="dim">Total Amount</div><div>RM {(isFiltered ? effectiveTotalAmount : order.totalAmount).toFixed(2)}</div></div>
+              <div><div className="dim">Total Amount</div><div>RM {(isFiltered || addonView ? effectiveTotalAmount : order.totalAmount).toFixed(2)}</div></div>
             </div>
             <ShipmentUrgencyEditor order={order} />
             {/* Not shown here before this — an import-derived note (a KIV
