@@ -111,10 +111,6 @@ export default function SalesDashboard() {
                 <tbody>
                   {searchResults.map((ord) => {
                     const { canAmend, canAddOn } = actionsFor(ord);
-              // Sean, 2026-10-17: what the salesman still owes this order, on its card
-              const live = !['Cancelled', 'Completed'].includes(ord.status);
-              const needsArtwork = live && !ord.artworkConfirmedAt && (ord.items || []).some((it) => isCrystalCode(it.jenisPlak));
-              const needsKiv = ord.status === 'In Production' && countReservedPlaques(ord) > 0;
                     return (
                       <tr key={ord.id}>
                         <td>{ord.id}</td>
@@ -167,6 +163,10 @@ export default function SalesDashboard() {
               const readyToApprove = ord.status === 'Reviewing Order' && !!ord.reviewedAt;
               const pendingReview = readyToApprove || (filter === ADDON_FILTER && isAddonInFlight(ord));
               const { canAmend, canAddOn } = actionsFor(ord);
+              // Sean, 2026-10-17: what the salesman still owes this order, on its card
+              const live = !['Cancelled', 'Completed'].includes(ord.status);
+              const needsArtwork = live && !ord.artworkConfirmedAt && (ord.items || []).some((it) => isCrystalCode(it.jenisPlak));
+              const needsKiv = ord.status === 'In Production' && countReservedPlaques(ord) > 0;
 
               return (
                 <div key={ord.id} className="card order-card">
