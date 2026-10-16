@@ -153,10 +153,11 @@ function TambahanPrintout({ order, invoiceId, printedAt, urgent, stamp, showSale
         <div className="card-kicker" style={{ marginTop: 'var(--space-3)' }}>Tambahan — Jenis Plak / Price per Unit / QTY / Harga</div>
         <PriceTable editable={false} priceDrafts={{}} setPrice={() => {}} showSelempangLines {...priceTable} />
       </div>
-      <PrintDetails groups={catBlockGroups} title="Order Details — Tambahan" flow />
       <p style={{ marginTop: 'var(--space-6)', fontSize: 14 }}>
         <strong>GRAND TOTAL (Original Order + Tambahan): RM {grandTotal.toFixed(2)}</strong>
       </p>
+      {/* page 1: details, both price tables, the total; Order Details from page 2 (Sean, 2026-10-17) */}
+      <PrintDetails groups={catBlockGroups} title="Order Details — Tambahan" />
     </div>
   );
 }
