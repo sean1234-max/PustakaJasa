@@ -413,7 +413,7 @@ function showTab(g) {
     const { g, t } = slides[at];
     // the logo: its web address (a picture pasted into the order itself only when it's small)
     const lg = typeof logoFrom.logo === "string" && (/^https?:/.test(logoFrom.logo) || logoFrom.logo.length < 300000) ? logoFrom.logo : null;
-    window.open("./index.html#order=" + encodeURIComponent(JSON.stringify({ name: g.jenis, order, role: ROLE, logo: lg, school: logoFrom.school, rows: g.tiles.map((x) => x.row), start: Math.max(0, g.tiles.indexOf(t)) })), "_blank");
+    window.open("./index.html#order=" + encodeURIComponent(JSON.stringify({ name: g.jenis, order, draft: !order, role: ROLE, logo: lg, school: logoFrom.school, rows: g.tiles.map((x) => x.row), start: Math.max(0, g.tiles.indexOf(t)) })), "_blank");
   };
   draw();
 }

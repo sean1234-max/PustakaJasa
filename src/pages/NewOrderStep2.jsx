@@ -535,7 +535,7 @@ export default function NewOrderStep2() {
               plakOptions={visiblePlakCatalog}
               isLastBlock={i === blocks.length - 1}
               flashJenisPlak={flashBlockIdx === blk.idx}
-              crystalSample={crystalsByBlock[blk.idx] && <CrystalPreview order={crystalsByBlock[blk.idx].order} role="view" showArtwork={false} />}
+              crystalSample={crystalsByBlock[blk.idx] && <CrystalPreview order={crystalsByBlock[blk.idx].order} role="teacher" showArtwork={false} />}
               hideReferenceSample={!!crystalsByBlock[blk.idx]?.only}
             />
           </div>
