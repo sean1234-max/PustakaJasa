@@ -2094,8 +2094,16 @@ export function AppStateProvider({ children }) {
     const dynamicKeys = Object.keys(next[f.visibleBlocksByCategory] || {});
     [...CATEGORIES.map((c) => c.key), ...dynamicKeys].forEach((catKey) => {
       const built = buildCategoryCartItems(draft, catKey);
-      if (built.items) items.push(...built.items);
-      else if (built.error) warnings.push(`${resolveCategory(catKey)?.label || catKey}: ${built.error}`);
+      if (built.items) { items.push(...built.items); return; }
+      if (!built.error) return;
+      // Can't be built from the file alone (e.g. a word the AI check flags that was confirmed on
+      // the order — ORD-0059's "SINA"): keep the order's own saved details for it, never drop it.
+      const label = resolveCategory(catKey)?.label || catKey;
+      const saved = (order.items || []).filter((it) => it.categoryKey === catKey);
+      items.push(...saved);
+      warnings.push(saved.length
+        ? `${label}: not read from this file (${built.error}) — using the order's saved details for it.`
+        : `${label}: ${built.error}`);
     });
     if (items.length === 0) {
       return { ok: false, message: 'Nothing recognizable in this file — no categories could be read.' };
