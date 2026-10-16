@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildPdfIr, renderPdfIrText } from './pdfIr';
-import { applyPdfReading } from './pdfMapping';
+import { applyPdfReading, applyPictureHeading } from './pdfMapping';
 
 // Made-up page: a sample label + a class list with counts, and a grid of
 // two finished labels side by side.
@@ -228,5 +228,26 @@ describe('odd label check', () => {
     }] });
     expect(res.notes.some((n) => n.includes('one label reads "SAHAJA MAHATMA GANDHI" where the others read "ANUGERAH MAHATMA GANDHI"'))).toBe(true);
     expect(res.count).toBe(3);
+  });
+});
+
+describe('applyPictureHeading', () => {
+  it('takes the picture lines where they agree with the text heading', () => {
+    const cat = {
+      a: [{ lines: { 0: 'MAJLIS APRESIASI AKADEMIK', 2: 'ANUGERAH IBNU SINA' } }],
+      b: [{ lines: { 0: 'HARI SUKAN', 2: 'JOHAN' } }],
+      c: [{ lines: { 2: 'ANUGERAH CHOLAR' } }],
+    };
+    const notes = applyPictureHeading(cat, { lines: ['SEKOLAH KEBANGSAAN TAMAN MELAWATI 2', 'MAJLIS APRESIASI AKADEMIK', '(SESI 2026)'], confidence: 'high' });
+    expect(cat.a[0].lines[0]).toBe('SEKOLAH KEBANGSAAN TAMAN MELAWATI 2\nMAJLIS APRESIASI AKADEMIK\n(SESI 2026)');
+    expect(cat.b[0].lines[0]).toBe('HARI SUKAN');
+    expect(cat.c[0].lines[0]).toBe('SEKOLAH KEBANGSAAN TAMAN MELAWATI 2\nMAJLIS APRESIASI AKADEMIK\n(SESI 2026)');
+    expect(notes).toEqual([`TAJUK BESAR: "SEKOLAH KEBANGSAAN TAMAN MELAWATI 2", "(SESI 2026)" were read from a picture of the sample label (not the PDF's text) — please check them against the PDF.`]);
+  });
+
+  it('ignores an unsure reading', () => {
+    const cat = { a: [{ lines: { 0: 'MAJLIS' } }] };
+    expect(applyPictureHeading(cat, { lines: ['SK X', 'MAJLIS'], confidence: 'low' })).toEqual([]);
+    expect(cat.a[0].lines[0]).toBe('MAJLIS');
   });
 });

@@ -21,6 +21,7 @@ import { MAPPING_SCHEMA, MAPPING_VERSION, validateMapping } from './schema.ts';
 import { PROMPT_VERSION, SYSTEM_PROMPT, buildUserPrompt } from './prompt.ts';
 import { PDF_SCHEMA, PDF_SCHEMA_VERSION, validatePdfReading } from './pdfSchema.ts';
 import { PDF_PROMPT_VERSION, PDF_SYSTEM_PROMPT, buildPdfUserPrompt } from './pdfPrompt.ts';
+import { HEADING_SCHEMA, HEADING_SYSTEM_PROMPT, HEADING_VERSION, buildHeadingUserText, validateHeading } from './headingSchema.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
@@ -35,12 +36,16 @@ const MAX_IR_CHARS = 120_000;
 const MAX_SHEETS = 30;
 const PIPELINE_VERSION = `m${MAPPING_VERSION}-p${PROMPT_VERSION}`;
 const PDF_PIPELINE_VERSION = `pdf-m${PDF_SCHEMA_VERSION}-p${PDF_PROMPT_VERSION}`;
+const HEADING_PIPELINE_VERSION = `head-${HEADING_VERSION}`;
+// kind "pdf-heading": one JPEG of the PDF's first page, base64.
+const MAX_IMAGE_CHARS = 3_000_000;
 
 // The two kinds of input this reader takes: Excel sheets the rule reader
 // skipped (phase 1) and text PDFs (phase 2). Same cache, rate limit,
 // budget and escalation; each has its own schema, prompt and version.
 type Kind = {
-  pipeline: string; schema: unknown; system: string; user: (ir: string) => string;
+  pipeline: string; schema: unknown; system: string; user: (ir: string) => string | unknown[];
+  escalate?: boolean;
   // ok + unsure (escalate) from the model's parsed answer
   check: (v: unknown) => { ok: true; value: unknown; unsure: boolean } | { ok: false; error: string };
 };
@@ -87,7 +92,8 @@ async function callModel(kind: Kind, model: string, effort: 'medium' | 'high', i
     fallbacks: 'default',
     output_config: { effort, format: { type: 'json_schema', schema: kind.schema } },
     system: [{ type: 'text', text: kind.system, cache_control: { type: 'ephemeral' } }],
-    messages: [{ role: 'user', content: kind.user(irText) }],
+    // deno-lint-ignore no-explicit-any
+    messages: [{ role: 'user', content: kind.user(irText) as any }],
   }) as unknown as {
     model: string; stop_reason: string; usage: Usage;
     content: { type: string; text?: string }[];
@@ -119,11 +125,25 @@ Deno.serve(async (req) => {
   try { body = await req.json(); } catch { return json({ error: 'Invalid request body.' }, 400); }
   const fileName = typeof body.fileName === 'string' ? body.fileName.slice(0, 200) : 'file';
   const irText = typeof body.irText === 'string' ? body.irText : '';
-  const isPdf = body.kind === 'pdf';
+  const isHeading = body.kind === 'pdf-heading';
+  const isPdf = body.kind === 'pdf' || isHeading;
   const sheetNames = Array.isArray(body.sheetNames) ? body.sheetNames.filter((s): s is string => typeof s === 'string').slice(0, MAX_SHEETS) : [];
   if (!irText || (!isPdf && sheetNames.length === 0)) return json({ error: 'Nothing to read.' }, 400);
-  if (irText.length > MAX_IR_CHARS) return json({ status: 'too-large', message: isPdf ? 'This PDF is too large for the AI reader — please add it by hand.' : 'These sheets are too large for the AI reader — please add them by hand.' });
-  const kind: Kind = isPdf
+  if (isHeading && (irText.length > MAX_IMAGE_CHARS || !irText.startsWith('/9j/'))) return json({ status: 'too-large', message: 'This page picture could not be read.' });
+  if (!isHeading && irText.length > MAX_IR_CHARS) return json({ status: 'too-large', message: isPdf ? 'This PDF is too large for the AI reader — please add it by hand.' : 'These sheets are too large for the AI reader — please add them by hand.' });
+  const kind: Kind = isHeading
+    ? {
+      pipeline: HEADING_PIPELINE_VERSION, schema: HEADING_SCHEMA, system: HEADING_SYSTEM_PROMPT, escalate: false,
+      user: (img) => [
+        { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: img } },
+        { type: 'text', text: buildHeadingUserText() },
+      ],
+      check: (v) => {
+        const c = validateHeading(v);
+        return c.ok ? { ok: true, value: c.value, unsure: false } : c;
+      },
+    }
+    : isPdf
     ? {
       pipeline: PDF_PIPELINE_VERSION, schema: PDF_SCHEMA, system: PDF_SYSTEM_PROMPT, user: buildPdfUserPrompt,
       check: (v) => {
@@ -192,7 +212,7 @@ Deno.serve(async (req) => {
     // first call already took long enough that a second one could run past
     // the function's time limit (a long PDF).
     const unsure = check.ok && check.unsure;
-    if ((!check.ok || unsure) && Date.now() - started < 50_000 && !(await budgetBlocked())) {
+    if (kind.escalate !== false && (!check.ok || unsure) && Date.now() - started < 50_000 && !(await budgetBlocked())) {
       modelUsed = ESCALATE_MODEL;
       const res2 = await callModel(kind, ESCALATE_MODEL, 'high', irText);
       add(res2.servedBy, res2.usage);

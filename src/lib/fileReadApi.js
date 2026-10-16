@@ -38,6 +38,20 @@ export async function readPdfWithAi({ fileName, irText }) {
   }
 }
 
+// The fixed header lines (school, ceremony, SESI) of a sample label the PDF
+// draws as a picture: imageBase64 is a JPEG of page 1, no "data:" prefix.
+// Resolves to { ok:true, lines, confidence } or { ok:false } — the order is
+// read without it then, as before.
+export async function readPdfHeadingWithAi({ fileName, imageBase64 }) {
+  try {
+    const { data, error } = await supabase.functions.invoke('read-order-file', { body: { kind: 'pdf-heading', fileName, irText: imageBase64 } });
+    if (error || !data || data.status !== 'succeeded' || !data.mapping) return { ok: false };
+    return { ok: true, lines: data.mapping.lines || [], confidence: data.mapping.confidence };
+  } catch {
+    return { ok: false };
+  }
+}
+
 // Admin banner (AiBudgetBanner.jsx). Resolves to null on any error.
 export async function getAiBudgetStatus() {
   try {

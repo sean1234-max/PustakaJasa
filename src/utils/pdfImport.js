@@ -1,7 +1,7 @@
-import { buildPdfIr, extractPdfPages, renderPdfIrText } from './pdfIr';
+import { buildPdfIr, extractPdfPages, renderPdfIrText, renderPdfPageJpeg } from './pdfIr';
 import { buildDocxIr } from './docxIr';
-import { applyPdfReading } from './pdfMapping';
-import { readPdfWithAi } from '../lib/fileReadApi';
+import { applyPdfReading, applyPictureHeading } from './pdfMapping';
+import { readPdfHeadingWithAi, readPdfWithAi } from '../lib/fileReadApi';
 
 // PDF orders (universal file-reader plan, phase 2: text PDFs only). The
 // browser pulls the PDF's text and positions out with pdf.js (pdfIr.js),
@@ -30,9 +30,18 @@ function loadPdfjs() {
 
 export async function parsePdfOrder(arrayBuffer, fileName) {
   let ir;
+  let picture = null;
   try {
     const pdfjs = await loadPdfjs();
-    ir = buildPdfIr(await extractPdfPages(arrayBuffer, pdfjs));
+    // Page 1 as a picture, for header lines the sample label draws as an
+    // image (school name, SESI). Rendered from a copy: pdf.js takes over
+    // the buffer it is given. Optional — the order reads without it.
+    try {
+      picture = await renderPdfPageJpeg(arrayBuffer.slice(0), pdfjs);
+    } catch (err) {
+      console.warn('Could not draw the PDF page for the header lines:', err);
+    }
+    ir = buildPdfIr(await extractPdfPages(arrayBuffer.slice(0), pdfjs));
   } catch (err) {
     console.error('Could not read PDF:', err);
     return { error: 'Could not read this PDF — please make sure it is a valid, unlocked .pdf file.' };
@@ -40,7 +49,7 @@ export async function parsePdfOrder(arrayBuffer, fileName) {
   if (ir.segments.length === 0) {
     return { error: 'This PDF has no text in it (it looks like a scan or a photo). Scans and photos are not supported yet — please add the order by hand.' };
   }
-  return readWithAi(ir, fileName, 'PDF');
+  return readWithAi(ir, fileName, 'PDF', picture);
 }
 
 // Only called after parseWordingDocx found no order table it knows.
@@ -50,10 +59,14 @@ export async function parseDocxOrderWithAi(arrayBuffer, fileName, ruleError) {
   return readWithAi(ir, fileName, 'Word file');
 }
 
-async function readWithAi(ir, fileName, what) {
-  const res = await readPdfWithAi({ fileName, irText: renderPdfIrText(ir) });
+async function readWithAi(ir, fileName, what, picture = null) {
+  const [res, heading] = await Promise.all([
+    readPdfWithAi({ fileName, irText: renderPdfIrText(ir) }),
+    picture ? readPdfHeadingWithAi({ fileName, imageBase64: picture }) : null,
+  ]);
   if (!res.ok) return { error: res.message };
   const { categorized, notes, count } = applyPdfReading(ir, res.reading);
+  if (heading?.ok) notes.push(...applyPictureHeading(categorized, heading));
   if (count === 0) return { error: `The AI found no plaques in this ${what}.${notes.length ? ` ${notes.join(' ')}` : ''}` };
   notes.unshift(`This order was read from a ${what} by the AI reader — please check every tab carefully against the ${what} before adding to cart.`);
   return { categorized, notes, klasMatrix: null, aiRead: true };

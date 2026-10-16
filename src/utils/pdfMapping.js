@@ -294,3 +294,28 @@ export function applyPdfReading(ir, reading) {
   (reading?.questions || []).forEach((q) => notes.push(String(q)));
   return { categorized, notes, count, bad };
 }
+
+// The fixed header lines of a sample label the PDF draws as a picture
+// (school, ceremony, SESI — read-order-file kind "pdf-heading"), put into
+// TAJUK BESAR. They can't be checked against the PDF's text, so they are
+// only used where they agree with what the text has: a tab whose heading
+// is empty, or whose every heading line is found in the picture's lines
+// ("MAJLIS APRESIASI AKADEMIK" in "MAJLIS APRESIASI AKADEMIK 2026"). Changes
+// `categorized` in place; returns the notes.
+export function applyPictureHeading(categorized, picture) {
+  const pic = (picture?.lines || []).map((l) => String(l).replace(/\s+/g, ' ').trim()).filter(Boolean);
+  if (!pic.length || picture.confidence === 'low') return [];
+  const sections = Object.values(categorized || {}).flatMap((list) => list || []);
+  const headingOf = (section) => String(section.lines?.['0'] || '').split('\n').map((l) => l.trim()).filter(Boolean);
+  const inText = new Set(sections.flatMap(headingOf).map(norm));
+  const added = new Set();
+  sections.forEach((section) => {
+    const own = headingOf(section);
+    const fits = own.every((t) => pic.some((p) => norm(p).includes(norm(t))));
+    if (!fits || own.join('\n') === pic.join('\n')) return;
+    pic.filter((p) => !inText.has(norm(p))).forEach((p) => added.add(p));
+    section.lines = { ...section.lines, 0: pic.join('\n') };
+  });
+  if (!added.size) return [];
+  return [`TAJUK BESAR: ${[...added].map((l) => `"${l}"`).join(', ')} ${added.size > 1 ? 'were' : 'was'} read from a picture of the sample label (not the PDF's text) — please check ${added.size > 1 ? 'them' : 'it'} against the PDF.`];
+}

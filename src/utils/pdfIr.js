@@ -35,6 +35,28 @@ export async function extractPdfPages(data, pdfjs) {
   return pages;
 }
 
+// Page `pageNo` as a JPEG (base64, no "data:" prefix), about `width` px
+// wide — for the header lines a sample label draws as a picture
+// (read-order-file kind "pdf-heading"). Browser only (needs a canvas).
+export async function renderPdfPageJpeg(data, pdfjs, { pageNo = 1, width = 1400, quality = 0.8 } = {}) {
+  const task = pdfjs.getDocument({ data: new Uint8Array(data), isEvalSupported: false });
+  try {
+    const doc = await task.promise;
+    const page = await doc.getPage(pageNo);
+    const viewport = page.getViewport({ scale: width / page.getViewport({ scale: 1 }).width });
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(viewport.width);
+    canvas.height = Math.round(viewport.height);
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    await page.render({ canvasContext: ctx, viewport }).promise;
+    return canvas.toDataURL('image/jpeg', quality).split(',')[1] || null;
+  } finally {
+    await task.destroy();
+  }
+}
+
 const clean = (s) => s.replace(/\s+/g, ' ').trim();
 
 // Items -> lines (same baseline, within half a font size) -> segments (one
