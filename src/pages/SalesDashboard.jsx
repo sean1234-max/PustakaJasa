@@ -7,6 +7,7 @@ import { matchesOrderSearch } from '../utils/orderSearch';
 import OrderUrgentBadge from '../components/OrderUrgentBadge';
 import AddOnTag from '../components/AddOnTag';
 import { prioritizeUrgentOrders } from '../utils/urgentOrder';
+import { countReservedPlaques } from '../utils/exportCsv';
 
 // Sales works one stage at a time — filter tabs map 1:1 to STATUS_STAGES.
 // A 'Reviewing Order' order can only be approved once Production has
@@ -160,6 +161,8 @@ export default function SalesDashboard() {
               const readyToApprove = ord.status === 'Reviewing Order' && !!ord.reviewedAt;
               const pendingReview = readyToApprove || (filter === ADDON_FILTER && isAddonInFlight(ord));
               const { canAmend, canAddOn } = actionsFor(ord);
+              // Sean, 2026-10-17: Reserved names still to fill in, on the card
+              const needsKiv = ord.status === 'In Production' && countReservedPlaques(ord) > 0;
 
               return (
                 <div key={ord.id} className="card order-card">
@@ -214,6 +217,13 @@ export default function SalesDashboard() {
                       <button type="button" className="btn btn-secondary" style={{ flex: 1 }} onClick={() => startAddOn(ord)}>Add On</button>
                     )}
                   </div>
+                  {needsKiv && (
+                    <div className="order-card-actions" style={{ display: 'flex', marginTop: 'var(--space-2)' }}>
+                      <button type="button" className="btn btn-secondary" style={{ flex: 1 }} onClick={() => navigate(`/sales/orders/${ord.id}?kiv=1`)}>
+                        Update KIV
+                      </button>
+                    </div>
+                  )}
                 </div>
               );
             })}

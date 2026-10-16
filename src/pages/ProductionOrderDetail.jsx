@@ -13,13 +13,14 @@ import { useAppState } from '../state/useAppState';
 import { statusPillStyle, formatDate, MANUAL_MAX_QTY, shipmentDatePassed, toMalaysiaDay, malaysiaToday, isReviewed, isAddonInFlight, invoiceLabel, invoiceSetByNote, resolveCategory } from '../data/catalog';
 import { redLinesProblem, RED_LINES_SUFFIX } from '../utils/redLines';
 import { reconstructOrderDetailGroups, reconstructBlocksForCategory, noopUpdaters } from '../utils/computeBlocks';
-import { getExportableCategories, splitOrderCategories, getOrderJenisPlakGroups, getPlakProductionMode, summarizeRowsForManual, buildCsvRows, rowsToCsv, buildCategoryCsvFilename, combineCsvRows, buildCombinedCsvFilename, validateExport, getInvoiceIdForJenisPlak, getPartialSplitNotes, needsKiv, kivInProduction, kivParts, isCrystalCode, firstKivCategory } from '../utils/exportCsv';
+import { getExportableCategories, splitOrderCategories, getOrderJenisPlakGroups, getPlakProductionMode, summarizeRowsForManual, buildCsvRows, rowsToCsv, buildCategoryCsvFilename, combineCsvRows, buildCombinedCsvFilename, validateExport, getInvoiceIdForJenisPlak, getPartialSplitNotes, needsKiv, kivInProduction, kivParts, isCrystalCode, firstKivCategory, lateNamesOrder, hasLateNames } from '../utils/exportCsv';
 import { downloadTextFile } from '../utils/downloadBlob';
 import { getInvoiceItems } from '../utils/orderBatches';
 import ImportFileButtons from '../components/ImportFileButtons';
 import ShipmentUrgencyEditor from '../components/ShipmentUrgencyEditor';
 import ProductionPriceEditor from '../components/ProductionPriceEditor';
 import ProductionInvoiceEntry from '../components/ProductionInvoiceEntry';
+import ReservedNamesForm from '../components/ReservedNamesForm';
 import { getAiFileHelperStatus, startAiFileHelperJob, getAiFileHelperJob } from '../lib/aiFileHelper';
 import { getOrderChangeStamp } from '../utils/orderStamp';
 
@@ -30,7 +31,7 @@ const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: f
 const REORDER_ONLY = { ...READONLY, lineOrder: true };
 
 export default function ProductionOrderDetail() {
-  const { state, ensureOrderLoaded, loadCorrectedExcelPreview, updateReferenceOrder, markReviewDone, markAddOnReviewed } = useAppState();
+  const { state, ensureOrderLoaded, loadCorrectedExcelPreview, updateReferenceOrder, markReviewDone, markAddOnReviewed, fillReservedNames } = useAppState();
   const { id } = useParams();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -102,7 +103,14 @@ export default function ProductionOrderDetail() {
   // Production's own Reference Sample row order and MERAH ticks
   // (updateReferenceOrder) are saved on the order's items, so they're carried
   // over onto the re-read file.
+  // Opened from a KIV card in Typing (?part=kiv, Sean 2026-10-17): only what that card makes —
+  // its crystals and the plaques whose Reserved names came after typing (lateNamesOrder).
+  const kivCardView = searchParams.get('part') === 'kiv' && !!order;
   const effectiveOrder = useMemo(() => {
+    if (kivCardView) {
+      const crystals = (order.items || []).filter((it) => isCrystalCode(it.jenisPlak));
+      return { ...order, items: [...crystals, ...(lateNamesOrder(order)?.items || [])] };
+    }
     if (!correctedItems) return order;
     const saved = Object.fromEntries((order.items || []).flatMap((it) => (
       Object.entries(it.detail?.lines || {}).filter(([k]) => k.endsWith('::refOrder') || k.endsWith('::redLines'))
@@ -115,7 +123,7 @@ export default function ProductionOrderDetail() {
         : it;
     });
     return { ...order, items };
-  }, [order, correctedItems]);
+  }, [order, correctedItems, kivCardView]);
 
   // The row order stays changeable from submit until the Shipment Date
   // itself — a teacher may phone in a change after submitting. Saved on
@@ -478,6 +486,14 @@ export default function ProductionOrderDetail() {
             </button>
           </p>
         )}
+
+        {kivCardView && (
+          <p className="hint-text" style={{ marginBottom: 'var(--space-3)', color: '#8a6d00', fontWeight: 600 }}>
+            KIV card — showing only what this card makes: {[kivParts(order).includes('CRYSTAL') && 'the crystals', hasLateNames(order) && 'the plaques named after typing'].filter(Boolean).join(' and ') || 'nothing yet'}.{' '}
+            <button type="button" onClick={() => navigate(`/production/orders/${order.id}`)} className="btn-link">View full order</button>
+          </p>
+        )}
+        <ReservedNamesForm order={order} onSave={(names) => fillReservedNames(order.id, names)} />
 
         {page === 'summary' ? (
           <>

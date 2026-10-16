@@ -63,6 +63,7 @@ function toDbOrder(order) {
     kiv_done_at: order.kivDoneAt ?? null,
     plak_done_at: order.plakDoneAt ?? null,
     kiv_production_done_at: order.kivProductionDoneAt ?? null,
+    kiv_filled_rows: order.kivFilledRows ?? null,
     salesman_delivery: !!order.salesmanDelivery,
   };
 }
@@ -120,6 +121,7 @@ function fromDbOrder(row) {
     kivDoneAt: row.kiv_done_at || null,
     plakDoneAt: row.plak_done_at || null,
     kivProductionDoneAt: row.kiv_production_done_at || null,
+    kivFilledRows: row.kiv_filled_rows || null,
     salesmanDelivery: !!row.salesman_delivery,
     parentOrderId: row.parent_order_id || null,
   };

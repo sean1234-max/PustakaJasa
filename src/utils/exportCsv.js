@@ -110,10 +110,27 @@ export const isCrystalCode = (code) => /^CRYSTAL \//i.test(String(code || '').tr
 const itemAllReserved = (it) => Array.isArray(it.detail?.rows) && it.detail.rows.length > 0
   && it.detail.rows.every((r) => isReservedName(r.namaMurid));
 
+// Reserved names filled in after the plaques were typed (0097 kiv_filled_rows, row ids):
+// made on the KIV card, in Typing, once no Reserved name is left (Sean, 2026-10-17).
+const filledRowIds = (order) => new Set(Array.isArray(order?.kivFilledRows) ? order.kivFilledRows : []);
+export const hasLateNames = (order) => countReservedPlaques(order) === 0 && filledRowIds(order).size > 0;
+
+// The KIV card's own plaques: only the rows named after typing (none = null).
+export function lateNamesOrder(order) {
+  const ids = filledRowIds(order);
+  if (!hasLateNames(order)) return null;
+  const items = (order.items || []).flatMap((it) => {
+    const rows = (Array.isArray(it.detail?.rows) ? it.detail.rows : []).filter((r) => ids.has(r.id));
+    if (rows.length === 0) return [];
+    return [{ ...it, qty: rows.reduce((n, r) => n + (Number(r.qty) || 0), 0), detail: { ...it.detail, rows } }];
+  });
+  return { ...order, items };
+}
+
 // What the KIV & ARTWORK card is for: SHORT SUPPLY and/or CRYSTAL ([] = none).
 export function kivParts(order) {
   const parts = [];
-  if (countReservedPlaques(order) > 0) parts.push('SHORT SUPPLY');
+  if (countReservedPlaques(order) > 0 || hasLateNames(order)) parts.push('SHORT SUPPLY');
   if ((order?.items || []).some((it) => isCrystalCode(it.jenisPlak))) parts.push('CRYSTAL');
   return parts;
 }
@@ -123,9 +140,15 @@ export function hasPlakPart(order) {
   return (order?.items || []).some((it) => !isCrystalCode(it.jenisPlak) && !itemAllReserved(it));
 }
 
-// Still waiting in the KIV & ARTWORK tab.
+// The KIV card's part not made yet (in the KIV & ARTWORK tab, or in Typing — kivInTyping).
 export function needsKiv(order) {
   return !order?.kivDoneAt && kivParts(order).length > 0;
+}
+
+// KIV & ARTWORK only waits, look-only (Sean, 2026-10-17): for the Reserved names. None
+// left: the card (late names, crystals) is in Typing.
+export function kivInTyping(order) {
+  return needsKiv(order) && countReservedPlaques(order) === 0;
 }
 
 // Its KIV & ARTWORK card is in In Production, not Done yet.

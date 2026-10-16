@@ -1,5 +1,5 @@
-import { useState, useMemo, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useState, useMemo, useEffect, useRef } from 'react';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import Nav from '../components/Nav';
 import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
@@ -12,7 +12,8 @@ import { statusPillStyle, standardUnitPrice, formatDate, defaultShipmentDate, to
 import CancelOrderControl from '../components/CancelOrderControl';
 import ReassignSalesmanControl from '../components/ReassignSalesmanControl';
 import { reconstructBlocksForCategory } from '../utils/computeBlocks';
-import { splitOrderCategories } from '../utils/exportCsv';
+import { splitOrderCategories, firstKivCategory } from '../utils/exportCsv';
+import ReservedNamesForm from '../components/ReservedNamesForm';
 import { getOrderChangeStamp } from '../utils/orderStamp';
 import { isUrgentShipment } from '../utils/urgentOrder';
 
@@ -20,8 +21,10 @@ import { isUrgentShipment } from '../utils/urgentOrder';
 // already submitted, it never edits the underlying order/category data.
 const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: false, matrix: false, jenisPlak: false };
 
+const KIV_FLASH_MS = 1700; // 3 flashes (index.css .tab-flash / .kiv-row-flash)
+
 export default function SalesOrderSummary() {
-  const { state, today, approveOrder, approveAddOn, rejectAddOn, recordPrint, ensureOrderLoaded, loadCorrectedExcelPreview, openAmend, openAddOn } = useAppState();
+  const { state, today, approveOrder, approveAddOn, rejectAddOn, recordPrint, ensureOrderLoaded, loadCorrectedExcelPreview, openAmend, openAddOn, fillReservedNames } = useAppState();
   const { id } = useParams();
   const navigate = useNavigate();
   const order = state.orders.find((o) => o.id === id);
@@ -130,6 +133,25 @@ export default function SalesOrderSummary() {
   );
   const [activeCat, setActiveCat] = useState(() => categories[0]?.key || '');
   const currentCat = categories.find((c) => c.key === activeCat) || categories[0];
+
+  // The dashboard's Update KIV (?kiv=1, Sean 2026-10-17): straight to Order Details, on the first
+  // category with a RESERVE / RESERVED / KIV row — its tab and those rows flash 3 times. Once per order.
+  const [searchParams] = useSearchParams();
+  const fromKiv = searchParams.get('kiv') === '1';
+  const [kivFlash, setKivFlash] = useState(null); // the flashing category's key
+  const kivHandledFor = useRef(null);
+  useEffect(() => {
+    if (!fromKiv || !effectiveOrder || kivHandledFor.current === effectiveOrder.id) return;
+    kivHandledFor.current = effectiveOrder.id;
+    const key = firstKivCategory(effectiveOrder, categories.map((c) => c.key));
+    setPage('details');
+    if (key) { setActiveCat(key); setKivFlash(key); }
+  }, [fromKiv, effectiveOrder, categories]);
+  useEffect(() => {
+    if (!kivFlash) return undefined;
+    const t = setTimeout(() => setKivFlash(null), KIV_FLASH_MS);
+    return () => clearTimeout(t);
+  }, [kivFlash]);
   const catBlocks = useMemo(() => {
     if (!effectiveOrder || !currentCat) return [];
     return reconstructBlocksForCategory(effectiveOrder, currentCat.key, state.plakCatalog).blocks;
@@ -456,6 +478,7 @@ export default function SalesOrderSummary() {
                   {correctedError ? `⚠ ${correctedError} — showing the original data instead.` : 'Production uploaded a corrected Excel — showing that version below, not the teacher\'s original.'}
                 </p>
               )}
+              <ReservedNamesForm order={order} onSave={(names) => fillReservedNames(order.id, names)} />
               {categories.length === 0 && selempangBlocks.length === 0 ? (
                 <p className="hint-text" style={{ marginTop: 'var(--space-3)' }}>No category details found for this order.</p>
               ) : (
@@ -464,10 +487,10 @@ export default function SalesOrderSummary() {
                     <>
                       <div className="card-kicker" style={{ marginBottom: 'var(--space-2)' }}>Anugerah</div>
                       <div style={{ margin: 'var(--space-1) 0 var(--space-3)' }}>
-                        <CategoryTabs categories={categories} active={currentCat?.key} onSelect={setActiveCat} />
+                        <CategoryTabs categories={categories} active={currentCat?.key} onSelect={setActiveCat} flashKey={kivFlash} />
                       </div>
                       {catBlocks.map((blk) => (
-                        <OrderCategoryBlock key={blk.idx} blk={blk} editable={READONLY} />
+                        <OrderCategoryBlock key={blk.idx} blk={blk} editable={READONLY} flashKivRows={!!kivFlash} />
                       ))}
                     </>
                   )}

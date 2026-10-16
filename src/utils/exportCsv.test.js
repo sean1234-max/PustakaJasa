@@ -1128,3 +1128,30 @@ describe('KIV & ARTWORK View Order — which category / rows to flash', () => {
     expect(firstKivCategory({ items: [{ categoryKey: 'X' }] }, ['X'])).toBe(null);
   });
 });
+
+describe('KIV: Reserved names filled in after typing (0097)', () => {
+  const tokoh = (rows) => ({ id: 'i1', categoryKey: 'TOKOH_SHEET', jenisPlak: 'PKC 246', qty: rows.reduce((n, r) => n + r.qty, 0), detail: { rows } });
+  const base = { status: 'In Production', typedAt: '2026-10-17T00:00:00Z' };
+
+  it('waits in KIV & ARTWORK while a Reserved name is left', async () => {
+    const { needsKiv, kivInTyping } = await import('./exportCsv');
+    const order = { ...base, items: [tokoh([{ id: 'a', namaMurid: 'ALI', qty: 1 }, { id: 'b', namaMurid: 'Reserved', qty: 2 }])] };
+    expect([needsKiv(order), kivInTyping(order)]).toEqual([true, false]);
+  });
+
+  it('goes to Typing with only the late-named rows once none is left', async () => {
+    const { kivInTyping, lateNamesOrder } = await import('./exportCsv');
+    const order = { ...base, kivFilledRows: ['b'], items: [tokoh([{ id: 'a', namaMurid: 'ALI', qty: 1 }, { id: 'b', namaMurid: 'ABU', qty: 2 }])] };
+    expect(kivInTyping(order)).toBe(true);
+    const late = lateNamesOrder(order);
+    expect(late.items[0].detail.rows.map((r) => r.id)).toEqual(['b']);
+    expect(late.items[0].qty).toBe(2);
+  });
+
+  it('has no KIV card when the names came before typing; crystals alone go to Typing', async () => {
+    const { kivParts, lateNamesOrder, kivInTyping } = await import('./exportCsv');
+    const order = { ...base, typedAt: null, items: [tokoh([{ id: 'a', namaMurid: 'ALI', qty: 1 }])] };
+    expect([kivParts(order), lateNamesOrder(order)]).toEqual([[], null]);
+    expect(kivInTyping({ ...base, items: [{ id: 'c', jenisPlak: 'CRYSTAL / SA4 / DESIGN A', qty: 1 }] })).toBe(true);
+  });
+});

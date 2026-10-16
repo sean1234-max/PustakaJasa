@@ -6,7 +6,7 @@ import { useAppState } from '../state/useAppState';
 import { statusPillStyle, formatDate, getLowStockAlerts, toMalaysiaDay, isAddonInFlight, invoiceLabel } from '../data/catalog';
 import { getOrderChangeStamp } from '../utils/orderStamp';
 import { getOrderInvoiceSlices } from '../utils/orderBatches';
-import { countReservedPlaques, needsKiv, kivParts, hasPlakPart, kivInProduction } from '../utils/exportCsv';
+import { countReservedPlaques, needsKiv, kivParts, hasPlakPart, kivInProduction, kivInTyping } from '../utils/exportCsv';
 import { prioritizeUrgentOrders } from '../utils/urgentOrder';
 import OrderUrgentBadge from '../components/OrderUrgentBadge';
 import AddOnTag from '../components/AddOnTag';
@@ -40,8 +40,9 @@ const TABS = [
   // after Done Review until the salesman approves it.
   { key: 'addon', label: 'Add-On Review', match: (o) => main(o) && o._primarySlice && isAddonInFlight(o) },
   { key: 'approved', label: 'Salesman Approved', match: (o) => main(o) && o.status === 'Salesman Approved' },
-  { key: 'typing', label: 'Typing', match: (o) => main(o) && o.status === 'In Production' && hasPlakPart(o) && !o.typedAt },
-  { key: 'kiv', label: 'KIV & ARTWORK', match: (o) => o._part === 'kiv' && o.status === 'In Production' && needsKiv(o) },
+  // a KIV card with no Reserved name left waits here (kivInTyping) — Sean, 2026-10-17
+  { key: 'typing', label: 'Typing', match: (o) => o.status === 'In Production' && (main(o) ? hasPlakPart(o) && !o.typedAt : kivInTyping(o)) },
+  { key: 'kiv', label: 'KIV & ARTWORK', match: (o) => o._part === 'kiv' && o.status === 'In Production' && needsKiv(o) && !kivInTyping(o) },
   {
     key: 'active',
     label: 'In Production',
@@ -254,7 +255,7 @@ export default function ProductionDashboard() {
                   <OrderUrgentBadge urgent={ord.urgent} />
                   <span className="status-pill" style={statusPillStyle(ord.status)}>
                     {isKivCard
-                      ? (needsKiv(ord) ? 'KIV & ARTWORK' : ord.status)
+                      ? (kivInTyping(ord) ? 'Typing' : needsKiv(ord) ? 'KIV & ARTWORK' : ord.status)
                       : (ord.status === 'In Production' && !ord.typedAt ? 'Typing' : ord.status)}
                   </span>
                   {isKivCard && reserved > 0 && (
@@ -277,7 +278,9 @@ export default function ProductionDashboard() {
                 </div>
               )}
               {/* The KIV & ARTWORK card: SHORT SUPPLY (Reserved plaques) and/or CRYSTAL — Sean, 2026-10-14 */}
-              {isKivCard && parts.map((part) => (
+              {/* KIV & ARTWORK only waits (Sean, 2026-10-17): no Done — it leaves once the Reserved
+                  names are filled in. In Typing the late-named plaques need no SHORT SUPPLY tag. */}
+              {isKivCard && parts.filter((part) => cardTab !== 'typing' || part !== 'SHORT SUPPLY').map((part) => (
                 <div key={part} className="order-stamp-inline" style={{ marginTop: 'var(--space-1)' }}>{part}</div>
               ))}
               {kivPending && <div className="hint-text" style={{ margin: '4px 0 0', fontWeight: 600, color: '#8a6d00' }}>Waiting: {parts.join(' / ')}</div>}
@@ -331,13 +334,13 @@ export default function ProductionDashboard() {
                 )}
                 {cardTab === 'typing' && (
                   <>
-                    <button type="button" className="btn btn-ghost" style={{ flex: 1 }} onClick={() => navigate(`/production/orders/${ord.id}${ord.invoiceId ? `?invoice=${encodeURIComponent(ord.invoiceId)}` : ''}`)}>
+                    <button type="button" className="btn btn-ghost" style={{ flex: 1 }} onClick={() => navigate(`/production/orders/${ord.id}${isKivCard ? '?part=kiv' : ord.invoiceId ? `?invoice=${encodeURIComponent(ord.invoiceId)}` : ''}`)}>
                       View Order
                     </button>
                     <ConfirmButton
                       label="Done Typing" style={{ flex: 1 }}
                       question="Finished typing? It moves to In Production, ready to print."
-                      onConfirm={() => markTypingDone(ord.id, ord.invoiceId)}
+                      onConfirm={() => (isKivCard ? markKivDone(ord.id) : markTypingDone(ord.id, ord.invoiceId))}
                     />
                   </>
                 )}
@@ -346,13 +349,6 @@ export default function ProductionDashboard() {
                     <button type="button" className="btn btn-ghost" style={{ flex: 1 }} onClick={() => navigate(`/production/orders/${ord.id}?kiv=1`)}>
                       View Order
                     </button>
-                    <ConfirmButton
-                      label="Done" style={{ flex: 1 }}
-                      question={`${parts.join(' + ')} done? It moves to In Production.`}
-                      confirmLabel="Yes, done"
-                      cancelLabel="No, not yet"
-                      onConfirm={() => markKivDone(ord.id)}
-                    />
                   </>
                 )}
                 {cardTab === 'active' && (
