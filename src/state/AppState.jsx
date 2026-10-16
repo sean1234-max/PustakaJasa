@@ -1429,7 +1429,10 @@ export function AppStateProvider({ children }) {
       ...(parsed.unrecognizedSheets || []),
       ...(!klasMatrixActive && parsed.klasMatrix ? parsed.klasMatrix.sections.map((sec) => sec.sourceSheet).filter(Boolean) : []),
     ])];
-    return { ok: true, message: `Imported — ${messages.join('; ')}. Please review carefully before adding to cart.`, warnings, draft: finalState, skippedSheets };
+    // A PDF/Word order read by the AI reader: its tabs, so the page can
+    // offer them as a filled-in FORM ANUGERAH (templateExport.js).
+    const aiCategorized = parsed.aiRead ? parsed.categorized : undefined;
+    return { ok: true, message: `Imported — ${messages.join('; ')}. Please review carefully before adding to cart.`, warnings, draft: finalState, skippedSheets, aiCategorized };
   }, [patch]);
 
   // Thin, zero-behavior-change wrapper for the existing New Order call site

@@ -56,5 +56,5 @@ async function readWithAi(ir, fileName, what) {
   const { categorized, notes, count } = applyPdfReading(ir, res.reading);
   if (count === 0) return { error: `The AI found no plaques in this ${what}.${notes.length ? ` ${notes.join(' ')}` : ''}` };
   notes.unshift(`This order was read from a ${what} by the AI reader — please check every tab carefully against the ${what} before adding to cart.`);
-  return { categorized, notes, klasMatrix: null };
+  return { categorized, notes, klasMatrix: null, aiRead: true };
 }

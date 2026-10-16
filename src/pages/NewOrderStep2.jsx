@@ -12,6 +12,11 @@ import { computeBlocks, noopUpdaters } from '../utils/computeBlocks';
 import { createDraftUpdaters } from '../utils/draftUpdaters';
 import { checkEngravingText } from '../lib/grammarCheckApi';
 import { canUseAiReader } from '../lib/fileReadApi';
+import { downloadBinaryFile } from '../utils/downloadBlob';
+
+// The blank FORM ANUGERAH an AI-read order is written into (templateExport.js).
+const FORM_TEMPLATE_URL = '/templates/FORM-ANUGERAH.xlsx';
+const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
 const DRAFT_FIELDS = {
   lineValues: 'lineValues', matrixValues: 'matrixValues', rowsByBlock: 'rowsByBlock', plakRows: 'plakRows',
@@ -37,6 +42,11 @@ export default function NewOrderStep2() {
   // sheets can be offered to the AI sheet reader (readSkippedSheetsWithAi).
   const lastImportFileRef = useRef(null);
   const [aiReading, setAiReading] = useState(false);
+  // A PDF/Word order the AI reader just read: its tabs as read (before any
+  // edit here), offered as a filled-in FORM ANUGERAH to check or send to
+  // the school. This page visit only.
+  const aiOrderRef = useRef(null);
+  const [formExport, setFormExport] = useState(null);
   const [dragOver, setDragOver] = useState(false);
   // Clicking a "couldn't match Jenis Plak" warning jumps straight to that
   // one field — see jumpToBlock/the effect below. `pendingScrollBlockIdx`
@@ -95,7 +105,10 @@ export default function NewOrderStep2() {
     } finally {
       setImporting(false);
     }
-    setImportStatus(result);
+    const { aiCategorized, ...status } = result;
+    aiOrderRef.current = aiCategorized ? { categorized: aiCategorized, fileName: file.name } : null;
+    setFormExport(null);
+    setImportStatus(status);
     // Said once, up front, right after the upload — those rows came in with
     // a blank Jenis Plak, and a teacher who only reads the order at Add to
     // Cart time wouldn't know which ones the file itself didn't resolve.
@@ -131,6 +144,32 @@ export default function NewOrderStep2() {
         ...(result.warnings || []),
       ],
     });
+  };
+
+  const handleDownloadForm = async () => {
+    const ai = aiOrderRef.current;
+    if (!ai || formExport?.busy) return;
+    setFormExport({ busy: true });
+    try {
+      const res = await fetch(FORM_TEMPLATE_URL);
+      if (!res.ok) {
+        setFormExport({ error: 'The blank FORM ANUGERAH template is not on the site yet — please ask an administrator.' });
+        return;
+      }
+      const { fillOrderTemplate } = await import('../utils/templateExport');
+      const out = await fillOrderTemplate(await res.arrayBuffer(), ai.categorized);
+      downloadBinaryFile(`${ai.fileName.replace(/\.[^.]+$/, '')} (FORM ANUGERAH).xlsx`, out.buffer, XLSX_MIME);
+      const placedTotal = Object.values(out.placed).reduce((a, n) => a + n, 0);
+      setFormExport({
+        notes: [
+          `${placedTotal} of ${out.plaqueCount} plaques written into the form (${Object.entries(out.placed).map(([k, n]) => `${k}: ${n}`).join(', ')}). The form shows the AI's reading as it came in — edits made on this page are not in it.`,
+          ...out.notes,
+        ],
+      });
+    } catch (err) {
+      console.error('Could not fill the FORM ANUGERAH:', err);
+      setFormExport({ error: 'Could not make the Excel form. Please try again.' });
+    }
   };
 
   // The import's cross-check questions (matrix column vs its own TOTAL row,
@@ -454,6 +493,19 @@ export default function NewOrderStep2() {
           )}
           {importStatus?.aiError && (
             <p className="hint-text" style={{ margin: '4px 0 0', color: '#c0392b', fontWeight: 600 }}>{importStatus.aiError}</p>
+          )}
+          {importStatus?.ok && aiOrderRef.current && (
+            <div style={{ marginTop: 8 }}>
+              <button type="button" className="btn btn-secondary" disabled={!!formExport?.busy} onClick={handleDownloadForm}>
+                {formExport?.busy ? 'Filling the form…' : 'Download as FORM ANUGERAH (.xlsx)'}
+              </button>
+              {formExport?.error && <p className="hint-text" style={{ margin: '4px 0 0', color: '#c0392b', fontWeight: 600 }}>{formExport.error}</p>}
+              {formExport?.notes && (
+                <ul style={{ margin: '6px 0 0', paddingLeft: 18, fontSize: '0.9em' }}>
+                  {formExport.notes.map((n) => <li key={n}>{n}</li>)}
+                </ul>
+              )}
+            </div>
           )}
           {aiSheets.length > 0 && (
             <button type="button" className="btn btn-secondary" style={{ marginTop: 8 }} disabled={aiReading} onClick={handleReadWithAi}>
