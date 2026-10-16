@@ -55,7 +55,8 @@ const TABS = [
       ? hasMainPart(o) && !!o.typedAt && !(o._primarySlice && o.plakDoneAt)
       : kivInProduction(o)),
   },
-  { key: 'completed', label: 'Completed', match: (o) => main(o) && o.status === 'Completed' },
+  // an order with a KIV card (crystals / Reserved) shows both its cards here too (Sean, 2026-10-17)
+  { key: 'completed', label: 'Completed', match: (o) => o.status === 'Completed' && (main(o) ? hasMainPart(o) || kivParts(o).length === 0 : true) },
 ];
 
 // order.shipmentDate is stored as free-form text (see supabase/migrations/0001,
