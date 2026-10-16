@@ -13,6 +13,7 @@ import CancelOrderControl from '../components/CancelOrderControl';
 import ReassignSalesmanControl from '../components/ReassignSalesmanControl';
 import { reconstructBlocksForCategory } from '../utils/computeBlocks';
 import { splitOrderCategories, isCrystalCode } from '../utils/exportCsv';
+import ReservedNamesForm from '../components/ReservedNamesForm';
 import CrystalPreview from '../components/CrystalPreview';
 import { getOrderChangeStamp } from '../utils/orderStamp';
 import { isUrgentShipment } from '../utils/urgentOrder';
@@ -22,7 +23,7 @@ import { isUrgentShipment } from '../utils/urgentOrder';
 const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: false, matrix: false, jenisPlak: false };
 
 export default function SalesOrderSummary() {
-  const { state, today, approveOrder, approveAddOn, rejectAddOn, recordPrint, ensureOrderLoaded, loadCorrectedExcelPreview, openAmend, openAddOn, confirmArtwork } = useAppState();
+  const { state, today, approveOrder, approveAddOn, rejectAddOn, recordPrint, ensureOrderLoaded, loadCorrectedExcelPreview, openAmend, openAddOn, confirmArtwork, fillReservedNames } = useAppState();
   const { id } = useParams();
   const navigate = useNavigate();
   const order = state.orders.find((o) => o.id === id);
@@ -343,6 +344,7 @@ export default function SalesOrderSummary() {
                 hideCategory combineJenisPlak
                 canPick={isCrystalCode} onPick={setPickedCrystal} picked={pickedCrystal}
               />
+              <ReservedNamesForm order={order} onSave={(names) => fillReservedNames(order.id, names)} />
               <CrystalPreview order={order} role="view" selected={pickedCrystal} onConfirmArtwork={() => confirmArtwork(order.id)} />
               {/* SELEMPANG's rows (ACARA / WARNA / QTY) also show right here on the
                   Summary — the only category that does (Sean); every category's full

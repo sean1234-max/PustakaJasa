@@ -123,10 +123,27 @@ export function crystalWithPlak(order) {
   return !!order.crystalTypedAt || (!order.typedAt && !order.kivDoneAt);
 }
 
+// Reserved names filled in after the plaques were typed (0097 kiv_filled_rows, row ids):
+// made on the KIV card, in Typing, once no Reserved name is left (Sean, 2026-10-17).
+const filledRowIds = (order) => new Set(Array.isArray(order?.kivFilledRows) ? order.kivFilledRows : []);
+export const hasLateNames = (order) => countReservedPlaques(order) === 0 && filledRowIds(order).size > 0;
+
+// The KIV card's own plaques: only the rows named after typing (none = null).
+export function lateNamesOrder(order) {
+  const ids = filledRowIds(order);
+  if (!hasLateNames(order)) return null;
+  const items = (order.items || []).flatMap((it) => {
+    const rows = (Array.isArray(it.detail?.rows) ? it.detail.rows : []).filter((r) => ids.has(r.id));
+    if (rows.length === 0) return [];
+    return [{ ...it, qty: rows.reduce((n, r) => n + (Number(r.qty) || 0), 0), detail: { ...it.detail, rows } }];
+  });
+  return { ...order, items };
+}
+
 // What the KIV & ARTWORK card is for: SHORT SUPPLY and/or CRYSTAL ([] = none).
 export function kivParts(order) {
   const parts = [];
-  if (countReservedPlaques(order) > 0) parts.push('SHORT SUPPLY');
+  if (countReservedPlaques(order) > 0 || hasLateNames(order)) parts.push('SHORT SUPPLY');
   if (hasCrystal(order) && !crystalWithPlak(order)) parts.push('CRYSTAL');
   return parts;
 }
@@ -147,9 +164,11 @@ export function needsKiv(order) {
   return !order?.kivDoneAt && kivParts(order).length > 0;
 }
 
-// Crystals only, artwork confirmed: that card waits in Typing, not KIV & ARTWORK.
+// KIV & ARTWORK only waits (look-only, Sean 2026-10-17): for Reserved names and for
+// the crystals' artwork. Neither left: the card is in Typing.
 export function kivInTyping(order) {
-  return needsKiv(order) && !!order.artworkConfirmedAt && kivParts(order).every((p) => p === 'CRYSTAL');
+  return needsKiv(order) && countReservedPlaques(order) === 0
+    && (!kivParts(order).includes('CRYSTAL') || !!order.artworkConfirmedAt);
 }
 
 // Its KIV & ARTWORK card is in In Production, not Done yet.

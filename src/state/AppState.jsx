@@ -2767,6 +2767,23 @@ export function AppStateProvider({ children }) {
     return null;
   }, [patch]);
 
+  // Production or the order's salesman types the real names over its "Reserved" rows
+  // (0097, Sean 2026-10-17). names: { rowId: name }. Returns an error message, or null.
+  const fillReservedNames = useCallback(async (orderId, names) => {
+    const { error } = await supabase.rpc('fill_reserved_names', { p_order_id: orderId, p_names: names });
+    if (error) {
+      console.error('Failed to fill in the Reserved names:', error);
+      return error.message || 'Could not save the names. Please try again.';
+    }
+    try {
+      const fresh = await fetchOrderById(orderId);
+      if (fresh) patch((st) => ({ orders: st.orders.map((o) => (o.id === orderId ? fresh : o)) }));
+    } catch (err) {
+      console.error('Names saved, but could not reload the order:', err);
+    }
+    return null;
+  }, [patch]);
+
   const markKivProductionDone = useCallback(async (orderId) => {
     const order = stateRef.current.orders.find((o) => o.id === orderId);
     if (!order || order.status !== 'In Production' || !kivInProduction(order)) {
@@ -3188,7 +3205,7 @@ export function AppStateProvider({ children }) {
     markTypingDone,
     updateReferenceOrder,
     markReviewDone,
-    markAddOnReviewed, saveProductionPrices, markKivDone, markKivProductionDone, confirmArtwork,
+    markAddOnReviewed, saveProductionPrices, markKivDone, markKivProductionDone, confirmArtwork, fillReservedNames,
     openProductionEdit,
     loadExcelIntoProductionEdit,
     saveProductionEdit,

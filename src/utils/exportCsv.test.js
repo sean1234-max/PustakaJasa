@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  needsKiv, kivInTyping, kivParts, lateNamesOrder,
   CSV_COLUMNS, rowsToCsv, buildCsvRows, validateExport, buildCategoryCsvFilename, getInvoiceIdForJenisPlak, getPartialSplitNotes, isReservedName,
   getOrderJenisPlakGroups, getExportableCategories, splitOrderCategories,
   combineCsvRows, buildCombinedCsvFilename, buildOrderImportFilename, getLineOrder,
@@ -1147,5 +1148,36 @@ describe('KIV & ARTWORK View Order — which category / rows to flash', () => {
     expect(firstKivCategory(order, ['KEHADIRAN', 'TOKOH_SHEET'])).toBe('KEHADIRAN');
     expect(firstKivCategory(order, ['PBD'])).toBe(null);
     expect(firstKivCategory({ items: [{ categoryKey: 'X' }] }, ['X'])).toBe(null);
+  });
+});
+
+describe('KIV: Reserved names filled in after typing (0097)', () => {
+  const tokoh = (rows) => ({ id: 'i1', categoryKey: 'TOKOH_SHEET', jenisPlak: 'PKC 246', qty: rows.reduce((n, r) => n + r.qty, 0), detail: { rows } });
+  const base = { status: 'In Production', typedAt: '2026-10-17T00:00:00Z' };
+
+  it('waits in KIV & ARTWORK while a Reserved name is left', () => {
+    const order = { ...base, items: [tokoh([{ id: 'a', namaMurid: 'ALI', qty: 1 }, { id: 'b', namaMurid: 'Reserved', qty: 2 }])] };
+    expect(needsKiv(order)).toBe(true);
+    expect(kivInTyping(order)).toBe(false);
+  });
+
+  it('goes to Typing with only the late-named rows once none is left', () => {
+    const order = { ...base, kivFilledRows: ['b'], items: [tokoh([{ id: 'a', namaMurid: 'ALI', qty: 1 }, { id: 'b', namaMurid: 'ABU', qty: 2 }])] };
+    expect(kivInTyping(order)).toBe(true);
+    const late = lateNamesOrder(order);
+    expect(late.items[0].detail.rows.map((r) => r.id)).toEqual(['b']);
+    expect(late.items[0].qty).toBe(2);
+  });
+
+  it('has no KIV card when the names came before typing', () => {
+    const order = { ...base, typedAt: null, items: [tokoh([{ id: 'a', namaMurid: 'ALI', qty: 1 }])] };
+    expect(kivParts(order)).toEqual([]);
+    expect(lateNamesOrder(order)).toBeNull();
+  });
+
+  it('keeps unconfirmed crystals waiting in KIV & ARTWORK', () => {
+    const order = { ...base, items: [{ id: 'c', jenisPlak: 'CRYSTAL / SA4 / DESIGN A', qty: 1 }] };
+    expect(kivInTyping(order)).toBe(false);
+    expect(kivInTyping({ ...order, artworkConfirmedAt: '2026-10-17T01:00:00Z' })).toBe(true);
   });
 });

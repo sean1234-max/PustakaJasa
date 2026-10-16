@@ -14,13 +14,14 @@ import { useAppState } from '../state/useAppState';
 import { statusPillStyle, formatDate, MANUAL_MAX_QTY, shipmentDatePassed, toMalaysiaDay, malaysiaToday, isReviewed, isAddonInFlight, invoiceLabel, invoiceSetByNote, resolveCategory } from '../data/catalog';
 import { redLinesProblem, RED_LINES_SUFFIX } from '../utils/redLines';
 import { reconstructOrderDetailGroups, reconstructBlocksForCategory, noopUpdaters } from '../utils/computeBlocks';
-import { getExportableCategories, splitOrderCategories, getOrderJenisPlakGroups, getPlakProductionMode, summarizeRowsForManual, buildCsvRows, rowsToCsv, buildCategoryCsvFilename, combineCsvRows, buildCombinedCsvFilename, validateExport, getInvoiceIdForJenisPlak, getPartialSplitNotes, needsKiv, kivInProduction, kivParts, isCrystalCode, firstKivCategory, crystalWithPlak } from '../utils/exportCsv';
+import { getExportableCategories, splitOrderCategories, getOrderJenisPlakGroups, getPlakProductionMode, summarizeRowsForManual, buildCsvRows, rowsToCsv, buildCategoryCsvFilename, combineCsvRows, buildCombinedCsvFilename, validateExport, getInvoiceIdForJenisPlak, getPartialSplitNotes, needsKiv, kivInProduction, kivParts, isCrystalCode, firstKivCategory, crystalWithPlak, lateNamesOrder, hasLateNames } from '../utils/exportCsv';
 import { downloadTextFile } from '../utils/downloadBlob';
 import { getInvoiceItems } from '../utils/orderBatches';
 import ImportFileButtons from '../components/ImportFileButtons';
 import ShipmentUrgencyEditor from '../components/ShipmentUrgencyEditor';
 import ProductionPriceEditor from '../components/ProductionPriceEditor';
 import ProductionInvoiceEntry from '../components/ProductionInvoiceEntry';
+import ReservedNamesForm from '../components/ReservedNamesForm';
 import { getAiFileHelperStatus, startAiFileHelperJob, getAiFileHelperJob } from '../lib/aiFileHelper';
 import { getOrderChangeStamp } from '../utils/orderStamp';
 
@@ -32,7 +33,7 @@ const REORDER_ONLY = { ...READONLY, lineOrder: true };
 const CRYSTAL_SEND_WAIT_MS = 3 * 60 * 1000; // Generate AI File: how long the plaques wait for the crystals to be sent
 
 export default function ProductionOrderDetail() {
-  const { state, ensureOrderLoaded, loadCorrectedExcelPreview, updateReferenceOrder, markReviewDone, markAddOnReviewed } = useAppState();
+  const { state, ensureOrderLoaded, loadCorrectedExcelPreview, updateReferenceOrder, markReviewDone, markAddOnReviewed, fillReservedNames } = useAppState();
   const { id } = useParams();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -104,7 +105,14 @@ export default function ProductionOrderDetail() {
   // Production's own Reference Sample row order and MERAH ticks
   // (updateReferenceOrder) are saved on the order's items, so they're carried
   // over onto the re-read file.
+  // Opened from a KIV card in Typing (?part=kiv, Sean 2026-10-17): only what that card makes —
+  // its crystals and the plaques whose Reserved names came after typing (lateNamesOrder).
+  const kivCardView = searchParams.get('part') === 'kiv' && !!order;
   const effectiveOrder = useMemo(() => {
+    if (kivCardView) {
+      const crystals = kivParts(order).includes('CRYSTAL') ? (order.items || []).filter((it) => isCrystalCode(it.jenisPlak)) : [];
+      return { ...order, items: [...crystals, ...(lateNamesOrder(order)?.items || [])] };
+    }
     if (!correctedItems) return order;
     const saved = Object.fromEntries((order.items || []).flatMap((it) => (
       Object.entries(it.detail?.lines || {}).filter(([k]) => k.endsWith('::refOrder') || k.endsWith('::redLines'))
@@ -117,7 +125,7 @@ export default function ProductionOrderDetail() {
         : it;
     });
     return { ...order, items };
-  }, [order, correctedItems]);
+  }, [order, correctedItems, kivCardView]);
 
   // The row order stays changeable from submit until the Shipment Date
   // itself — a teacher may phone in a change after submitting. Saved on
@@ -336,10 +344,7 @@ export default function ProductionOrderDetail() {
   // artwork is confirmed they're typed with the plaques — Generate AI File runs
   // both (Sean, 2026-10-15); otherwise they're made from their own card.
   const crystalGroups = jenisPlakExport.filter((g) => isCrystalCode(g.jenisPlak));
-  // Opened from a crystal card of its own in Typing (?part=crystal, Sean 2026-10-17: its plaques
-  // were typed before the artwork was confirmed): Generate AI File makes the crystals only.
-  const crystalCard = searchParams.get('part') === 'crystal';
-  const crystalsHere = crystalGroups.length > 0 && (crystalCard ? !!order.artworkConfirmedAt : crystalWithPlak(order));
+  const crystalsHere = crystalGroups.length > 0 && (kivCardView ? !!order.artworkConfirmedAt : crystalWithPlak(order));
   const plakGroups = jenisPlakExport.filter((g) => !isCrystalCode(g.jenisPlak));
   const reservedGroups = plakGroups.filter((g) => g.csvData.reservedCount > 0);
   const combinedRows = combineCsvRows(plakGroups);
@@ -358,7 +363,7 @@ export default function ProductionOrderDetail() {
   // reach the NAS AI FILE folder, and stops with an alert if there's no
   // helper or no folder — instead of queuing a job nobody will pick up.
   const aiFileBusy = aiFileChecking || !!activeAiFileJobId;
-  const generateOk = crystalCard ? crystalsHere : crystalsHere ? (plakGroups.length === 0 || combinedOk) : combinedOk;
+  const generateOk = crystalsHere ? (plakGroups.length === 0 || combinedOk) : combinedOk;
   const handleGenerateAiFile = async () => {
     if (!generateOk || aiFileBusy) return;
     setAiFileErr('');
@@ -385,7 +390,7 @@ export default function ProductionOrderDetail() {
         });
         setCrystalPrep(false);
       }
-      if (crystalCard || !combinedOk) return;
+      if (!combinedOk) return;
       const id = await startAiFileHelperJob(buildCombinedCsvFilename(order), rowsToCsv(combinedRows));
       setAiFileJob({ id, status: 'queued', message: '', files: [] });
     } catch (err) {
@@ -503,6 +508,14 @@ export default function ProductionOrderDetail() {
           </p>
         )}
 
+        {kivCardView && (
+          <p className="hint-text" style={{ marginBottom: 'var(--space-3)', color: '#8a6d00', fontWeight: 600 }}>
+            KIV card — showing only what this card makes: {[kivParts(order).includes('CRYSTAL') && 'the crystals', hasLateNames(order) && 'the plaques named after typing'].filter(Boolean).join(' and ') || 'nothing yet'}.{' '}
+            <button type="button" onClick={() => navigate(`/production/orders/${order.id}`)} className="btn-link">View full order</button>
+          </p>
+        )}
+        <ReservedNamesForm order={order} onSave={(names) => fillReservedNames(order.id, names)} />
+
         {page === 'summary' ? (
           <>
             <div className="form-grid-2" style={{ marginTop: 'var(--space-3)' }}>
@@ -610,9 +623,7 @@ export default function ProductionOrderDetail() {
                     </p>
                     {crystalGroups.length > 0 && (
                       <p className="hint-text" style={{ marginTop: 4, color: '#8a6d00', fontWeight: 600 }}>
-                        {crystalCard && crystalsHere
-                          ? 'CRYSTAL card — Generate AI File makes only the crystals (the plaques were already typed): '
-                          : crystalsHere
+                        {crystalsHere
                           ? 'CRYSTAL is not in the CSV — Generate AI File also opens the crystals in Illustrator (from the Crystal Preview above): '
                           : 'CRYSTAL is made from its own card (KIV & ARTWORK, then Typing once the artwork is confirmed) — left out of this CSV / AI file: '}
                         {crystalGroups.map((g) => `${g.categoryLabel} – ${g.jenisPlak} (${g.totalQty})`).join(', ')}.
@@ -628,7 +639,7 @@ export default function ProductionOrderDetail() {
                       type="button" className="btn" style={{ marginTop: 8 }}
                       disabled={!generateOk || aiFileBusy} onClick={handleGenerateAiFile}
                     >
-                      {crystalPrep ? '⏳ Preparing the crystals — keep this page in front…' : aiFileChecking ? 'Checking this computer…' : activeAiFileJobId ? '⏳ Generating…' : crystalCard ? '🖨 Generate Crystal AI File' : '🖨 Generate AI File'}
+                      {crystalPrep ? '⏳ Preparing the crystals — keep this page in front…' : aiFileChecking ? 'Checking this computer…' : activeAiFileJobId ? '⏳ Generating…' : '🖨 Generate AI File'}
                     </button>
                     <p className="hint-text" style={{ marginTop: 4 }}>
                       Runs this same combined CSV in Illustrator on this computer — it needs the AI File helper installed and the NAS AI FILE folder reachable here. Type your name when Illustrator asks.

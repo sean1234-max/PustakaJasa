@@ -283,7 +283,10 @@ export default function ProductionDashboard() {
                 </div>
               )}
               {/* The KIV & ARTWORK card: SHORT SUPPLY (Reserved plaques) and/or CRYSTAL — Sean, 2026-10-14 */}
-              {isKivCard && parts.map((part) => (
+              {/* KIV & ARTWORK only waits (Sean, 2026-10-17): no Done — it leaves once the Reserved
+                  names are filled in and the crystals' artwork is confirmed. In Typing the
+                  late-named plaques need no SHORT SUPPLY tag. */}
+              {isKivCard && parts.filter((part) => cardTab !== 'typing' || part !== 'SHORT SUPPLY').map((part) => (
                 <div key={part} className="order-stamp-inline" style={{ marginTop: 'var(--space-1)' }}>{part}</div>
               ))}
               {kivPending && <div className="hint-text" style={{ margin: '4px 0 0', fontWeight: 600, color: '#8a6d00' }}>Waiting: {parts.join(' / ')}</div>}
@@ -340,7 +343,7 @@ export default function ProductionDashboard() {
                 )}
                 {cardTab === 'typing' && (
                   <>
-                    <button type="button" className="btn btn-ghost" style={{ flex: 1 }} onClick={() => navigate(`/production/orders/${ord.id}${isKivCard ? '?part=crystal' : ord.invoiceId ? `?invoice=${encodeURIComponent(ord.invoiceId)}` : ''}`)}>
+                    <button type="button" className="btn btn-ghost" style={{ flex: 1 }} onClick={() => navigate(`/production/orders/${ord.id}${isKivCard ? '?part=kiv' : ord.invoiceId ? `?invoice=${encodeURIComponent(ord.invoiceId)}` : ''}`)}>
                       View Order
                     </button>
                     <ConfirmButton
@@ -355,13 +358,6 @@ export default function ProductionDashboard() {
                     <button type="button" className="btn btn-ghost" style={{ flex: 1 }} onClick={() => navigate(`/production/orders/${ord.id}?kiv=1`)}>
                       View Order
                     </button>
-                    <ConfirmButton
-                      label="Done" style={{ flex: 1 }}
-                      question={`${parts.join(' + ')} done? It moves to In Production.`}
-                      confirmLabel="Yes, done"
-                      cancelLabel="No, not yet"
-                      onConfirm={() => markKivDone(ord.id)}
-                    />
                   </>
                 )}
                 {cardTab === 'active' && (
