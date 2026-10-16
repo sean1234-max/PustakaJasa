@@ -73,11 +73,13 @@ function describeStockError(err) {
 // ponytail: one hardcoded email, not a role/flag column — simplest thing
 // that works for a single known test account; promote to a real
 // `profiles.is_test_account` column if more than one is ever needed.
-const TEST_ACCOUNT_EMAIL = 'sktest@pjsb.com';
+// The salesman seanng@pjsb.com is a test account too (Sean, 2026-10-17): its New Orders
+// also go to ORD-90xx and never touch stock.
+const TEST_ACCOUNT_EMAILS = new Set(['sktest@pjsb.com', 'seanng@pjsb.com']);
 async function isTestAccountUser() {
   try {
     const { data: { user } } = await supabase.auth.getUser();
-    return (user?.email || '').toLowerCase() === TEST_ACCOUNT_EMAIL;
+    return TEST_ACCOUNT_EMAILS.has((user?.email || '').toLowerCase());
   } catch {
     return false;
   }
