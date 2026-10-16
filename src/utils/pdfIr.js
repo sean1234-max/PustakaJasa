@@ -35,6 +35,18 @@ export async function extractPdfPages(data, pdfjs) {
   return pages;
 }
 
+async function drawPageJpeg(page, width, quality) {
+  const viewport = page.getViewport({ scale: width / page.getViewport({ scale: 1 }).width });
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(viewport.width);
+  canvas.height = Math.round(viewport.height);
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  await page.render({ canvasContext: ctx, viewport }).promise;
+  return canvas.toDataURL('image/jpeg', quality).split(',')[1] || null;
+}
+
 // Page `pageNo` as a JPEG (base64, no "data:" prefix), about `width` px
 // wide — for the header lines a sample label draws as a picture
 // (read-order-file kind "pdf-heading"). Browser only (needs a canvas).
@@ -42,16 +54,31 @@ export async function renderPdfPageJpeg(data, pdfjs, { pageNo = 1, width = 1400,
   const task = pdfjs.getDocument({ data: new Uint8Array(data), isEvalSupported: false });
   try {
     const doc = await task.promise;
-    const page = await doc.getPage(pageNo);
-    const viewport = page.getViewport({ scale: width / page.getViewport({ scale: 1 }).width });
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.round(viewport.width);
-    canvas.height = Math.round(viewport.height);
-    const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    await page.render({ canvasContext: ctx, viewport }).promise;
-    return canvas.toDataURL('image/jpeg', quality).split(',')[1] || null;
+    return await drawPageJpeg(await doc.getPage(pageNo), width, quality);
+  } finally {
+    await task.destroy();
+  }
+}
+
+// The pages that draw a picture (a plaque photo, usually), as JPEGs, for
+// the AI to read plaque codes and designs shown only in a photo. At most
+// maxPages, first pages first.
+export async function renderPdfPicturePages(data, pdfjs, { maxPages = 10, width = 800, quality = 0.7 } = {}) {
+  const { OPS } = pdfjs;
+  const imageOps = new Set([OPS.paintImageXObject, OPS.paintInlineImageXObject, OPS.paintImageXObjectRepeat, OPS.paintJpegXObject].filter((op) => op != null));
+  const task = pdfjs.getDocument({ data: new Uint8Array(data), isEvalSupported: false });
+  try {
+    const doc = await task.promise;
+    const pages = [];
+    const images = [];
+    for (let n = 1; n <= doc.numPages && pages.length < maxPages; n++) {
+      const page = await doc.getPage(n);
+      const ops = await page.getOperatorList();
+      if (!ops.fnArray.some((fn) => imageOps.has(fn))) continue;
+      const jpeg = await drawPageJpeg(page, width, quality);
+      if (jpeg) { pages.push(n); images.push(jpeg); }
+    }
+    return { pages, images };
   } finally {
     await task.destroy();
   }

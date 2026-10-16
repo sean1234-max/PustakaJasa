@@ -22,6 +22,7 @@ import { PROMPT_VERSION, SYSTEM_PROMPT, buildUserPrompt } from './prompt.ts';
 import { PDF_SCHEMA, PDF_SCHEMA_VERSION, validatePdfReading } from './pdfSchema.ts';
 import { PDF_PROMPT_VERSION, PDF_SYSTEM_PROMPT, buildPdfUserPrompt } from './pdfPrompt.ts';
 import { HEADING_SCHEMA, HEADING_SYSTEM_PROMPT, HEADING_VERSION, buildHeadingUserText, validateHeading } from './headingSchema.ts';
+import { PLAQUE_SCHEMA, PLAQUE_SYSTEM_PROMPT, PLAQUE_VERSION, buildPlaqueUserParts, parsePlaqueInput, validatePlaques } from './plaqueSchema.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
@@ -39,9 +40,13 @@ const PDF_PIPELINE_VERSION = `pdf-m${PDF_SCHEMA_VERSION}-p${PDF_PROMPT_VERSION}`
 const HEADING_PIPELINE_VERSION = `head-${HEADING_VERSION}`;
 // kind "pdf-heading": one JPEG of the PDF's first page, base64.
 const MAX_IMAGE_CHARS = 3_000_000;
+const PLAQUE_PIPELINE_VERSION = `plaque-${PLAQUE_VERSION}`;
+// kind "pdf-plaques": JSON { pages, images } of up to 10 page JPEGs.
+const MAX_PLAQUE_CHARS = 8_000_000;
 
-// The two kinds of input this reader takes: Excel sheets the rule reader
-// skipped (phase 1) and text PDFs (phase 2). Same cache, rate limit,
+// The kinds of input this reader takes: Excel sheets the rule reader
+// skipped (phase 1), text PDFs (phase 2), and pictures of a PDF's pages
+// (its header lines, its plaque photos). Same cache, rate limit,
 // budget and escalation; each has its own schema, prompt and version.
 type Kind = {
   pipeline: string; schema: unknown; system: string; user: (ir: string) => string | unknown[];
@@ -126,12 +131,25 @@ Deno.serve(async (req) => {
   const fileName = typeof body.fileName === 'string' ? body.fileName.slice(0, 200) : 'file';
   const irText = typeof body.irText === 'string' ? body.irText : '';
   const isHeading = body.kind === 'pdf-heading';
-  const isPdf = body.kind === 'pdf' || isHeading;
+  const isPlaques = body.kind === 'pdf-plaques';
+  const isPicture = isHeading || isPlaques;
+  const isPdf = body.kind === 'pdf' || isPicture;
   const sheetNames = Array.isArray(body.sheetNames) ? body.sheetNames.filter((s): s is string => typeof s === 'string').slice(0, MAX_SHEETS) : [];
   if (!irText || (!isPdf && sheetNames.length === 0)) return json({ error: 'Nothing to read.' }, 400);
   if (isHeading && (irText.length > MAX_IMAGE_CHARS || !irText.startsWith('/9j/'))) return json({ status: 'too-large', message: 'This page picture could not be read.' });
-  if (!isHeading && irText.length > MAX_IR_CHARS) return json({ status: 'too-large', message: isPdf ? 'This PDF is too large for the AI reader — please add it by hand.' : 'These sheets are too large for the AI reader — please add them by hand.' });
-  const kind: Kind = isHeading
+  const plaqueInput = isPlaques ? parsePlaqueInput(irText, MAX_PLAQUE_CHARS) : null;
+  if (isPlaques && !plaqueInput) return json({ status: 'too-large', message: 'These page pictures could not be read.' });
+  if (!isPicture && irText.length > MAX_IR_CHARS) return json({ status: 'too-large', message: isPdf ? 'This PDF is too large for the AI reader — please add it by hand.' : 'These sheets are too large for the AI reader — please add them by hand.' });
+  const kind: Kind = isPlaques
+    ? {
+      pipeline: PLAQUE_PIPELINE_VERSION, schema: PLAQUE_SCHEMA, system: PLAQUE_SYSTEM_PROMPT, escalate: false,
+      user: () => buildPlaqueUserParts(plaqueInput!.pages, plaqueInput!.images),
+      check: (v) => {
+        const c = validatePlaques(v);
+        return c.ok ? { ok: true, value: c.value, unsure: false } : c;
+      },
+    }
+    : isHeading
     ? {
       pipeline: HEADING_PIPELINE_VERSION, schema: HEADING_SCHEMA, system: HEADING_SYSTEM_PROMPT, escalate: false,
       user: (img) => [

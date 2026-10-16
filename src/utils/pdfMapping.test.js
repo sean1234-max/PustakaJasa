@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildPdfIr, renderPdfIrText } from './pdfIr';
-import { applyPdfReading, applyPictureHeading, splitSchoolLines } from './pdfMapping';
+import { applyPdfReading, applyPictureHeading, applyPlaquePictures, splitSchoolLines } from './pdfMapping';
 
 // Made-up page: a sample label + a class list with counts, and a grid of
 // two finished labels side by side.
@@ -265,5 +265,36 @@ describe('splitSchoolLines', () => {
     const ok = ['SEKOLAH KEBANGSAAN TAMAN MELAWATI 2', 'SEKOLAH KLUSTER KECEMERLANGAN', 'MAJLIS APRESIASI AKADEMIK', '(SESI 2026)'];
     expect(splitSchoolLines(ok)).toEqual(ok);
     expect(splitSchoolLines(['SEKOLAH KEBANGSAAN', 'TAMAN MELAWATI 2'])).toEqual(['SEKOLAH KEBANGSAAN', 'TAMAN MELAWATI 2']);
+  });
+});
+
+describe('applyPlaquePictures', () => {
+  const sec = (award, code) => ({ lines: { 0: 'MAJLIS APRESIASI AKADEMIK', 2: award }, jenisPlak: code, classes: [] });
+  const photo = (code, design, award, confidence = 'high') => ({ page: 9, code, design, award, confidence });
+
+  it('adds the design a photo shows, and a code to a batch with none', () => {
+    const cat = {
+      a: [sec('ANUGERAH TOKOH SAIDINA ALI', '0011A')],
+      b: [sec('ANUGERAH TOKOH SAIDINA ALI', 'SA4')],
+      c: [sec('ANUGERAH IBNU SINA', 'PKC 263')],
+      d: [sec('ANUGERAH TOKOH SAIDINA ALI', '')],
+      e: [sec('ANUGERAH MAHATMA GANDHI', '')],
+    };
+    const notes = applyPlaquePictures(cat, [
+      photo('0011A', 'DESIGN A', 'ANUGERAH TOKOH SAIDINA ALI'),
+      photo('CODE SA4', 'DESIGN A', null),
+      photo('PKC 263', null, 'ANUGERAH IBNU SINA'),
+    ]);
+    expect(['a', 'b', 'c', 'd', 'e'].map((k) => cat[k][0].jenisPlak)).toEqual(['0011A DESIGN A', 'SA4 DESIGN A', 'PKC 263', '0011A DESIGN A', '']);
+    expect(notes).toHaveLength(2); // a and d share one note
+  });
+
+  it('leaves the plaque alone when photos disagree or are unsure', () => {
+    const cat = { a: [sec('ANUGERAH X', '0011A')], b: [sec('ANUGERAH Y', '')] };
+    applyPlaquePictures(cat, [
+      photo('0011A', 'DESIGN A', null), photo('0011A', 'DESIGN B', null),
+      photo('SA4', 'DESIGN A', 'ANUGERAH Y', 'low'),
+    ]);
+    expect([cat.a[0].jenisPlak, cat.b[0].jenisPlak]).toEqual(['0011A', '']);
   });
 });

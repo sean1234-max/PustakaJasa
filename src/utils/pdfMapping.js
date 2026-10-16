@@ -339,3 +339,38 @@ export function applyPictureHeading(categorized, picture) {
   if (!added.size) return [];
   return [`TAJUK BESAR: ${[...added].map((l) => `"${l}"`).join(', ')} ${added.size > 1 ? 'were' : 'was'} read from a picture of the sample label (not the PDF's text) — please check ${added.size > 1 ? 'them' : 'it'} against the PDF.`];
 }
+
+// Plaque photos read by the AI (read-order-file kind "pdf-plaques") complete
+// a batch's Jenis Plak where the PDF's text leaves it short: a code with no
+// design ("0011A" + a photo marked DESIGN A), or no code at all (the photo
+// placed by the award it is for). Only used when every photo that fits says
+// the same thing; never replaces a code the text gives. Returns notes.
+const plakKey = (s) => String(s || '').toUpperCase().replace(/^\s*CODE\s*:?/, '').replace(/[^A-Z0-9]/g, '');
+export function applyPlaquePictures(categorized, pictures) {
+  const usable = (pictures || []).filter((p) => p && p.code && p.confidence !== 'low');
+  if (!usable.length) return [];
+  const notes = [];
+  const awardOf = (section) => Object.entries(section.lines || {}).filter(([k]) => k !== '0').map(([, v]) => v).find(Boolean) || '';
+  const agreed = (list, key) => {
+    const values = [...new Set(list.map(key))];
+    return values.length === 1 ? values[0] : null;
+  };
+  Object.values(categorized || {}).flatMap((list) => list || []).forEach((section) => {
+    const own = String(section.jenisPlak || '').trim();
+    const award = awardOf(section);
+    let plak = null;
+    if (own) {
+      if (/DESIGN/i.test(own)) return;
+      const design = agreed(usable.filter((p) => p.design && plakKey(p.code) === plakKey(own)), (p) => p.design);
+      if (design) plak = `${own} ${design}`;
+    } else if (award) {
+      const fits = usable.filter((p) => p.award && (norm(p.award).includes(norm(award)) || norm(award).includes(norm(p.award))));
+      const picked = agreed(fits, (p) => [p.code, p.design].filter(Boolean).join(' '));
+      if (picked) plak = picked;
+    }
+    if (!plak) return;
+    section.jenisPlak = plak;
+    notes.push(`${award || 'A batch'}: Jenis Plak "${plak}" was read from a photo of the plaque in the PDF — please check it.`);
+  });
+  return [...new Set(notes)];
+}

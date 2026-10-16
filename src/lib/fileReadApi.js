@@ -52,6 +52,20 @@ export async function readPdfHeadingWithAi({ fileName, imageBase64 }) {
   }
 }
 
+// Page pictures holding plaque photos (kind "pdf-plaques"): each photo's
+// code, design and the award it is for. { ok: false } on any problem —
+// the order still reads without it.
+export async function readPdfPlaquesWithAi({ fileName, pages, images }) {
+  try {
+    const irText = JSON.stringify({ pages, images });
+    const { data, error } = await supabase.functions.invoke('read-order-file', { body: { kind: 'pdf-plaques', fileName, irText } });
+    if (error || !data || data.status !== 'succeeded' || !data.mapping) return { ok: false };
+    return { ok: true, pictures: data.mapping.pictures || [] };
+  } catch {
+    return { ok: false };
+  }
+}
+
 // Admin banner (AiBudgetBanner.jsx). Resolves to null on any error.
 export async function getAiBudgetStatus() {
   try {
