@@ -1,0 +1,148 @@
+// The "file structure map" for a PDF order (universal file-reader plan,
+// phase 2: text PDFs). Built in the browser with pdf.js from the PDF's own
+// text layer — no OCR, so a scan or photo has no text here and is refused.
+//
+// Every piece of text becomes a numbered SEGMENT ("p1s12") with its page
+// and position. A segment is a run of text on one line with no wide gap in
+// it, so a 5-across grid of finished labels splits into 5 segments per
+// line instead of one long jumbled line. The AI (read-order-file, kind
+// "pdf") answers with segment ids plus the exact text it took from each;
+// pdfMapping.js checks every quoted text really is inside that segment
+// before anything reaches an order.
+
+export const PDF_IR_VERSION = 2;
+const MAX_SEGMENTS = 4000;
+
+// pdf.js is passed in (browser: the normal build with its worker; tests:
+// the legacy build) so this file has no bundler-specific import.
+export async function extractPdfPages(data, pdfjs) {
+  const task = pdfjs.getDocument({ data: new Uint8Array(data), isEvalSupported: false, disableFontFace: true });
+  const doc = await task.promise;
+  const pages = [];
+  for (let n = 1; n <= doc.numPages; n++) {
+    const page = await doc.getPage(n);
+    const { width, height } = page.getViewport({ scale: 1 });
+    const content = await page.getTextContent();
+    const items = content.items
+      .filter((it) => typeof it.str === 'string' && it.str.trim())
+      .map((it) => {
+        const size = Math.hypot(it.transform[2], it.transform[3]) || it.height || 10;
+        return { str: it.str, x: it.transform[4], y: height - it.transform[5], w: it.width, size };
+      });
+    pages.push({ page: n, width, height, items });
+  }
+  await task.destroy();
+  return pages;
+}
+
+async function drawPageJpeg(page, width, quality) {
+  const viewport = page.getViewport({ scale: width / page.getViewport({ scale: 1 }).width });
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(viewport.width);
+  canvas.height = Math.round(viewport.height);
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  await page.render({ canvasContext: ctx, viewport }).promise;
+  return canvas.toDataURL('image/jpeg', quality).split(',')[1] || null;
+}
+
+// Page `pageNo` as a JPEG (base64, no "data:" prefix), about `width` px
+// wide — for the header lines a sample label draws as a picture
+// (read-order-file kind "pdf-heading"). Browser only (needs a canvas).
+export async function renderPdfPageJpeg(data, pdfjs, { pageNo = 1, width = 1400, quality = 0.8 } = {}) {
+  const task = pdfjs.getDocument({ data: new Uint8Array(data), isEvalSupported: false });
+  try {
+    const doc = await task.promise;
+    return await drawPageJpeg(await doc.getPage(pageNo), width, quality);
+  } finally {
+    await task.destroy();
+  }
+}
+
+// The pages that draw a picture (a plaque photo, usually), as JPEGs, for
+// the AI to read plaque codes and designs shown only in a photo. At most
+// maxPages, first pages first.
+export async function renderPdfPicturePages(data, pdfjs, { maxPages = 10, width = 800, quality = 0.7 } = {}) {
+  const { OPS } = pdfjs;
+  const imageOps = new Set([OPS.paintImageXObject, OPS.paintInlineImageXObject, OPS.paintImageXObjectRepeat, OPS.paintJpegXObject].filter((op) => op != null));
+  const task = pdfjs.getDocument({ data: new Uint8Array(data), isEvalSupported: false });
+  try {
+    const doc = await task.promise;
+    const pages = [];
+    const images = [];
+    for (let n = 1; n <= doc.numPages && pages.length < maxPages; n++) {
+      const page = await doc.getPage(n);
+      const ops = await page.getOperatorList();
+      if (!ops.fnArray.some((fn) => imageOps.has(fn))) continue;
+      const jpeg = await drawPageJpeg(page, width, quality);
+      if (jpeg) { pages.push(n); images.push(jpeg); }
+    }
+    return { pages, images };
+  } finally {
+    await task.destroy();
+  }
+}
+
+const clean = (s) => s.replace(/\s+/g, ' ').trim();
+
+// Items -> lines (same baseline, within half a font size) -> segments (one
+// per pdf.js text item, except items that touch, which are one word).
+export function buildPdfIr(pages) {
+  const segments = [];
+  let truncated = false;
+  pages.forEach(({ page, items }) => {
+    const sorted = [...items].sort((a, b) => a.y - b.y || a.x - b.x);
+    const lines = [];
+    sorted.forEach((it) => {
+      const line = lines.find((l) => Math.abs(l.y - it.y) <= Math.max(2, Math.min(l.size, it.size) * 0.5));
+      if (line) line.items.push(it);
+      else lines.push({ y: it.y, size: it.size, items: [it] });
+    });
+    lines.sort((a, b) => a.y - b.y);
+    let n = 0;
+    lines.forEach((line) => {
+      const its = line.items.sort((a, b) => a.x - b.x);
+      let cur = null;
+      its.forEach((it) => {
+        const gap = cur ? it.x - cur.end : Infinity;
+        // Items that touch are one word the PDF wrote in pieces
+        // ("SAID" "I" "NA", "PKC 26" "3", "9" "9"): join them with no
+        // space. Anything further apart stays its own segment.
+        if (cur && gap <= Math.min(it.size, cur.size) * 0.15) {
+          cur.text += it.str;
+          cur.end = Math.max(cur.end, it.x + it.w);
+        } else {
+          if (cur) segments.push(cur);
+          cur = { page, x: it.x, y: line.y, end: it.x + it.w, size: it.size, text: it.str };
+        }
+      });
+      if (cur) segments.push(cur);
+    });
+    // ids are per page, in reading order
+    segments.filter((s) => s.page === page && !s.id).forEach((s) => { s.id = `p${page}s${++n}`; });
+  });
+  const out = segments
+    .map((s) => ({ id: s.id, page: s.page, x: Math.round(s.x), y: Math.round(s.y), text: clean(s.text) }))
+    .filter((s) => s.text);
+  if (out.length > MAX_SEGMENTS) truncated = true;
+  return { irVersion: PDF_IR_VERSION, segments: out.slice(0, MAX_SEGMENTS), pageCount: pages.length, truncated };
+}
+
+// Plain text the model reads: one row per printed line, every segment
+// tagged with its id and x position. Deterministic, so the same PDF always
+// renders the same text (the cache key).
+export function renderPdfIrText(ir) {
+  const out = [];
+  let page = 0;
+  let rowY = null;
+  let row = [];
+  const flush = () => { if (row.length) out.push(`y=${rowY}: ${row.join('  ')}`); row = []; };
+  ir.segments.forEach((s) => {
+    if (s.page !== page) { flush(); page = s.page; rowY = null; out.push(`=== PAGE ${page} ===`); }
+    if (rowY !== s.y) { flush(); rowY = s.y; }
+    row.push(`[${s.id} x=${s.x}] ${s.text}`);
+  });
+  flush();
+  return out.join('\n');
+}

@@ -24,6 +24,9 @@ export function slotFieldsFor(cat) {
   // PPKI / MP THP: the SUBJEK row (2b) and line 3 together are the CONTOH of the
   // subject + Tahun lines (buildMatrixRows), so they move as one block.
   if (cat?.mode === 'matrix') return { ...header, 2: ['position'], '2b': ['event_line_1', 'event_line_2'], 3: ['event_line_1', 'event_line_2'] };
+  // Word/PDF/AI-imported award tabs: ACARA -> position, the per-plaque
+  // line(s) -> lines 1 and 2 (a name list engraves the name first).
+  if (cat?.mode === 'dynamicMatrix') return { ...header, 2: ['position'], '2b': ['position'], 3: ['event_line_1', 'event_line_2'] };
   // LONJAKAN / KEHADIRAN (TAHUN) and TOKOH (NAMA MURID) -> line 1.
   if (cat?.positionFromRows) return { ...header, 2: ['position'], '2b': ['position'], 3: ['event_line_1'] };
   return null;

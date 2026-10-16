@@ -1301,3 +1301,21 @@ describe('copiedSheetCategory — Excel\'s "<sheet> (2)" copies keep their sheet
     expect(copiedSheetCategory('')).toBe(null);
   });
 });
+
+describe('template sheets whose layout was changed', () => {
+  it('reports a filled template sheet its own reader finds nothing in, instead of dropping it', () => {
+    const data = workbookFromSheets({
+      'KEHADIRAN PENUH': [
+        ['', '', 'TOLONG ISI DI SINI'],
+        ['', '', 'KEHADIRAN PENUH'],
+        ['NAMA', 'KUANTITI', 'JENIS PLAK'],
+        ['KEHADIRAN PENUH', 20, 'PK 261 A'],
+      ],
+      PPKI: [['', 'TOLONG ISI DI SINI'], ['', 'NAMA KELAS', 'QTY'], ['', '1 PKB UKM', 3]],
+      // The untouched template: wording only, no quantities — not reported.
+      'LONJAKAN SAUJANA': [['TOLONG ISI DI SINI'], ['NAMA', 'KUANTITI', 'JENIS PLAK'], ['TOTAL:', 0]],
+    });
+    const parsed = parseFormAnugerahExcel(data.buffer);
+    expect(parsed.unrecognizedSheets).toEqual(['PPKI', 'KEHADIRAN PENUH']);
+  });
+});

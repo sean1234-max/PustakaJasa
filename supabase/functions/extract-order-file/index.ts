@@ -32,7 +32,6 @@ const PRICE_OUT_PER_MTOK = Number(Deno.env.get('EXTRACT_PRICE_OUT_USD') ?? '15')
 
 const MAX_SHEETS_TEXT_CHARS = 200_000;   // ~50k tokens of input — a real order file is far smaller
 const RAW_RESPONSE_CAP = 200_000;        // chars kept in ai_extraction_runs.raw_response
-const RETENTION_DAYS = 90;
 
 const ALLOWED_ROLES = ['teacher', 'salesman', 'admin'];
 
@@ -196,7 +195,6 @@ Deno.serve(async (req) => {
           raw_response: JSON.stringify(res.raw).slice(0, RAW_RESPONSE_CAP),
           parsed_result: check.value,
         });
-        scheduleCleanup(adminClient, user.id);
         return json({ runId, status: 'succeeded', result: check.value });
       }
 
@@ -233,24 +231,3 @@ Deno.serve(async (req) => {
   }
 });
 
-// Fire-and-forget: after a successful run, delete this user's own uploads
-// older than the retention window. Runs on the response's own lifetime via
-// EdgeRuntime.waitUntil so it never delays the reply. Best-effort — a failure
-// here is logged, not surfaced.
-function scheduleCleanup(admin: ReturnType<typeof createClient>, userId: string) {
-  const task = (async () => {
-    try {
-      const { data: files } = await admin.storage.from('order-imports').list(userId, { limit: 1000 });
-      if (!files?.length) return;
-      const cutoff = Date.now() - RETENTION_DAYS * 86_400_000;
-      const stale = files
-        .filter((f) => f.created_at && new Date(f.created_at).getTime() < cutoff)
-        .map((f) => `${userId}/${f.name}`);
-      if (stale.length) await admin.storage.from('order-imports').remove(stale);
-    } catch (err) {
-      console.error('order-imports cleanup failed:', err);
-    }
-  })();
-  // @ts-ignore EdgeRuntime is provided by the Supabase Edge runtime
-  if (typeof EdgeRuntime !== 'undefined') EdgeRuntime.waitUntil(task);
-}

@@ -23,10 +23,12 @@ export async function uploadOrderImportFile(file) {
   try {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return null;
-    const ext = /\.docx$/i.test(file.name || '') ? '.docx' : '.xlsx';
+    const ext = (String(file.name || '').match(/\.(docx|pdf)$/i)?.[0] || '.xlsx').toLowerCase();
     const path = `${user.id}/${crypto.randomUUID()}${ext}`;
+    // The bucket (0046) allows .xlsx/.docx types and octet-stream; a PDF
+    // goes up as octet-stream (it is only ever downloaded back as a file).
     const { error } = await supabase.storage.from('order-imports').upload(path, file, {
-      contentType: file.type || 'application/octet-stream',
+      contentType: ext === '.pdf' ? 'application/octet-stream' : (file.type || 'application/octet-stream'),
       upsert: false,
     });
     if (error) { console.error('order import upload failed:', error); return null; }

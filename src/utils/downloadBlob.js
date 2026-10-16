@@ -11,3 +11,14 @@ export function downloadTextFile(filename, text, mimeType = 'text/csv;charset=ut
   document.body.removeChild(anchor);
   URL.revokeObjectURL(url);
 }
+
+export function downloadBinaryFile(filename, data, mimeType = 'application/octet-stream') {
+  const url = URL.createObjectURL(new Blob([data], { type: mimeType }));
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  URL.revokeObjectURL(url);
+}
