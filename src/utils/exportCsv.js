@@ -112,15 +112,12 @@ const itemAllReserved = (it) => Array.isArray(it.detail?.rows) && it.detail.rows
 
 const hasCrystal = (order) => (order?.items || []).some((it) => isCrystalCode(it.jenisPlak));
 
-// Crystals go with the plaques — same Typing card, one Generate AI (Sean,
-// 2026-10-15) — once their artwork is confirmed, unless the plaques were typed
-// (or the crystal card moved on) before that: then they stay their own card,
-// KIV & ARTWORK until confirmed, then Typing marked CRYSTAL, whose Generate AI
-// makes the crystals only (?part=crystal, Sean 2026-10-17). crystalTypedAt (0093) keeps it
-// that way after Done Typing.
+// Crystals never ride on the plaques' card (Sean, 2026-10-17): they're their own
+// card — KIV & ARTWORK until the artwork is confirmed, then Typing (two cards with
+// the same Order ID), each Generate AI making only its own. Only an order whose
+// crystals were already typed with its plaques (crystalTypedAt, 0093) stays that way.
 export function crystalWithPlak(order) {
-  if (!hasCrystal(order) || !order.artworkConfirmedAt) return false;
-  return !!order.crystalTypedAt || (!order.typedAt && !order.kivDoneAt);
+  return hasCrystal(order) && !!order.crystalTypedAt;
 }
 
 // Reserved names filled in after the plaques were typed (0097 kiv_filled_rows, row ids):

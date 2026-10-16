@@ -7,6 +7,8 @@ import { matchesOrderSearch } from '../utils/orderSearch';
 import OrderUrgentBadge from '../components/OrderUrgentBadge';
 import AddOnTag from '../components/AddOnTag';
 import { prioritizeUrgentOrders } from '../utils/urgentOrder';
+import ConfirmButton from '../components/ConfirmButton';
+import { countReservedPlaques, isCrystalCode } from '../utils/exportCsv';
 
 // Sales works one stage at a time — filter tabs map 1:1 to STATUS_STAGES.
 // A 'Reviewing Order' order can only be approved once Production has
@@ -24,7 +26,8 @@ const FILTERS = [
 ];
 
 export default function SalesDashboard() {
-  const { state, openAmend, openAddOn } = useAppState();
+  const { state, openAmend, openAddOn, confirmArtwork } = useAppState();
+  const [artworkErr, setArtworkErr] = useState({});
   const navigate = useNavigate();
   const [filter, setFilter] = useState(FILTERS[0].status);
   // A Sales Manager's `state.orders` already contains every salesman's
@@ -108,6 +111,10 @@ export default function SalesDashboard() {
                 <tbody>
                   {searchResults.map((ord) => {
                     const { canAmend, canAddOn } = actionsFor(ord);
+              // Sean, 2026-10-17: what the salesman still owes this order, on its card
+              const live = !['Cancelled', 'Completed'].includes(ord.status);
+              const needsArtwork = live && !ord.artworkConfirmedAt && (ord.items || []).some((it) => isCrystalCode(it.jenisPlak));
+              const needsKiv = ord.status === 'In Production' && countReservedPlaques(ord) > 0;
                     return (
                       <tr key={ord.id}>
                         <td>{ord.id}</td>
@@ -214,6 +221,27 @@ export default function SalesDashboard() {
                       <button type="button" className="btn btn-secondary" style={{ flex: 1 }} onClick={() => startAddOn(ord)}>Add On</button>
                     )}
                   </div>
+                  {(needsArtwork || needsKiv) && (
+                    <div className="order-card-actions" style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-2)' }}>
+                      {needsArtwork && (
+                        <ConfirmButton
+                          label="Confirm Artwork" style={{ flex: 1 }}
+                          question="Is the crystal artwork correct (design, words, logo)? Check it in View Summary → Crystal Preview first. The crystals then go to Production."
+                          confirmLabel="Yes, confirm" cancelLabel="Not yet"
+                          onConfirm={async () => {
+                            const err = await confirmArtwork(ord.id);
+                            setArtworkErr((e) => ({ ...e, [ord.id]: err || '' }));
+                          }}
+                        />
+                      )}
+                      {needsKiv && (
+                        <button type="button" className="btn btn-secondary" style={{ flex: 1 }} onClick={() => navigate(`/sales/orders/${ord.id}?kiv=1`)}>
+                          Update KIV
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {artworkErr[ord.id] && <p className="hint-text" style={{ color: '#b91c1c' }}>{artworkErr[ord.id]}</p>}
                 </div>
               );
             })}
