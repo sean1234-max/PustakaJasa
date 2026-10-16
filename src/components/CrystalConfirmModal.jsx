@@ -2,9 +2,10 @@
 // dialog (the browser's own modal <dialog>: dark backdrop, the page behind can't be used,
 // Esc = Cancel). "Yes, Artwork Confirmed" asks once more — the crystals go to Production
 // as they are (Sean, 2026-10-16) — and only "Yes, send to Production" submits.
+// onLater (salesman only): submit now, confirm the artwork later on the order's Summary page.
 import { useEffect, useRef, useState } from 'react';
 
-export default function CrystalConfirmModal({ open, busy, onYes, onEdit, onCancel }) {
+export default function CrystalConfirmModal({ open, busy, onYes, onLater = null, onEdit, onCancel }) {
   const ref = useRef(null);
   const [doubleCheck, setDoubleCheck] = useState(false);
   useEffect(() => {
@@ -40,6 +41,11 @@ export default function CrystalConfirmModal({ open, busy, onYes, onEdit, onCance
           <p className="crystal-confirm-text">Your order contains Crystal items. Have you confirmed the artwork?</p>
           <div className="crystal-confirm-actions">
             <button type="button" className="btn btn-primary" onClick={() => setDoubleCheck(true)}>Yes, Artwork Confirmed</button>
+            {onLater && (
+              <button type="button" className="btn btn-secondary" disabled={busy} onClick={onLater}>
+                {busy ? 'Submitting…' : 'Not yet — submit, confirm artwork later'}
+              </button>
+            )}
             <button type="button" className="btn btn-secondary" onClick={onEdit}>No, Edit Crystal</button>
             <button type="button" className="btn btn-ghost" onClick={onCancel}>Cancel / No</button>
           </div>

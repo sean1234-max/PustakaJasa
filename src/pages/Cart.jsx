@@ -102,15 +102,14 @@ export default function Cart() {
     () => ({ id: '', items: state.cart, sekolah: state.sekolah, schoolLanguage: state.schoolLanguage, logoDataUrl: state.logoDataUrl }),
     [state.cart, state.sekolah, state.schoolLanguage, state.logoDataUrl],
   );
-  const [askArtwork, setAskArtwork] = useState(false);
-  const [artworkNote, setArtworkNote] = useState('');
   const isSalesman = state.role === 'salesman';
-  // A teacher answers in a full-screen dialog (Sean, 2026-10-15); a salesman keeps the line below.
+  // Teacher and salesman answer in a full-screen dialog (Sean, 2026-10-15 / 10-17); only a
+  // salesman may submit first and confirm the artwork later (Sales order Summary → Confirm Artwork).
   const [crystalModal, setCrystalModal] = useState(false);
   const [crystalBusy, setCrystalBusy] = useState(false);
-  const confirmCrystals = async () => {
+  const confirmCrystals = async (artworkConfirmed = true) => {
     setCrystalBusy(true);
-    await handleSubmit(true);
+    await handleSubmit(artworkConfirmed);
     setCrystalBusy(false);
     setCrystalModal(false);
   };
@@ -271,43 +270,16 @@ export default function Cart() {
         <div className="row-split">
           <button type="button" className="btn btn-ghost" onClick={() => navigate('/order/step1')}>← Back to Order</button>
           {state.cartToast && <span className="toast-inline">{state.cartToast}</span>}
-          {askArtwork ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxWidth: 420 }}>
-              <span className="hint-text" style={{ margin: 0, fontWeight: 600 }}>
-                This order has crystals. Is the crystal artwork in the Crystal Preview above correct (design, words, logo)?
-              </span>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                <button type="button" className="btn btn-primary" onClick={() => handleSubmit(true)}>Yes — submit</button>
-                <button
-                  type="button" className="btn btn-ghost"
-                  onClick={() => {
-                    if (isSalesman) { handleSubmit(false); return; }
-                    setAskArtwork(false);
-                    setArtworkNote('Please check the crystal artwork in the Crystal Preview first — the order can be submitted once it is correct.');
-                  }}
-                >
-                  {isSalesman ? 'No — submit, confirm later' : 'No'}
-                </button>
-              </div>
-            </div>
-          ) : (
-            <button
-              type="button" className="btn btn-primary" disabled={state.cart.length === 0 || submitting || !!stockViolation || !!dupes}
-              onClick={() => {
-                setArtworkNote('');
-                if (!hasCrystal) handleSubmit();
-                else if (isSalesman) setAskArtwork(true);
-                else setCrystalModal(true);
-              }}
-            >
-              {submitting ? 'Submitting…' : 'Submit Order'}
-            </button>
-          )}
+          <button
+            type="button" className="btn btn-primary" disabled={state.cart.length === 0 || submitting || !!stockViolation || !!dupes}
+            onClick={() => (hasCrystal ? setCrystalModal(true) : handleSubmit())}
+          >
+            {submitting ? 'Submitting…' : 'Submit Order'}
+          </button>
         </div>
-        {artworkNote && <p className="hint-text" style={{ color: '#b45309', fontWeight: 600, textAlign: 'right' }}>{artworkNote}</p>}
         <CrystalConfirmModal
           open={crystalModal} busy={crystalBusy}
-          onYes={confirmCrystals} onEdit={editCrystals} onCancel={() => setCrystalModal(false)}
+          onYes={() => confirmCrystals(true)} onLater={isSalesman ? () => confirmCrystals(false) : null} onEdit={editCrystals} onCancel={() => setCrystalModal(false)}
         />
       </div>
     </div>
