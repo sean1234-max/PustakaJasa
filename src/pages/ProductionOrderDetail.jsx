@@ -336,7 +336,10 @@ export default function ProductionOrderDetail() {
   // artwork is confirmed they're typed with the plaques — Generate AI File runs
   // both (Sean, 2026-10-15); otherwise they're made from their own card.
   const crystalGroups = jenisPlakExport.filter((g) => isCrystalCode(g.jenisPlak));
-  const crystalsHere = crystalGroups.length > 0 && crystalWithPlak(order);
+  // Opened from a crystal card of its own in Typing (?part=crystal, Sean 2026-10-17: its plaques
+  // were typed before the artwork was confirmed): Generate AI File makes the crystals only.
+  const crystalCard = searchParams.get('part') === 'crystal';
+  const crystalsHere = crystalGroups.length > 0 && (crystalCard ? !!order.artworkConfirmedAt : crystalWithPlak(order));
   const plakGroups = jenisPlakExport.filter((g) => !isCrystalCode(g.jenisPlak));
   const reservedGroups = plakGroups.filter((g) => g.csvData.reservedCount > 0);
   const combinedRows = combineCsvRows(plakGroups);
@@ -355,7 +358,7 @@ export default function ProductionOrderDetail() {
   // reach the NAS AI FILE folder, and stops with an alert if there's no
   // helper or no folder — instead of queuing a job nobody will pick up.
   const aiFileBusy = aiFileChecking || !!activeAiFileJobId;
-  const generateOk = crystalsHere ? (plakGroups.length === 0 || combinedOk) : combinedOk;
+  const generateOk = crystalCard ? crystalsHere : crystalsHere ? (plakGroups.length === 0 || combinedOk) : combinedOk;
   const handleGenerateAiFile = async () => {
     if (!generateOk || aiFileBusy) return;
     setAiFileErr('');
@@ -382,7 +385,7 @@ export default function ProductionOrderDetail() {
         });
         setCrystalPrep(false);
       }
-      if (!combinedOk) return;
+      if (crystalCard || !combinedOk) return;
       const id = await startAiFileHelperJob(buildCombinedCsvFilename(order), rowsToCsv(combinedRows));
       setAiFileJob({ id, status: 'queued', message: '', files: [] });
     } catch (err) {
@@ -607,7 +610,9 @@ export default function ProductionOrderDetail() {
                     </p>
                     {crystalGroups.length > 0 && (
                       <p className="hint-text" style={{ marginTop: 4, color: '#8a6d00', fontWeight: 600 }}>
-                        {crystalsHere
+                        {crystalCard && crystalsHere
+                          ? 'CRYSTAL card — Generate AI File makes only the crystals (the plaques were already typed): '
+                          : crystalsHere
                           ? 'CRYSTAL is not in the CSV — Generate AI File also opens the crystals in Illustrator (from the Crystal Preview above): '
                           : 'CRYSTAL is made from its own card (KIV & ARTWORK, then Typing once the artwork is confirmed) — left out of this CSV / AI file: '}
                         {crystalGroups.map((g) => `${g.categoryLabel} – ${g.jenisPlak} (${g.totalQty})`).join(', ')}.
@@ -623,7 +628,7 @@ export default function ProductionOrderDetail() {
                       type="button" className="btn" style={{ marginTop: 8 }}
                       disabled={!generateOk || aiFileBusy} onClick={handleGenerateAiFile}
                     >
-                      {crystalPrep ? '⏳ Preparing the crystals — keep this page in front…' : aiFileChecking ? 'Checking this computer…' : activeAiFileJobId ? '⏳ Generating…' : '🖨 Generate AI File'}
+                      {crystalPrep ? '⏳ Preparing the crystals — keep this page in front…' : aiFileChecking ? 'Checking this computer…' : activeAiFileJobId ? '⏳ Generating…' : crystalCard ? '🖨 Generate Crystal AI File' : '🖨 Generate AI File'}
                     </button>
                     <p className="hint-text" style={{ marginTop: 4 }}>
                       Runs this same combined CSV in Illustrator on this computer — it needs the AI File helper installed and the NAS AI FILE folder reachable here. Type your name when Illustrator asks.

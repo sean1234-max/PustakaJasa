@@ -340,7 +340,7 @@ export default function ProductionDashboard() {
                 )}
                 {cardTab === 'typing' && (
                   <>
-                    <button type="button" className="btn btn-ghost" style={{ flex: 1 }} onClick={() => navigate(`/production/orders/${ord.id}${ord.invoiceId ? `?invoice=${encodeURIComponent(ord.invoiceId)}` : ''}`)}>
+                    <button type="button" className="btn btn-ghost" style={{ flex: 1 }} onClick={() => navigate(`/production/orders/${ord.id}${isKivCard ? '?part=crystal' : ord.invoiceId ? `?invoice=${encodeURIComponent(ord.invoiceId)}` : ''}`)}>
                       View Order
                     </button>
                     <ConfirmButton

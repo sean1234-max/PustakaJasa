@@ -115,7 +115,8 @@ const hasCrystal = (order) => (order?.items || []).some((it) => isCrystalCode(it
 // Crystals go with the plaques — same Typing card, one Generate AI (Sean,
 // 2026-10-15) — once their artwork is confirmed, unless the plaques were typed
 // (or the crystal card moved on) before that: then they stay their own card,
-// KIV & ARTWORK until confirmed, then Typing. crystalTypedAt (0093) keeps it
+// KIV & ARTWORK until confirmed, then Typing marked CRYSTAL, whose Generate AI
+// makes the crystals only (?part=crystal, Sean 2026-10-17). crystalTypedAt (0093) keeps it
 // that way after Done Typing.
 export function crystalWithPlak(order) {
   if (!hasCrystal(order) || !order.artworkConfirmedAt) return false;
