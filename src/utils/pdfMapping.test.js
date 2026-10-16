@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildPdfIr, renderPdfIrText } from './pdfIr';
-import { applyPdfReading, applyPictureHeading } from './pdfMapping';
+import { applyPdfReading, applyPictureHeading, splitSchoolLines } from './pdfMapping';
 
 // Made-up page: a sample label + a class list with counts, and a grid of
 // two finished labels side by side.
@@ -249,5 +249,21 @@ describe('applyPictureHeading', () => {
     const cat = { a: [{ lines: { 0: 'MAJLIS' } }] };
     expect(applyPictureHeading(cat, { lines: ['SK X', 'MAJLIS'], confidence: 'low' })).toEqual([]);
     expect(cat.a[0].lines[0]).toBe('MAJLIS');
+  });
+});
+
+describe('splitSchoolLines', () => {
+  it('puts each school on its own line', () => {
+    expect(splitSchoolLines([
+      'SEKOLAH KEBANGSAAN TAMAN MELAWATI 2SEKOLAH KLUSTER', 'KECEMERLANGAN', 'MAJLIS APRESIASI AKADEMIK 2026',
+    ])).toEqual(['SEKOLAH KEBANGSAAN TAMAN MELAWATI 2', 'SEKOLAH KLUSTER KECEMERLANGAN', 'MAJLIS APRESIASI AKADEMIK 2026']);
+    expect(splitSchoolLines(['SEKOLAH KEBANGSAAN TAMAN MELAWATI 2 SEKOLAH KLUSTER KECEMERLANGAN']))
+      .toEqual(['SEKOLAH KEBANGSAAN TAMAN MELAWATI 2', 'SEKOLAH KLUSTER KECEMERLANGAN']);
+  });
+
+  it('leaves lines that are already right', () => {
+    const ok = ['SEKOLAH KEBANGSAAN TAMAN MELAWATI 2', 'SEKOLAH KLUSTER KECEMERLANGAN', 'MAJLIS APRESIASI AKADEMIK', '(SESI 2026)'];
+    expect(splitSchoolLines(ok)).toEqual(ok);
+    expect(splitSchoolLines(['SEKOLAH KEBANGSAAN', 'TAMAN MELAWATI 2'])).toEqual(['SEKOLAH KEBANGSAAN', 'TAMAN MELAWATI 2']);
   });
 });

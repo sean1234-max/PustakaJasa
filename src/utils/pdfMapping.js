@@ -128,6 +128,26 @@ function oddOneOut(labels) {
   return out;
 }
 
+// Owner (2026-10-16): one engraved line never holds two schools. A line
+// like "SEKOLAH KEBANGSAAN TAMAN MELAWATI 2SEKOLAH KLUSTER" is split before
+// the second SEKOLAH, and that school's words carried on the next line
+// ("KECEMERLANGAN") join it again: "SEKOLAH KLUSTER KECEMERLANGAN".
+const SECOND_SCHOOL_RE = /(?<=[^A-Za-z])\s*(?=SEKOLAH\b)/gi;
+const LINE_START_RE = /^(SEKOLAH|SK|SJK|SMK|MAJLIS|HARI|ANUGERAH|SESI|\(|\d)/i;
+export function splitSchoolLines(lines) {
+  const out = [];
+  let carry = false;
+  (lines || []).forEach((raw) => {
+    const line = String(raw ?? '').replace(/\s+/g, ' ').trim();
+    if (!line) return;
+    if (carry && !LINE_START_RE.test(line)) { out[out.length - 1] += ` ${line}`; carry = false; return; }
+    const parts = line.split(SECOND_SCHOOL_RE).map((p) => p.trim()).filter(Boolean);
+    out.push(...parts);
+    carry = parts.length > 1;
+  });
+  return out;
+}
+
 export function applyPdfReading(ir, reading) {
   const notes = [];
   const { read, segs } = makeSegmentReader(ir);
@@ -198,7 +218,7 @@ export function applyPdfReading(ir, reading) {
 
     const tajukLines = (g.tajuk || []).map(read);
     if (tajukLines.some((t) => t == null)) { bad++; notes.push(`${where}: the AI pointed at header text that isn't in the file — please type the TAJUK BESAR by hand.`); }
-    const heading = tajukLines.filter((t) => t != null).join('\n');
+    const heading = splitSchoolLines(tajukLines.filter((t) => t != null)).join('\n');
 
     let sum = 0;
     let assumedOne = 0;
@@ -303,7 +323,7 @@ export function applyPdfReading(ir, reading) {
 // ("MAJLIS APRESIASI AKADEMIK" in "MAJLIS APRESIASI AKADEMIK 2026"). Changes
 // `categorized` in place; returns the notes.
 export function applyPictureHeading(categorized, picture) {
-  const pic = (picture?.lines || []).map((l) => String(l).replace(/\s+/g, ' ').trim()).filter(Boolean);
+  const pic = splitSchoolLines(picture?.lines);
   if (!pic.length || picture.confidence === 'low') return [];
   const sections = Object.values(categorized || {}).flatMap((list) => list || []);
   const headingOf = (section) => String(section.lines?.['0'] || '').split('\n').map((l) => l.trim()).filter(Boolean);
