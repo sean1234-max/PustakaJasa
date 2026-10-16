@@ -210,3 +210,23 @@ describe('buildPdfIr word pieces', () => {
     expect(ir.segments.map((s) => s.text)).toEqual(['ANUGERAH SAIDINA ABU BAKAR', '=', '99', '1', 'UM']);
   });
 });
+
+describe('odd label check', () => {
+  it('flags one label whose line differs by one word from its siblings', () => {
+    const at = (str, x, y) => ({ str, x, y, w: str.length * 5, size: 10 });
+    const ir = buildPdfIr([{ page: 1, width: 600, height: 800, items: [
+      at('PKC 263', 300, 50),
+      at('ANUGERAH MAHATMA GANDHI', 300, 100), at('TAHUN 1', 300, 115),
+      at('SAHAJA MAHATMA GANDHI', 300, 200), at('TAHUN 2', 300, 215),
+      at('ANUGERAH MAHATMA GANDHI', 300, 300), at('TAHUN 3', 300, 315),
+    ] }]);
+    const id = (y) => ir.segments.find((s) => s.y === y).id;
+    const label = (y) => [[id(y)], [id(y + 15)]];
+    const res = applyPdfReading(ir, { groups: [{
+      name: 'G', code: { ref: id(50), text: 'PKC 263' }, total: null, each: null, tajuk: [], names: false, confidence: 'high', note: null,
+      labels: [label(100), label(200), label(300)],
+    }] });
+    expect(res.notes.some((n) => n.includes('one label reads "SAHAJA MAHATMA GANDHI" where the others read "ANUGERAH MAHATMA GANDHI"'))).toBe(true);
+    expect(res.count).toBe(3);
+  });
+});

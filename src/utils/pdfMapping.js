@@ -100,6 +100,34 @@ function cartesian(lists) {
   return lists.reduce((acc, list) => acc.flatMap((a) => list.map((x) => [...a, x])), [[]]);
 }
 
+// A line on one finished label that matches the same line on the group's
+// other labels except for one word ("SAHAJA MAHATMA GANDHI" among several
+// "ANUGERAH MAHATMA GANDHI"): most likely the AI took the text beside the
+// right one. Returns [odd, usual] pairs; nothing is changed.
+function oddOneOut(labels) {
+  const out = [];
+  const byLine = new Map();
+  labels.forEach((lines) => lines.forEach((t, i) => {
+    const key = `${lines.length}:${i}`;
+    if (!byLine.has(key)) byLine.set(key, new Map());
+    const m = byLine.get(key);
+    m.set(t, (m.get(t) || 0) + 1);
+  }));
+  byLine.forEach((counts) => {
+    const values = [...counts];
+    values.forEach(([odd, n]) => {
+      if (n !== 1) return;
+      const a = odd.split(' ');
+      const usual = values.find(([t, m]) => {
+        const b = t.split(' ');
+        return m >= 2 && a.length >= 2 && b.length === a.length && b.filter((w, i) => w !== a[i]).length === 1;
+      });
+      if (usual) out.push([odd, usual[0]]);
+    });
+  });
+  return out;
+}
+
 export function applyPdfReading(ir, reading) {
   const notes = [];
   const { read, segs } = makeSegmentReader(ir);
@@ -176,6 +204,7 @@ export function applyPdfReading(ir, reading) {
     let assumedOne = 0;
     let multiplied = false;
     const rows = [];
+    const fixedLines = [];
     let each = 1;
     if (g.each) {
       const seg = read(g.each.ref);
@@ -215,8 +244,10 @@ export function applyPdfReading(ir, reading) {
           else text.push(o.text);
         });
         rows.push({ lines: text, qty, kod, nameFirst });
+        if (!varies) fixedLines.push(text);
       });
     });
+    oddOneOut(fixedLines).forEach(([odd, usual]) => notes.push(`${where}: one label reads "${odd}" where the others read "${usual}" — please check that label.`));
 
     let totalMatches = false;
     if (g.total) {
