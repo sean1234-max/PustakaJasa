@@ -3,9 +3,10 @@ import { supabase } from './supabaseClient';
 // AI sheet reader — see supabase/functions/read-order-file and
 // /mnt/project-files/ai-agent-design. Off unless VITE_AI_READER_ENABLED=1,
 // and only offered to the roles in VITE_AI_READER_ROLES (default
-// "salesman"); the function re-checks the role itself (READER_ROLES).
+// "salesman,teacher": both upload orders on New Order); the function
+// re-checks the role itself (READER_ROLES).
 export const AI_READER_ENABLED = import.meta.env?.VITE_AI_READER_ENABLED === '1';
-const AI_READER_ROLES = String(import.meta.env?.VITE_AI_READER_ROLES || 'salesman').split(',').map((s) => s.trim());
+const AI_READER_ROLES = String(import.meta.env?.VITE_AI_READER_ROLES || 'salesman,teacher').split(',').map((s) => s.trim());
 
 export function canUseAiReader(role) {
   return AI_READER_ENABLED && AI_READER_ROLES.includes(role);

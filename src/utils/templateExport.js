@@ -402,6 +402,15 @@ function setCell(doc, ref, value) {
 
 // ---------------------------------------------------------------------------
 
+// The template's own sample subjects (BAHASA MELAYU, BAHASA CINA …) in
+// the SUBJEK rows this order doesn't use are emptied, so no row reads as
+// an award nobody ordered.
+function clearUnusedSubjects(doc, ws, layout, used) {
+  layout.awardRows.slice(used).forEach((r) => {
+    if (textAt(ws, r, layout.subjekCol) && !ws[addr(r, layout.subjekCol)]?.f) setCell(doc, addr(r, layout.subjekCol), '');
+  });
+}
+
 const chunk = (list, size) => {
   const out = [];
   for (let i = 0; i < list.length; i += size) out.push(list.slice(i, i + size));
@@ -476,6 +485,7 @@ export async function fillOrderTemplate(templateBuffer, categorized, {
         setCell(doc, addr(r, layout.subjekCol), a);
         layout.levelCols.forEach((col, year) => setCell(doc, addr(r, col), perYear.get(year) || ''));
       });
+      clearUnusedSubjects(doc, wb.Sheets[base], layout, awards.length);
       count(name, n * awards.length);
     }
   }
@@ -499,6 +509,7 @@ export async function fillOrderTemplate(templateBuffer, categorized, {
         setCell(doc, addr(layout.awardRows[i], layout.subjekCol), a);
         if (layout.levelCol != null) setCell(doc, addr(layout.awardRows[i], layout.levelCol), perAward);
       });
+      clearUnusedSubjects(doc, wb.Sheets[base], layout, awards.length);
       g.levels.forEach(({ label, qty }, i) => {
         setCell(doc, addr(layout.dataRow + i, layout.nameCol), label);
         setCell(doc, addr(layout.dataRow + i, layout.qtyCol), qty);

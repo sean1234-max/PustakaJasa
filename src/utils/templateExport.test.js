@@ -11,6 +11,7 @@ function makeTemplate() {
   mp[0] = ['', 'TOLONG ISI DI SINI'];
   mp[10] = ['SUBJEK', '', '', '', '', 'Tahun 1', '', '', '', '', 'Tahun 2', '', '', '', '', 'Tahun 3'];
   mp[11] = ['', 'TAHUN 1', 'TAHUN 2', 'TAHUN 3', '', 'Nama Kelas', 'QTY', '', '', '', 'Nama Kelas', 'QTY', '', '', '', 'Nama Kelas', 'QTY'];
+  mp[15] = ['BAHASA CINA']; // the template's own sample subject
   mp[16] = ['TOTAL'];
   mp[18] = ['', 'JENIS PLAK', 'QTY'];
   const mpWs = XLSX.utils.aoa_to_sheet(mp.map((r) => r || []));
@@ -20,6 +21,7 @@ function makeTemplate() {
   pk[0] = ['', '', 'TOLONG ISI DI SINI'];
   pk[9] = ['SUBJEK', 'KUANTITI', '', '', '', 'PRA PPKI', '', '', '', '', 'PPKI'];
   pk[10] = ['', 'PRA PPKI', 'PPKI', 'PRASEKOLAH', '', 'Nama Kelas', 'QTY', '', '', '', 'Nama Kelas', 'QTY'];
+  pk[14] = ['BAHASA TAMIL'];
   pk[15] = ['TOTAL'];
   pk[17] = ['', 'JENIS PLAK'];
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(pk.map((r) => r || [])), 'PPKI,PRA');
@@ -80,6 +82,7 @@ describe('fillOrderTemplate', () => {
     expect([v(wb, mp, 'B13'), v(wb, mp, 'C13'), v(wb, mp, 'D13')]).toEqual([2, 1, undefined]);
     expect([v(wb, mp, 'F13'), v(wb, mp, 'G13'), v(wb, mp, 'F14'), v(wb, mp, 'K13')]).toEqual(['UM', 1, 'UKM', 'UM']);
     expect(v(wb, mp, 'B20')).toBe('PKC 263');
+    expect([v(wb, mp, 'A16'), v(wb, `${mp} (2)`, 'A16'), v(wb, 'PPKI,PRA', 'A15')]).toEqual([undefined, undefined, undefined]);
     expect(v(wb, `${mp} (2)`, 'A13')).toBe('ANUGERAH SHAKESPEARE');
     expect(v(wb, `${mp} (2)`, 'B20')).toBe('PKC 246');
     expect(v(wb, 'PPKI,PRA', 'A12')).toBe('ANUGERAH AL-FARABI');
