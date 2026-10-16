@@ -77,9 +77,9 @@ export default function CrystalPreview({ order, role = 'view', selected = null, 
   const [readyTick, setReadyTick] = useState(0); // counts "ready"s: a reloaded preview needs the rows again
   const rows = useMemo(() => crystalRowsOf(order), [order]);
   const reserved = useMemo(() => reservedCrystalsOf(order), [order]);
-  // Production makes the crystals only once the artwork is confirmed
-  const shownRole = role === 'production' && showArtwork && !order?.artworkConfirmedAt ? 'view' : role;
-  const src = `${STUDIO_PATH}/preview.html?theme=light&role=${encodeURIComponent(shownRole)}`;
+  // Production makes the crystals only once the artwork is confirmed (it can still ✎ Edit them)
+  const locked = role === 'production' && showArtwork && !order?.artworkConfirmedAt;
+  const src = `${STUDIO_PATH}/preview.html?theme=light&role=${encodeURIComponent(role)}${locked ? '&locked=1' : ''}`;
 
   useEffect(() => {
     const onMessage = (e) => {

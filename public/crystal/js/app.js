@@ -1458,5 +1458,7 @@ window.addEventListener("beforeunload", (e) => { if (S.dirty) { e.preventDefault
     const custom = await orderCustom();
     S.rows.forEach((r, i) => { const k = keyFor(i), st = custom[S.origKeys[i]]; if (k && st) S.edits[i + "|" + k] = st; });
   }
-  await show(0);
+  // ✎ Edit this crystal: open on the crystal that was showing
+  const start = opened && Number.isInteger(opened.start) && opened.start < S.rows.length ? opened.start : 0;
+  await show(start);
 })();
