@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import { useAppState } from '../state/useAppState';
-import { statusPillStyle, isAddonInFlight, formatDate, toMalaysiaDay, invoiceLabel } from '../data/catalog';
+import { statusPillStyle, isAddonInFlight, invoiceLabel } from '../data/catalog';
 import { matchesOrderSearch } from '../utils/orderSearch';
 import OrderUrgentBadge from '../components/OrderUrgentBadge';
 import AddOnTag from '../components/AddOnTag';
@@ -41,7 +41,7 @@ export default function SalesDashboard() {
   // Manager sees everyone's but edits only their own — isOwn below).
   // ponytail: searches the loaded orders (fetchOrders' newest 500); add a
   // server-side ilike search if a salesman ever has more than that.
-  const searchResults = search.trim() ? state.orders.filter((ord) => matchesOrderSearch(ord, search)) : null;
+  const searching = !!search.trim();
 
   // Before approval: Update Details; after: Add On only (Sean, 2026-10-09).
   const actionsFor = (ord) => {
@@ -62,9 +62,16 @@ export default function SalesDashboard() {
   const byStage = filter === ADDON_FILTER
     ? state.orders.filter((ord) => isAddonInFlight(ord))
     : state.orders.filter((ord) => ord.status === filter);
+  // Searching (Sean, 2026-10-17 — same as Production's): the matching orders' cards from every
+  // stage, each with its own stage's buttons (cardFilterOf).
+  const shown = searching ? state.orders.filter((ord) => matchesOrderSearch(ord, search)) : byStage;
   const filteredOrders = prioritizeUrgentOrders(isManager && salesmanFilter !== 'all'
-    ? byStage.filter((ord) => ord.sales === salesmanFilter)
-    : byStage);
+    ? shown.filter((ord) => ord.sales === salesmanFilter)
+    : shown);
+  const cardFilterOf = (ord) => {
+    if (!searching) return filter;
+    return isAddonInFlight(ord) ? ADDON_FILTER : ord.status;
+  };
 
   return (
     <div className="screen-wrap">
@@ -91,47 +98,23 @@ export default function SalesDashboard() {
         </div>
       )}
 
-      <div className="field" style={{ maxWidth: 480, marginBottom: 'var(--space-4)' }}>
+      <div className="field" style={{ maxWidth: 520, marginBottom: 'var(--space-4)' }}>
         <label htmlFor="orderSearch">Search Order</label>
-        <input
-          className="input" id="orderSearch" type="search" value={search} onChange={(e) => setSearch(e.target.value)}
-          placeholder="School name, Invoice Number or Order ID — e.g. SK Sungai"
-        />
+        <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
+          <span aria-hidden="true" style={{ fontSize: 18 }}>🔍</span>
+          <input
+            className="input" id="orderSearch" type="search" value={search} onChange={(e) => setSearch(e.target.value)}
+            placeholder="Order ID, Invoice Number, school or salesman — e.g. SK Sungai"
+            style={{ flex: 1 }}
+          />
+          {search && <button type="button" className="btn btn-ghost" onClick={() => setSearch('')}>✕ Clear</button>}
+        </div>
       </div>
 
-      {searchResults ? (
+      {searching ? (
         <>
-          <div className="card-kicker">Search results ({searchResults.length})</div>
-          {searchResults.length === 0 ? (
-            <p className="hint-text">No order matches “{search.trim()}”.</p>
-          ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <table className="table">
-                <thead><tr><th>Order ID</th><th>School</th><th>Invoice Number</th><th>Shipment Date</th><th>Status</th><th /></tr></thead>
-                <tbody>
-                  {searchResults.map((ord) => {
-                    const { canAmend, canAddOn } = actionsFor(ord);
-                    return (
-                      <tr key={ord.id}>
-                        <td>{ord.id}</td>
-                        <td>{ord.sekolah || '—'}</td>
-                        <td>{[ord.invoiceId, ...(ord.invoiceGroups || []).map((g) => g.invoiceId)].filter(Boolean).map((inv) => invoiceLabel(ord, inv)).join(', ') || '—'}</td>
-                        <td>{ord.shipmentDate ? formatDate(toMalaysiaDay(ord.shipmentDate)) : '—'}</td>
-                        <td><span className="status-pill" style={statusPillStyle(ord.status)}>{ord.status}</span></td>
-                        <td>
-                          <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
-                            <button type="button" className="btn btn-ghost" onClick={() => navigate(`/sales/orders/${ord.id}`)}>View</button>
-                            {canAmend && <button type="button" className="btn btn-secondary" onClick={() => startAmend(ord)}>Update Details</button>}
-                            {canAddOn && <button type="button" className="btn btn-secondary" onClick={() => startAddOn(ord)}>Add On</button>}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
+          <div className="card-kicker">Search results ({filteredOrders.length})</div>
+          {filteredOrders.length === 0 && <p className="hint-text">No order matches “{search.trim()}”.</p>}
         </>
       ) : (
         <>
@@ -158,10 +141,13 @@ export default function SalesDashboard() {
 
           <div className="card-kicker">{FILTERS.find((f) => f.status === filter)?.label}</div>
           {filteredOrders.length === 0 && <p className="hint-text">No orders in this stage.</p>}
+        </>
+      )}
           <div className="order-grid">
             {filteredOrders.map((ord) => {
+              const cardFilter = cardFilterOf(ord);
               const readyToApprove = ord.status === 'Reviewing Order' && !!ord.reviewedAt;
-              const pendingReview = readyToApprove || (filter === ADDON_FILTER && isAddonInFlight(ord));
+              const pendingReview = readyToApprove || (cardFilter === ADDON_FILTER && isAddonInFlight(ord));
               const { canAmend, canAddOn } = actionsFor(ord);
               // Sean, 2026-10-17: what the salesman still owes this order, on its card
               const live = !['Cancelled', 'Completed'].includes(ord.status);
@@ -192,7 +178,7 @@ export default function SalesDashboard() {
                   {ord.correctedImportFilePath && (
                     <span className="status-pill" style={{ background: '#fff4ce', color: '#8a6d00', marginTop: 'var(--space-2)' }}>Excel Updated</span>
                   )}
-                  {filter === ADDON_FILTER && (
+                  {cardFilter === ADDON_FILTER && (
                     <span className="status-pill" style={{ background: 'var(--color-accent-100)', color: 'var(--color-accent-900)', marginTop: 'var(--space-2)' }}>Add-On Pending</span>
                   )}
 
@@ -212,7 +198,7 @@ export default function SalesDashboard() {
 
                   <div className="order-card-actions" style={{ display: 'flex', gap: 'var(--space-2)' }}>
                     <button type="button" className="btn btn-primary" style={{ flex: 1 }} onClick={() => navigate(`/sales/orders/${ord.id}`)}>
-                      {filter === ADDON_FILTER ? 'Review Add-On' : pendingReview ? 'Approve Order' : 'View Summary'}
+                      {cardFilter === ADDON_FILTER ? 'Review Add-On' : pendingReview ? 'Approve Order' : 'View Summary'}
                     </button>
                     {canAmend && (
                       <button type="button" className="btn btn-secondary" style={{ flex: 1 }} onClick={() => startAmend(ord)}>Update Details</button>
@@ -246,8 +232,6 @@ export default function SalesDashboard() {
               );
             })}
           </div>
-        </>
-      )}
     </div>
   );
 }
