@@ -327,8 +327,8 @@ function showTab(g) {
     return;
   }
   out.innerHTML = `
-    <div class="vhead"><b id="vJenis"></b> <span id="vSub" class="muted"></span> <a href="#" class="edit" id="vEdit"
-      title="Open this crystal in Crystal Studio (the design's other crystals too, ‹ › there) to change it">✎ Edit this crystal</a>
+    <div class="vhead"><b id="vJenis"></b> <span id="vSub" class="muted"></span> <button type="button" class="gen" id="vEdit" style="margin-left:8px"
+      title="Open this crystal in Crystal Studio (the design's other crystals too, ‹ › there) to change it">✎ Edit in Crystal Studio</button>
       <a href="#" class="edit" id="vDefault" hidden title="This crystal was changed for this order only: throw that away and show it on the default template again (for everyone who sees this order)">↺ Use the default design</a>
       <label class="edit" id="vLogo" hidden title="Pick the school's logo (a picture): it's kept in Crystal Studio's School logos under this school's name, for every order of this school">⊕ Add the school's logo<input type="file" id="vLogoFile" accept=".png,.jpg,.jpeg,.webp,.svg" hidden></label></div>
     <div class="vrow">
