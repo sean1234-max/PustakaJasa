@@ -33,6 +33,9 @@ import ProductionInvoiceEntry from '../components/ProductionInvoiceEntry';
 // KIV & ARTWORK → In Production — so one order can have two cards in In
 // Production, one marked SHORT SUPPLY / CRYSTAL.
 const main = (o) => o._part === 'main';
+// One card of an order done while its other card is still being made (Sean, 2026-10-17): the
+// plaques Done (plakDoneAt) or the KIV card Done (kivProductionDoneAt) — that card is Completed.
+const partDone = (o) => o.status === 'In Production' && (main(o) ? !!o._primarySlice && !!o.plakDoneAt : !!o.kivProductionDoneAt);
 const TABS = [
   { key: 'reviewing', label: 'Reviewing Order', match: (o) => main(o) && o.status === 'Reviewing Order' },
   // A submitted add-on (0085) — one card per order (its first invoice slice),
@@ -56,7 +59,7 @@ const TABS = [
       : kivInProduction(o)),
   },
   // an order with a KIV card (crystals / Reserved) shows both its cards here too (Sean, 2026-10-17)
-  { key: 'completed', label: 'Completed', match: (o) => o.status === 'Completed' && (main(o) ? hasMainPart(o) || kivParts(o).length === 0 : true) },
+  { key: 'completed', label: 'Completed', match: (o) => partDone(o) || (o.status === 'Completed' && (main(o) ? hasMainPart(o) || kivParts(o).length === 0 : true)) },
 ];
 
 // order.shipmentDate is stored as free-form text (see supabase/migrations/0001,
@@ -259,8 +262,8 @@ export default function ProductionDashboard() {
                     <span className="status-pill" style={{ background: '#fff4ce', color: '#8a6d00' }}>Excel Updated</span>
                   )}
                   <OrderUrgentBadge urgent={ord.urgent} />
-                  <span className="status-pill" style={statusPillStyle(ord.status)}>
-                    {isKivCard
+                  <span className="status-pill" style={statusPillStyle(partDone(ord) ? 'Completed' : ord.status)}>
+                    {partDone(ord) ? 'Completed' : isKivCard
                       ? (kivInTyping(ord) ? 'Typing' : needsKiv(ord) ? 'KIV & ARTWORK' : ord.status)
                       : (ord.status === 'In Production' && !ord.typedAt ? 'Typing' : ord.status)}
                   </span>
