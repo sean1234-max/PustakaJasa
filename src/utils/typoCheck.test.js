@@ -12,6 +12,11 @@ describe('findPossibleTypo', () => {
     expect(findPossibleTypo('ANUEGRAH KEHADIRAN PENUH')).toMatchObject({ word: 'ANUEGRAH', suggestion: 'ANUGERAH' });
   });
 
+  it('SINA is only a typo of CINA after BAHASA ("IBNU SINA" is a name)', () => {
+    expect(findPossibleTypo('ANUGERAH IBNU SINA')).toBeNull();
+    expect(findPossibleTypo('BAHASA SINA')).toMatchObject({ clean: 'SINA', suggestion: 'CINA' });
+  });
+
   it('returns null for an exact match', () => {
     expect(findPossibleTypo('ANUGERAH KECEMERLANGAN MURID')).toBeNull();
   });
