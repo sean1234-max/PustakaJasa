@@ -154,8 +154,11 @@ async function showAll(groups) {
   const my = ++job;
   slides = [];
   columns = [...new Set(allRows.flatMap((r) => Object.keys(r)))].map((k) => ({ key: k, label: k }));
-  const cells = allCells = cellsOf(groups);
-  const ready = cells.filter((c) => c.it).length;
+  // one tile per Jenis Plak / design, as its CONTOH (Sean, 2026-10-17): its tab shows each crystal
+  const every = cellsOf(groups);
+  const cells = allCells = every.filter((c, n) => every.findIndex((x) => x.g === c.g) === n);
+  const ready = every.filter((c) => c.it).length;
+  const pcs = (g) => g.tiles.reduce((n, t) => n + (Number(t.qty) || 0), 0);
   out.innerHTML = `
     <div class="abar">
       <span class="muted">${ready} crystal${ready === 1 ? "" : "s"} · click one to see it alone</span>
@@ -168,8 +171,8 @@ async function showAll(groups) {
     <div class="grid" id="aGrid" style="--th:${Math.round(THUMB_H * allZoom)}px">${cells.map((c, n) => `
     <button type="button" class="cell${c.it ? "" : " missing"}" data-n="${n}" title="${c.it ? "See it alone" : "No Crystal Studio design for this yet"}">
       <span class="thumb">${c.it && smalls.get(rowKey(c.g.jenis, c.t.row)) ? `<img alt="" src="${smalls.get(rowKey(c.g.jenis, c.t.row))}"${readFlip && mirrored(c.it) ? ' style="transform:scaleX(-1)"' : ""}>` : c.it ? "…" : "Not imported yet"}</span>
-      <span class="clabel"><b>${esc(short(c.g.jenis))}</b>${c.t ? ` ×${c.t.qty}` : ""}${c.t && custom[rowKey(c.g.jenis, c.t.row)] ? ' <span class="own" title="Changed for this order only">✎ this order</span>' : ""}</span>
-      <span class="clabel">${c.t ? esc(caption(c.t.row)) : ""}</span>
+      <span class="clabel"><b>${esc(short(c.g.jenis))}</b>${c.t ? ` ×${pcs(c.g)}` : ""}${c.t && custom[rowKey(c.g.jenis, c.t.row)] ? ' <span class="own" title="Changed for this order only">✎ this order</span>' : ""}</span>
+      <span class="clabel">${c.t ? (c.g.tiles.length > 1 ? `CONTOH · ${c.g.tiles.length} different` : esc(caption(c.t.row))) : ""}</span>
     </button>`).join("")}</div>`;
   const setAllZoom = (step) => {
     allZoom = ZOOMS[Math.max(0, Math.min(ZOOMS.length - 1, ZOOMS.indexOf(allZoom) + step))];

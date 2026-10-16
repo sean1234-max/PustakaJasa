@@ -105,6 +105,8 @@ let showToken = 0;
 async function show(r, key) {
   const token = ++showToken;
   const nextRow = canon(Math.max(0, Math.min(r, S.rows.length - 1)));
+  if (nextRow !== S.row) await spreadLayout(); // the crystal being left: its change to its whole design
+  if (token !== showToken) return;
   // a design opened by hand (Templates panel) stays until another row is picked
   if (key) S.manual = key && key !== keyFor(nextRow) ? key : null;
   else if (nextRow !== S.row) S.manual = null;
@@ -536,6 +538,20 @@ $("resetRow").onclick = async () => {
   await show(S.row, S.key);
 };
 
+// Opened from an order: a change to one crystal goes to every crystal of the same Jenis Plak /
+// design (Sean, 2026-10-17) — done when leaving the crystal and on Save (each keeps its own words).
+let spreadPending = false;
+async function spreadLayout() {
+  if (!spreadPending || !S.key || !(S.order || S.draft) || !S.edits[S.row + "|" + S.key]) return;
+  spreadPending = false;
+  for (const g of S.groups) {
+    const r = g.rows[0];
+    if (r === S.row || keyFor(r) !== S.key) continue;
+    const sc = await sceneFor(S.key, r);
+    if (sc) S.edits[r + "|" + S.key] = await editor.layoutLike(sc);
+  }
+}
+
 $("applyAll").onclick = async () => {
   if (!S.key) return;
   const others = [];
@@ -741,6 +757,7 @@ editor.initEditor({
   changed: (state) => {
     if (!S.key) return;
     S.edits[S.row + "|" + S.key] = state;
+    spreadPending = true;
     markDirty();
     renderTableSoon();
     renderElementsSoon();
@@ -1014,6 +1031,7 @@ async function orderCustom() {
 }
 $("saveOrder").onclick = async () => {
   if (!S.order && !S.draft) return;
+  await spreadLayout();
   const custom = await orderCustom();
   for (const k of S.origKeys) delete custom[k]; // these crystals: as they are here now
   let n = 0;
