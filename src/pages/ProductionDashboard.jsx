@@ -79,7 +79,7 @@ export default function ProductionDashboard() {
   // ponytail: searches the loaded orders (fetchOrders' newest 500); add a server-side ilike
   // search once Production sees more than that.
   const [search, setSearch] = useState('');
-  const searchResults = search.trim() ? state.orders.filter((ord) => matchesOrderSearch(ord, search)) : null;
+  const searching = !!search.trim();
 
 
   const lowStockAlerts = getLowStockAlerts(state.plakCatalog);
@@ -110,8 +110,14 @@ export default function ProductionDashboard() {
 
   const activeTab = TABS.find((t) => t.key === tab);
   const ordersInTab = orderSlices.filter((o) => activeTab.match(o, today));
-  const filteredOrders = prioritizeUrgentOrders(ordersInTab
-    .filter((o) => !shipmentDateFilter || shipmentDateKey(o.shipmentDate) === shipmentDateFilter));
+  // the tab a card belongs to: its buttons are that tab's ('' = none, e.g. Cancelled: View Order only)
+  const cardTabOf = (o) => (searching ? TABS.find((t) => t.match(o, today))?.key || '' : tab);
+  // Searching (Sean, 2026-10-17): the matching orders' cards, from every tab — a KIV & ARTWORK
+  // card only while it's in a tab; an order in no tab (Cancelled …) still shows its main card.
+  const filteredOrders = searching
+    ? orderSlices.filter((o) => matchesOrderSearch(o, search) && (o._part === 'main' || cardTabOf(o)))
+    : prioritizeUrgentOrders(ordersInTab
+      .filter((o) => !shipmentDateFilter || shipmentDateKey(o.shipmentDate) === shipmentDateFilter));
 
   // Only shipment dates that actually have an order in this tab are
   // selectable — production shouldn't be able to pick a date with nothing
@@ -176,37 +182,10 @@ export default function ProductionDashboard() {
         </div>
       </div>
 
-      {searchResults ? (
+      {searching ? (
         <>
-          <div className="card-kicker">Search results ({searchResults.length})</div>
-          {searchResults.length === 0 ? (
-            <p className="hint-text">No order matches “{search.trim()}”.</p>
-          ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <table className="table">
-                <thead>
-                  <tr><th>Order ID</th><th>Invoice Number</th><th>School</th><th>Salesman</th><th>Shipment Date</th><th>Status</th><th /></tr>
-                </thead>
-                <tbody>
-                  {searchResults.map((ord) => (
-                    <tr key={ord.id}>
-                      <td>{ord.id}</td>
-                      <td>{[ord.invoiceId, ...(ord.invoiceGroups || []).map((g) => g.invoiceId)].filter(Boolean).map((inv) => invoiceLabel(ord, inv)).join(', ') || '—'}</td>
-                      <td>{ord.sekolah || '—'}</td>
-                      <td>{ord.sales || '—'}</td>
-                      <td>{ord.shipmentDate ? formatDate(toMalaysiaDay(ord.shipmentDate)) : '—'}</td>
-                      <td><span className="status-pill" style={statusPillStyle(ord.status)}>{ord.status}</span></td>
-                      <td>
-                        <button type="button" className="btn btn-ghost" onClick={() => navigate(`/production/orders/${ord.id}${ord.invoiceId ? `?invoice=${encodeURIComponent(ord.invoiceId)}` : ''}`)}>
-                          View Order
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+          <div className="card-kicker">Search results ({filteredOrders.length})</div>
+          {filteredOrders.length === 0 && <p className="hint-text">No order matches “{search.trim()}”.</p>}
         </>
       ) : (
         <>
@@ -243,9 +222,12 @@ export default function ProductionDashboard() {
         </select>
       </div>
       {filteredOrders.length === 0 && <p className="hint-text">No orders in this stage.</p>}
+        </>
+      )}
       <div className="order-grid">
         {filteredOrders.map((ord) => {
           const stamp = getOrderChangeStamp(ord);
+          const cardTab = cardTabOf(ord);
           const isKivCard = ord._part === 'kiv';
           const parts = kivParts(ord);
           const reserved = countReservedPlaques(ord);
@@ -281,7 +263,7 @@ export default function ProductionDashboard() {
                   {ord.status === 'Reviewing Order' && ord.reviewedAt && (
                     <span className="status-pill" style={{ background: '#dcefe3', color: '#2f6b4f' }}>✓ Review Done</span>
                   )}
-                  {tab === 'addon' && (ord.pendingAddonStatus === 'reviewed'
+                  {cardTab === 'addon' && (ord.pendingAddonStatus === 'reviewed'
                     ? <span className="status-pill" style={{ background: '#dcefe3', color: '#2f6b4f' }}>✓ Review Done — waiting for Sales</span>
                     : <span className="status-pill" style={{ background: '#fff4ce', color: '#8a6d00' }}>Tambahan — needs review</span>)}
                 </div>
@@ -314,12 +296,12 @@ export default function ProductionDashboard() {
               </div>
 
               <div className="order-card-invoice"><span className="dim">Invoice ID:</span> {invoiceLabel(ord) || '—'}</div>
-              {tab === 'approved' && <ProductionInvoiceEntry order={ord} />}
+              {cardTab === 'approved' && <ProductionInvoiceEntry order={ord} />}
               <div className="dim" style={{ fontSize: 11 }}>Total Amount</div>
               <div className={`order-card-total${ord.priceAdjusted ? ' amount-adjusted' : ''}`}>RM {ord.totalAmount.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
 
-              <div className="order-card-actions" style={tab === 'active' || tab === 'typing' || tab === 'reviewing' || tab === 'addon' || tab === 'kiv' ? { display: 'flex', gap: 'var(--space-2)' } : undefined}>
-                {tab === 'reviewing' && (
+              <div className="order-card-actions" style={cardTab === 'active' || cardTab === 'typing' || cardTab === 'reviewing' || cardTab === 'addon' || cardTab === 'kiv' ? { display: 'flex', gap: 'var(--space-2)' } : undefined}>
+                {cardTab === 'reviewing' && (
                   <>
                     <button type="button" className="btn btn-ghost" style={{ flex: 1 }} onClick={() => navigate(`/production/orders/${ord.id}`)}>
                       View Order
@@ -333,7 +315,7 @@ export default function ProductionDashboard() {
                     )}
                   </>
                 )}
-                {tab === 'addon' && (
+                {cardTab === 'addon' && (
                   <>
                     <button type="button" className="btn btn-ghost" style={{ flex: 1 }} onClick={() => navigate(`/production/orders/${ord.id}`)}>
                       View Order
@@ -347,7 +329,7 @@ export default function ProductionDashboard() {
                     )}
                   </>
                 )}
-                {tab === 'typing' && (
+                {cardTab === 'typing' && (
                   <>
                     <button type="button" className="btn btn-ghost" style={{ flex: 1 }} onClick={() => navigate(`/production/orders/${ord.id}${ord.invoiceId ? `?invoice=${encodeURIComponent(ord.invoiceId)}` : ''}`)}>
                       View Order
@@ -359,7 +341,7 @@ export default function ProductionDashboard() {
                     />
                   </>
                 )}
-                {tab === 'kiv' && (
+                {cardTab === 'kiv' && (
                   <>
                     <button type="button" className="btn btn-ghost" style={{ flex: 1 }} onClick={() => navigate(`/production/orders/${ord.id}?kiv=1`)}>
                       View Order
@@ -373,7 +355,7 @@ export default function ProductionDashboard() {
                     />
                   </>
                 )}
-                {tab === 'active' && (
+                {cardTab === 'active' && (
                   <>
                     {/* ?invoice= tells ProductionOrderDetail which slice this
                         card represents (see getOrderInvoiceSlices) — a
@@ -394,7 +376,7 @@ export default function ProductionDashboard() {
                     />
                   </>
                 )}
-                {tab !== 'active' && tab !== 'typing' && tab !== 'reviewing' && tab !== 'addon' && tab !== 'kiv' && (
+                {cardTab !== 'active' && cardTab !== 'typing' && cardTab !== 'reviewing' && cardTab !== 'addon' && cardTab !== 'kiv' && (
                   <button type="button" className="btn btn-ghost btn-block" onClick={() => navigate(`/production/orders/${ord.id}${ord.invoiceId ? `?invoice=${encodeURIComponent(ord.invoiceId)}` : ''}`)}>
                     View Order
                   </button>
@@ -404,8 +386,6 @@ export default function ProductionDashboard() {
           );
         })}
       </div>
-        </>
-      )}
     </div>
   );
 }
