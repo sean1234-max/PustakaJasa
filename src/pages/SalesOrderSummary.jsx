@@ -60,9 +60,13 @@ export default function SalesOrderSummary() {
     // scoped to id/correctedImportFilePath rather than the whole `order`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [order?.id, order?.correctedImportFilePath, loadCorrectedExcelPreview]);
+  // Opened from the Add-On card (?addon=1, Sean 2026-10-17): the screen and Order Details show the
+  // Tambahan alone; the print keeps the original's details and price table first, then TAMBAHAN.
+  const [searchParams] = useSearchParams();
+  const addonView = searchParams.get('addon') === '1' && !!order && isAddonInFlight(order);
   const effectiveOrder = useMemo(
-    () => (correctedItems ? { ...order, items: correctedItems } : order),
-    [order, correctedItems],
+    () => (addonView ? { ...order, items: order.pendingAddonItems || [] } : correctedItems ? { ...order, items: correctedItems } : order),
+    [order, correctedItems, addonView],
   );
   // A Sales Manager can open any salesman's order (RLS —
   // supabase/migrations/0048_sales_manager.sql) but only acts on their own;
@@ -138,7 +142,6 @@ export default function SalesOrderSummary() {
 
   // The dashboard's Update KIV (?kiv=1, Sean 2026-10-17): straight to Order Details, on the first
   // category with a RESERVE / RESERVED / KIV row — its tab and those rows flash 3 times. Once per order.
-  const [searchParams] = useSearchParams();
   const fromKiv = searchParams.get('kiv') === '1';
   const [kivFlash, setKivFlash] = useState(null); // the flashing category's key
   const kivHandledFor = useRef(null);
@@ -358,6 +361,10 @@ export default function SalesOrderSummary() {
                 </div>
               )}
 
+              {addonView ? (
+                <CrystalPreview order={effectiveOrder} role="view" showArtwork={false} />
+              ) : (
+              <>
               <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Jenis Plak / Price per Unit / QTY / Harga</div>
               <PriceTable
                 rows={rows} editable={editable} priceDrafts={priceDrafts} setPrice={setPrice}
@@ -366,6 +373,8 @@ export default function SalesOrderSummary() {
                 canPick={isCrystalCode} onPick={setPickedCrystal} picked={pickedCrystal}
               />
               <CrystalPreview order={order} role="view" selected={pickedCrystal} onConfirmArtwork={() => confirmArtwork(order.id)} />
+              </>
+              )}
               {/* SELEMPANG's rows (ACARA / WARNA / QTY) also show right here on the
                   Summary — the only category that does (Sean); every category's full
                   details stay on the Order Details tab. */}
@@ -523,10 +532,13 @@ export default function SalesOrderSummary() {
 
         {/* Print-only — see the "Print Order" button, only shown once approved. */}
         <OrderPrintout
-          original={originalOrder}
-          order={order} invoiceId={order.invoiceId} printedAt={order.printedAt}
+          original={addonView ? order : originalOrder}
+          order={addonView ? effectiveOrder : order} invoiceId={order.invoiceId} printedAt={order.printedAt}
           urgent={order.urgent} stamp={stamp} showSales showRemark
-          priceTable={{
+          priceTable={addonView ? {
+            rows: addOnRows, priceDrafts: addOnPriceDrafts, setPrice: () => {}, plakCatalog: state.plakCatalog,
+            totalQty: addOnTotalQty, totalHarga: addOnTotalHarga, priceAdjusted: false, hideCategory: true, combineJenisPlak: true,
+          } : {
             rows, priceDrafts, setPrice, plakCatalog: state.plakCatalog, totalQty, totalHarga, priceAdjusted,
             hideCategory: true, combineJenisPlak: true,
           }}

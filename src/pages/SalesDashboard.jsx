@@ -200,7 +200,7 @@ export default function SalesDashboard() {
                   </div>
 
                   <div className="order-card-actions" style={{ display: 'flex', gap: 'var(--space-2)' }}>
-                    <button type="button" className="btn btn-primary" style={{ flex: 1 }} onClick={() => navigate(`/sales/orders/${ord.id}`)}>
+                    <button type="button" className="btn btn-primary" style={{ flex: 1 }} onClick={() => navigate(`/sales/orders/${ord.id}${cardFilter === ADDON_FILTER ? '?addon=1' : ''}`)}>
                       {cardFilter === ADDON_FILTER ? 'Review Add-On' : pendingReview ? 'Approve Order' : 'View Summary'}
                     </button>
                     {canAmend && (
