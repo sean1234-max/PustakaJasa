@@ -89,15 +89,21 @@ function levenshtein(a, b) {
 // hint that's meant to be a light nudge, not an authority.
 // `okWords` — words the teacher chose to keep as typed (the block's
 // wordsOk) — are never flagged again. `clean` is the flagged word, letters only.
+// A suggestion that is only a typo after a given word (Sean, 2026-10-15): "BAHASA SINA" is
+// BAHASA CINA, but "IBNU SINA" is a name and right as it is.
+const ONLY_AFTER = { CINA: 'BAHASA' };
+
 export function findPossibleTypo(text, dictionary = getTypoDictionary(), okWords = []) {
   const words = String(text || '').split(/\s+/).filter(Boolean);
   const maxDistance = 1;
-  for (const raw of words) {
+  for (const [i, raw] of words.entries()) {
     const word = raw.toUpperCase().replace(/[^A-Z]/g, '');
+    const before = i > 0 ? words[i - 1].toUpperCase().replace(/[^A-Z]/g, '') : '';
     if (word.length < 3 || dictionary.includes(word) || okWords.includes(word)) continue;
     let best = null;
     for (const known of dictionary) {
       if (Math.abs(known.length - word.length) > maxDistance) continue;
+      if (ONLY_AFTER[known] && ONLY_AFTER[known] !== before) continue;
       const dist = levenshtein(word, known);
       if (dist > 0 && dist <= maxDistance && (!best || dist < best.dist)) best = { dist, known };
     }
