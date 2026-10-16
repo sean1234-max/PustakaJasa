@@ -132,7 +132,6 @@ export default function Cart() {
   // has to say it's a separate order before it goes.
   const handleSubmit = async (artworkConfirmed = false) => {
     if (state.cart.length === 0 || submitting || stockViolation) return;
-    setAskArtwork(false);
     setSubmitting(true);
     const found = await checkDuplicateOrders();
     setSubmitting(false);
