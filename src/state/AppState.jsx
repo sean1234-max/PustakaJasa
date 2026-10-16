@@ -1822,7 +1822,8 @@ export function AppStateProvider({ children }) {
   // pattern above) rather than setState, since the stock calls in the
   // middle need a stable snapshot of the draft, not a re-run on every
   // render.
-  const submitPendingAddOn = useCallback(async () => {
+  // shipmentDate ("YYYY-MM-DD", salesman only — 0098): the Tambahan's own Shipment Date; '' = the order's.
+  const submitPendingAddOn = useCallback(async ({ shipmentDate = '' } = {}) => {
     const st = stateRef.current;
     const addOnOrder = st.orders.find((o) => o.id === st.addOnOrderId);
     // Exactly what was added to the add-on cart (addOnAddToCart). An item
@@ -1838,6 +1839,7 @@ export function AppStateProvider({ children }) {
 
     const order = addOnOrder;
     const isTestOrder = isTestOrderId(st.addOnOrderId);
+    const pendingAddonShipmentDate = /^\d{4}-\d\d-\d\d$/.test(shipmentDate) ? `${shipmentDate}T00:00:00+08:00` : null;
     // A still-'pending' add-on being overwritten by this fresh submission
     // already had its own stock deducted once (below, on its own earlier
     // call) — restore that first so resubmitting can never leave the
@@ -1862,7 +1864,7 @@ export function AppStateProvider({ children }) {
     }
 
     try {
-      await updateOrder(st.addOnOrderId, { pendingAddonItems: newItems, pendingAddonStatus: 'pending', pendingAddonRejectReason: null });
+      await updateOrder(st.addOnOrderId, { pendingAddonItems: newItems, pendingAddonStatus: 'pending', pendingAddonRejectReason: null, pendingAddonShipmentDate });
     } catch (err) {
       console.error('Failed to submit add-on to Supabase:', err);
       if (!isTestOrder) {
@@ -1875,7 +1877,7 @@ export function AppStateProvider({ children }) {
 
     patch((latest) => ({
       orders: latest.orders.map((o) => (
-        o.id === st.addOnOrderId ? { ...o, pendingAddonItems: newItems, pendingAddonStatus: 'pending', pendingAddonRejectReason: null } : o
+        o.id === st.addOnOrderId ? { ...o, pendingAddonItems: newItems, pendingAddonStatus: 'pending', pendingAddonRejectReason: null, pendingAddonShipmentDate } : o
       )),
       addOnCart: [],
     }));
@@ -1889,7 +1891,7 @@ export function AppStateProvider({ children }) {
   const cancelPendingAddOn = useCallback(async (orderId) => {
     const order = stateRef.current.orders.find((o) => o.id === orderId);
     if (!order) return { ok: false };
-    const fields = { pendingAddonItems: null, pendingAddonStatus: null, pendingAddonRejectReason: null };
+    const fields = { pendingAddonItems: null, pendingAddonStatus: null, pendingAddonRejectReason: null, pendingAddonShipmentDate: null };
     try {
       await updateOrder(orderId, fields);
     } catch (err) {
@@ -1976,7 +1978,7 @@ export function AppStateProvider({ children }) {
       cancelledAt: new Date().toISOString(),
       cancelledBy: st.userAuthId || null,
       ...(hadPendingAddon
-        ? { pendingAddonItems: null, pendingAddonStatus: null, pendingAddonRejectReason: null }
+        ? { pendingAddonItems: null, pendingAddonStatus: null, pendingAddonRejectReason: null, pendingAddonShipmentDate: null }
         : {}),
     };
 
@@ -2207,7 +2209,7 @@ export function AppStateProvider({ children }) {
     } catch (err) {
       console.error('Add-on approved, but its new order could not be loaded:', err);
     }
-    const cleared = { pendingAddonItems: null, pendingAddonStatus: null, pendingAddonRejectReason: null };
+    const cleared = { pendingAddonItems: null, pendingAddonStatus: null, pendingAddonRejectReason: null, pendingAddonShipmentDate: null };
     patch((latest) => ({
       orders: [
         ...(child ? [child] : []),

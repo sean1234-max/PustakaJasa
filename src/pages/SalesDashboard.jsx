@@ -49,7 +49,7 @@ export default function SalesDashboard() {
     return {
       canAmend: isOwn && ord.status === 'Reviewing Order',
       // a Tambahan's own order takes no add-on of its own — add to the original (0091)
-      canAddOn: isOwn && ['Salesman Approved', 'In Production'].includes(ord.status) && !isAddonInFlight(ord) && !ord.parentOrderId,
+      canAddOn: isOwn && ['Salesman Approved', 'In Production', 'Completed'].includes(ord.status) && !isAddonInFlight(ord) && !ord.parentOrderId,
     };
   };
   const startAmend = (ord) => { openAmend(ord); navigate(`/amend/${ord.id}`); };

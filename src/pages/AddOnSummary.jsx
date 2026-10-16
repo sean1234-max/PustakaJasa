@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import { useAppState } from '../state/useAppState';
-import { getStockStatus, formatDate, toMalaysiaDay, resolveCategory } from '../data/catalog';
+import { getStockStatus, formatDate, toMalaysiaDay, resolveCategory, malaysiaToday, malaysiaDayIso } from '../data/catalog';
 
 // The add-on's cart (Sean, 2026-10-09): the same Order Summary as New
 // Order's Cart for the original order, then TAMBAHAN below in the same form.
@@ -46,6 +46,9 @@ export default function AddOnSummary() {
   const { state, submitPendingAddOn, removeFromAddOnCart } = useAppState();
   const navigate = useNavigate();
   const [submitting, setSubmitting] = useState(false);
+  // the salesman may give the Tambahan its own Shipment Date (Sean, 2026-10-17); blank = the order's
+  const [shipDate, setShipDate] = useState('');
+  const isSalesman = state.role === 'salesman';
   const order = state.orders.find((o) => o.id === state.addOnOrderId);
 
   // Exactly what submitPendingAddOn will submit (AppState's addOnAddToCart).
@@ -64,7 +67,7 @@ export default function AddOnSummary() {
   const handleSubmit = async () => {
     if (submitting || stockViolation) return;
     setSubmitting(true);
-    const ok = await submitPendingAddOn();
+    const ok = await submitPendingAddOn({ shipmentDate: isSalesman ? shipDate : '' });
     setSubmitting(false);
     if (ok) navigate(state.role === 'salesman' ? `/sales/orders/${order.id}` : '/dashboard');
   };
@@ -121,6 +124,19 @@ export default function AddOnSummary() {
           <p className="hint-text" style={{ color: '#c0392b', fontWeight: 600 }}>
             Stock tidak cukup untuk &quot;{stockViolation.jenisPlak}&quot; — baki {stockViolation.maxOrderable} sahaja boleh ditempah. Sila kurangkan kuantiti atau hubungi Salesman sebelum submit.
           </p>
+        )}
+        {isSalesman && (
+          <div className="field" style={{ maxWidth: 320, marginBottom: 'var(--space-4)' }}>
+            <label htmlFor="addonShipDate">Shipment Date (Tambahan)</label>
+            <input
+              className="input" id="addonShipDate" type="date" value={shipDate}
+              min={malaysiaDayIso(malaysiaToday()).slice(0, 10)}
+              onChange={(e) => setShipDate(e.target.value)}
+            />
+            <p className="hint-text" style={{ margin: '4px 0 0' }}>
+              Leave blank to ship with the original order ({order.shipmentDate ? formatDate(toMalaysiaDay(order.shipmentDate)) : 'no date yet'}).
+            </p>
+          </div>
         )}
         <div className="row-split">
           <button type="button" className="btn btn-ghost" onClick={() => navigate(`/addon/${order.id}`)}>← Back to Add On</button>

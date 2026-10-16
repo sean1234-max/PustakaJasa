@@ -484,6 +484,11 @@ export default function ProductionOrderDetail() {
             Edit Order (download / upload its Excel there), then Done Review. */}
         {isAddonInFlight(order) && (
           <div className="confirm-panel" style={{ marginBottom: 'var(--space-4)' }}>
+            {order.pendingAddonShipmentDate && (
+              <p className="hint-text" style={{ margin: '0 0 var(--space-2)', fontWeight: 600, color: '#8a6d00' }}>
+                Tambahan Shipment Date: {formatDate(toMalaysiaDay(order.pendingAddonShipmentDate))}
+              </p>
+            )}
             <p className="hint-text" style={{ margin: '0 0 var(--space-3)', fontWeight: 600 }}>
               {order.pendingAddonStatus === 'reviewed'
                 ? 'Tambahan (add-on) review done — waiting for the salesman to approve. You can still edit it until then.'

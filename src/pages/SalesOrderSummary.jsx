@@ -75,7 +75,7 @@ export default function SalesOrderSummary() {
   const awaitingReview = reviewing && !isReviewed(order);
   const addonReviewed = order?.pendingAddonStatus === 'reviewed';
   const canAmend = reviewing;
-  const canAddOn = ['Salesman Approved', 'In Production'].includes(order?.status) && !isAddonInFlight(order) && !order?.parentOrderId;
+  const canAddOn = ['Salesman Approved', 'In Production', 'Completed'].includes(order?.status) && !isAddonInFlight(order) && !order?.parentOrderId;
   const editable = reviewing && isReviewed(order) && isOwn;
 
   // Shipment Date (shipmentDate) / Function Date stay editable right up to the moment of
@@ -380,6 +380,11 @@ export default function SalesOrderSummary() {
                   <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>
                     Tambahan — {addonReviewed ? 'Pending Approval' : 'Waiting for Production review'}
                   </div>
+                  {order.pendingAddonShipmentDate && (
+                    <p className="hint-text" style={{ margin: '0 0 var(--space-2)', fontWeight: 600, color: '#8a6d00' }}>
+                      Tambahan Shipment Date: {formatDate(toMalaysiaDay(order.pendingAddonShipmentDate))}
+                    </p>
+                  )}
                   <p className="hint-text" style={{ marginTop: 0 }}>
                     {addonReviewed
                       ? 'Production has reviewed it. Adjust pricing if needed, then approve to add these into the order, or reject to send it back.'
