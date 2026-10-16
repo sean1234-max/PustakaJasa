@@ -11,7 +11,7 @@ import { isCrystalCode } from '../utils/exportCsv';
 const isSelempangItem = (ci) => resolveCategory(ci.categoryKey)?.selempang;
 
 export default function Cart() {
-  const { state, patch, today, removeFromCart, editCartCategory, submitOrder, checkDuplicateOrders } = useAppState();
+  const { state, patch, today, removeFromCart, editCartCategory, restoreCartToDraft, submitOrder, checkDuplicateOrders } = useAppState();
   const [dupes, setDupes] = useState(null); // look-alike orders shown, waiting for an answer
   const navigate = useNavigate();
   const [submitting, setSubmitting] = useState(false);
@@ -253,7 +253,7 @@ export default function Cart() {
           </tbody>
         </table>
 
-        {hasCrystal && <CrystalPreview order={draftOrder} role="view" showArtwork={false} />}
+        {hasCrystal && <CrystalPreview order={draftOrder} role="teacher" showArtwork={false} />}
 
         <div className="field" style={{ margin: 'var(--space-6) 0 var(--space-8)' }}>
           <label htmlFor="cartRemark">Remark</label>
@@ -267,7 +267,7 @@ export default function Cart() {
         )}
         <DuplicateOrderModal sekolah={state.sekolah} orders={dupes?.found || null} busy={submitting} onYes={goAhead} onNo={() => setDupes(null)} />
         <div className="row-split">
-          <button type="button" className="btn btn-ghost" onClick={() => navigate('/order/step1')}>← Back to Order</button>
+          <button type="button" className="btn btn-ghost" onClick={() => { restoreCartToDraft(); navigate('/order/step2'); }}>← Back to Order</button>
           {state.cartToast && <span className="toast-inline">{state.cartToast}</span>}
           <button
             type="button" className="btn btn-primary" disabled={state.cart.length === 0 || submitting || !!stockViolation || !!dupes}

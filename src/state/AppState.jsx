@@ -180,6 +180,37 @@ function findNodeAndSiblings(nodes, id, siblings) {
 // whichever state key tracks per-category visible-block counts
 // (visibleBlocksByCategory for New Order, addOnVisibleBlocksByCategory for
 // Add On) — passed in so this helper works for both draft namespaces.
+// One cart category's items back into the New Order form (Edit / Back to Order).
+function restoreCategoryDraft(st, categoryKey) {
+  const itemsForCat = st.cart.filter((ci) => ci.categoryKey === categoryKey);
+  if (itemsForCat.length === 0) return {};
+  const restored = buildDraftFromOrder({ items: itemsForCat });
+  const newLineValues = { ...st.lineValues };
+  Object.keys(newLineValues).forEach((k) => { if (k.startsWith(`${categoryKey}::`)) delete newLineValues[k]; });
+  Object.assign(newLineValues, restored.lineValues);
+  const newMatrixValues = { ...st.matrixValues };
+  Object.keys(newMatrixValues).forEach((k) => { if (k.startsWith(`${categoryKey}::`)) delete newMatrixValues[k]; });
+  Object.assign(newMatrixValues, restored.matrixValues);
+  // Drop this category's stale per-level Nama Kelas lists before merging
+  // the restored ones back (same reason lineValues/matrixValues clear).
+  const newRowsByBlock = { ...st.rowsByBlock };
+  Object.keys(newRowsByBlock).forEach((k) => {
+    if (k.startsWith(`${categoryKey}::`) && (k.endsWith('::main') || k.endsWith('::moral'))) delete newRowsByBlock[k];
+  });
+  Object.assign(newRowsByBlock, restored.rowsByBlock);
+  return {
+    category: categoryKey,
+    lineValues: newLineValues,
+    matrixValues: newMatrixValues,
+    rowsByBlock: newRowsByBlock,
+    columnsByBlock: { ...st.columnsByBlock, ...restored.columnsByBlock },
+    plakRows: { ...st.plakRows, ...restored.plakRows },
+    nextRowId: Math.max(st.nextRowId, restored.nextId),
+    nextColumnId: Math.max(st.nextColumnId, restored.nextId),
+    visibleBlocksByCategory: { ...st.visibleBlocksByCategory, [categoryKey]: restored.visibleBlocksByCategory[categoryKey] },
+  };
+}
+
 function resetCategoryFields(catKey, st, visibleField) {
   const cat = resolveCategory(catKey);
   const lineValues = { ...st.lineValues };
@@ -1554,33 +1585,21 @@ export function AppStateProvider({ children }) {
   // appending — so the stale copy left here is safely superseded on a real
   // re-add, and just as safely still there if the teacher never re-adds.
   const editCartCategory = useCallback((categoryKey) => {
+    patch((st) => restoreCategoryDraft(st, categoryKey));
+  }, [patch]);
+
+  // Cart's "← Back to Order" (Sean, 2026-10-17): Order Details shows every category in the cart
+  // again, as it was added (Add to Cart clears the form). The cart keeps its items; adding again
+  // replaces a category's entries, never duplicates them.
+  const restoreCartToDraft = useCallback(() => {
     patch((st) => {
-      const itemsForCat = st.cart.filter((ci) => ci.categoryKey === categoryKey);
-      if (itemsForCat.length === 0) return {};
-      const restored = buildDraftFromOrder({ items: itemsForCat });
-      const newLineValues = { ...st.lineValues };
-      Object.keys(newLineValues).forEach((k) => { if (k.startsWith(`${categoryKey}::`)) delete newLineValues[k]; });
-      Object.assign(newLineValues, restored.lineValues);
-      const newMatrixValues = { ...st.matrixValues };
-      Object.keys(newMatrixValues).forEach((k) => { if (k.startsWith(`${categoryKey}::`)) delete newMatrixValues[k]; });
-      Object.assign(newMatrixValues, restored.matrixValues);
-      // Drop this category's stale per-level Nama Kelas lists before merging
-      // the restored ones back (same reason lineValues/matrixValues clear).
-      const newRowsByBlock = { ...st.rowsByBlock };
-      Object.keys(newRowsByBlock).forEach((k) => {
-        if (k.startsWith(`${categoryKey}::`) && (k.endsWith('::main') || k.endsWith('::moral'))) delete newRowsByBlock[k];
-      });
-      Object.assign(newRowsByBlock, restored.rowsByBlock);
+      const keys = [...new Set(st.cart.map((ci) => ci.categoryKey))];
+      if (keys.length === 0) return {};
+      const merged = keys.reduce((acc, key) => ({ ...acc, ...restoreCategoryDraft(acc, key) }), st);
       return {
-        category: categoryKey,
-        lineValues: newLineValues,
-        matrixValues: newMatrixValues,
-        rowsByBlock: newRowsByBlock,
-        columnsByBlock: { ...st.columnsByBlock, ...restored.columnsByBlock },
-        plakRows: { ...st.plakRows, ...restored.plakRows },
-        nextRowId: Math.max(st.nextRowId, restored.nextId),
-        nextColumnId: Math.max(st.nextColumnId, restored.nextId),
-        visibleBlocksByCategory: { ...st.visibleBlocksByCategory, [categoryKey]: restored.visibleBlocksByCategory[categoryKey] },
+        lineValues: merged.lineValues, matrixValues: merged.matrixValues, rowsByBlock: merged.rowsByBlock,
+        columnsByBlock: merged.columnsByBlock, plakRows: merged.plakRows, nextRowId: merged.nextRowId,
+        nextColumnId: merged.nextColumnId, visibleBlocksByCategory: merged.visibleBlocksByCategory, category: keys[0],
       };
     });
   }, [patch]);
@@ -3256,7 +3275,7 @@ export function AppStateProvider({ children }) {
 
   const value = {
     state, patch, today: TODAY, login, logout,
-    resetCurrentCategory, startNewOrder, addToCart, addAllToCart, removeFromCart, editCartCategory, submitOrder, checkDuplicateOrders, reorderOrder,
+    resetCurrentCategory, startNewOrder, addToCart, addAllToCart, removeFromCart, editCartCategory, restoreCartToDraft, submitOrder, checkDuplicateOrders, reorderOrder,
     importFormAnugerahExcel, importFormAnugerahExcelInto, readSkippedSheetsWithAi,
     openAmend, updateAmend,
     openAddOn, addOnAddToCart, removeFromAddOnCart, submitPendingAddOn, cancelPendingAddOn, rejectAddOn, approveAddOn, approveOrder, setInvoiceId, approveAndSetInvoiceId,
