@@ -75,6 +75,35 @@ export function buildInstructionTabs(draft, catKeys) {
   return tabs;
 }
 
+// Before asking the AI: when every instruction names a file and none of
+// them can be about `fileName` (its name appears nowhere in the text),
+// there is nothing for the AI to do for this file — no call, no cost. Names
+// that match no uploaded file are still asked about. Returns a plan, or
+// null when the AI is needed.
+const FILE_MENTION_RE = /(?:\bfile|\bfail|文件|档案)\s*[:"'\u2018\u201C]?\s*([^\s,;:.'"\u2019\u201D]+(?:\.(?:xlsx|xls|docx|doc|pdf))?)/gi;
+export function precheckInstructions(instructions, { fileName, uploaded }) {
+  const sentences = String(instructions || '').split(/(?<=[.!?。])\s+|\n+/).map((x) => x.trim()).filter(Boolean);
+  if (!sentences.length) return null;
+  const mentions = sentences.map((x) => [...x.matchAll(FILE_MENTION_RE)].map((m) => m[1]));
+  if (mentions.some((m) => m.length === 0)) return null;
+  const stem = fileStem(fileName);
+  if (!stem || new RegExp(`(^| )${stem.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}( |$)`).test(fileStem(instructions))) return null;
+  const files = uploaded.includes(fileName) ? uploaded : [...uploaded, fileName];
+  const plan = { headings: [], positions: [], notes: [], questions: [], otherFiles: 0 };
+  sentences.forEach((quote, i) => {
+    mentions[i].forEach((name) => {
+      const f = resolveFileMention(name, files);
+      if (f.match === fileName) return; // can't happen (checked above), kept for safety
+      if (f.match) { plan.otherFiles += 1; return; }
+      const text = f.ambiguous
+        ? `"${name}" could mean ${f.ambiguous.map((n) => `"${n}"`).join(' or ')} — please write the full file name.`
+        : `No uploaded file is called "${name}". Upload it, or check the file name in your instructions.`;
+      plan.questions.push({ id: hashId(`${fileName}|${quote}|${text}`), quote, text });
+    });
+  });
+  return plan;
+}
+
 // Short stable id for a question, so its answer survives a re-render.
 function hashId(s) {
   let h = 0;

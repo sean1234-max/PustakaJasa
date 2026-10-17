@@ -27,6 +27,7 @@ import {
   INSTRUCTIONS_SCHEMA, INSTRUCTIONS_SYSTEM_PROMPT, INSTRUCTIONS_VERSION, MAX_INSTRUCTIONS_CHARS,
   buildInstructionsUserText, parseInstructionsInput, validateInstructions, withInstructions,
 } from './instructionsSchema.ts';
+import { LAYOUT_VERSION, type Block, type IrSheet, type Layout, layoutFromBlock, layoutKey, matchLayout, parseIrSheets } from './layoutMemory.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const PUBLISHABLE_KEY = JSON.parse(Deno.env.get('SUPABASE_PUBLISHABLE_KEYS')!)['default'];
@@ -51,6 +52,10 @@ const MAX_PLAQUE_CHARS = 8_000_000;
 // (instructionsSchema.ts) — the user's Custom Instructions for AI.
 const INSTRUCTIONS_PIPELINE_VERSION = `instr-${INSTRUCTIONS_VERSION}`;
 const MAX_INSTRUCTIONS_INPUT_CHARS = 60_000;
+// Layout memory (layoutMemory.ts): learned Excel layouts, shared by every
+// user. Tied to the block shape the browser reads (MAPPING_VERSION).
+const LAYOUT_PIPELINE = `layout-${LAYOUT_VERSION}-m${MAPPING_VERSION}`;
+const MAX_LAYOUTS = 2000;
 
 // The kinds of input this reader takes: Excel sheets the rule reader
 // skipped (phase 1), text PDFs (phase 2), and pictures of a PDF's pages
@@ -117,6 +122,27 @@ async function callModel(kind: Kind, model: string, effort: 'medium' | 'high', i
     try { parsed = JSON.parse(text); } catch { parsed = null; }
   }
   return { parsed, stopReason: response.stop_reason, usage: response.usage, servedBy: response.model };
+}
+
+// The AI's sure answers, remembered as layouts for everyone (never a sheet
+// it asked a question about). Best effort: a failure here loses nothing.
+// deno-lint-ignore no-explicit-any
+async function rememberLayouts(admin: any, mapping: { blocks: Block[]; questions: { sheet: string | null }[] }, irSheets: IrSheet[], userId: string, runId?: string) {
+  const asked = new Set(mapping.questions.map((q) => q.sheet));
+  const rows = [];
+  for (const b of mapping.blocks) {
+    const sh = irSheets.find((x) => x.name === b.sheet);
+    if (!sh || asked.has(b.sheet) || mapping.blocks.filter((x) => x.sheet === b.sheet).length > 1) continue;
+    const l = layoutFromBlock(b, sh);
+    if (!l) continue;
+    rows.push({
+      layout_key: await sha256Hex(layoutKey(l)), pipeline_version: LAYOUT_PIPELINE, role: l.role,
+      anchors: l.anchors, present: l.present, template: l.template, created_by: userId, source_run_id: runId ?? null,
+    });
+  }
+  if (!rows.length) return;
+  const { error } = await admin.from('ai_sheet_layouts').upsert(rows, { onConflict: 'layout_key', ignoreDuplicates: true });
+  if (error) console.error('read-order-file: could not remember layouts', error.code);
 }
 
 Deno.serve(async (req) => {
@@ -202,20 +228,66 @@ Deno.serve(async (req) => {
       },
     };
   const PIPELINE = kind.pipeline;
+  const isSheets = !isPdf && !isInstructions;
+  // memoryOnly (browser, right after an import): read only the sheets a
+  // remembered layout fits — never the model, never any cost.
+  const memoryOnly = isSheets && body.memoryOnly === true;
 
-  // Instructions change the answer, so they are part of the cache key; with
-  // none, the key is the same as before.
-  const inputSha = await sha256Hex(userInstructions ? `${irText}\n\u0000instructions:${userInstructions}` : irText);
+  // Instructions change the answer, so they are part of the cache key — with
+  // the file's name, since they may name files; with none, the key is the
+  // same as before.
+  const inputSha = await sha256Hex(userInstructions ? `${irText}\n\u0000file:${fileName}\n\u0000instructions:${userInstructions}` : irText);
 
-  // Same input, same pipeline -> same answer, no model call.
-  const { data: cached } = await admin.from('file_read_runs')
-    .select('id, mapping').eq('created_by', user.id).eq('input_sha256', inputSha).eq('pipeline_version', PIPELINE)
-    .eq('status', 'succeeded').order('created_at', { ascending: true }).limit(1).maybeSingle();
-  if (cached?.mapping) return json({ status: 'succeeded', runId: cached.id, mapping: cached.mapping, cached: true });
+  // Same input, same pipeline -> same answer, no model call — whoever
+  // uploaded it first (the same file already has the same data in it).
+  if (!memoryOnly) {
+    const { data: cached } = await admin.from('file_read_runs')
+      .select('id, mapping').eq('input_sha256', inputSha).eq('pipeline_version', PIPELINE)
+      .eq('status', 'succeeded').order('created_at', { ascending: true }).limit(1).maybeSingle();
+    if (cached?.mapping) return json({ status: 'succeeded', runId: cached.id, mapping: cached.mapping, cached: true });
+  }
 
+  // Layout memory: sheets laid out like one the AI already learned are read
+  // from memory. Not when the user typed instructions (they may change how
+  // a sheet is read). Any database problem just means no memory.
+  const irSheets: IrSheet[] = isSheets && !userInstructions ? parseIrSheets(irText).filter((sh) => sheetNames.includes(sh.name)) : [];
+  const learned: { block: Block; id: string }[] = [];
+  if (irSheets.length) {
+    const { data: layouts, error: layoutsError } = await admin.from('ai_sheet_layouts')
+      .select('id, role, anchors, present, template').eq('pipeline_version', LAYOUT_PIPELINE).eq('disabled', false)
+      .order('use_count', { ascending: false }).limit(MAX_LAYOUTS);
+    if (layoutsError) console.error('read-order-file: layout memory unavailable', layoutsError.code);
+    for (const sh of irSheets) {
+      for (const l of (layouts ?? []) as (Layout & { id: string })[]) {
+        const block = matchLayout(l, sh);
+        if (block) { learned.push({ block, id: l.id }); break; }
+      }
+    }
+  }
+  const learnedSheets = learned.map((x) => x.block.sheet);
+  const remaining = sheetNames.filter((n) => !learnedSheets.includes(n));
+  const useLayouts = async () => {
+    const ids = [...new Set(learned.map((x) => x.id))];
+    const { error } = await admin.rpc('ai_sheet_layouts_used', { layout_ids: ids });
+    if (error) console.error('read-order-file: could not count layout use', error.code);
+  };
+  if (learned.length && (memoryOnly || remaining.length === 0)) {
+    const mapping = { blocks: learned.map((x) => x.block), questions: [] };
+    await useLayouts();
+    const { data: run } = await admin.from('file_read_runs').insert({
+      created_by: user.id, file_name: fileName, input_sha256: inputSha, pipeline_version: PIPELINE, route: 'cache',
+      status: 'succeeded', model: 'layout-memory', mapping, cost_usd_cents: 0, completed_at: new Date().toISOString(),
+    }).select('id').single();
+    return json({ status: 'succeeded', runId: run?.id, mapping, cached: true, learnedSheets });
+  }
+  if (memoryOnly) return json({ status: 'no-match', learnedSheets: [] });
+  // The model reads only the sheets memory couldn't.
+  const modelIr = learned.length ? irSheets.filter((sh) => remaining.includes(sh.name)).map((sh) => sh.section).join('\n\n') : irText;
+
+  // Readings served from memory (route 'cache') don't count.
   const hourAgo = new Date(Date.now() - 3_600_000).toISOString();
   const { count: recent } = await admin.from('file_read_runs').select('id', { count: 'exact', head: true })
-    .eq('created_by', user.id).gte('created_at', hourAgo);
+    .eq('created_by', user.id).eq('route', 'ai-map').gte('created_at', hourAgo);
   if ((recent ?? 0) >= RATE_LIMIT_PER_HOUR) return json({ status: 'rate-limited', message: 'Too many AI readings this hour — please try again later.' });
 
   const budgetBlocked = async () => {
@@ -249,7 +321,7 @@ Deno.serve(async (req) => {
 
   try {
     let modelUsed = MODEL;
-    let res = await callModel(kind, MODEL, 'medium', irText);
+    let res = await callModel(kind, MODEL, 'medium', modelIr);
     add(res.servedBy, res.usage);
     let check = kind.check(res.parsed);
     // Escalate once to the stronger model when the first answer is unusable
@@ -259,7 +331,7 @@ Deno.serve(async (req) => {
     const unsure = check.ok && check.unsure;
     if (kind.escalate !== false && (!check.ok || unsure) && Date.now() - started < 50_000 && !(await budgetBlocked())) {
       modelUsed = ESCALATE_MODEL;
-      const res2 = await callModel(kind, ESCALATE_MODEL, 'high', irText);
+      const res2 = await callModel(kind, ESCALATE_MODEL, 'high', modelIr);
       add(res2.servedBy, res2.usage);
       const check2 = kind.check(res2.parsed);
       if (check2.ok) { res = res2; check = check2; }
@@ -268,9 +340,17 @@ Deno.serve(async (req) => {
       await finish({ status: 'failed', model: modelUsed, error: `${res.stopReason}: ${check.error}`.slice(0, 500) });
       return json({ status: 'failed', runId, message: isInstructions ? 'The AI could not work out your instructions — the order was imported without them.' : isPdf ? 'The AI could not read this PDF — please add the order by hand.' : 'The AI could not read these sheets — please add them by hand.' });
     }
-    const mapping = check.value;
+    let mapping = check.value;
+    if (isSheets && !userInstructions) {
+      const m = mapping as { blocks: Block[]; questions: { sheet: string | null }[] };
+      await rememberLayouts(admin, m, irSheets, user.id, runId);
+      if (learned.length) {
+        await useLayouts();
+        mapping = { ...m, blocks: [...learned.map((x) => x.block), ...m.blocks] };
+      }
+    }
     await finish({ status: 'succeeded', model: modelUsed, mapping });
-    return json({ status: 'succeeded', runId, mapping, cached: false });
+    return json({ status: 'succeeded', runId, mapping, cached: false, learnedSheets });
   } catch (err) {
     console.error('read-order-file failed', runId, err instanceof Error ? err.name : 'error');
     await finish({ status: 'failed', error: String(err).slice(0, 500) });

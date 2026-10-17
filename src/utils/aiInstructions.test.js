@@ -229,3 +229,22 @@ describe('read-order-file instructions input and answer check', () => {
     expect(good.value.items[0]).toMatchObject({ text: 'majlis q', status: 'apply' });
   });
 });
+
+describe('precheckInstructions (no AI call when nothing can be for this file)', () => {
+  it('every instruction names another uploaded file', async () => {
+    const { precheckInstructions } = await import('./aiInstructions');
+    const plan = precheckInstructions("For file ABC, header 'X' at the bottom. For file DEF.pdf, header at the top.", { fileName: 'GHI.xlsx', uploaded: ['ABC.xlsx', 'DEF.pdf'] });
+    expect(plan).toMatchObject({ otherFiles: 2, questions: [] });
+  });
+  it('a named file that was not uploaded is still asked about', async () => {
+    const { precheckInstructions } = await import('./aiInstructions');
+    const plan = precheckInstructions('For file XYZ, header at the top.', { fileName: 'GHI.xlsx', uploaded: [] });
+    expect(plan.questions[0].text).toMatch(/No uploaded file is called "XYZ"/);
+  });
+  it('asks the AI when an instruction names no file, or names this one', async () => {
+    const { precheckInstructions } = await import('./aiInstructions');
+    expect(precheckInstructions('Header at the bottom. For file ABC, bold.', { fileName: 'GHI.xlsx', uploaded: ['ABC.xlsx'] })).toBeNull();
+    expect(precheckInstructions('For file ABC and GHI, header at the bottom.', { fileName: 'GHI.xlsx', uploaded: ['ABC.xlsx'] })).toBeNull();
+    expect(precheckInstructions('', { fileName: 'GHI.xlsx', uploaded: [] })).toBeNull();
+  });
+});

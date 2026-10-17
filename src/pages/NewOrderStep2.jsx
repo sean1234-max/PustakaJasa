@@ -149,6 +149,28 @@ export default function NewOrderStep2() {
           const outcome = await applyCustomInstructions(file.name, result.categories, result.draft, instructions);
           status = mergeInstructionOutcome(status, [outcome]);
         }
+        // Sheets the rules skipped but laid out like one the AI already
+        // learned (from anyone's file) are read straight away, at no cost.
+        // The rest stay on the "Read with AI" button. Not with instructions:
+        // those need the AI to read the sheet.
+        if (pdfAllowed && !instructions && (status.skippedSheets || []).length) {
+          const mem = await readSkippedSheetsWithAi(file, status.skippedSheets, '', { memoryOnly: true });
+          if (mem.ok && mem.learnedSheets?.length) {
+            const learned = mem.learnedSheets;
+            patch((st) => ({
+              step2UploadedFiles: (st.step2UploadedFiles || []).map((f) => (f.name === file.name ? { ...f, categories: [...new Set([...(f.categories || []), ...(mem.categories || [])])] } : f)),
+            }));
+            status = {
+              ...status,
+              message: `${status.message} ${mem.message}`,
+              skippedSheets: mem.remaining,
+              warnings: [
+                ...(status.warnings || []).filter((w) => !(w.type === 'truncated' && learned.some((n) => w.text.includes(`"${n}"`)))),
+                ...(mem.warnings || []),
+              ],
+            };
+          }
+        }
       }
     } catch (err) {
       console.error('Import failed:', err);
