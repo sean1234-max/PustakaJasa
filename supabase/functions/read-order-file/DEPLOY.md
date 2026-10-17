@@ -57,29 +57,14 @@ Redeploy the site. When an Excel import skips sheets, the salesman sees a
 Unset `VITE_AI_READER_ENABLED` and redeploy the site. The function can stay
 deployed: nothing calls it while the flag is off.
 
-## Ask Claude (kind "chat", 2026-10-17)
+## Ask Claude (kind "chat", 2026-10-17) — taken off the page
 
-New Order step 2 has an **Ask Claude** chat (in place of the earlier Custom
-Instructions box) for the roles that can use the AI reader. The user tells
-Claude what to change in the order on the page; the browser sends the
-conversation, the uploaded file names, the Remark and every tab's Reference
-Sample rows (`chatSchema.ts`). Claude answers and may ask for:
-
-- a Reference Sample row set to text the user typed word for word (or text
-  already in the order), or cleared; TAJUK BESAR may be several lines;
-- a tab's rows reordered (`refOrder`, the `line_order` column SEAN.jsx
-  stacks the plaque in), on the tabs that can be dragged;
-- a note added to the Remark for Production.
-
-`src/utils/aiChat.js` re-checks every change before it is applied; each
-reply's changes can be undone. Names, quantities and Jenis Plak are never
-changed by the chat. Under the chat, **Download Excel (FORM ANUGERAH)**
-writes the order as it is on the page now into the blank form.
-
-No migration and no new secret: same `file_read_runs` cache and monthly cap.
-Chat messages have their own hourly limit, `READER_CHAT_LIMIT_PER_HOUR`
-(default 60), so they don't use up the file readings. To switch on: deploy
-this function again. The old kind "instructions" is still served.
+The "Ask Claude" chat on New Order step 2 was removed from the website at
+Sean's request (2026-10-17). The function still answers kind `chat`
+(`chatSchema.ts`, own hourly limit `READER_CHAT_LIMIT_PER_HOUR`) and kind
+`instructions`, so nothing needs redeploying; no page calls them now. The
+**Download Excel (FORM ANUGERAH)** button stays under the import box and
+fills the form from the order as it is on the page (`src/utils/draftForm.js`).
 
 ## Layout memory + shared cache (2026-10-17)
 

@@ -4,7 +4,6 @@ import Nav from '../components/Nav';
 import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import CrystalPreview from '../components/CrystalPreview';
-import AiChatPanel from '../components/AiChatPanel';
 import { isCrystalCode } from '../utils/exportCsv';
 import { useAppState } from '../state/useAppState';
 import { buildCategoryCartItems } from '../state/categoryCartItems';
@@ -32,7 +31,7 @@ const DRAFT_FIELDS = {
 const EDITABLE = { lines: true, rowDesc: true, rowQty: true, addRemoveRows: true, matrix: true, jenisPlak: true };
 
 export default function NewOrderStep2() {
-  const { state, patch, addToCart, addAllToCart, importFormAnugerahExcel, readSkippedSheetsWithAi, sendChatMessage, undoChatMessage } = useAppState();
+  const { state, patch, addToCart, addAllToCart, importFormAnugerahExcel, readSkippedSheetsWithAi } = useAppState();
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
   // The last import's result ({ ok, message, warnings }) and the answers to
@@ -88,10 +87,6 @@ export default function NewOrderStep2() {
   // to the roles allowed to use it.
   const pdfAllowed = canUseAiReader(state.role);
 
-  // "Ask Claude" (Sean, 2026-10-17): only for the roles that can use the AI
-  // reader. The files of this order, and the tabs each one filled, are
-  // shown to Claude with the order.
-  const chatMessages = pdfAllowed ? (state.step2Chat || []) : [];
   // One import at a time: state updates land a render later, so a fast
   // double click is stopped by this ref, not the flag.
   const busyRef = useRef(false);
@@ -596,14 +591,9 @@ export default function NewOrderStep2() {
           )}
         </div>
 
-        {pdfAllowed && (
-          <AiChatPanel
-            messages={chatMessages}
-            onSend={sendChatMessage}
-            onUndo={undoChatMessage}
-            onClear={() => patch({ step2Chat: [] })}
-          >
-            <div style={{ marginTop: 8 }}>
+        {pdfAllowed && importStatus?.ok && (
+          <div style={{ maxWidth: 560, margin: '0 auto var(--space-6)' }}>
+            <div>
               <button type="button" className="btn btn-secondary" disabled={!!formExport?.busy} onClick={handleDownloadForm}>
                 {formExport?.busy ? 'Filling the form…' : 'Download Excel (FORM ANUGERAH)'}
               </button>
@@ -614,7 +604,7 @@ export default function NewOrderStep2() {
                 </ul>
               )}
             </div>
-          </AiChatPanel>
+          </div>
         )}
 
         <div className="card-kicker">Jenis Anugerah (Category)</div>

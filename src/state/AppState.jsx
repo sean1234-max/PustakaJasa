@@ -15,8 +15,7 @@ import { parseWordingDocx } from '../utils/docxImport';
 import * as XLSX from 'xlsx';
 import { buildWorkbookIr, renderIrText } from '../utils/fileIr';
 import { applyAiMapping } from '../utils/aiMapping';
-import { readSheetsWithAi, chatWithAi, canUseAiReader } from '../lib/fileReadApi';
-import { applyChatActions, buildChatRequest, buildChatTabs, undoChatChanges } from '../utils/aiChat';
+import { readSheetsWithAi, canUseAiReader } from '../lib/fileReadApi';
 import { parseDocxOrderWithAi, parsePdfOrder } from '../utils/pdfImport';
 import { checkColumnTotals, checkExpansionTotals, checkLevelBreakdownMatch, checkAliranKelasTotals } from '../utils/importChecks';
 import { frontPgToFunctionDetails } from '../utils/frontPgDetails';
@@ -710,7 +709,7 @@ export function AppStateProvider({ children }) {
       logoDataUrl: null, logoFileName: '', logoRemark: '', schoolType: null, stepError: '',
       importFilePath: null, importFileName: null, importFiles: [],
       step2ImportStatus: null, step2ChoiceAnswers: {},
-      step2UploadedFiles: [], step2Chat: [],
+      step2UploadedFiles: [],
 
       category: null,
       lineValues: {}, matrixValues: {},
@@ -1543,62 +1542,6 @@ export function AppStateProvider({ children }) {
     [importFormAnugerahExcelInto],
   );
 
-  // "Ask Claude" (New Order step 2, Sean 2026-10-17): the teacher or
-  // salesman tells Claude what to change in the order on the page; Claude
-  // answers, and the changes it may make (Reference Sample rows, their
-  // order, Remark notes) are checked and applied by src/utils/aiChat.js.
-  // The chat is kept in the draft (step2Chat) until the order is submitted.
-  // One message at a time. Resolves to false when nothing was sent.
-  const chatBusyRef = useRef(false);
-  const sendChatMessage = useCallback(async (text) => {
-    const said = String(text || '').trim().slice(0, 2000);
-    if (!said || chatBusyRef.current || !canUseAiReader(stateRef.current.role)) return false;
-    chatBusyRef.current = true;
-    const newId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-    const userMsg = { id: newId(), role: 'user', text: said };
-    const history = [...(stateRef.current.step2Chat || []).filter((m) => !m.error), userMsg];
-    patch((st) => ({ step2Chat: [...(st.step2Chat || []), userMsg] }));
-    try {
-      const st = stateRef.current;
-      // The tabs as Claude saw them: its answer is checked against these.
-      const tabs = buildChatTabs(st);
-      const res = await chatWithAi(buildChatRequest(st, history));
-      if (!res.ok) {
-        patch((latest) => ((latest.step2Chat || []).some((m) => m.id === userMsg.id)
-          ? { step2Chat: [...latest.step2Chat, { id: newId(), role: 'assistant', text: res.message, error: true }] }
-          : {}));
-        return true;
-      }
-      const userText = history.filter((m) => m.role === 'user').map((m) => m.text).join('\n');
-      const replyId = newId();
-      // Applied inside the updater, to the latest draft (the page may have
-      // been edited while Claude was answering); pure, so Strict Mode's
-      // double call is harmless.
-      patch((latest) => {
-        // The chat was cleared meanwhile (New chat, or a new order was
-        // started): this answer is for an order that is gone.
-        if (!(latest.step2Chat || []).some((m) => m.id === userMsg.id)) return {};
-        const r = applyChatActions(latest, res.actions, { tabs, userText });
-        return {
-          ...r.patch,
-          step2Chat: [...(latest.step2Chat || []), { id: replyId, role: 'assistant', text: res.reply, done: r.done, refused: r.refused, undo: r.undo }],
-        };
-      });
-      return true;
-    } finally {
-      chatBusyRef.current = false;
-    }
-  }, [patch]);
-
-  // Puts back what one Claude reply changed.
-  const undoChatMessage = useCallback((id) => {
-    patch((latest) => {
-      const m = (latest.step2Chat || []).find((x) => x.id === id);
-      if (!m?.undo || m.undone) return {};
-      return { ...undoChatChanges(latest, m.undo), step2Chat: latest.step2Chat.map((x) => (x.id === id ? { ...x, undone: true } : x)) };
-    });
-  }, [patch]);
-
   // AI sheet reader (universal file-reader plan, phase 1): the sheets of an
   // already-imported Excel file that the rule-based reader skipped are
   // sent — as their structure map, never as typed values — to the
@@ -1807,7 +1750,7 @@ export function AppStateProvider({ children }) {
       patch({ cartToast: message });
       return null;
     }
-    patch((latest) => ({ lastOrderId: newId, orders: [newOrder, ...latest.orders], cart: [], cartToast: '', step2ImportStatus: null, step2ChoiceAnswers: {}, step2UploadedFiles: [], step2Chat: [] }));
+    patch((latest) => ({ lastOrderId: newId, orders: [newOrder, ...latest.orders], cart: [], cartToast: '', step2ImportStatus: null, step2ChoiceAnswers: {}, step2UploadedFiles: [] }));
     // crystal changes the teacher made before submitting (Cart → Edit Crystal): onto the order now
     if (st.cart.some((ci) => isCrystalCode(ci.jenisPlak))) saveCrystalDraft(newId).catch((err) => console.error('Order saved, but its crystal changes were not:', err));
     // who confirmed the artwork is stamped by the database (0089) — read it back for the order page
@@ -3352,7 +3295,7 @@ export function AppStateProvider({ children }) {
   const value = {
     state, patch, today: TODAY, login, logout,
     resetCurrentCategory, startNewOrder, addToCart, addAllToCart, removeFromCart, editCartCategory, restoreCartToDraft, submitOrder, checkDuplicateOrders, reorderOrder,
-    importFormAnugerahExcel, importFormAnugerahExcelInto, readSkippedSheetsWithAi, sendChatMessage, undoChatMessage,
+    importFormAnugerahExcel, importFormAnugerahExcelInto, readSkippedSheetsWithAi,
     openAmend, updateAmend,
     openAddOn, addOnAddToCart, removeFromAddOnCart, submitPendingAddOn, cancelPendingAddOn, rejectAddOn, approveAddOn, approveOrder, setInvoiceId, approveAndSetInvoiceId,
     setJenisPlakInvoiceGroup, renameInvoiceNumber,
