@@ -223,7 +223,7 @@ export default function NewOrderStep2() {
       const placedTotal = Object.values(out.placed).reduce((a, n) => a + n, 0);
       setFormExport({
         notes: [
-          `${placedTotal} of ${out.plaqueCount} plaques written into the form (${Object.entries(out.placed).map(([k, n]) => `${k}: ${n}`).join(', ')}), as the order is on this page now.`,
+          `${placedTotal} of ${out.plaqueCount} plaques written into the form (${Object.entries(out.placed).map(([k, n]) => `${k}: ${n}`).join(', ')}), as the order is on this page now. The form has a fixed place for each line, so a changed row order is not shown in it; the order itself keeps it.`,
           ...out.notes,
           ...skipped.map((x) => `Not in the form (not ready to add to cart yet): ${x}`),
         ],

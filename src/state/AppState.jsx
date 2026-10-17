@@ -1564,7 +1564,9 @@ export function AppStateProvider({ children }) {
       const tabs = buildChatTabs(st);
       const res = await chatWithAi(buildChatRequest(st, history));
       if (!res.ok) {
-        patch((latest) => ({ step2Chat: [...(latest.step2Chat || []), { id: newId(), role: 'assistant', text: res.message, error: true }] }));
+        patch((latest) => ((latest.step2Chat || []).some((m) => m.id === userMsg.id)
+          ? { step2Chat: [...latest.step2Chat, { id: newId(), role: 'assistant', text: res.message, error: true }] }
+          : {}));
         return true;
       }
       const userText = history.filter((m) => m.role === 'user').map((m) => m.text).join('\n');
@@ -1573,6 +1575,9 @@ export function AppStateProvider({ children }) {
       // been edited while Claude was answering); pure, so Strict Mode's
       // double call is harmless.
       patch((latest) => {
+        // The chat was cleared meanwhile (New chat, or a new order was
+        // started): this answer is for an order that is gone.
+        if (!(latest.step2Chat || []).some((m) => m.id === userMsg.id)) return {};
         const r = applyChatActions(latest, res.actions, { tabs, userText });
         return {
           ...r.patch,

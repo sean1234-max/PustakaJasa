@@ -114,6 +114,9 @@ describe('applying Claude\'s answer', () => {
     expect(back.lineValues[`${TAB}::0`]).toBe('MAJLIS ANUGERAH 2026');
     expect(back.lineValues[`${TAB}::2`]).toBe('TOKOH GURU');
     expect(back.remark).toBe("Teacher's own note");
+    // The same row changed again after this reply: its newer text stays.
+    const edited = { ...after, lineValues: { ...after.lineValues, [`${TAB}::0`]: 'MAJLIS BARU 2027' } };
+    expect(undoChatChanges(edited, r.undo).lineValues[`${TAB}::0`]).toBe('MAJLIS BARU 2027');
   });
 
   it('makes no change (and no undo) when Claude only answers', () => {

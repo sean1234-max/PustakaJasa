@@ -141,15 +141,20 @@ export function applyChatActions(draft, actions, { tabs, userText }) {
     patch.remark = remark ? `${remark}\n${add.join('\n')}` : add.join('\n');
     add.forEach((l) => done.push(`Remark: "${l}"`));
   }
-  const undo = (patch.lineValues || add.length) ? { lineValues: before, remarkLines: add } : null;
+  // What each changed row was before, and what this reply wrote there.
+  const after = Object.fromEntries(Object.keys(before).map((k) => [k, lineValues[k]]));
+  const undo = (patch.lineValues || add.length) ? { lineValues: before, written: after, remarkLines: add } : null;
   return { patch, done, refused: [...new Set(refused)], undo };
 }
 
-// Undo one reply's changes, keeping everything else the user changed since.
+// Undo one reply's changes, keeping everything else the user changed since:
+// a row changed again after this reply (by hand, or by a later reply) keeps
+// its newer text.
 export function undoChatChanges(draft, undo) {
   if (!undo) return {};
   const lineValues = { ...(draft.lineValues || {}) };
   Object.entries(undo.lineValues || {}).forEach(([k, v]) => {
+    if (undo.written && (lineValues[k] ?? '') !== (undo.written[k] ?? '')) return;
     if (v === undefined) delete lineValues[k];
     else lineValues[k] = v;
   });
