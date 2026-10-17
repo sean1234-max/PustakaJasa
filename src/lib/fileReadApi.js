@@ -76,22 +76,6 @@ export async function readPdfPlaquesWithAi({ fileName, pages, images }) {
   }
 }
 
-// "Ask Claude" (New Order step 2): one message to Claude about the order on
-// the page. `request` is aiChat.js's buildChatRequest. Never throws.
-// Resolves to { ok:true, reply, actions } or { ok:false, message }.
-export async function chatWithAi(request) {
-  const fail = 'Claude could not answer right now — please try again, or make the change by hand.';
-  try {
-    const irText = JSON.stringify(request);
-    const { data, error } = await supabase.functions.invoke('read-order-file', { body: { kind: 'chat', fileName: 'chat', irText } });
-    if (error || !data) return { ok: false, message: fail };
-    if (data.status === 'succeeded' && data.mapping) return { ok: true, reply: String(data.mapping.reply || ''), actions: data.mapping.actions || [] };
-    return { ok: false, message: data.message || fail };
-  } catch {
-    return { ok: false, message: fail };
-  }
-}
-
 // Admin banner (AiBudgetBanner.jsx). Resolves to null on any error.
 export async function getAiBudgetStatus() {
   try {
