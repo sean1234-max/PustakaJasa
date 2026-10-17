@@ -70,9 +70,9 @@ describe('planTemplateFill', () => {
     expect(plan.plaqueCount).toBe(3 + 3 + 3 + 2 + 2 + 1);
   });
 
-  it('puts every wording in capitals, keeping heading line breaks', () => {
+  it('puts every wording in capitals, keeping heading line breaks, the year on its own line', () => {
     const plan = planTemplateFill({ plaques: [{ heading: 'Hari Anugerah\nKualiti 2026', award: 'Terbaik Pentaksiran', line: 'Tahun 1', eline2: 'naib johan', code: '', qty: 2 }] });
-    expect(plan.umum).toEqual([{ heading: 'HARI ANUGERAH\nKUALITI 2026', award: 'TERBAIK PENTAKSIRAN', line: 'TAHUN 1', eline2: 'NAIB JOHAN', code: '', qty: 2 }]);
+    expect(plan.umum).toEqual([{ heading: 'HARI ANUGERAH\nKUALITI\n2026', award: 'TERBAIK PENTAKSIRAN', line: 'TAHUN 1', eline2: 'NAIB JOHAN', code: '', qty: 2 }]);
   });
 
   it('does not repeat the TAJUK BESAR in the award', () => {
@@ -103,9 +103,9 @@ describe('fillOrderTemplate', () => {
     expect(v(wb, 'PPKI,PRA', 'A12')).toBe('ANUGERAH AL-FARABI');
     expect([v(wb, 'PPKI,PRA', 'C12'), v(wb, 'PPKI,PRA', 'K12'), v(wb, 'PPKI,PRA', 'L13')]).toEqual([2, 'ALIRAN TAHUN 1', 1]);
     expect(v(wb, 'ORDER LAIN-LAIN', 'B5')).toBe('MAJLIS APRESIASI AKADEMIK');
-    expect([v(wb, 'ORDER LAIN-LAIN', 'C12'), v(wb, 'ORDER LAIN-LAIN', 'F12'), v(wb, 'ORDER LAIN-LAIN', 'G12')])
-      .toEqual(['ANUGERAH CHOLAR\nTAHUN 1', 1, 'PKC 263']);
-    expect(v(wb, 'ORDER LAIN-LAIN', 'C14')).toBe('ANUGERAH SIBAWEIH\n1 UM');
+    expect([v(wb, 'ORDER LAIN-LAIN', 'C12'), v(wb, 'ORDER LAIN-LAIN', 'D12'), v(wb, 'ORDER LAIN-LAIN', 'F12'), v(wb, 'ORDER LAIN-LAIN', 'G12')])
+      .toEqual(['ANUGERAH CHOLAR', 'TAHUN 1', 1, 'PKC 263']);
+    expect([v(wb, 'ORDER LAIN-LAIN', 'C14'), v(wb, 'ORDER LAIN-LAIN', 'D14')]).toEqual(['ANUGERAH SIBAWEIH', '1 UM']);
     expect(res.placed).toEqual({ [mp]: 6, [`${mp} (2)`]: 3, 'PPKI,PRA': 2, 'ORDER LAIN-LAIN': 3 });
     expect(Object.values(res.placed).reduce((a, n) => a + n, 0)).toBe(res.plaqueCount);
   });
@@ -115,7 +115,7 @@ describe('fillOrderTemplate', () => {
     const res = await fillOrderTemplate(makeTemplate(), many, { DOMParser, XMLSerializer });
     const wb = read(res.buffer);
     expect(wb.SheetNames).toContain('ORDER LAIN-LAIN (2)');
-    expect(v(wb, 'ORDER LAIN-LAIN (2)', 'C13')).toBe('ANUGERAH 4\nTAHUN 1');
+    expect([v(wb, 'ORDER LAIN-LAIN (2)', 'C13'), v(wb, 'ORDER LAIN-LAIN (2)', 'D13')]).toEqual(['ANUGERAH 4', 'TAHUN 1']);
     expect(res.placed).toEqual({ 'ORDER LAIN-LAIN': 3, 'ORDER LAIN-LAIN (2)': 2 });
   });
 });
@@ -135,6 +135,7 @@ describe('fillOrderTemplate, the one-award sheets (the real template)', () => {
       P({ award: 'Tokoh Sukan', qty: 2, code: 'SR-116 A / RED' }),
       P({ award: 'Tokoh Nilam', line: 'Tahap 2', heading: `SK X\n${H}`, code: '4942' }),
       P({ award: 'Terbaik PBD', line: 'Tahun 1', qty: 45, code: 'CPH / C' }),
+      P({ award: 'Anugerah Khas', code: 'PKC 263' }),
     ],
     selempang: [{ acara: 'Nilam', warna: 'MERAH', qty: 2 }],
     front: { sales: 'Sean', sekolah: 'SK Test', cikgu: 'Pn A / 012-3456789', remark: 'Hamper: GST 25 A x14' },
@@ -145,7 +146,7 @@ describe('fillOrderTemplate, the one-award sheets (the real template)', () => {
     const wb = read(res.buffer);
     // MP THP 2: the template's own subject rows, a new one in an empty row.
     expect([v(wb, 'MP THP 2', 'B3'), v(wb, 'MP THP 2', 'B4'), v(wb, 'MP THP 2', 'B5'), v(wb, 'MP THP 2', 'B6')])
-      .toEqual(['HARI ANUGERAH KUALITI 2026', 'MATA PELAJARAN TERBAIK', 'BAHASA MELAYU', 'TAHUN 4']);
+      .toEqual(['HARI ANUGERAH KUALITI\n2026', 'MATA PELAJARAN TERBAIK', 'BAHASA MELAYU', 'TAHUN 4']);
     expect([v(wb, 'MP THP 2', 'B10'), v(wb, 'MP THP 2', 'C10'), v(wb, 'MP THP 2', 'D10')]).toEqual([1, 1, undefined]);
     expect([v(wb, 'MP THP 2', 'A21'), v(wb, 'MP THP 2', 'B21')]).toEqual(['SEJARAH', 1]);
     expect([v(wb, 'MP THP 2', 'A26'), v(wb, 'MP THP 2', 'D26')]).toEqual(['KIMIA', 1]);
@@ -157,9 +158,13 @@ describe('fillOrderTemplate, the one-award sheets (the real template)', () => {
     // TOKOH: the template's sample honours are replaced.
     expect([v(wb, 'TOKOH', 'A7'), v(wb, 'TOKOH', 'D7'), v(wb, 'TOKOH', 'A8'), v(wb, 'TOKOH', 'A9')])
       .toEqual(['TOKOH AKADEMIK\nTAHAP 1', 2, 'TOKOH SUKAN', undefined]);
-    // Another TAJUK BESAR: ORDER LAIN-LAIN, with its own heading.
-    expect([v(wb, 'ORDER LAIN-LAIN', 'C14'), v(wb, 'ORDER LAIN-LAIN', 'B15'), v(wb, 'ORDER LAIN-LAIN', 'C15')])
-      .toEqual(['TERBAIK PBD\nTAHUN 1', 'SK X\nHARI ANUGERAH KUALITI 2026', 'TOKOH NILAM\nTAHAP 2']);
+    // ORDER LAIN-LAIN: the award in ②, its TAHUN / TAHAP in ③ ("-" when
+    // the plaque has none); another TAJUK BESAR carries its own heading.
+    const u = (ref) => v(wb, 'ORDER LAIN-LAIN', ref);
+    expect([u('B5'), u('B6'), u('B7')]).toEqual(['HARI ANUGERAH KUALITI\n2026', 'TERBAIK PBD', 'TAHUN 1']);
+    expect([u('B14'), u('C14'), u('D14'), u('E14')]).toEqual([undefined, 'TERBAIK PBD', 'TAHUN 1', undefined]);
+    expect([u('C15'), u('D15')]).toEqual(['ANUGERAH KHAS', '-']);
+    expect([u('B16'), u('C16'), u('D16')]).toEqual(['SK X\nHARI ANUGERAH KUALITI\n2026', 'TOKOH NILAM', 'TAHAP 2']);
     expect([v(wb, 'SELEMPANG', 'A5'), v(wb, 'SELEMPANG', 'B5'), v(wb, 'SELEMPANG', 'C5')]).toEqual(['NILAM', 'MERAH', 2]);
     expect([v(wb, 'FRONT PG', 'B1'), v(wb, 'FRONT PG', 'B2'), v(wb, 'FRONT PG', 'B4'), v(wb, 'FRONT PG', 'B32')])
       .toEqual(['SEAN', 'SK TEST', 'PN A / 012-3456789', 'HAMPER: GST 25 A X14']);

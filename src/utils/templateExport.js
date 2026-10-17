@@ -66,10 +66,20 @@ function dropHeading(text, heading) {
   if (!head.length || lines.length < head.length) return text;
   return head.every((h, i) => lineKey(lines[i]) === h) ? lines.slice(head.length).join('\n').trim() : text;
 }
+// The year at the end of a TAJUK BESAR goes on its own line ("HARI
+// ANUGERAH KUALITI\n2026"), the way the plaque is laid out (Sean,
+// 2026-10-17).
+const TRAILING_YEAR_RE = /^(.*\S)\s+((?:SESI\s+)?(?:19|20)\d{2}(?:\s*\/\s*(?:19|20)?\d{2})?)$/;
+function yearOnOwnLine(heading) {
+  const lines = heading.split('\n');
+  const m = TRAILING_YEAR_RE.exec(lines[lines.length - 1].trim());
+  if (m) lines.splice(lines.length - 1, 1, m[1], m[2]);
+  return lines.join('\n');
+}
 function plaquesOf(categorized) {
   const caps = (p) => {
     const heading = String(p.heading ?? '').toUpperCase();
-    return { ...p, heading, award: dropHeading(String(p.award ?? '').toUpperCase(), heading), line: String(p.line ?? '').toUpperCase(), eline2: String(p.eline2 ?? '').toUpperCase() };
+    return { ...p, heading: yearOnOwnLine(heading), award: dropHeading(String(p.award ?? '').toUpperCase(), heading), line: String(p.line ?? '').toUpperCase(), eline2: String(p.eline2 ?? '').toUpperCase() };
   };
   if (Array.isArray(categorized?.plaques)) return categorized.plaques.filter((p) => p.qty > 0).map(caps);
   const out = [];
@@ -789,14 +799,25 @@ export async function fillOrderTemplate(templateBuffer, categorized, {
       for (const part of chunk(rows, layout.rows.length)) {
         const { doc, name } = await sheetCopy(base);
         if (layout.contoh.l0 && heading) setCell(doc, layout.contoh.l0, heading);
-        if (layout.contoh.l1) setCell(doc, layout.contoh.l1, [part[0].award, part[0].line].filter(Boolean).join('\n'));
+        // ② the award, ③ its TAHUN / TAHAP line, ④ the line under that
+        // (Sean, 2026-10-17: each on its own line of the plaque).
+        const contoh = { l1: part[0].award, l2: part[0].line, l3: part[0].eline2 };
+        ['l1', 'l2', 'l3'].forEach((k) => layout.contoh[k] && setCell(doc, layout.contoh[k], contoh[k]));
         part.forEach((p, i) => {
           const r = layout.rows[i];
           // ① blank = the CONTOH heading; a plaque with another heading
           // carries its own.
           if (layout.cols.l0 != null && p.heading && p.heading !== heading) setCell(doc, addr(r, layout.cols.l0), p.heading);
-          // ② blank would mean "same as CONTOH": "-" is the form's "no line".
-          setCell(doc, addr(r, layout.cols.l1), [p.award, p.line, p.eline2].filter(Boolean).join('\n') || '-');
+          // A blank line would mean "same as CONTOH": "-" is the form's
+          // "no such line". A form without the ③ / ④ columns keeps the
+          // lines together in ②.
+          const own = layout.cols.l2 != null && layout.cols.l3 != null
+            ? { l1: p.award, l2: p.line, l3: p.eline2 }
+            : { l1: [p.award, p.line, p.eline2].filter(Boolean).join('\n'), l2: '', l3: '' };
+          ['l1', 'l2', 'l3'].forEach((k) => {
+            if (layout.cols[k] == null) return;
+            setCell(doc, addr(r, layout.cols[k]), own[k] || (k === 'l1' || (layout.contoh[k] && contoh[k]) ? '-' : ''));
+          });
           setCell(doc, addr(r, layout.cols.qty), p.qty);
           if (p.code) setCell(doc, addr(r, layout.cols.plak), p.code);
         });
