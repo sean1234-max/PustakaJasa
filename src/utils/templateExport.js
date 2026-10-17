@@ -42,8 +42,11 @@ const up = (s) => String(s ?? '').replace(/\s+/g, ' ').trim().toUpperCase();
 // One plaque wording from an AI tab: the award (POSITION) and the line under
 // it (the class / Tahun), with its count and code. `{ plaques }` instead of
 // the AI's tabs: the plaques of the order on the page (draftForm.js).
+// Every wording goes into the form in capitals (Sean, 2026-10-17); line
+// breaks in a heading are kept.
 function plaquesOf(categorized) {
-  if (Array.isArray(categorized?.plaques)) return categorized.plaques.filter((p) => p.qty > 0);
+  const caps = (p) => ({ ...p, heading: String(p.heading ?? '').toUpperCase(), award: String(p.award ?? '').toUpperCase(), line: String(p.line ?? '').toUpperCase(), eline2: String(p.eline2 ?? '').toUpperCase() });
+  if (Array.isArray(categorized?.plaques)) return categorized.plaques.filter((p) => p.qty > 0).map(caps);
   const out = [];
   Object.values(categorized || {}).forEach((sections) => (sections || []).forEach((section) => {
     const lines = section.lines || {};
@@ -57,7 +60,7 @@ function plaquesOf(categorized) {
       if (qty > 0) out.push({ heading, award, line, eline2, qty, code });
     });
   }));
-  return out;
+  return out.map(caps);
 }
 
 const YEAR_CLASS_RE = /^([1-6])\s+([A-Z][A-Z0-9 .&'’-]*)$/;
