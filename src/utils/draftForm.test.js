@@ -24,9 +24,34 @@ describe('draftPlaques', () => {
     expect(plaques.every((p) => p.heading === 'MAJLIS BARU 2026' && p.code === 'MP399')).toBe(true);
   });
 
-  it('leaves out a tab that is not ready yet, and says so', () => {
+  it('keeps a tab with no Jenis Plak yet, with a blank KOD, and says so', () => {
     const d = draft();
-    d.rowsByBlock['TOKOH_SHEET::0'][0].jenisPlak = '';
-    expect(draftPlaques(d).skipped[0]).toMatch(/^TOKOH: /);
+    d.rowsByBlock['TOKOH_SHEET::0'].forEach((r) => { r.jenisPlak = ''; });
+    const { plaques, skipped, unready } = draftPlaques(d);
+    expect(skipped).toEqual([]);
+    expect(plaques.reduce((n, p) => n + p.qty, 0)).toBe(2);
+    expect(plaques.every((p) => p.code === '' && p.heading === 'MAJLIS BARU 2026')).toBe(true);
+    expect(unready[0]).toMatch(/^TOKOH: .*Jenis Plak/);
+  });
+
+  it('leaves out a tab with no quantity, and says so', () => {
+    const d = draft();
+    d.rowsByBlock['TOKOH_SHEET::0'].forEach((r) => { r.qty = ''; r.jenisPlak = ''; });
+    const { plaques, skipped } = draftPlaques(d);
+    expect(plaques).toEqual([]);
+    expect(skipped[0]).toMatch(/^TOKOH: /);
+  });
+});
+
+describe('draftPlaques, a tab with no Jenis Plak row at all', () => {
+  it('writes the whole tab in with a blank KOD', async () => {
+    const { computeBlocks, noopUpdaters } = await import('./computeBlocks');
+    const d = { ...draft(), lineValues: { 'MP1::0::0': 'MAJLIS BARU 2026' }, rowsByBlock: {} };
+    const blk = computeBlocks('MP1', d.lineValues, {}, {}, {}, {}, noopUpdaters, d.plakCatalog, 'SK').blocks[0];
+    d.matrixValues = { [blk.matrixRows[0].cells[0].key]: '2' };
+    const { plaques, unready } = draftPlaques(d);
+    expect(plaques.reduce((n, p) => n + p.qty, 0)).toBe(2);
+    expect(plaques.every((p) => p.code === '')).toBe(true);
+    expect(unready[0]).toMatch(/^MP THP 1: /);
   });
 });

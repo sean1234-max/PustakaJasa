@@ -198,9 +198,9 @@ export default function NewOrderStep2() {
 
   const handleDownloadForm = async () => {
     if (formExport?.busy) return;
-    const { plaques, skipped } = draftPlaques(state);
+    const { plaques, skipped, unready } = draftPlaques(state);
     if (!plaques.length) {
-      setFormExport({ error: skipped.length ? `Nothing in the order is ready yet: ${skipped.join('; ')}` : 'The order is empty — upload a file or fill in a tab first.' });
+      setFormExport({ error: skipped.length ? `Nothing in the order has a quantity yet: ${skipped.join('; ')}` : 'The order is empty — upload a file or fill in a tab first.' });
       return;
     }
     setFormExport({ busy: true });
@@ -220,7 +220,8 @@ export default function NewOrderStep2() {
         notes: [
           `${placedTotal} of ${out.plaqueCount} plaques written into the form (${Object.entries(out.placed).map(([k, n]) => `${k}: ${n}`).join(', ')}), as the order is on this page now. The form has a fixed place for each line, so a changed row order is not shown in it; the order itself keeps it.`,
           ...out.notes,
-          ...skipped.map((x) => `Not in the form (not ready to add to cart yet): ${x}`),
+          ...(unready.length ? ['Still to fix (fill it in the Excel, e.g. the KOD, then upload the form again):', ...unready] : []),
+          ...skipped.map((x) => `Not in the form (no plaques yet): ${x}`),
         ],
       });
     } catch (err) {
