@@ -17,7 +17,8 @@ import * as XLSX from 'xlsx';
 //   Tahun; TOKOH awards -> the TOKOH sheet, one row per honour; a subject
 //   for each Tahun (MATA PELAJARAN TERBAIK) -> MP THP 1 / MP THP 2; the
 //   Selempang tab -> SELEMPANG; Function Details and the Remark -> FRONT PG
-//   (Sean, 2026-10-17: the same sheets staff fill by hand). On those
+//   (Sean, 2026-10-17: the same sheets staff fill by hand). The hidden
+//   SENARAI PLAK price list takes the website's own prices (`priceOf`). On those
 //   sheets a plaque under another TAJUK BESAR than the rest goes to ORDER
 //   LAIN-LAIN, which can say its own heading.
 // - everything else -> ORDER LAIN-LAIN, one row per plaque wording.
@@ -43,6 +44,7 @@ const SHEET_KEHADIRAN = 'KEHADIRAN PENUH';
 const SHEET_TOKOH = 'TOKOH';
 const SHEET_SELEMPANG = 'SELEMPANG';
 const SHEET_FRONT = 'FRONT PG';
+const SHEET_PRICES = 'SENARAI PLAK';
 const SHEET_PPKI = ['PPKI,PRA', 'PPKI'];
 const SHEET_UMUM = ['ORDER LAIN-LAIN', 'UMUM (万能)', 'UMUM'];
 const DEFAULT_CLASS_ROWS = 12;
@@ -246,7 +248,7 @@ export function planTemplateFill(categorized) {
   });
   const mpPlain = [...plainGroups.values()];
 
-  return { mp, ppki, lonjakan, kehadiran, tokoh, mpPlain, umum, notes, plaqueCount: plaques.reduce((a, p) => a + p.qty, 0) };
+  return { mp, ppki, lonjakan, kehadiran, tokoh, mpPlain, umum, notes, allCodes: plaques.map((p) => p.code).filter(Boolean), plaqueCount: plaques.reduce((a, p) => a + p.qty, 0) };
 }
 
 // ---------------------------------------------------------------------------
@@ -784,6 +786,34 @@ export async function fillOrderTemplate(templateBuffer, categorized, {
         const at = findCells(ws, '', (t) => re.test(t))[0];
         if (at) setCell(doc, addr(at.r, at.c + 1), String(value).trim().toUpperCase());
       });
+    }
+  }
+
+  // SENARAI PLAK: every code's HARGA from the website's catalog, so each
+  // sheet's price lookup matches what the cart charges.
+  const priceOf = categorized?.priceOf;
+  const priceName = findName(SHEET_PRICES);
+  if (typeof priceOf === 'function' && priceName) {
+    const ws = wb.Sheets[priceName];
+    const head = findCells(ws, 'JENIS PLAK')[0];
+    const harga = head && findCells(ws, '', (t) => /^HARGA/.test(t)).find((p) => p.r === head.r);
+    if (harga) {
+      const range = XLSX.utils.decode_range(ws['!ref']);
+      const listed = new Set();
+      const changes = [];
+      for (let r = head.r + 1; r <= range.e.r; r++) {
+        const code = textAt(ws, r, head.c);
+        if (!code) continue;
+        listed.add(code);
+        const price = priceOf(code);
+        if (price != null && price !== ws[addr(r, harga.c)]?.v) changes.push([addr(r, harga.c), price]);
+      }
+      if (changes.length) {
+        const { doc } = await sheetCopy(priceName);
+        changes.forEach(([ref, price]) => setCell(doc, ref, price));
+      }
+      const missing = [...new Set(plan.allCodes)].filter((c) => !listed.has(up(c)));
+      if (missing.length) notes.push(`Not in the form's price list (SENARAI PLAK), so their HARGA is blank: ${missing.join(', ')}.`);
     }
   }
 

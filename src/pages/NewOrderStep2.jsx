@@ -198,7 +198,7 @@ export default function NewOrderStep2() {
 
   const handleDownloadForm = async () => {
     if (formExport?.busy) return;
-    const { plaques, selempang, front, skipped, unready } = draftPlaques(state);
+    const { plaques, selempang, front, priceOf, skipped, unready } = draftPlaques(state);
     if (!plaques.length && !selempang.length) {
       setFormExport({ error: skipped.length ? `Nothing in the order has a quantity yet: ${skipped.join('; ')}` : 'The order is empty — upload a file or fill in a tab first.' });
       return;
@@ -211,7 +211,7 @@ export default function NewOrderStep2() {
         return;
       }
       const { fillOrderTemplate } = await import('../utils/templateExport');
-      const out = await fillOrderTemplate(await res.arrayBuffer(), { plaques, selempang, front });
+      const out = await fillOrderTemplate(await res.arrayBuffer(), { plaques, selempang, front, priceOf });
       const first = (state.step2UploadedFiles || [])[0]?.name;
       const base = (first || state.sekolah || 'Order').replace(/\.[^.]+$/, '').replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'Order';
       downloadBinaryFile(`${base} (FORM ANUGERAH).xlsx`, out.buffer, XLSX_MIME);
