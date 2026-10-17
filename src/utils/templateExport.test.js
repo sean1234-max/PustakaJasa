@@ -68,6 +68,11 @@ describe('planTemplateFill', () => {
     ]);
     expect(plan.plaqueCount).toBe(3 + 3 + 3 + 2 + 2 + 1);
   });
+
+  it('puts every wording in capitals, keeping heading line breaks', () => {
+    const plan = planTemplateFill({ plaques: [{ heading: 'Hari Anugerah\nKualiti 2026', award: 'Terbaik Pentaksiran', line: 'Tahun 1', eline2: 'naib johan', code: '', qty: 2 }] });
+    expect(plan.umum).toEqual([{ heading: 'HARI ANUGERAH\nKUALITI 2026', award: 'TERBAIK PENTAKSIRAN', line: 'TAHUN 1', eline2: 'NAIB JOHAN', code: '', qty: 2 }]);
+  });
 });
 
 describe('fillOrderTemplate', () => {
