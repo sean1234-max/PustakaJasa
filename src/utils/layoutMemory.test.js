@@ -132,6 +132,9 @@ describe('a class matrix layout', () => {
     const { ir, text } = irOf({ 'MP B': B });
     const got = matchLayout(layout, parseIrSheets(text)[0]);
     expect(got.classColumns).toEqual(['B', 'C', 'D']);
+    // Columns after JUMLAH (HARGA, CATATAN) are not classes.
+    const priced = B.map((r, i) => (i === 2 ? [...r, 'HARGA'] : i >= 3 ? [...r, 25] : r));
+    expect(matchLayout(layout, parseIrSheets(irOf({ X: priced }).text)[0]).classColumns).toEqual(['B', 'C', 'D']);
     expect(JSON.stringify(layout)).not.toContain('MAWAR');
     const { categorized } = applyAiMapping(ir, { blocks: [got], questions: [] });
     expect(totalQty(categorized)).toBe(3);

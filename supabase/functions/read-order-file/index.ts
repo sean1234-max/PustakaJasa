@@ -233,9 +233,10 @@ Deno.serve(async (req) => {
   // remembered layout fits — never the model, never any cost.
   const memoryOnly = isSheets && body.memoryOnly === true;
 
-  // Instructions change the answer, so they are part of the cache key; with
-  // none, the key is the same as before.
-  const inputSha = await sha256Hex(userInstructions ? `${irText}\n\u0000instructions:${userInstructions}` : irText);
+  // Instructions change the answer, so they are part of the cache key — with
+  // the file's name, since they may name files; with none, the key is the
+  // same as before.
+  const inputSha = await sha256Hex(userInstructions ? `${irText}\n\u0000file:${fileName}\n\u0000instructions:${userInstructions}` : irText);
 
   // Same input, same pipeline -> same answer, no model call — whoever
   // uploaded it first (the same file already has the same data in it).

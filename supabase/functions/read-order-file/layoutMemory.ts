@@ -133,9 +133,13 @@ export function matchLayout(l: Layout, sheet: IrSheet): Block | null {
   let dataCols: string[];
   if (l.role === 'class-matrix') {
     const from = colIndex(t.labelColumn as string) + 1;
+    // The classes run from the label column to the JUMLAH/TOTAL column (or
+    // to the first column with no header): anything after that — HARGA,
+    // CATATAN — is not a class.
     for (let c = from; c <= sheet.maxCol; c++) {
       const h = cell(sheet, `${colName(c)}${hr}`);
-      if (h && !TOTAL_RE.test(h)) classColumns.push(colName(c));
+      if (!h || TOTAL_RE.test(h)) break;
+      classColumns.push(colName(c));
     }
     if (!classColumns.length) return null;
     dataCols = [t.labelColumn as string, ...classColumns];
