@@ -16,7 +16,7 @@ import * as XLSX from 'xlsx';
 import { buildWorkbookIr, renderIrText } from '../utils/fileIr';
 import { applyAiMapping } from '../utils/aiMapping';
 import { readSheetsWithAi, readInstructionsWithAi, canUseAiReader } from '../lib/fileReadApi';
-import { applyInstructionPlan, buildInstructionTabs, instructionQuestionsToWarnings, planInstructions } from '../utils/aiInstructions';
+import { applyInstructionPlan, buildInstructionTabs, instructionQuestionsToWarnings, planInstructions, precheckInstructions } from '../utils/aiInstructions';
 import { parseDocxOrderWithAi, parsePdfOrder } from '../utils/pdfImport';
 import { checkColumnTotals, checkExpansionTotals, checkLevelBreakdownMatch, checkAliranKelasTotals } from '../utils/importChecks';
 import { frontPgToFunctionDetails } from '../utils/frontPgDetails';
@@ -1561,6 +1561,16 @@ export function AppStateProvider({ children }) {
     if (!instructions || !canUseAiReader(st.role)) return { ok: true, done: [], warnings: [], skipped: true };
     const tabs = buildInstructionTabs(st, catKeys);
     const uploaded = (stateRef.current.step2UploadedFiles || []).map((f) => f.name);
+    // Every instruction is for another file: no AI call needed.
+    const pre = precheckInstructions(instructions, { fileName, uploaded });
+    if (pre) {
+      patch((latest) => ({ step2InstructionsAppliedFor: { ...(latest.step2InstructionsAppliedFor || {}), [fileName]: instructions } }));
+      return {
+        ok: true,
+        done: pre.questions.length ? [] : [`No instruction is for "${fileName}" — it was imported with the usual rules.`],
+        warnings: instructionQuestionsToWarnings(pre.questions),
+      };
+    }
     const res = await readInstructionsWithAi({
       instructions, fileName, files: uploaded.includes(fileName) ? uploaded : [...uploaded, fileName],
       tabs: tabs.map(({ id, label, heading, lines }) => ({ id, label, heading, lines })),
@@ -1588,7 +1598,10 @@ export function AppStateProvider({ children }) {
   // values are then read from the file itself (aiMapping.js) and added to
   // the draft as new tabs, alongside what the rules already imported.
   // Returns { ok, message, warnings }; never throws.
-  const readSkippedSheetsWithAi = useCallback(async (file, sheetNames, instructions = '') => {
+  // `memoryOnly` (right after an import): only the sheets a layout the AI
+  // learned earlier — from any user's file — fits are read, free; the rest
+  // stay offered to the AI button. Returns `remaining` = sheets not read.
+  const readSkippedSheetsWithAi = useCallback(async (file, sheetNames, instructions = '', { memoryOnly = false } = {}) => {
     let ir;
     try {
       const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
@@ -1598,14 +1611,22 @@ export function AppStateProvider({ children }) {
       return { ok: false, message: 'Could not read this file. Please try again.' };
     }
     if (ir.blocks.length === 0) return { ok: false, message: 'Those sheets are empty — nothing to read.' };
-    const res = await readSheetsWithAi({ fileName: file.name, irText: renderIrText(ir), sheetNames: ir.blocks.map((b) => b.name), instructions });
+    const res = await readSheetsWithAi({ fileName: file.name, irText: renderIrText(ir), sheetNames: ir.blocks.map((b) => b.name), instructions, memoryOnly });
     if (!res.ok) return { ok: false, message: res.message };
-    const { categorized, notes } = applyAiMapping(ir, res.mapping);
+    const learned = res.learnedSheets || [];
+    // From memory only: map just those sheets (the others weren't read).
+    const readIr = memoryOnly ? { ...ir, blocks: ir.blocks.filter((b) => learned.includes(b.name)) } : ir;
+    const { categorized, notes } = applyAiMapping(readIr, res.mapping);
+    learned.forEach((name) => notes.unshift(`Sheet "${name}": read with a layout the AI learned from an earlier file (no AI cost) — please check it against the file.`));
     if (Object.keys(categorized).length === 0) {
       return { ok: false, message: 'The AI found no order rows in those sheets.', warnings: notes.map((text) => ({ type: 'truncated', text })) };
     }
     const result = await importFormAnugerahExcelInto(file, NEW_ORDER_IMPORT_FIELDS, { parsedOverride: { categorized, notes } });
-    return { ...result, message: `AI-read sheets imported — ${Object.keys(categorized).length} new tab(s). Check every AI-read tab carefully against the file before adding to cart.` };
+    const remaining = memoryOnly ? sheetNames.filter((n) => !learned.includes(n)) : [];
+    const message = memoryOnly
+      ? `${learned.length} more sheet(s) read with layouts learned earlier — ${Object.keys(categorized).length} new tab(s). Check them against the file before adding to cart.`
+      : `AI-read sheets imported — ${Object.keys(categorized).length} new tab(s). Check every AI-read tab carefully against the file before adding to cart.`;
+    return { ...result, message, learnedSheets: learned, remaining };
   }, [importFormAnugerahExcelInto]);
 
   const removeFromCart = useCallback((id) => {

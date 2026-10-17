@@ -18,11 +18,16 @@ export function canUseAiReader(role) {
 // with the file so the reader can follow the ones about how to read it.
 const withInstructions = (body, instructions) => (instructions && instructions.trim() ? { ...body, instructions: instructions.trim() } : body);
 
-export async function readSheetsWithAi({ fileName, irText, sheetNames, instructions }) {
+// `memoryOnly`: read only the sheets a layout the AI learned earlier fits
+// (free, no AI call); `learnedSheets` names the ones read from memory.
+export async function readSheetsWithAi({ fileName, irText, sheetNames, instructions, memoryOnly = false }) {
   try {
-    const { data, error } = await supabase.functions.invoke('read-order-file', { body: withInstructions({ fileName, irText, sheetNames }, instructions) });
+    const body = withInstructions({ fileName, irText, sheetNames, ...(memoryOnly ? { memoryOnly: true } : {}) }, instructions);
+    const { data, error } = await supabase.functions.invoke('read-order-file', { body });
     if (error || !data) return { ok: false, message: 'The AI reader is not available right now — please add these sheets by hand.' };
-    if (data.status === 'succeeded' && data.mapping) return { ok: true, mapping: data.mapping, cached: !!data.cached, runId: data.runId };
+    if (data.status === 'succeeded' && data.mapping) {
+      return { ok: true, mapping: data.mapping, cached: !!data.cached, runId: data.runId, learnedSheets: data.learnedSheets || [] };
+    }
     return { ok: false, message: data.message || 'The AI could not read these sheets — please add them by hand.' };
   } catch {
     return { ok: false, message: 'The AI reader is not available right now — please add these sheets by hand.' };

@@ -79,3 +79,22 @@ No migration and no new secret: it uses the same `file_read_runs` cache,
 rate limit and monthly cap. To switch on: deploy this function again
 (`supabase functions deploy read-order-file`). The box shows only when
 `VITE_AI_READER_ENABLED=1` and the role is in `VITE_AI_READER_ROLES`.
+
+## Layout memory + shared cache (2026-10-17)
+
+- **Same file, any user:** the same-file cache is now shared, so a file one
+  user already had read is free for everyone after.
+- **Layout memory** (`layoutMemory.ts`, table `ai_sheet_layouts`): when the
+  AI maps an Excel sheet layout and is sure of it, the layout (headers and
+  column roles only, no student data) is remembered for every user. A later
+  sheet with the same headers in the same cells, from any school, is read
+  from memory at no cost — straight after the import, without the "Read
+  with AI" button. Not used when the user typed Custom Instructions.
+- **Instructions:** when every instruction names another file, no AI call.
+
+To switch on: run `supabase/migrations/0101_ai_sheet_layouts.sql`, then
+`supabase functions deploy read-order-file --use-api`. Without the
+migration the function still works; it just remembers nothing.
+
+A layout that reads wrongly can be switched off:
+`update ai_sheet_layouts set disabled = true where id = '…';`
