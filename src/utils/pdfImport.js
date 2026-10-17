@@ -1,5 +1,6 @@
 import { buildPdfIr, extractPdfPages, renderPdfIrText, renderPdfPageJpeg, renderPdfPicturePages } from './pdfIr';
 import { buildDocxIr } from './docxIr';
+import { readDocxSelempang } from './docxSelempang';
 import { applyPdfReading, applyPictureHeading, applyPlaquePictures } from './pdfMapping';
 import { readPdfHeadingWithAi, readPdfPlaquesWithAi, readPdfWithAi } from '../lib/fileReadApi';
 
@@ -64,7 +65,16 @@ export async function parsePdfOrder(arrayBuffer, fileName, instructions = '') {
 export async function parseDocxOrderWithAi(arrayBuffer, fileName, ruleError, instructions = '') {
   const ir = await buildDocxIr(arrayBuffer);
   if (!ir || ir.segments.length === 0) return { error: ruleError };
-  return readWithAi(ir, fileName, 'Word file', null, null, instructions);
+  const [res, selempang] = await Promise.all([
+    readWithAi(ir, fileName, 'Word file', null, null, instructions),
+    readDocxSelempang(arrayBuffer),
+  ]);
+  // Selempang drawn as coloured boxes (docxSelempang.js).
+  if (!res.error && selempang.section) {
+    res.categorized.SELEMPANG = [selempang.section];
+    res.notes.push(...selempang.notes);
+  }
+  return res;
 }
 
 async function readWithAi(ir, fileName, what, picture = null, photos = null, instructions = '') {

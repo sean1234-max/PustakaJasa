@@ -1,5 +1,6 @@
 import JSZip from 'jszip';
 import { makeDynamicCategoryKey } from '../data/catalog';
+import { readSelempangFromDocument } from './docxSelempang';
 
 // A second real-world order shape, completely different from any Excel
 // template: a Word table with one row per plaque (or per set of plaques).
@@ -445,6 +446,11 @@ export async function parseWordingDocx(arrayBuffer, { DOMParser: DP = globalThis
   }
 
   if (!heading) notes.push('No event heading (MAJLIS ...) was found above the table — please type the TAJUK BESAR by hand.');
+
+  // Selempang drawn as coloured boxes (docxSelempang.js).
+  const selempang = readSelempangFromDocument(doc);
+  if (selempang.section) categorized.SELEMPANG = [selempang.section];
+  notes.push(...selempang.notes);
 
   return { categorized, notes, klasMatrix: null };
 }
