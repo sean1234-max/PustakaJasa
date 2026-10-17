@@ -1586,7 +1586,9 @@ function parseTokohAnugerahSheet(ws) {
     if (!name) continue;
     tokohRows.push({
       desc: name,
-      namaMurid: namaCol != null ? cellText(ws, r, namaCol) : '',
+      // "-" = this honour has no NAMA line at all (Sean, 2026-10-17), kept
+      // apart from a blank one, which engraves the CONTOH's ③.
+      namaMurid: namaCol != null ? (/^\s*-+\s*$/.test(cellStr(ws, r, namaCol)) ? '-' : cellText(ws, r, namaCol)) : '',
       gambar: gambarCol != null ? cellText(ws, r, gambarCol) : '',
       qty: cellNum(ws, r, qtyCol),
       jenisPlak: jpCol != null ? cellText(ws, r, jpCol) : '',

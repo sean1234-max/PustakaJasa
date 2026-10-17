@@ -501,6 +501,16 @@ describe('buildCsvRows — TOKOH_SHEET NAMA MURID / Reserved', () => {
     expect(rows.every((r) => r[2] === 'TOKOH NILAM' && r[3] === '')).toBe(true);
   });
 
+  it('a NAMA MURID of "-" has no event_line_1, even when the CONTOH has a ③', () => {
+    const item = tokohItem('d', { id: 3, desc: 'TOKOH SUKAN', qty: 2, namaMurid: '-' });
+    item.detail.lines['TOKOH_SHEET::0::3'] = 'LELAKI\nTAHAP 1';
+    const named = tokohItem('e', { id: 4, desc: 'TOKOH AKADEMIK', qty: 1, namaMurid: 'LELAKI\nTAHAP 1' });
+    named.detail.lines['TOKOH_SHEET::0::3'] = 'LELAKI\nTAHAP 1';
+    const items = [item, named];
+    const { rows } = buildCsvRows({ ...order, items }, 'TOKOH_SHEET', items);
+    expect(rows.map((r) => r.slice(2, 4))).toEqual([['TOKOH SUKAN', ''], ['TOKOH SUKAN', ''], ['TOKOH AKADEMIK', 'LELAKI\nTAHAP 1']]);
+  });
+
   it('a "Reserved" NAMA MURID is left out of the CSV but counted (stock is held elsewhere)', () => {
     const named = tokohItem('n', { id: 1, desc: 'TOKOH MURID', qty: 1, namaMurid: 'SITI' });
     const reserved = tokohItem('r', { id: 2, desc: 'TOKOH AKADEMIK', qty: 2, namaMurid: 'Reserved' });

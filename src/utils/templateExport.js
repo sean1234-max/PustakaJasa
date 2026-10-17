@@ -228,7 +228,7 @@ export function planTemplateFill(categorized) {
   toUmum(tokohMain.rest);
   const tokoh = tokohMain.main.length ? {
     heading: tokohMain.main[0].heading,
-    rows: tokohMain.main.map((p) => ({ name: [p.award, p.line, p.eline2].filter(Boolean).join('\n'), qty: p.qty, code: p.code })),
+    rows: tokohMain.main.map((p) => ({ name: p.award, nama: [p.line, p.eline2].filter(Boolean).join('\n'), qty: p.qty, code: p.code })),
   } : null;
 
   // MP THP 1 / 2: a subject per row, its count under each Tahun; one sheet
@@ -352,6 +352,7 @@ function layoutList(ws, label) {
   const col = (re) => findCells(ws, '', (t) => re.test(t)).find((p) => p.r === head.r)?.c;
   const qty = col(/^KUANTITI$/);
   const plak = col(/^JENIS PLAK$/);
+  const nama = col(/^NAMA MURID$/);
   if (qty == null || plak == null) return null;
   const range = XLSX.utils.decode_range(ws['!ref']);
   const rows = [];
@@ -359,7 +360,7 @@ function layoutList(ws, label) {
     if (/^TOTAL/.test(textAt(ws, r, head.c))) break;
     rows.push({ r, label: textAt(ws, r, head.c) });
   }
-  return { labelCol: head.c, qtyCol: qty, plakCol: plak, rows, title: titleRows(ws) };
+  return { labelCol: head.c, qtyCol: qty, plakCol: plak, namaCol: nama, rows, title: titleRows(ws) };
 }
 
 function layoutSelempang(ws) {
@@ -474,7 +475,42 @@ function makeBook(zip, files, { DOMParser: DP, XMLSerializer: XS }) {
     return path;
   };
 
+  // A cell written with a line break gets its style's "wrap text" copy, so
+  // the break shows in Excel and WPS (Sean, 2026-10-17: "KUALITI2026").
+  const stylesDoc = files.styles ? parse(files.styles) : null;
+  const wrapped = new Map();
+  const wrapStyle = (s) => {
+    const idx = Number(s) || 0;
+    if (wrapped.has(idx)) return wrapped.get(idx);
+    const xfsEl = stylesDoc?.getElementsByTagNameNS(MAIN_NS, 'cellXfs')[0];
+    const xfs = xfsEl ? Array.from(xfsEl.getElementsByTagNameNS(MAIN_NS, 'xf')) : [];
+    const xf = xfs[idx];
+    let out = idx;
+    if (xf) {
+      const align = Array.from(xf.getElementsByTagNameNS(MAIN_NS, 'alignment'))[0];
+      if (align?.getAttribute('wrapText') !== '1') {
+        const copy = xf.cloneNode(true);
+        let a = Array.from(copy.getElementsByTagNameNS(MAIN_NS, 'alignment'))[0];
+        if (!a) { a = stylesDoc.createElementNS(MAIN_NS, 'alignment'); copy.insertBefore(a, copy.firstChild); }
+        a.setAttribute('wrapText', '1');
+        copy.setAttribute('applyAlignment', '1');
+        xfsEl.appendChild(copy);
+        xfsEl.setAttribute('count', String(xfs.length + 1));
+        out = xfs.length;
+      }
+    }
+    wrapped.set(idx, out);
+    return out;
+  };
+
   const save = () => {
+    docs.forEach((doc) => Array.from(doc.getElementsByTagNameNS(MAIN_NS, 'c'))
+      .filter((c) => c.getAttribute('t') === 'inlineStr' && c.textContent.includes('\n'))
+      .forEach((c) => {
+        const s = wrapStyle(c.getAttribute('s'));
+        if (s) c.setAttribute('s', String(s));
+      }));
+    if (stylesDoc && wrapped.size) zip.file('xl/styles.xml', ser(stylesDoc));
     docs.forEach((doc, path) => zip.file(path, ser(doc)));
     // Every total is recalculated when the file is opened; the old
     // calculation chain would point at cells that changed.
@@ -573,6 +609,7 @@ export async function fillOrderTemplate(templateBuffer, categorized, {
     workbook: await zip.file('xl/workbook.xml').async('string'),
     workbookRels: await zip.file('xl/_rels/workbook.xml.rels').async('string'),
     contentTypes: await zip.file('[Content_Types].xml').async('string'),
+    styles: await zip.file('xl/styles.xml')?.async('string'),
   }, { DOMParser: DP, XMLSerializer: XS });
 
   const pristine = new Map();
@@ -739,15 +776,23 @@ export async function fillOrderTemplate(templateBuffer, categorized, {
     const over = plan.tokoh.rows.slice(rowsOf.length);
     if (over.length) {
       notes.push(`${over.length} TOKOH award(s) didn't fit the ${base || SHEET_TOKOH} sheet, so they went to ORDER LAIN-LAIN.`);
-      toExtra(over.map((x) => ({ heading: plan.tokoh.heading, award: x.name, line: '', eline2: '', qty: x.qty, code: x.code })));
+      toExtra(over.map((x) => ({ heading: plan.tokoh.heading, award: x.name, line: x.nama, eline2: '', qty: x.qty, code: x.code })));
     }
     if (fit.length) {
       const { doc, name } = await sheetCopy(base);
-      writeTitle(doc, layout.title, [plan.tokoh.heading, fit[0].name]);
+      // The line under the award (LELAKI / TAHAP 1) is the NAMA MURID, and
+      // the CONTOH's ③ NAMA line (Sean, 2026-10-17). A blank NAMA MURID
+      // engraves the CONTOH's ③, so an honour with no such line gets "-"
+      // (no line) once ③ is filled.
+      const namaCol = layout.namaCol;
+      const sample = namaCol != null ? fit.find((x) => x.nama) : null;
+      writeTitle(doc, layout.title, [plan.tokoh.heading, (sample || fit[0]).name, sample ? sample.nama : '']);
       rowsOf.forEach(({ r, label }, i) => {
         const x = fit[i];
         if (!x) { if (label) setCell(doc, addr(r, layout.labelCol), ''); return; }
-        setCell(doc, addr(r, layout.labelCol), x.name);
+        const together = namaCol == null && x.nama;
+        setCell(doc, addr(r, layout.labelCol), together ? `${x.name}\n${x.nama}` : x.name);
+        if (namaCol != null && (x.nama || sample)) setCell(doc, addr(r, namaCol), x.nama || '-');
         setCell(doc, addr(r, layout.qtyCol), x.qty);
         if (x.code) setCell(doc, addr(r, layout.plakCol), x.code);
       });
