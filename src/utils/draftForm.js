@@ -1,4 +1,4 @@
-import { ACTIVE_CATEGORIES, isDynamicCategoryKey, resolveCategory, resolveSelempangWarna } from '../data/catalog';
+import { ACTIVE_CATEGORIES, flattenPlakCatalog, isDynamicCategoryKey, priceInFlatCatalog, resolveCategory, resolveSelempangWarna } from '../data/catalog';
 import { buildCategoryCartItems } from '../state/categoryCartItems';
 import { buildCsvRows } from './exportCsv';
 
@@ -15,6 +15,19 @@ import { buildCsvRows } from './exportCsv';
 // MP2 …; a tab read from a renamed sheet keeps its base kind), so the form
 // can put it on that sheet. `selempang`: the Selempang tab's rows; `front`:
 // the Function Details the FRONT PG shows (Sean, 2026-10-17).
+// `priceOf(code)`: the website's own price for a plaque code (the Jenis
+// Plak catalog Add to Cart charges), for the form's SENARAI PLAK (Sean,
+// 2026-10-17); null when the catalog doesn't know it.
+const codeKey = (code) => String(code || '').toUpperCase().replace(/\s+/g, '');
+function catalogPrices(catalog) {
+  const flat = flattenPlakCatalog(catalog);
+  const byKey = new Map(flat.map((p) => [codeKey(p.code), p.price]));
+  return (code) => {
+    const price = priceInFlatCatalog(flat, code) ?? byKey.get(codeKey(code)) ?? null;
+    return Number(price) > 0 ? Number(price) : null;
+  };
+}
+
 const kindOf = (catKey) => (isDynamicCategoryKey(catKey) ? catKey.split('::')[1] : catKey);
 
 export function draftPlaques(draft) {
@@ -54,5 +67,5 @@ export function draftPlaques(draft) {
     cikgu: [draft.picName, draft.phone].map((x) => String(x || '').trim()).filter(Boolean).join(' / '),
     remark: draft.remark || '',
   };
-  return { plaques: [...byWording.values()], selempang, front, skipped, unready };
+  return { plaques: [...byWording.values()], selempang, front, priceOf: catalogPrices(draft.plakCatalog), skipped, unready };
 }

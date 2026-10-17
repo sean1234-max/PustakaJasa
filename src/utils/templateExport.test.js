@@ -171,3 +171,22 @@ describe('fillOrderTemplate, the one-award sheets (the real template)', () => {
     expect(Object.values(res.placed).reduce((a, n) => a + n, 0)).toBe(res.plaqueCount);
   });
 });
+
+describe('fillOrderTemplate, prices', () => {
+  it('writes the website prices into SENARAI PLAK and names codes it does not list', async () => {
+    const prices = { 'SR-116 A / RED': 34, 'PKF 266': 10, 'CPH / C': 7.5 };
+    const res = await fillOrderTemplate(fs.readFileSync('public/templates/FORM-ANUGERAH.xlsx'), {
+      plaques: [
+        { heading: 'H', award: 'TOKOH SUKAN', line: '', eline2: '', code: 'SR-116 A / RED', qty: 2 },
+        { heading: 'H', award: 'ANUGERAH KHAS', line: '', eline2: '', code: 'ZZ 999', qty: 1 },
+      ],
+      priceOf: (code) => prices[code] ?? null,
+    }, { DOMParser, XMLSerializer });
+    const wb = read(res.buffer);
+    const list = XLSX.utils.sheet_to_json(wb.Sheets['SENARAI PLAK'], { header: 1 });
+    const price = (code) => list.find((r) => r[0] === code)?.[1];
+    expect([price('SR-116 A / RED'), price('PKF 266'), price('CPH / C'), price('PKC 263')]).toEqual([34, 10, 7.5, 12]);
+    expect(res.notes.join('\n')).toContain('ZZ 999');
+    expect(res.notes.join('\n')).not.toContain('SR-116 A / RED');
+  });
+});

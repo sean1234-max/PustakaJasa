@@ -66,3 +66,14 @@ describe('draftPlaques, sheet kinds, selempang and Function Details', () => {
     expect(front).toEqual({ sales: 'Sean', sekolah: 'SK Test', cikgu: 'Pn Aminah / 012-3456789', remark: 'Hamper GST 40' });
   });
 });
+
+describe('draftPlaques, prices', () => {
+  it('prices a code from the website catalog, including a parent code', () => {
+    const d = { ...draft(), plakCatalog: [
+      { code: 'MP399', price: 12 },
+      { code: 'CPH', price: 0, children: [{ code: 'A', price: 7.5 }, { code: 'C', price: 7.5 }] },
+    ] };
+    const { priceOf } = draftPlaques(d);
+    expect([priceOf('MP399'), priceOf('CPH / C'), priceOf('cph / a'), priceOf('NOPE')]).toEqual([12, 7.5, 7.5, null]);
+  });
+});
