@@ -6,7 +6,7 @@ import { STATUS_STAGES, statusPillStyle, invoiceLabel, invoiceSetByNote } from '
 import { getOrderChangeStamp } from '../utils/orderStamp';
 import { getOrderInvoiceSlices } from '../utils/orderBatches';
 import { fetchMyAssignedSalesmen, fetchAllSalesmen } from '../lib/ordersApi';
-import { prioritizeUrgentOrders } from '../utils/urgentOrder';
+import { prioritizeUrgentOrders, URGENT_ORDERS_SHEET_URL } from '../utils/urgentOrder';
 import OrderUrgentBadge from '../components/OrderUrgentBadge';
 import AddOnTag from '../components/AddOnTag';
 
@@ -22,10 +22,6 @@ import AddOnTag from '../components/AddOnTag';
 // this change) and no longer does.
 const EMPTY_ORDERS = [];
 
-// The "Urgent Orders" Google Sheet that sync-urgent-order-sheet writes to
-// (GOOGLE_SHEETS_SPREADSHEET_ID) — kept here just for the button link, the
-// Edge Function still only knows it via its own Supabase secret.
-const URGENT_ORDERS_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1gccvpiiY4QfzkXudF36RCx5350sCY5lVsGPRqW7lvrA/edit?gid=0#gid=0';
 // Store Admin's main job first (Sean, 2026-10-03): Salesman Approved orders
 // waiting for their Invoice Number (also any older order still without one).
 // Then, separately, orders Production has reviewed but Sales hasn't approved
@@ -116,11 +112,10 @@ export default function StoreAdminDashboard() {
           <div className="card-title" style={{ marginBottom: 'var(--space-2)' }}>{isManager ? 'Store Admin Manager' : 'Store Admin'}</div>
           <p className="hint-text" style={{ margin: 0 }}>Assign Invoice Numbers for Salesman Approved orders first. Orders still waiting for the salesman's approval are in their own tab (approve one yourself from a hard copy there); invoiced ones can be searched under Invoiced.</p>
         </div>
-        {isManager && (
-          <a href={URGENT_ORDERS_SHEET_URL} target="_blank" rel="noreferrer" className="btn btn-urgent">
-            ⚡ Urgent List
-          </a>
-        )}
+        {/* Every Store Admin (Sean, 2026-10-17) — who can open it is set by the Sheet's own sharing */}
+        <a href={URGENT_ORDERS_SHEET_URL} target="_blank" rel="noreferrer" className="btn btn-urgent">
+          ⚡ Urgent List
+        </a>
       </div>
 
       <div className="tabs" style={{ marginBottom: 'var(--space-4)' }}>

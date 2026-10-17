@@ -34,6 +34,12 @@ export function prioritizeUrgentOrders(orders) {
 // sync-urgent-order-sheet writes the same figure to the Google Sheet.
 export const URGENT_COMMISSION_RATE = 0.025;
 
+// The "Urgent Orders" Google Sheet that sync-urgent-order-sheet writes to
+// (GOOGLE_SHEETS_SPREADSHEET_ID) — only for the Urgent List buttons (Store
+// Admin, Admin); the Edge Function still knows it via its own Supabase secret.
+// Who can open it is decided by the Sheet's sharing (Admin + Store Admin).
+export const URGENT_ORDERS_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1gccvpiiY4QfzkXudF36RCx5350sCY5lVsGPRqW7lvrA/edit?gid=0#gid=0';
+
 export function urgentCommission(amount) {
   return Math.round((Number(amount) || 0) * URGENT_COMMISSION_RATE * 100) / 100;
 }

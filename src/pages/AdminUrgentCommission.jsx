@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import AdminLayout from '../components/AdminLayout';
 import { useAppState } from '../state/useAppState';
-import { summarizeUrgentCommission, URGENT_COMMISSION_RATE } from '../utils/urgentOrder';
+import { summarizeUrgentCommission, URGENT_COMMISSION_RATE, URGENT_ORDERS_SHEET_URL } from '../utils/urgentOrder';
 
 const EMPTY_ORDERS = [];
 const rm = (n) => `RM ${(Number(n) || 0).toFixed(2)}`;
@@ -18,7 +18,15 @@ export default function AdminUrgentCommission() {
   const rate = `${URGENT_COMMISSION_RATE * 100}%`;
 
   return (
-    <AdminLayout title="Urgent Commission" subtitle={`Each urgent order gives up ${rate} of its order total as commission.`}>
+    <AdminLayout
+      title="Urgent Commission"
+      subtitle={`Each urgent order gives up ${rate} of its order total as commission.`}
+      headerActions={(
+        <a href={URGENT_ORDERS_SHEET_URL} target="_blank" rel="noreferrer" className="btn btn-urgent w-full md:w-auto justify-center">
+          ⚡ Urgent List
+        </a>
+      )}
+    >
       {!state.ordersLoaded ? (
         <p className="text-body-md text-on-surface-variant">Loading…</p>
       ) : rows.length === 0 ? (
