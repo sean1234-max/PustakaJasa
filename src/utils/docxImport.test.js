@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import JSZip from 'jszip';
 import { DOMParser } from '@xmldom/xmldom';
-import { parseWordingDocx, classifyWordingLines, parseDocxQty, cleanDocxPlakCode, wordingRowsToCategorized } from './docxImport';
+import { parseWordingDocx, classifyWordingLines, parseDocxQty, cleanDocxPlakCode, wordingRowsToCategorized, splitRowHeading } from './docxImport';
+import { matchJenisPlakPath } from './excelImport';
 import { makeDynamicCategoryKey } from '../data/catalog';
 
 const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -268,5 +269,60 @@ describe('subject short forms', () => {
     expect(text).not.toContain('(TERBAIK KESELURUHAN)');
     expect(text).toContain('SAIDINA ABUBAKAR');
     expect(text).toContain('(KELAB)');
+  });
+});
+
+describe('a Word order that repeats the heading in every WORDING cell', () => {
+  const H = 'HARI ANUGERAH KUALITI 2026';
+  const body = para(H)
+    + table([
+      ['BIL', 'WORDING', 'BILANGAN', 'JENIS / KOD', 'HARGA'],
+      ['1', `${H}\nTerbaik PBD\nTahun 1`, '45', 'CPH C', 'RM7.50'],
+      ['2', `${H}\nTerbaik PBD\nTahun 2`, '40', 'CPH C', 'RM7.50'],
+      ['', '', 'JUMLAH : 85 PCS', '', ''],
+    ])
+    + table([
+      ['BIL', 'WORDING', 'BILANGAN', 'JENIS', 'HARGA'],
+      ['1', `SK PUCHONG UTAMA 2\n${H}\nTokoh NILAM\nTahap 2`, '1', '4942', 'RM59.00'],
+      ['2', `${H}\nTokoh Murid\nTahap 2`, '1', 'TSL232#3 (BL)', 'RM45.00'],
+      ['', '', 'JUMLAH : 2 PCS', '', ''],
+    ]);
+
+  it('reads JENIS / KOD, skips the JUMLAH row, and gives each award its own tab', async () => {
+    const res = await parse(await makeDocx(body));
+    expect(Object.values(res.categorized).map(([s]) => [s.sourceSheet, s.lines[0], s.jenisPlak])).toEqual([
+      ['Terbaik PBD', H, 'CPH C'],
+      ['Tokoh NILAM', `SK PUCHONG UTAMA 2\n${H}`, '4942'],
+      ['Tokoh Murid', H, 'TSL232#3 BLUE'],
+    ]);
+    expect(res.categorized[key('Terbaik PBD')][0].classes.map((c) => [c.namaKelas, c.subjects[0].qty])).toEqual([['Tahun 1', 45], ['Tahun 2', 40]]);
+    // The JUMLAH row is a total that agrees with the table, so nothing to say.
+    expect(res.notes.join(' ')).not.toMatch(/JUMLAH|no plaque code|no wording/);
+  });
+
+  it('still says so when a JUMLAH row disagrees with its table', async () => {
+    const res = await parse(await makeDocx(para(H) + table([
+      ['BIL', 'WORDING', 'BILANGAN', 'JENIS / KOD'],
+      ['1', `${H}\nTerbaik PBD\nTahun 1`, '45', 'CPH C'],
+      ['', '', 'JUMLAH : 50 PCS', ''],
+    ])));
+    expect(res.notes.join(' ')).toMatch(/JUMLAH\/TOTAL says 50, but the rows above it add up to 45/);
+  });
+
+  it('leaves a cell that is only the heading, or has no heading, as it is', () => {
+    expect(splitRowHeading({ lines: [H], qty: 1 }, H)).toEqual({ lines: [H], qty: 1 });
+    expect(splitRowHeading({ lines: ['ANUGERAH NILAM', 'TAHUN 1'], qty: 1 }, H)).toEqual({ lines: ['ANUGERAH NILAM', 'TAHUN 1'], qty: 1 });
+    expect(splitRowHeading({ lines: ['A', 'B', H, 'X'], qty: 1 }, H).lines).toEqual(['A', 'B', H, 'X']);
+  });
+
+  it('spells out a bracketed colour so the catalog option is found', () => {
+    const tree = [
+      { code: 'SR-116 A', children: [{ code: 'RED' }, { code: 'BLUE' }] },
+      { code: 'TSL232#3', children: [{ code: 'RED' }, { code: 'BLUE' }] },
+      { code: 'CPH', children: [{ code: 'A' }, { code: 'B' }, { code: 'C' }] },
+    ];
+    expect(matchJenisPlakPath(cleanDocxPlakCode('SR – 116 A (R)'), tree)).toBe('SR-116 A / RED');
+    expect(matchJenisPlakPath(cleanDocxPlakCode('TSL232#3 (BL)'), tree)).toBe('TSL232#3 / BLUE');
+    expect(matchJenisPlakPath(cleanDocxPlakCode('CPH C'), tree)).toBe('CPH / C');
   });
 });
