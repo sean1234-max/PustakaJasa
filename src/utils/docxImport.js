@@ -74,7 +74,9 @@ function headerLabel(tc) {
 
 const WORDING_LABELS = ['WORDING', 'LABEL'];
 const QTY_LABELS = ['KUANTITI', 'BILANGAN', 'QTY', 'KUANTITI (UNIT)', 'UNIT'];
-const KOD_LABELS = ['KOD HADIAH', 'KOD', 'KOD PLAK', 'JENIS PLAK', 'CODE'];
+const KOD_LABELS = ['KOD HADIAH', 'KOD', 'KOD PLAK', 'JENIS PLAK', 'CODE', 'JENIS', 'JENIS/KOD', 'KOD/JENIS'];
+// "JENIS / KOD" -> "JENIS/KOD", so a spaced slash still matches.
+const kodLabel = (t) => t.replace(/\s*\/\s*/g, '/');
 
 // Finds the header row (whichever row actually carries a WORDING/LABEL
 // cell — not assumed to always be row 0) and the column each label sits
@@ -89,7 +91,7 @@ function findWordingHeader(rows) {
       const t = headerLabel(tc);
       if (wordingCol < 0 && WORDING_LABELS.includes(t)) wordingCol = ci;
       else if (qtyCol < 0 && QTY_LABELS.includes(t)) qtyCol = ci;
-      else if (kodCol < 0 && KOD_LABELS.includes(t)) kodCol = ci;
+      else if (kodCol < 0 && KOD_LABELS.includes(kodLabel(t))) kodCol = ci;
     });
     if (wordingCol >= 0 && qtyCol >= 0) return { headerRow: ri, wordingCol, qtyCol, kodCol };
   }
@@ -111,6 +113,10 @@ export function cleanDocxPlakCode(raw) {
     .replace(/\s+/g, ' ')
     .replace(/^\s*(KOD|CODE)\s*:\s*/i, '')
     .replace(/\bRM\s*\d+(?:[.,]\d+)?\b/gi, '')
+    // A colour written short in brackets ("SR – 116 A (R)", "TSL232#3 (BL)")
+    // spelled out, so the catalog's RED / BLUE option is found.
+    .replace(/\(\s*(?:R|RED|MERAH)\s*\)/gi, ' RED')
+    .replace(/\(\s*(?:BL|BLUE|BIRU)\s*\)/gi, ' BLUE')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -133,6 +139,12 @@ function readTableRows(tbl, tableIdx, notes) {
     const qty = parseDocxQty(qtyRaw);
     if (lines.length > 0 && TOTAL_RE.test(lines[0])) {
       out.push({ isTotal: true, qty, where });
+      continue;
+    }
+    // "JUMLAH : 125 PCS" typed in the quantity column itself.
+    if (lines.length === 0 && TOTAL_RE.test(qtyRaw)) {
+      const m = /(\d+)/.exec(qtyRaw);
+      out.push({ isTotal: true, qty: m ? Number(m[1]) : null, where });
       continue;
     }
     if (lines.length === 0) {
@@ -312,7 +324,7 @@ export function wordingRowsToCategorized(inputRows, heading = '', { keepOrder = 
   const fieldsByRow = wordingFieldsForRows(rows);
   const keyOf = (ri) => {
     const { position: title, nameFirst = false } = fieldsByRow[ri];
-    return `${title}\u0000${rows[ri].kod}\u0000${nameFirst}`;
+    return `${title}\u0000${rows[ri].kod}\u0000${nameFirst}\u0000${rows[ri].heading || ''}`;
   };
   const firstRow = new Map();
   const finalRow = new Map();
@@ -324,7 +336,7 @@ export function wordingRowsToCategorized(inputRows, heading = '', { keepOrder = 
   const lastRow = new Map();
   const latestRun = new Map();
   let run = 0;
-  rows.forEach(({ qty, kod }, ri) => {
+  rows.forEach(({ qty, kod, heading: rowHeading = '' }, ri) => {
     const { position: title, eventLine1, eventLine2, nameFirst = false } = fieldsByRow[ri];
     const baseKey = keyOf(ri);
     let gk = baseKey;
@@ -338,7 +350,7 @@ export function wordingRowsToCategorized(inputRows, heading = '', { keepOrder = 
     }
     let g = groups.get(gk);
     if (!g) {
-      g = { title, kod, nameFirst, classesByKey: new Map(), classOrder: [] };
+      g = { title, kod, nameFirst, heading: rowHeading, classesByKey: new Map(), classOrder: [] };
       groups.set(gk, g);
       groupOrder.push(gk);
       if (!codesByTitle.has(title)) codesByTitle.set(title, new Set());
@@ -386,7 +398,7 @@ export function wordingRowsToCategorized(inputRows, heading = '', { keepOrder = 
     let label = base;
     for (let n = 2; categorized[makeDynamicCategoryKey('KLAS_MATRIX', label)]; n++) label = `${base} (${n})`;
     const lines = { 2: g.title };
-    if (heading) lines[0] = heading;
+    if (g.heading || heading) lines[0] = g.heading || heading;
     const section = {
       lines,
       classes: g.classOrder.map((k) => g.classesByKey.get(k)),
@@ -399,6 +411,20 @@ export function wordingRowsToCategorized(inputRows, heading = '', { keepOrder = 
   });
 
   return { categorized, count: groupOrder.length, notes };
+}
+
+// Schools often repeat the event heading as the first line of every
+// WORDING cell ("HARI ANUGERAH KUALITI 2026 / Terbaik PBD / Tahun 1"), or
+// put the school name above it ("SK ... / HARI ANUGERAH ... / Tokoh NILAM /
+// Tahap 2"). Those top lines are the plaque's TAJUK BESAR, not the award:
+// they are taken off the wording (so awards get their own tabs) and kept
+// as that row's own heading (Sean, 2026-10-17).
+const headingKey = (s) => String(s).replace(/\s+/g, ' ').trim().toUpperCase();
+export function splitRowHeading(row, heading) {
+  if (!heading) return row;
+  const at = row.lines.findIndex((l, i) => i <= 1 && headingKey(l) === headingKey(heading));
+  if (at < 0 || row.lines.length <= at + 1) return row;
+  return { ...row, heading: row.lines.slice(0, at + 1).join('\n'), lines: row.lines.slice(at + 1) };
 }
 
 const BAD_FILE = 'Could not read this file — please make sure it is a valid .docx file.';
@@ -439,7 +465,7 @@ export async function parseWordingDocx(arrayBuffer, { DOMParser: DP = globalThis
     rows.push(...tableRows);
   });
 
-  const { categorized, count, notes: groupNotes } = wordingRowsToCategorized(rows, heading);
+  const { categorized, count, notes: groupNotes } = wordingRowsToCategorized(rows.map((r) => splitRowHeading(r, heading)), heading);
   notes.push(...groupNotes);
   if (count === 0) {
     return { klasMatrix: null, error: 'No recognized WORDING/KUANTITI or LABEL/BILANGAN table found in this file.' };
