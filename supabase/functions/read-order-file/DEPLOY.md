@@ -57,28 +57,29 @@ Redeploy the site. When an Excel import skips sheets, the salesman sees a
 Unset `VITE_AI_READER_ENABLED` and redeploy the site. The function can stay
 deployed: nothing calls it while the flag is off.
 
-## Custom Instructions for AI (kind "instructions", 2026-10-17)
+## Ask Claude (kind "chat", 2026-10-17)
 
-New Order step 2 has a **Custom Instructions for AI** box for the roles that
-can use the AI reader. After each upload the browser sends the instructions,
-the file's name, the other uploaded files' names and the tabs the file
-filled (`instructionsSchema.ts`). The model says which instructions are for
-that file and what each asks; `src/utils/aiInstructions.js` re-checks the
-answer and applies only:
+New Order step 2 has an **Ask Claude** chat (in place of the earlier Custom
+Instructions box) for the roles that can use the AI reader. The user tells
+Claude what to change in the order on the page; the browser sends the
+conversation, the uploaded file names, the Remark and every tab's Reference
+Sample rows (`chatSchema.ts`). Claude answers and may ask for:
 
-- **TAJUK BESAR** set to text the user typed word for word;
-- TAJUK BESAR at the **top or bottom** of the Reference Sample (`refOrder`,
-  the `line_order` column SEAN.jsx stacks the plaque in).
+- a Reference Sample row set to text the user typed word for word (or text
+  already in the order), or cleared; TAJUK BESAR may be several lines;
+- a tab's rows reordered (`refOrder`, the `line_order` column SEAN.jsx
+  stacks the plaque in), on the tabs that can be dragged;
+- a note added to the Remark for Production.
 
-Other formatting requests are copied into the order's Remark. Unclear,
-conflicting or missing-file instructions are asked before Add to Cart. The
-same instructions are also sent with a PDF / Word / skipped-sheet reading,
-for the parts about how to read the file (they are part of the cache key).
+`src/utils/aiChat.js` re-checks every change before it is applied; each
+reply's changes can be undone. Names, quantities and Jenis Plak are never
+changed by the chat. Under the chat, **Download Excel (FORM ANUGERAH)**
+writes the order as it is on the page now into the blank form.
 
-No migration and no new secret: it uses the same `file_read_runs` cache,
-rate limit and monthly cap. To switch on: deploy this function again
-(`supabase functions deploy read-order-file`). The box shows only when
-`VITE_AI_READER_ENABLED=1` and the role is in `VITE_AI_READER_ROLES`.
+No migration and no new secret: same `file_read_runs` cache and monthly cap.
+Chat messages have their own hourly limit, `READER_CHAT_LIMIT_PER_HOUR`
+(default 60), so they don't use up the file readings. To switch on: deploy
+this function again. The old kind "instructions" is still served.
 
 ## Layout memory + shared cache (2026-10-17)
 
@@ -89,8 +90,7 @@ rate limit and monthly cap. To switch on: deploy this function again
   column roles only, no student data) is remembered for every user. A later
   sheet with the same headers in the same cells, from any school, is read
   from memory at no cost — straight after the import, without the "Read
-  with AI" button. Not used when the user typed Custom Instructions.
-- **Instructions:** when every instruction names another file, no AI call.
+  with AI" button.
 
 To switch on: run `supabase/migrations/0101_ai_sheet_layouts.sql`, then
 `supabase functions deploy read-order-file --use-api`. Without the

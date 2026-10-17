@@ -40,8 +40,10 @@ const up = (s) => String(s ?? '').replace(/\s+/g, ' ').trim().toUpperCase();
 // Plan: the AI's tabs -> what goes on which sheet. Pure, no file.
 
 // One plaque wording from an AI tab: the award (POSITION) and the line under
-// it (the class / Tahun), with its count and code.
+// it (the class / Tahun), with its count and code. `{ plaques }` instead of
+// the AI's tabs: the plaques of the order on the page (draftForm.js).
 function plaquesOf(categorized) {
+  if (Array.isArray(categorized?.plaques)) return categorized.plaques.filter((p) => p.qty > 0);
   const out = [];
   Object.values(categorized || {}).forEach((sections) => (sections || []).forEach((section) => {
     const lines = section.lines || {};
