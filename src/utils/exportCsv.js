@@ -582,7 +582,8 @@ function buildFixedRows(item, header, year, positionPart1) {
 // break leaves every row's NAMA MURID as the single line it already is.
 function formatTokohNamaMurid(namaMurid, contohLine3) {
   const name = (namaMurid || '').trim();
-  if (!name || !contohLine3.includes('\n')) return name;
+  // Already laid out on its own lines ("LELAKI\nTAHAP 1"): kept as it is.
+  if (!name || !contohLine3.includes('\n') || name.includes('\n')) return name;
   const idx = name.lastIndexOf(' ');
   return idx === -1 ? name : `${name.slice(0, idx)}\n${name.slice(idx + 1)}`;
 }

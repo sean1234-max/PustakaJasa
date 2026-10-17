@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
+import JSZip from 'jszip';
 import * as XLSX from 'xlsx';
 import { DOMParser, XMLSerializer } from '@xmldom/xmldom';
 import { fillOrderTemplate, planTemplateFill } from './templateExport';
@@ -188,5 +189,40 @@ describe('fillOrderTemplate, prices', () => {
     expect([price('SR-116 A / RED'), price('PKF 266'), price('CPH / C'), price('PKC 263')]).toEqual([34, 10, 7.5, 12]);
     expect(res.notes.join('\n')).toContain('ZZ 999');
     expect(res.notes.join('\n')).not.toContain('SR-116 A / RED');
+  });
+});
+
+describe('fillOrderTemplate, TOKOH NAMA MURID and line breaks', () => {
+  it('puts LELAKI / TAHAP 1 in NAMA MURID and the CONTOH ③, and wraps cells with a line break', async () => {
+    const T = (gender, tahap) => ({ heading: 'Hari Anugerah Kualiti 2026', award: 'Tokoh Akademik', line: gender, eline2: tahap, code: 'W038 / B', qty: 1 });
+    const res = await fillOrderTemplate(fs.readFileSync('public/templates/FORM-ANUGERAH.xlsx'), {
+      plaques: [T('Lelaki', 'Tahap 1'), T('Perempuan', 'Tahap 1')],
+    }, { DOMParser, XMLSerializer });
+    const wb = XLSX.read(res.buffer, { type: 'array', cellStyles: true });
+    const t = (ref) => wb.Sheets.TOKOH[ref]?.v;
+    expect([t('D2'), t('D3'), t('D4')]).toEqual(['HARI ANUGERAH KUALITI\n2026', 'TOKOH AKADEMIK', 'LELAKI\nTAHAP 1']);
+    expect([t('A7'), t('B7'), t('A8'), t('B8')]).toEqual(['TOKOH AKADEMIK', 'LELAKI\nTAHAP 1', 'TOKOH AKADEMIK', 'PEREMPUAN\nTAHAP 1']);
+    const zip = await JSZip.loadAsync(res.buffer);
+    const styles = await zip.file('xl/styles.xml').async('string');
+    const sheet = await zip.file(await (async () => {
+      const rels = await zip.file('xl/_rels/workbook.xml.rels').async('string');
+      const book = await zip.file('xl/workbook.xml').async('string');
+      const rid = /<sheet name="TOKOH" sheetId="\d+" r:id="(rId\d+)"/.exec(book)[1];
+      return `xl/${new RegExp(`Id="${rid}"[^>]*Target="([^"]+)"`).exec(rels)[1]}`;
+    })()).async('string');
+    const s = Number(/<c r="D4" s="(\d+)"/.exec(sheet)[1]);
+    const xfs = /<cellXfs[^>]*>([\s\S]*?)<\/cellXfs>/.exec(styles)[1].match(/<xf\b[\s\S]*?(?:\/>|<\/xf>)/g);
+    expect(xfs[s]).toContain('wrapText="1"');
+  });
+
+  it('leaves the CONTOH ③ blank when an honour has no NAMA MURID', async () => {
+    const res = await fillOrderTemplate(fs.readFileSync('public/templates/FORM-ANUGERAH.xlsx'), {
+      plaques: [
+        { heading: 'H', award: 'Tokoh Akademik', line: 'Lelaki', eline2: 'Tahap 1', code: 'W038 / B', qty: 1 },
+        { heading: 'H', award: 'Tokoh Sukan', line: '', eline2: '', code: 'SR-116 A / RED', qty: 2 },
+      ],
+    }, { DOMParser, XMLSerializer });
+    const wb = read(res.buffer);
+    expect([v(wb, 'TOKOH', 'D4'), v(wb, 'TOKOH', 'B7'), v(wb, 'TOKOH', 'B8')]).toEqual([undefined, 'LELAKI\nTAHAP 1', undefined]);
   });
 });
