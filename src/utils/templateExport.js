@@ -782,17 +782,17 @@ export async function fillOrderTemplate(templateBuffer, categorized, {
       const { doc, name } = await sheetCopy(base);
       // The line under the award (LELAKI / TAHAP 1) is the NAMA MURID, and
       // the CONTOH's ③ NAMA line (Sean, 2026-10-17). A blank NAMA MURID
-      // engraves the CONTOH's ③, so ③ is only filled when every honour
-      // has its own.
+      // engraves the CONTOH's ③, so an honour with no such line gets "-"
+      // (no line) once ③ is filled.
       const namaCol = layout.namaCol;
-      const allNamed = namaCol != null && fit.every((x) => x.nama);
-      writeTitle(doc, layout.title, [plan.tokoh.heading, fit[0].name, allNamed ? fit[0].nama : '']);
+      const sample = namaCol != null ? fit.find((x) => x.nama) : null;
+      writeTitle(doc, layout.title, [plan.tokoh.heading, (sample || fit[0]).name, sample ? sample.nama : '']);
       rowsOf.forEach(({ r, label }, i) => {
         const x = fit[i];
         if (!x) { if (label) setCell(doc, addr(r, layout.labelCol), ''); return; }
         const together = namaCol == null && x.nama;
         setCell(doc, addr(r, layout.labelCol), together ? `${x.name}\n${x.nama}` : x.name);
-        if (namaCol != null && x.nama) setCell(doc, addr(r, namaCol), x.nama);
+        if (namaCol != null && (x.nama || sample)) setCell(doc, addr(r, namaCol), x.nama || '-');
         setCell(doc, addr(r, layout.qtyCol), x.qty);
         if (x.code) setCell(doc, addr(r, layout.plakCol), x.code);
       });

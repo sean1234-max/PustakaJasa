@@ -215,7 +215,7 @@ describe('fillOrderTemplate, TOKOH NAMA MURID and line breaks', () => {
     expect(xfs[s]).toContain('wrapText="1"');
   });
 
-  it('leaves the CONTOH ③ blank when an honour has no NAMA MURID', async () => {
+  it('gives an honour with no NAMA MURID line a "-"', async () => {
     const res = await fillOrderTemplate(fs.readFileSync('public/templates/FORM-ANUGERAH.xlsx'), {
       plaques: [
         { heading: 'H', award: 'Tokoh Akademik', line: 'Lelaki', eline2: 'Tahap 1', code: 'W038 / B', qty: 1 },
@@ -223,6 +223,6 @@ describe('fillOrderTemplate, TOKOH NAMA MURID and line breaks', () => {
       ],
     }, { DOMParser, XMLSerializer });
     const wb = read(res.buffer);
-    expect([v(wb, 'TOKOH', 'D4'), v(wb, 'TOKOH', 'B7'), v(wb, 'TOKOH', 'B8')]).toEqual([undefined, 'LELAKI\nTAHAP 1', undefined]);
+    expect([v(wb, 'TOKOH', 'D4'), v(wb, 'TOKOH', 'B7'), v(wb, 'TOKOH', 'B8')]).toEqual(['LELAKI\nTAHAP 1', 'LELAKI\nTAHAP 1', '-']);
   });
 });
