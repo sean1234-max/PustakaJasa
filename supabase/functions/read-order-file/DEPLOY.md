@@ -56,3 +56,26 @@ Redeploy the site. When an Excel import skips sheets, the salesman sees a
 
 Unset `VITE_AI_READER_ENABLED` and redeploy the site. The function can stay
 deployed: nothing calls it while the flag is off.
+
+## Custom Instructions for AI (kind "instructions", 2026-10-17)
+
+New Order step 2 has a **Custom Instructions for AI** box for the roles that
+can use the AI reader. After each upload the browser sends the instructions,
+the file's name, the other uploaded files' names and the tabs the file
+filled (`instructionsSchema.ts`). The model says which instructions are for
+that file and what each asks; `src/utils/aiInstructions.js` re-checks the
+answer and applies only:
+
+- **TAJUK BESAR** set to text the user typed word for word;
+- TAJUK BESAR at the **top or bottom** of the Reference Sample (`refOrder`,
+  the `line_order` column SEAN.jsx stacks the plaque in).
+
+Other formatting requests are copied into the order's Remark. Unclear,
+conflicting or missing-file instructions are asked before Add to Cart. The
+same instructions are also sent with a PDF / Word / skipped-sheet reading,
+for the parts about how to read the file (they are part of the cache key).
+
+No migration and no new secret: it uses the same `file_read_runs` cache,
+rate limit and monthly cap. To switch on: deploy this function again
+(`supabase functions deploy read-order-file`). The box shows only when
+`VITE_AI_READER_ENABLED=1` and the role is in `VITE_AI_READER_ROLES`.

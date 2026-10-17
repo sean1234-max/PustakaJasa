@@ -30,7 +30,7 @@ const DRAFT_FIELDS = {
 const EDITABLE = { lines: true, rowDesc: true, rowQty: true, addRemoveRows: true, matrix: true, jenisPlak: true };
 
 export default function NewOrderStep2() {
-  const { state, patch, addToCart, addAllToCart, importFormAnugerahExcel, readSkippedSheetsWithAi } = useAppState();
+  const { state, patch, addToCart, addAllToCart, importFormAnugerahExcel, readSkippedSheetsWithAi, applyCustomInstructions } = useAppState();
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
   // The last import's result ({ ok, message, warnings }) and the answers to
@@ -88,26 +88,77 @@ export default function NewOrderStep2() {
   // Text PDFs are read by the AI reader (pdfImport.js), so only offered
   // to the roles allowed to use it.
   const pdfAllowed = canUseAiReader(state.role);
+
+  // Custom Instructions for AI (Sean, 2026-10-17): typed once, kept in the
+  // draft (so they survive a step back to Function Details) and used for
+  // every file uploaded to this order until it is submitted. Only for the
+  // roles that can use the AI reader. Sent with an AI-read file, then
+  // matched to the file and applied to its tabs (applyCustomInstructions).
+  const aiInstructions = pdfAllowed ? String(state.step2AiInstructions || '') : '';
+  const uploadedFiles = state.step2UploadedFiles || [];
+  const appliedFor = state.step2InstructionsAppliedFor || {};
+  // One import or instructions run at a time: state updates land a render
+  // later, so a fast double click is stopped by this ref, not the flag.
+  const busyRef = useRef(false);
+  const [applyingInstructions, setApplyingInstructions] = useState(false);
+  const instructionsStale = !!aiInstructions.trim() && uploadedFiles.some((f) => appliedFor[f.name] !== aiInstructions.trim());
+
+  // The instructions' outcome for one file, merged into the import status:
+  // what was applied, and its questions in "Confirm before continuing".
+  const mergeInstructionOutcome = (status, outcomes) => {
+    const done = outcomes.flatMap((o) => o.done || []);
+    const errors = [...new Set(outcomes.filter((o) => !o.ok && o.message).map((o) => o.message))];
+    return {
+      ...status,
+      instructionsDone: done,
+      instructionsError: errors.join(' '),
+      warnings: [...(status.warnings || []).filter((w) => !w.instruction), ...outcomes.flatMap((o) => o.warnings || [])],
+    };
+  };
+
   const handleImportFile = async (file) => {
-    if (!file || importing) return;
+    if (!file || importing || busyRef.current) return;
     if (!(pdfAllowed ? /\.(xlsx|docx|pdf)$/i : /\.(xlsx|docx)$/i).test(file.name)) {
       setImportStatus({ ok: false, message: pdfAllowed ? 'Please upload an .xlsx, .docx or .pdf file.' : 'Please upload an .xlsx or .docx file.' });
       return;
     }
+    busyRef.current = true;
     setImporting(true);
     setImportStatus(null);
     setChoiceAnswers({});
     lastImportFileRef.current = file;
+    const instructions = aiInstructions.trim();
     let result;
+    let status;
     try {
-      result = await importFormAnugerahExcel(file);
+      result = await importFormAnugerahExcel(file, { instructions });
+      status = { ...result };
+      delete status.aiCategorized;
+      if (result.ok) {
+        // This upload session's files, and the tabs each one filled — a
+        // later file that fills the same tab takes it over.
+        const mine = new Set(result.categories || []);
+        patch((st) => ({
+          step2UploadedFiles: [
+            ...(st.step2UploadedFiles || []).filter((f) => f.name !== file.name)
+              .map((f) => ({ ...f, categories: (f.categories || []).filter((k) => !mine.has(k)) })),
+            { name: file.name, categories: [...mine] },
+          ],
+        }));
+        if (instructions) {
+          const outcome = await applyCustomInstructions(file.name, result.categories, result.draft, instructions);
+          status = mergeInstructionOutcome(status, [outcome]);
+        }
+      }
     } catch (err) {
       console.error('Import failed:', err);
       result = { ok: false, message: 'Could not read this file. Please try again.' };
+      status = result;
     } finally {
+      busyRef.current = false;
       setImporting(false);
     }
-    const { aiCategorized, ...status } = result;
+    const aiCategorized = result.aiCategorized;
     aiOrderRef.current = aiCategorized ? { categorized: aiCategorized, fileName: file.name } : null;
     setFormExport(null);
     setImportStatus(status);
@@ -130,7 +181,17 @@ export default function NewOrderStep2() {
     setAiReading(true);
     let result;
     try {
-      result = await readSkippedSheetsWithAi(lastImportFileRef.current, aiSheets);
+      result = await readSkippedSheetsWithAi(lastImportFileRef.current, aiSheets, aiInstructions.trim());
+      // The AI-read sheets are new tabs: the instructions apply to them too.
+      if (result.ok && aiInstructions.trim()) {
+        const name = lastImportFileRef.current.name;
+        const cats = result.categories || [];
+        patch((st) => ({
+          step2UploadedFiles: (st.step2UploadedFiles || []).map((f) => (f.name === name ? { ...f, categories: [...new Set([...(f.categories || []), ...cats])] } : f)),
+        }));
+        const outcome = await applyCustomInstructions(name, cats, result.draft, aiInstructions.trim());
+        result = { ...result, warnings: [...(result.warnings || []), ...(outcome.warnings || [])], instructionOutcome: outcome };
+      }
     } finally {
       setAiReading(false);
     }
@@ -140,12 +201,39 @@ export default function NewOrderStep2() {
       aiDone: !!result.ok,
       message: result.ok ? `${prev.message} ${result.message}` : prev.message,
       aiError: result.ok ? '' : result.message,
+      ...(result.instructionOutcome ? {
+        instructionsDone: [...(prev.instructionsDone || []), ...(result.instructionOutcome.done || [])],
+        instructionsError: result.instructionOutcome.ok ? prev.instructionsError : result.instructionOutcome.message,
+      } : {}),
       // The rule reader's "this sheet was skipped" lines are answered now.
       warnings: [
         ...(prev.warnings || []).filter((w) => !(result.ok && w.type === 'truncated' && /were skipped|Couldn't recognize the format of sheet/.test(w.text))),
         ...(result.warnings || []),
       ],
     });
+  };
+
+  // "Apply instructions": the instructions were typed or changed after a
+  // file was uploaded. Re-checked for every file of this order (the AI
+  // answer is cached per instructions + file), applied to the tabs each
+  // file filled. Nothing is re-imported, so edits made on the page stay.
+  const handleApplyInstructions = async () => {
+    if (busyRef.current || importing || !aiInstructions.trim() || uploadedFiles.length === 0) return;
+    busyRef.current = true;
+    setApplyingInstructions(true);
+    const outcomes = [];
+    try {
+      for (const f of uploadedFiles) {
+        if (!(f.categories || []).length) continue;
+        outcomes.push(await applyCustomInstructions(f.name, f.categories, undefined, aiInstructions.trim()));
+      }
+    } finally {
+      busyRef.current = false;
+      setApplyingInstructions(false);
+    }
+    const prev = importStatus || { ok: true, message: '' };
+    setChoiceAnswers((a) => Object.fromEntries(Object.entries(a).filter(([id]) => !id.startsWith('instr-'))));
+    setImportStatus(mergeInstructionOutcome(prev, outcomes));
   };
 
   const handleDownloadForm = async () => {
@@ -548,6 +636,41 @@ export default function NewOrderStep2() {
             </ul>
           )}
         </div>
+
+        {pdfAllowed && (
+          <div className="field" style={{ maxWidth: 560, margin: '0 auto var(--space-6)' }}>
+            <label htmlFor="aiInstructions">Custom Instructions for AI</label>
+            <textarea
+              id="aiInstructions"
+              className="input"
+              rows={4}
+              maxLength={4000}
+              value={aiInstructions}
+              onChange={(e) => patch({ step2AiInstructions: e.target.value })}
+              placeholder="Enter special instructions for AI... e.g. For file ABC, place the header 'Majlis...' at the bottom of the artwork."
+              style={{ width: '100%', boxSizing: 'border-box', resize: 'vertical', minHeight: 96 }}
+            />
+            <p className="hint-text" style={{ margin: '4px 0 0' }}>
+              Optional. Type these before uploading, one instruction per sentence or line. Name a file (&quot;For file ABC, …&quot;) to apply an
+              instruction to that file only; an instruction with no file name applies to every file. The AI can set the TAJUK BESAR
+              (header) to text you give and put it at the top or bottom of the plaque. Other formatting requests (font, size, spacing) are
+              copied into Remark for Production. Names and quantities always come from the file. Anything unclear is asked below before Add to Cart.
+            </p>
+            {uploadedFiles.length > 0 && instructionsStale && (
+              <button type="button" className="btn btn-secondary" style={{ marginTop: 8 }} disabled={applyingInstructions || importing} onClick={handleApplyInstructions}>
+                {applyingInstructions ? 'Applying instructions…' : `Apply instructions to ${uploadedFiles.length === 1 ? uploadedFiles[0].name : `${uploadedFiles.length} uploaded files`}`}
+              </button>
+            )}
+            {importStatus?.instructionsDone?.length > 0 && (
+              <ul style={{ margin: '6px 0 0', paddingLeft: 0, listStyle: 'none', color: '#1f8a3b', fontWeight: 600, fontSize: '0.9em' }}>
+                {importStatus.instructionsDone.map((d) => <li key={d}>✓ {d}</li>)}
+              </ul>
+            )}
+            {importStatus?.instructionsError && (
+              <p className="hint-text" style={{ margin: '4px 0 0', color: '#c0392b', fontWeight: 600 }}>{importStatus.instructionsError}</p>
+            )}
+          </div>
+        )}
 
         <div className="card-kicker">Jenis Anugerah (Category)</div>
         <div style={{ margin: 'var(--space-3) 0 var(--space-2)' }}>

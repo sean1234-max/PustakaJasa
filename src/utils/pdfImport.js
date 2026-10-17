@@ -28,7 +28,8 @@ function loadPdfjs() {
   return pdfjsPromise;
 }
 
-export async function parsePdfOrder(arrayBuffer, fileName) {
+// `instructions`: the user's Custom Instructions for AI (optional).
+export async function parsePdfOrder(arrayBuffer, fileName, instructions = '') {
   let ir;
   let picture = null;
   let photos = null;
@@ -56,19 +57,19 @@ export async function parsePdfOrder(arrayBuffer, fileName) {
   if (ir.segments.length === 0) {
     return { error: 'This PDF has no text in it (it looks like a scan or a photo). Scans and photos are not supported yet — please add the order by hand.' };
   }
-  return readWithAi(ir, fileName, 'PDF', picture, photos);
+  return readWithAi(ir, fileName, 'PDF', picture, photos, instructions);
 }
 
 // Only called after parseWordingDocx found no order table it knows.
-export async function parseDocxOrderWithAi(arrayBuffer, fileName, ruleError) {
+export async function parseDocxOrderWithAi(arrayBuffer, fileName, ruleError, instructions = '') {
   const ir = await buildDocxIr(arrayBuffer);
   if (!ir || ir.segments.length === 0) return { error: ruleError };
-  return readWithAi(ir, fileName, 'Word file');
+  return readWithAi(ir, fileName, 'Word file', null, null, instructions);
 }
 
-async function readWithAi(ir, fileName, what, picture = null, photos = null) {
+async function readWithAi(ir, fileName, what, picture = null, photos = null, instructions = '') {
   const [res, heading, plaques] = await Promise.all([
-    readPdfWithAi({ fileName, irText: renderPdfIrText(ir) }),
+    readPdfWithAi({ fileName, irText: renderPdfIrText(ir), instructions }),
     picture ? readPdfHeadingWithAi({ fileName, imageBase64: picture }) : null,
     photos?.pages.length ? readPdfPlaquesWithAi({ fileName, ...photos }) : null,
   ]);
