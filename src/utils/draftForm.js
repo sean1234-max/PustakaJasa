@@ -1,4 +1,4 @@
-import { ACTIVE_CATEGORIES, isDynamicCategoryKey, resolveCategory } from '../data/catalog';
+import { ACTIVE_CATEGORIES, isDynamicCategoryKey, resolveCategory, resolveSelempangWarna } from '../data/catalog';
 import { buildCategoryCartItems } from '../state/categoryCartItems';
 import { buildCsvRows } from './exportCsv';
 
@@ -11,13 +11,29 @@ import { buildCsvRows } from './exportCsv';
 // still written in, with a blank KOD where its Jenis Plak is missing, so the
 // form can be finished in Excel and uploaded again (Sean, 2026-10-17); its
 // problem is named in `unready`. `skipped`: tabs with no plaque at all yet.
+// Each plaque carries `kind`, its tab's own sheet kind (LONJAKAN, TOKOH_SHEET,
+// MP2 …; a tab read from a renamed sheet keeps its base kind), so the form
+// can put it on that sheet. `selempang`: the Selempang tab's rows; `front`:
+// the Function Details the FRONT PG shows (Sean, 2026-10-17).
+const kindOf = (catKey) => (isDynamicCategoryKey(catKey) ? catKey.split('::')[1] : catKey);
+
 export function draftPlaques(draft) {
   const dynamic = Object.keys(draft.visibleBlocksByCategory || {}).filter(isDynamicCategoryKey);
   const keys = [...ACTIVE_CATEGORIES.map((c) => c.key), ...dynamic];
   const byWording = new Map();
   const skipped = [];
   const unready = [];
+  const selempang = [];
   keys.forEach((catKey) => {
+    if (resolveCategory(catKey)?.selempang) {
+      (draft.rowsByBlock?.[`${catKey}::0`] || []).forEach((r) => {
+        const acara = String(r.acara || '').trim();
+        const qty = Number(r.qty) || 0;
+        if (!acara && !qty) return;
+        selempang.push({ acara, warna: resolveSelempangWarna(r.warna)?.warna || String(r.warna || '').trim(), qty });
+      });
+      return;
+    }
     const strict = buildCategoryCartItems(draft, catKey);
     if (!strict.engaged) return;
     const label = resolveCategory(catKey)?.label || catKey;
@@ -26,12 +42,17 @@ export function draftPlaques(draft) {
     if (strict.error) unready.push(`${label}: ${strict.error}`);
     const { rows } = buildCsvRows({ schoolLanguage: draft.schoolLanguage, items: res.items }, catKey, res.items);
     rows.forEach(([heading, , award, line, eline2, code]) => {
-      const p = { heading: heading || '', award: award || '', line: line || '', eline2: eline2 || '', code: code || '' };
+      const p = { kind: kindOf(catKey), heading: heading || '', award: award || '', line: line || '', eline2: eline2 || '', code: code || '' };
       const key = JSON.stringify(p);
       const have = byWording.get(key);
       if (have) have.qty += 1;
       else byWording.set(key, { ...p, qty: 1 });
     });
   });
-  return { plaques: [...byWording.values()], skipped, unready };
+  const front = {
+    sales: draft.sales || '', sekolah: draft.sekolah || '',
+    cikgu: [draft.picName, draft.phone].map((x) => String(x || '').trim()).filter(Boolean).join(' / '),
+    remark: draft.remark || '',
+  };
+  return { plaques: [...byWording.values()], selempang, front, skipped, unready };
 }

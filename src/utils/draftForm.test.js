@@ -55,3 +55,14 @@ describe('draftPlaques, a tab with no Jenis Plak row at all', () => {
     expect(unready[0]).toMatch(/^MP THP 1: /);
   });
 });
+
+describe('draftPlaques, sheet kinds, selempang and Function Details', () => {
+  it('names each plaque\'s tab kind and passes the selempang rows and FRONT PG details on', () => {
+    const d = { ...draft(), sales: 'Sean', sekolah: 'SK Test', picName: 'Pn Aminah', phone: '012-3456789', remark: 'Hamper GST 40' };
+    d.rowsByBlock['SELEMPANG::0'] = [{ id: 9, acara: 'Nilam', warna: 'merah', qty: '2' }, { id: 10, acara: '', warna: '', qty: '' }];
+    const { plaques, selempang, front } = draftPlaques(d);
+    expect(plaques.every((p) => p.kind === 'TOKOH_SHEET')).toBe(true);
+    expect(selempang).toEqual([{ acara: 'Nilam', warna: 'MERAH', qty: 2 }]);
+    expect(front).toEqual({ sales: 'Sean', sekolah: 'SK Test', cikgu: 'Pn Aminah / 012-3456789', remark: 'Hamper GST 40' });
+  });
+});

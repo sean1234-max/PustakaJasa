@@ -1485,9 +1485,14 @@ export function AppStateProvider({ children }) {
     // No AddOn-side equivalent (fields.remark undefined there) — AddOn
     // uploads simply don't surface KIV/PERASMI notes anywhere, rather than
     // building new addOnRemark plumbing nothing else in that flow reads.
-    if (fields.remark && remarkNotes.length > 0) {
-      next = { ...next, [fields.remark]: next[fields.remark] ? `${next[fields.remark]}\n${remarkNotes.join('\n')}` : remarkNotes.join('\n') };
-      messages.push(`${remarkNotes.length} note(s) added to Remark`);
+    // A note the Remark already says (a FORM ANUGERAH downloaded from this
+    // page and uploaded again carries the Remark in FRONT PG) isn't added
+    // twice.
+    const haveRemark = fields.remark ? String(next[fields.remark] || '').toUpperCase() : '';
+    const newNotes = remarkNotes.filter((n) => !haveRemark.includes(String(n).trim().toUpperCase()));
+    if (fields.remark && newNotes.length > 0) {
+      next = { ...next, [fields.remark]: next[fields.remark] ? `${next[fields.remark]}\n${newNotes.join('\n')}` : newNotes.join('\n') };
+      messages.push(`${newNotes.length} note(s) added to Remark`);
     }
 
     const finalState = { ...next, [fields.category]: landOn || next[fields.category] };
