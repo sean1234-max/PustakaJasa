@@ -306,9 +306,17 @@ function wordingFieldsForRows(rows) {
 // line that is only a bracket ("(KELAB)") stays.
 const TRAILING_NOTE_RE = /(\S)\s*\([^()\d]*[A-Za-z][^()\d]*\)\s*$/;
 const dropSubjectShortForm = (line) => String(line ?? '').replace(TRAILING_NOTE_RE, '$1').trim();
+// Except "(LELAKI)" / "(PEREMPUAN)": it is engraved, on its own line under
+// the award ("TOKOH AKADEMIK (LELAKI) / TAHAP 1" -> TOKOH AKADEMIK /
+// LELAKI / TAHAP 1), Sean 2026-10-17.
+const GENDER_NOTE_RE = /^(.*\S)\s*\(\s*(LELAKI|PEREMPUAN)\s*\)\s*$/i;
+const wordingLine = (line) => {
+  const m = GENDER_NOTE_RE.exec(String(line ?? '').trim());
+  return m ? [dropSubjectShortForm(m[1]), m[2]] : [dropSubjectShortForm(line)];
+};
 
 export function wordingRowsToCategorized(inputRows, heading = '', { keepOrder = false } = {}) {
-  const rows = inputRows.map((r) => ({ ...r, lines: (r.lines || []).map(dropSubjectShortForm).filter(Boolean) }));
+  const rows = inputRows.map((r) => ({ ...r, lines: (r.lines || []).flatMap(wordingLine).filter(Boolean) }));
   // Group by award title + plaque code. One title with two different codes
   // is two awards (each block carries one Jenis Plak) — both kept, each
   // labelled with its own code so neither silently takes the other's.

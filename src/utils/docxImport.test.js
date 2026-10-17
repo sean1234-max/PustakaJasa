@@ -270,6 +270,18 @@ describe('subject short forms', () => {
     expect(text).toContain('SAIDINA ABUBAKAR');
     expect(text).toContain('(KELAB)');
   });
+
+  it('engraves (LELAKI) / (PEREMPUAN) on its own line under the award', () => {
+    const { categorized } = wordingRowsToCategorized([
+      { lines: ['Tokoh Akademik (Lelaki)', 'Tahap 1'], qty: 1, kod: 'W038 / B' },
+      { lines: ['Tokoh Akademik (Perempuan)', 'Tahap 1'], qty: 1, kod: 'W038 / B' },
+    ], 'HARI ANUGERAH KUALITI 2026');
+    const sections = Object.values(categorized).flat();
+    expect(sections).toHaveLength(1);
+    expect(sections[0].lines[2]).toBe('Tokoh Akademik');
+    expect(sections[0].classes.map((c) => [c.namaKelas, c.eline2, c.subjects[0].qty]))
+      .toEqual([['Lelaki', 'Tahap 1', 1], ['Perempuan', 'Tahap 1', 1]]);
+  });
 });
 
 describe('a Word order that repeats the heading in every WORDING cell', () => {
