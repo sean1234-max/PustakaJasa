@@ -43,9 +43,21 @@ const up = (s) => String(s ?? '').replace(/\s+/g, ' ').trim().toUpperCase();
 // it (the class / Tahun), with its count and code. `{ plaques }` instead of
 // the AI's tabs: the plaques of the order on the page (draftForm.js).
 // Every wording goes into the form in capitals (Sean, 2026-10-17); line
-// breaks in a heading are kept.
+// breaks in a heading are kept. An award that starts with the plaque's own
+// TAJUK BESAR drops it: the form writes the heading in its own row (Sean,
+// 2026-10-17).
+const lineKey = (s) => s.replace(/\s+/g, ' ').trim();
+function dropHeading(text, heading) {
+  const head = heading.split('\n').map(lineKey).filter(Boolean);
+  const lines = text.split('\n');
+  if (!head.length || lines.length < head.length) return text;
+  return head.every((h, i) => lineKey(lines[i]) === h) ? lines.slice(head.length).join('\n').trim() : text;
+}
 function plaquesOf(categorized) {
-  const caps = (p) => ({ ...p, heading: String(p.heading ?? '').toUpperCase(), award: String(p.award ?? '').toUpperCase(), line: String(p.line ?? '').toUpperCase(), eline2: String(p.eline2 ?? '').toUpperCase() });
+  const caps = (p) => {
+    const heading = String(p.heading ?? '').toUpperCase();
+    return { ...p, heading, award: dropHeading(String(p.award ?? '').toUpperCase(), heading), line: String(p.line ?? '').toUpperCase(), eline2: String(p.eline2 ?? '').toUpperCase() };
+  };
   if (Array.isArray(categorized?.plaques)) return categorized.plaques.filter((p) => p.qty > 0).map(caps);
   const out = [];
   Object.values(categorized || {}).forEach((sections) => (sections || []).forEach((section) => {
@@ -541,7 +553,8 @@ export async function fillOrderTemplate(templateBuffer, categorized, {
           // ① blank = the CONTOH heading; a plaque with another heading
           // carries its own.
           if (layout.cols.l0 != null && p.heading && p.heading !== heading) setCell(doc, addr(r, layout.cols.l0), p.heading);
-          setCell(doc, addr(r, layout.cols.l1), [p.award, p.line, p.eline2].filter(Boolean).join('\n'));
+          // ② blank would mean "same as CONTOH": "-" is the form's "no line".
+          setCell(doc, addr(r, layout.cols.l1), [p.award, p.line, p.eline2].filter(Boolean).join('\n') || '-');
           setCell(doc, addr(r, layout.cols.qty), p.qty);
           if (p.code) setCell(doc, addr(r, layout.cols.plak), p.code);
         });
