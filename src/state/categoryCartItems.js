@@ -14,7 +14,11 @@ import { computeBlocks, snapshotDetail, noopUpdaters } from '../utils/computeBlo
 //   error    — a human message if it's engaged but not ready (missing Jenis
 //              Plak, a total that doesn't add up, a required line blank, …)
 //   items    — the cart items, when there's no error
-export function buildCategoryCartItems(st, catKey) {
+// `{ lenient: true }` (the FORM ANUGERAH download, draftForm.js): no
+// readiness checks, and a row or block with a quantity but no Jenis Plak
+// still becomes an item (jenisPlak ''), so the form can be downloaded,
+// finished in Excel and uploaded again (Sean, 2026-10-17).
+export function buildCategoryCartItems(st, catKey, { lenient = false } = {}) {
   const { blocks, isMatrix, isDynamicMatrix } = computeBlocks(
     catKey, st.lineValues, st.matrixValues, st.rowsByBlock, st.plakRows, st.columnsByBlock, noopUpdaters, st.plakCatalog, st.schoolLanguage,
   );
@@ -78,6 +82,7 @@ export function buildCategoryCartItems(st, catKey) {
     const blkEngaged = hasQty || hasJenisPlak || blk.lines.some(lineHasValue);
     if (!blkEngaged) continue;
     engaged = true;
+    if (lenient) continue;
     // hasNamaKelasList categories (OTHERS) can have several blocks
     // sharing the same qtyLabel — the Kuantiti TAHUN value, when set,
     // is included too so the message says which Tahun part has
@@ -171,11 +176,11 @@ export function buildCategoryCartItems(st, catKey) {
       // the item's detail carries only that row so exportCsv emits just
       // its own plaques.
       b.rows.forEach((row) => {
-        if (row.jenisPlak && row.qty) {
+        if (row.jenisPlak ? row.qty : lenient && Number(row.qty) > 0) {
           const tokoh = {};
           (row.tokohFields || []).forEach((f) => { if (f.value) tokoh[f.key] = f.value; });
           newItems.push({
-            id: crypto.randomUUID(), jenisPlak: row.jenisPlak, qty: row.qty, harga: row.rawHarga, unitPrice: row.unitPrice,
+            id: crypto.randomUUID(), jenisPlak: row.jenisPlak || '', qty: row.qty, harga: row.rawHarga, unitPrice: row.unitPrice,
             // cat.label (not b.qtyLabel) — qtyLabel is blank for every
             // hideQtyLabelSuffix category (ALIRAN/LONJAKAN/KEHADIRAN/
             // TOKOH_SHEET/SELEMPANG, catalog.js) since that flag is meant
@@ -202,9 +207,19 @@ export function buildCategoryCartItems(st, catKey) {
       });
       return;
     }
-    b.plakRows.forEach((pr) => {
-      if (pr.jenisPlak && pr.qty) newItems.push({
-        id: crypto.randomUUID(), jenisPlak: pr.jenisPlak, qty: pr.qty, harga: pr.rawHarga, unitPrice: pr.unitPrice,
+    // lenient: a footer row with a quantity but no Jenis Plak goes in with a
+    // blank code. Every footer row but ALIRAN's is the whole block's total,
+    // so a blank one counts only when none has a Jenis Plak yet; with no
+    // footer row at all, the whole block goes in as one.
+    let plakRows = b.plakRows;
+    const coded = plakRows.some((pr) => pr.jenisPlak && Number(pr.qty) > 0);
+    if (lenient && !coded && !plakRows.some((pr) => Number(pr.qty) > 0) && b.blockTotalQty > 0) {
+      plakRows = [{ id: `${catKey}::${b.idx}::noplak`, jenisPlak: '', qty: b.blockTotalQty }];
+    }
+    const blankCounts = lenient && (b.aliranKedudukan || !coded);
+    plakRows.forEach((pr) => {
+      if (pr.jenisPlak ? pr.qty : blankCounts && Number(pr.qty) > 0) newItems.push({
+        id: crypto.randomUUID(), jenisPlak: pr.jenisPlak || '', qty: pr.qty, harga: pr.rawHarga, unitPrice: pr.unitPrice,
         // See the plakPerRow branch above for why this is cat.label, not b.qtyLabel.
         categoryLabel: cat?.label || b.qtyLabel, categoryKey: catKey, blockIdx: b.idx,
         // ALIRAN — which places (1st..Nth) this plak covers, so

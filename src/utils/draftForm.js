@@ -7,17 +7,23 @@ import { buildCsvRows } from './exportCsv';
 // — read from a file, typed, or changed by "Ask Claude". Each plaque is the
 // wording the production file would engrave (exportCsv.js buildCsvRows: the
 // same rows Add to Cart sends on), so the form shows what will be made.
-// A tab that can't be added to cart yet is left out, and named in `skipped`.
+// A tab that can't be added to cart yet (no Jenis Plak, a blank line…) is
+// still written in, with a blank KOD where its Jenis Plak is missing, so the
+// form can be finished in Excel and uploaded again (Sean, 2026-10-17); its
+// problem is named in `unready`. `skipped`: tabs with no plaque at all yet.
 export function draftPlaques(draft) {
   const dynamic = Object.keys(draft.visibleBlocksByCategory || {}).filter(isDynamicCategoryKey);
   const keys = [...ACTIVE_CATEGORIES.map((c) => c.key), ...dynamic];
   const byWording = new Map();
   const skipped = [];
+  const unready = [];
   keys.forEach((catKey) => {
-    const res = buildCategoryCartItems(draft, catKey);
-    if (!res.engaged) return;
+    const strict = buildCategoryCartItems(draft, catKey);
+    if (!strict.engaged) return;
     const label = resolveCategory(catKey)?.label || catKey;
-    if (res.error || !res.items?.length) { skipped.push(`${label}: ${res.error || 'nothing to add'}`); return; }
+    const res = strict.error ? buildCategoryCartItems(draft, catKey, { lenient: true }) : strict;
+    if (!res.items?.length) { skipped.push(`${label}: ${strict.error || 'nothing to add'}`); return; }
+    if (strict.error) unready.push(`${label}: ${strict.error}`);
     const { rows } = buildCsvRows({ schoolLanguage: draft.schoolLanguage, items: res.items }, catKey, res.items);
     rows.forEach(([heading, , award, line, eline2, code]) => {
       const p = { heading: heading || '', award: award || '', line: line || '', eline2: eline2 || '', code: code || '' };
@@ -27,5 +33,5 @@ export function draftPlaques(draft) {
       else byWording.set(key, { ...p, qty: 1 });
     });
   });
-  return { plaques: [...byWording.values()], skipped };
+  return { plaques: [...byWording.values()], skipped, unready };
 }
