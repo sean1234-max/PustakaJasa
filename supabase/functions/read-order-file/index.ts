@@ -27,6 +27,7 @@ import {
   INSTRUCTIONS_SCHEMA, INSTRUCTIONS_SYSTEM_PROMPT, INSTRUCTIONS_VERSION, MAX_INSTRUCTIONS_CHARS,
   buildInstructionsUserText, parseInstructionsInput, validateInstructions, withInstructions,
 } from './instructionsSchema.ts';
+import { CHAT_SCHEMA, CHAT_SYSTEM_PROMPT, CHAT_VERSION, buildChatUserText, parseChatInput, validateChat } from './chatSchema.ts';
 import { LAYOUT_VERSION, type Block, type IrSheet, type Layout, layoutFromBlock, layoutKey, matchLayout, parseIrSheets } from './layoutMemory.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
@@ -52,6 +53,12 @@ const MAX_PLAQUE_CHARS = 8_000_000;
 // (instructionsSchema.ts) — the user's Custom Instructions for AI.
 const INSTRUCTIONS_PIPELINE_VERSION = `instr-${INSTRUCTIONS_VERSION}`;
 const MAX_INSTRUCTIONS_INPUT_CHARS = 60_000;
+// kind "chat": JSON { messages, files, remark, tabs } (chatSchema.ts) —
+// "Ask Claude" on New Order step 2. Its own hourly limit, so a long chat
+// doesn't use up the file readings.
+const CHAT_PIPELINE_VERSION = `chat-${CHAT_VERSION}`;
+const MAX_CHAT_INPUT_CHARS = 80_000;
+const CHAT_LIMIT_PER_HOUR = Number(Deno.env.get('READER_CHAT_LIMIT_PER_HOUR') ?? '60');
 // Layout memory (layoutMemory.ts): learned Excel layouts, shared by every
 // user. Tied to the block shape the browser reads (MAPPING_VERSION).
 const LAYOUT_PIPELINE = `layout-${LAYOUT_VERSION}-m${MAPPING_VERSION}`;
@@ -165,22 +172,34 @@ Deno.serve(async (req) => {
   const fileName = typeof body.fileName === 'string' ? body.fileName.slice(0, 200) : 'file';
   const irText = typeof body.irText === 'string' ? body.irText : '';
   const isInstructions = body.kind === 'instructions';
+  const isChat = body.kind === 'chat';
   const isHeading = body.kind === 'pdf-heading';
   const isPlaques = body.kind === 'pdf-plaques';
   const isPicture = isHeading || isPlaques;
   const isPdf = body.kind === 'pdf' || isPicture;
   const sheetNames = Array.isArray(body.sheetNames) ? body.sheetNames.filter((s): s is string => typeof s === 'string').slice(0, MAX_SHEETS) : [];
-  if (!irText || (!isPdf && !isInstructions && sheetNames.length === 0)) return json({ error: 'Nothing to read.' }, 400);
+  if (!irText || (!isPdf && !isInstructions && !isChat && sheetNames.length === 0)) return json({ error: 'Nothing to read.' }, 400);
+  const chatInput = isChat && irText.length <= MAX_CHAT_INPUT_CHARS ? parseChatInput(irText) : null;
+  if (isChat && !chatInput) return json({ status: 'too-large', message: 'This conversation is too long for Claude — please start a new one.' });
   const instructionsInput = isInstructions && irText.length <= MAX_INSTRUCTIONS_INPUT_CHARS ? parseInstructionsInput(irText) : null;
   if (isInstructions && !instructionsInput) return json({ status: 'too-large', message: `Your instructions could not be read — please keep them under ${MAX_INSTRUCTIONS_CHARS} characters.` });
   // Custom Instructions sent along with an Excel / PDF / Word reading.
-  const userInstructions = !isPicture && !isInstructions && typeof body.instructions === 'string'
+  const userInstructions = !isPicture && !isInstructions && !isChat && typeof body.instructions === 'string'
     ? body.instructions.trim().slice(0, MAX_INSTRUCTIONS_CHARS) : '';
   if (isHeading && (irText.length > MAX_IMAGE_CHARS || !irText.startsWith('/9j/'))) return json({ status: 'too-large', message: 'This page picture could not be read.' });
   const plaqueInput = isPlaques ? parsePlaqueInput(irText, MAX_PLAQUE_CHARS) : null;
   if (isPlaques && !plaqueInput) return json({ status: 'too-large', message: 'These page pictures could not be read.' });
-  if (!isPicture && !isInstructions && irText.length > MAX_IR_CHARS) return json({ status: 'too-large', message: isPdf ? 'This PDF is too large for the AI reader — please add it by hand.' : 'These sheets are too large for the AI reader — please add them by hand.' });
-  const kind: Kind = isInstructions
+  if (!isPicture && !isInstructions && !isChat && irText.length > MAX_IR_CHARS) return json({ status: 'too-large', message: isPdf ? 'This PDF is too large for the AI reader — please add it by hand.' : 'These sheets are too large for the AI reader — please add them by hand.' });
+  const kind: Kind = isChat
+    ? {
+      pipeline: CHAT_PIPELINE_VERSION, schema: CHAT_SCHEMA, system: CHAT_SYSTEM_PROMPT, escalate: false,
+      user: () => buildChatUserText(chatInput!),
+      check: (v) => {
+        const c = validateChat(v, chatInput!);
+        return c.ok ? { ok: true, value: c.value, unsure: false } : c;
+      },
+    }
+    : isInstructions
     ? {
       pipeline: INSTRUCTIONS_PIPELINE_VERSION, schema: INSTRUCTIONS_SCHEMA, system: INSTRUCTIONS_SYSTEM_PROMPT, escalate: false,
       user: () => buildInstructionsUserText(instructionsInput!),
@@ -228,7 +247,7 @@ Deno.serve(async (req) => {
       },
     };
   const PIPELINE = kind.pipeline;
-  const isSheets = !isPdf && !isInstructions;
+  const isSheets = !isPdf && !isInstructions && !isChat;
   // memoryOnly (browser, right after an import): read only the sheets a
   // remembered layout fits — never the model, never any cost.
   const memoryOnly = isSheets && body.memoryOnly === true;
@@ -284,11 +303,16 @@ Deno.serve(async (req) => {
   // The model reads only the sheets memory couldn't.
   const modelIr = learned.length ? irSheets.filter((sh) => remaining.includes(sh.name)).map((sh) => sh.section).join('\n\n') : irText;
 
-  // Readings served from memory (route 'cache') don't count.
+  // Readings served from memory (route 'cache') don't count. Chat messages
+  // have their own limit.
   const hourAgo = new Date(Date.now() - 3_600_000).toISOString();
-  const { count: recent } = await admin.from('file_read_runs').select('id', { count: 'exact', head: true })
+  let recentQuery = admin.from('file_read_runs').select('id', { count: 'exact', head: true })
     .eq('created_by', user.id).eq('route', 'ai-map').gte('created_at', hourAgo);
-  if ((recent ?? 0) >= RATE_LIMIT_PER_HOUR) return json({ status: 'rate-limited', message: 'Too many AI readings this hour — please try again later.' });
+  recentQuery = isChat ? recentQuery.eq('pipeline_version', CHAT_PIPELINE_VERSION) : recentQuery.neq('pipeline_version', CHAT_PIPELINE_VERSION);
+  const { count: recent } = await recentQuery;
+  if ((recent ?? 0) >= (isChat ? CHAT_LIMIT_PER_HOUR : RATE_LIMIT_PER_HOUR)) {
+    return json({ status: 'rate-limited', message: isChat ? 'Too many messages to Claude this hour — please try again later.' : 'Too many AI readings this hour — please try again later.' });
+  }
 
   const budgetBlocked = async () => {
     const { data, error } = await admin.rpc('ai_budget_status');
@@ -296,7 +320,7 @@ Deno.serve(async (req) => {
   };
   if (await budgetBlocked()) {
     await admin.from('file_read_runs').insert({ created_by: user.id, file_name: fileName, input_sha256: inputSha, pipeline_version: PIPELINE, status: 'blocked' });
-    return json({ status: 'blocked', message: "This month's AI budget is used up — please add these sheets by hand. It resets on the 1st." });
+    return json({ status: 'blocked', message: isChat ? "This month's AI budget is used up — please make the changes by hand. It resets on the 1st." : "This month's AI budget is used up — please add these sheets by hand. It resets on the 1st." });
   }
 
   const started = Date.now();
@@ -338,7 +362,7 @@ Deno.serve(async (req) => {
     }
     if (!check.ok) {
       await finish({ status: 'failed', model: modelUsed, error: `${res.stopReason}: ${check.error}`.slice(0, 500) });
-      return json({ status: 'failed', runId, message: isInstructions ? 'The AI could not work out your instructions — the order was imported without them.' : isPdf ? 'The AI could not read this PDF — please add the order by hand.' : 'The AI could not read these sheets — please add them by hand.' });
+      return json({ status: 'failed', runId, message: isChat ? 'Claude could not answer that — please try again, or make the change by hand.' : isInstructions ? 'The AI could not work out your instructions — the order was imported without them.' : isPdf ? 'The AI could not read this PDF — please add the order by hand.' : 'The AI could not read these sheets — please add them by hand.' });
     }
     let mapping = check.value;
     if (isSheets && !userInstructions) {
@@ -354,6 +378,6 @@ Deno.serve(async (req) => {
   } catch (err) {
     console.error('read-order-file failed', runId, err instanceof Error ? err.name : 'error');
     await finish({ status: 'failed', error: String(err).slice(0, 500) });
-    return json({ status: 'failed', runId, message: 'The AI reader hit an error — please try again or add these sheets by hand.' });
+    return json({ status: 'failed', runId, message: isChat ? 'Claude hit an error — please try again.' : 'The AI reader hit an error — please try again or add these sheets by hand.' });
   }
 });

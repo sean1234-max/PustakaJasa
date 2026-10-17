@@ -15,8 +15,8 @@ import { parseWordingDocx } from '../utils/docxImport';
 import * as XLSX from 'xlsx';
 import { buildWorkbookIr, renderIrText } from '../utils/fileIr';
 import { applyAiMapping } from '../utils/aiMapping';
-import { readSheetsWithAi, readInstructionsWithAi, canUseAiReader } from '../lib/fileReadApi';
-import { applyInstructionPlan, buildInstructionTabs, instructionQuestionsToWarnings, planInstructions, precheckInstructions } from '../utils/aiInstructions';
+import { readSheetsWithAi, chatWithAi, canUseAiReader } from '../lib/fileReadApi';
+import { applyChatActions, buildChatRequest, buildChatTabs, undoChatChanges } from '../utils/aiChat';
 import { parseDocxOrderWithAi, parsePdfOrder } from '../utils/pdfImport';
 import { checkColumnTotals, checkExpansionTotals, checkLevelBreakdownMatch, checkAliranKelasTotals } from '../utils/importChecks';
 import { frontPgToFunctionDetails } from '../utils/frontPgDetails';
@@ -710,7 +710,7 @@ export function AppStateProvider({ children }) {
       logoDataUrl: null, logoFileName: '', logoRemark: '', schoolType: null, stepError: '',
       importFilePath: null, importFileName: null, importFiles: [],
       step2ImportStatus: null, step2ChoiceAnswers: {},
-      step2AiInstructions: '', step2UploadedFiles: [], step2InstructionsAppliedFor: {},
+      step2UploadedFiles: [], step2Chat: [],
 
       category: null,
       lineValues: {}, matrixValues: {},
@@ -881,9 +881,8 @@ export function AppStateProvider({ children }) {
   // klasMatrixActive check) and isn't a realistic AddOn target.
   // `parsedOverride` (the AI sheet reader below) skips reading the file
   // and the backup upload — the file was already read and uploaded once.
-  // `instructions` (New Order only): the Custom Instructions for AI, sent
-  // with a PDF / Word file the AI reader reads (applied to the draft
-  // afterwards by applyCustomInstructions, not here).
+  // `instructions` (optional): how to read the file, in the user's words,
+  // sent with a PDF / Word file the AI reader reads.
   const importFormAnugerahExcelInto = useCallback(async (file, fields, { applyFilter, parsedOverride, instructions = '' } = {}) => {
     let parsed = parsedOverride;
     if (!parsed) {
@@ -1528,7 +1527,7 @@ export function AppStateProvider({ children }) {
     // A PDF/Word order read by the AI reader: its tabs, so the page can
     // offer them as a filled-in FORM ANUGERAH (templateExport.js).
     const aiCategorized = parsed.aiRead ? parsed.categorized : undefined;
-    // The tabs this file filled (Custom Instructions are applied to these).
+    // The tabs this file filled (the page tracks them per uploaded file).
     const categories = [
       ...(parsed.klasMatrix && klasMatrixActive ? ['KLAS_MATRIX'] : []),
       ...Object.entries(parsed.categorized || {}).filter(([k, secs]) => resolveCategory(k) && secs?.length).map(([k]) => k),
@@ -1544,51 +1543,60 @@ export function AppStateProvider({ children }) {
     [importFormAnugerahExcelInto],
   );
 
-  // Custom Instructions for AI (New Order step 2): the AI says which of the
-  // typed instructions are for `fileName` and what they ask, and the
-  // supported ones are applied to the tabs that file filled (TAJUK BESAR
-  // text, its place in the Reference Sample line order; anything else is
-  // copied into Remark). See src/utils/aiInstructions.js. `base` is the
-  // draft to read the tabs from (the import's own just-committed draft,
-  // which `stateRef` may not hold yet); `typed` = the instructions to use.
-  // Resolves to
-  // { ok, done: [lines], warnings: [questions], message }; never throws.
-  const applyCustomInstructions = useCallback(async (fileName, catKeys, base, typed) => {
-    const st = base || stateRef.current;
-    // The instructions as they were when processing started (the box stays
-    // editable meanwhile).
-    const instructions = String(typed ?? stateRef.current.step2AiInstructions ?? '').trim();
-    if (!instructions || !canUseAiReader(st.role)) return { ok: true, done: [], warnings: [], skipped: true };
-    const tabs = buildInstructionTabs(st, catKeys);
-    const uploaded = (stateRef.current.step2UploadedFiles || []).map((f) => f.name);
-    // Every instruction is for another file: no AI call needed.
-    const pre = precheckInstructions(instructions, { fileName, uploaded });
-    if (pre) {
-      patch((latest) => ({ step2InstructionsAppliedFor: { ...(latest.step2InstructionsAppliedFor || {}), [fileName]: instructions } }));
-      return {
-        ok: true,
-        done: pre.questions.length ? [] : [`No instruction is for "${fileName}" — it was imported with the usual rules.`],
-        warnings: instructionQuestionsToWarnings(pre.questions),
-      };
+  // "Ask Claude" (New Order step 2, Sean 2026-10-17): the teacher or
+  // salesman tells Claude what to change in the order on the page; Claude
+  // answers, and the changes it may make (Reference Sample rows, their
+  // order, Remark notes) are checked and applied by src/utils/aiChat.js.
+  // The chat is kept in the draft (step2Chat) until the order is submitted.
+  // One message at a time. Resolves to false when nothing was sent.
+  const chatBusyRef = useRef(false);
+  const sendChatMessage = useCallback(async (text) => {
+    const said = String(text || '').trim().slice(0, 2000);
+    if (!said || chatBusyRef.current || !canUseAiReader(stateRef.current.role)) return false;
+    chatBusyRef.current = true;
+    const newId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    const userMsg = { id: newId(), role: 'user', text: said };
+    const history = [...(stateRef.current.step2Chat || []).filter((m) => !m.error), userMsg];
+    patch((st) => ({ step2Chat: [...(st.step2Chat || []), userMsg] }));
+    try {
+      const st = stateRef.current;
+      // The tabs as Claude saw them: its answer is checked against these.
+      const tabs = buildChatTabs(st);
+      const res = await chatWithAi(buildChatRequest(st, history));
+      if (!res.ok) {
+        patch((latest) => ((latest.step2Chat || []).some((m) => m.id === userMsg.id)
+          ? { step2Chat: [...latest.step2Chat, { id: newId(), role: 'assistant', text: res.message, error: true }] }
+          : {}));
+        return true;
+      }
+      const userText = history.filter((m) => m.role === 'user').map((m) => m.text).join('\n');
+      const replyId = newId();
+      // Applied inside the updater, to the latest draft (the page may have
+      // been edited while Claude was answering); pure, so Strict Mode's
+      // double call is harmless.
+      patch((latest) => {
+        // The chat was cleared meanwhile (New chat, or a new order was
+        // started): this answer is for an order that is gone.
+        if (!(latest.step2Chat || []).some((m) => m.id === userMsg.id)) return {};
+        const r = applyChatActions(latest, res.actions, { tabs, userText });
+        return {
+          ...r.patch,
+          step2Chat: [...(latest.step2Chat || []), { id: replyId, role: 'assistant', text: res.reply, done: r.done, refused: r.refused, undo: r.undo }],
+        };
+      });
+      return true;
+    } finally {
+      chatBusyRef.current = false;
     }
-    const res = await readInstructionsWithAi({
-      instructions, fileName, files: uploaded.includes(fileName) ? uploaded : [...uploaded, fileName],
-      tabs: tabs.map(({ id, label, heading, lines }) => ({ id, label, heading, lines })),
+  }, [patch]);
+
+  // Puts back what one Claude reply changed.
+  const undoChatMessage = useCallback((id) => {
+    patch((latest) => {
+      const m = (latest.step2Chat || []).find((x) => x.id === id);
+      if (!m?.undo || m.undone) return {};
+      return { ...undoChatChanges(latest, m.undo), step2Chat: latest.step2Chat.map((x) => (x.id === id ? { ...x, undone: true } : x)) };
     });
-    if (!res.ok) return { ok: false, done: [], warnings: [], message: res.message };
-    const plan = planInstructions(res.reading, { fileName, uploaded, instructions, tabs });
-    // Applied inside the updater, to the latest draft (a pure function of
-    // it, so Strict Mode's double call is harmless) — the teacher may have
-    // edited the page while the AI was answering. The updater runs later,
-    // so what-was-done (which depends only on the plan) is read off a dry
-    // run here.
-    let { done } = applyInstructionPlan(stateRef.current, plan, { fileName, tabs });
-    patch((latest) => ({
-      ...applyInstructionPlan(latest, plan, { fileName, tabs }).patch,
-      step2InstructionsAppliedFor: { ...(latest.step2InstructionsAppliedFor || {}), [fileName]: instructions },
-    }));
-    if (plan.otherFiles && !done.length && !plan.questions.length) done = [`No instruction is for "${fileName}" — it was imported with the usual rules.`];
-    return { ok: true, done, warnings: instructionQuestionsToWarnings(plan.questions) };
   }, [patch]);
 
   // AI sheet reader (universal file-reader plan, phase 1): the sheets of an
@@ -1799,7 +1807,7 @@ export function AppStateProvider({ children }) {
       patch({ cartToast: message });
       return null;
     }
-    patch((latest) => ({ lastOrderId: newId, orders: [newOrder, ...latest.orders], cart: [], cartToast: '', step2ImportStatus: null, step2ChoiceAnswers: {}, step2AiInstructions: '', step2UploadedFiles: [], step2InstructionsAppliedFor: {} }));
+    patch((latest) => ({ lastOrderId: newId, orders: [newOrder, ...latest.orders], cart: [], cartToast: '', step2ImportStatus: null, step2ChoiceAnswers: {}, step2UploadedFiles: [], step2Chat: [] }));
     // crystal changes the teacher made before submitting (Cart → Edit Crystal): onto the order now
     if (st.cart.some((ci) => isCrystalCode(ci.jenisPlak))) saveCrystalDraft(newId).catch((err) => console.error('Order saved, but its crystal changes were not:', err));
     // who confirmed the artwork is stamped by the database (0089) — read it back for the order page
@@ -3344,7 +3352,7 @@ export function AppStateProvider({ children }) {
   const value = {
     state, patch, today: TODAY, login, logout,
     resetCurrentCategory, startNewOrder, addToCart, addAllToCart, removeFromCart, editCartCategory, restoreCartToDraft, submitOrder, checkDuplicateOrders, reorderOrder,
-    importFormAnugerahExcel, importFormAnugerahExcelInto, readSkippedSheetsWithAi, applyCustomInstructions,
+    importFormAnugerahExcel, importFormAnugerahExcelInto, readSkippedSheetsWithAi, sendChatMessage, undoChatMessage,
     openAmend, updateAmend,
     openAddOn, addOnAddToCart, removeFromAddOnCart, submitPendingAddOn, cancelPendingAddOn, rejectAddOn, approveAddOn, approveOrder, setInvoiceId, approveAndSetInvoiceId,
     setJenisPlakInvoiceGroup, renameInvoiceNumber,

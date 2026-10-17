@@ -4,6 +4,7 @@ import Nav from '../components/Nav';
 import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import CrystalPreview from '../components/CrystalPreview';
+import AiChatPanel from '../components/AiChatPanel';
 import { isCrystalCode } from '../utils/exportCsv';
 import { useAppState } from '../state/useAppState';
 import { buildCategoryCartItems } from '../state/categoryCartItems';
@@ -15,8 +16,9 @@ import { createDraftUpdaters } from '../utils/draftUpdaters';
 import { checkEngravingText } from '../lib/grammarCheckApi';
 import { canUseAiReader } from '../lib/fileReadApi';
 import { downloadBinaryFile } from '../utils/downloadBlob';
+import { draftPlaques } from '../utils/draftForm';
 
-// The blank FORM ANUGERAH an AI-read order is written into (templateExport.js).
+// The blank FORM ANUGERAH the order is written into (templateExport.js).
 const FORM_TEMPLATE_URL = '/templates/FORM-ANUGERAH.xlsx';
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
@@ -30,7 +32,7 @@ const DRAFT_FIELDS = {
 const EDITABLE = { lines: true, rowDesc: true, rowQty: true, addRemoveRows: true, matrix: true, jenisPlak: true };
 
 export default function NewOrderStep2() {
-  const { state, patch, addToCart, addAllToCart, importFormAnugerahExcel, readSkippedSheetsWithAi, applyCustomInstructions } = useAppState();
+  const { state, patch, addToCart, addAllToCart, importFormAnugerahExcel, readSkippedSheetsWithAi, sendChatMessage, undoChatMessage } = useAppState();
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
   // The last import's result ({ ok, message, warnings }) and the answers to
@@ -44,10 +46,7 @@ export default function NewOrderStep2() {
   // sheets can be offered to the AI sheet reader (readSkippedSheetsWithAi).
   const lastImportFileRef = useRef(null);
   const [aiReading, setAiReading] = useState(false);
-  // A PDF/Word order the AI reader just read: its tabs as read (before any
-  // edit here), offered as a filled-in FORM ANUGERAH to check or send to
-  // the school. This page visit only.
-  const aiOrderRef = useRef(null);
+  // The order on the page, written into a FORM ANUGERAH (.xlsx) on request.
   const [formExport, setFormExport] = useState(null);
   const [dragOver, setDragOver] = useState(false);
   // Clicking a "couldn't match Jenis Plak" warning jumps straight to that
@@ -89,32 +88,13 @@ export default function NewOrderStep2() {
   // to the roles allowed to use it.
   const pdfAllowed = canUseAiReader(state.role);
 
-  // Custom Instructions for AI (Sean, 2026-10-17): typed once, kept in the
-  // draft (so they survive a step back to Function Details) and used for
-  // every file uploaded to this order until it is submitted. Only for the
-  // roles that can use the AI reader. Sent with an AI-read file, then
-  // matched to the file and applied to its tabs (applyCustomInstructions).
-  const aiInstructions = pdfAllowed ? String(state.step2AiInstructions || '') : '';
-  const uploadedFiles = state.step2UploadedFiles || [];
-  const appliedFor = state.step2InstructionsAppliedFor || {};
-  // One import or instructions run at a time: state updates land a render
-  // later, so a fast double click is stopped by this ref, not the flag.
+  // "Ask Claude" (Sean, 2026-10-17): only for the roles that can use the AI
+  // reader. The files of this order, and the tabs each one filled, are
+  // shown to Claude with the order.
+  const chatMessages = pdfAllowed ? (state.step2Chat || []) : [];
+  // One import at a time: state updates land a render later, so a fast
+  // double click is stopped by this ref, not the flag.
   const busyRef = useRef(false);
-  const [applyingInstructions, setApplyingInstructions] = useState(false);
-  const instructionsStale = !!aiInstructions.trim() && uploadedFiles.some((f) => appliedFor[f.name] !== aiInstructions.trim());
-
-  // The instructions' outcome for one file, merged into the import status:
-  // what was applied, and its questions in "Confirm before continuing".
-  const mergeInstructionOutcome = (status, outcomes) => {
-    const done = outcomes.flatMap((o) => o.done || []);
-    const errors = [...new Set(outcomes.filter((o) => !o.ok && o.message).map((o) => o.message))];
-    return {
-      ...status,
-      instructionsDone: done,
-      instructionsError: errors.join(' '),
-      warnings: [...(status.warnings || []).filter((w) => !w.instruction), ...outcomes.flatMap((o) => o.warnings || [])],
-    };
-  };
 
   const handleImportFile = async (file) => {
     if (!file || importing || busyRef.current) return;
@@ -127,11 +107,10 @@ export default function NewOrderStep2() {
     setImportStatus(null);
     setChoiceAnswers({});
     lastImportFileRef.current = file;
-    const instructions = aiInstructions.trim();
     let result;
     let status;
     try {
-      result = await importFormAnugerahExcel(file, { instructions });
+      result = await importFormAnugerahExcel(file);
       status = { ...result };
       delete status.aiCategorized;
       if (result.ok) {
@@ -145,15 +124,10 @@ export default function NewOrderStep2() {
             { name: file.name, categories: [...mine] },
           ],
         }));
-        if (instructions) {
-          const outcome = await applyCustomInstructions(file.name, result.categories, result.draft, instructions);
-          status = mergeInstructionOutcome(status, [outcome]);
-        }
         // Sheets the rules skipped but laid out like one the AI already
         // learned (from anyone's file) are read straight away, at no cost.
-        // The rest stay on the "Read with AI" button. Not with instructions:
-        // those need the AI to read the sheet.
-        if (pdfAllowed && !instructions && (status.skippedSheets || []).length) {
+        // The rest stay on the "Read with AI" button.
+        if (pdfAllowed && (status.skippedSheets || []).length) {
           const mem = await readSkippedSheetsWithAi(file, status.skippedSheets, '', { memoryOnly: true });
           if (mem.ok && mem.learnedSheets?.length) {
             const learned = mem.learnedSheets;
@@ -180,8 +154,6 @@ export default function NewOrderStep2() {
       busyRef.current = false;
       setImporting(false);
     }
-    const aiCategorized = result.aiCategorized;
-    aiOrderRef.current = aiCategorized ? { categorized: aiCategorized, fileName: file.name } : null;
     setFormExport(null);
     setImportStatus(status);
     // Said once, up front, right after the upload — those rows came in with
@@ -203,16 +175,14 @@ export default function NewOrderStep2() {
     setAiReading(true);
     let result;
     try {
-      result = await readSkippedSheetsWithAi(lastImportFileRef.current, aiSheets, aiInstructions.trim());
-      // The AI-read sheets are new tabs: the instructions apply to them too.
-      if (result.ok && aiInstructions.trim()) {
+      result = await readSkippedSheetsWithAi(lastImportFileRef.current, aiSheets, '');
+      // The AI-read sheets are new tabs of this file.
+      if (result.ok) {
         const name = lastImportFileRef.current.name;
         const cats = result.categories || [];
         patch((st) => ({
           step2UploadedFiles: (st.step2UploadedFiles || []).map((f) => (f.name === name ? { ...f, categories: [...new Set([...(f.categories || []), ...cats])] } : f)),
         }));
-        const outcome = await applyCustomInstructions(name, cats, result.draft, aiInstructions.trim());
-        result = { ...result, warnings: [...(result.warnings || []), ...(outcome.warnings || [])], instructionOutcome: outcome };
       }
     } finally {
       setAiReading(false);
@@ -223,10 +193,6 @@ export default function NewOrderStep2() {
       aiDone: !!result.ok,
       message: result.ok ? `${prev.message} ${result.message}` : prev.message,
       aiError: result.ok ? '' : result.message,
-      ...(result.instructionOutcome ? {
-        instructionsDone: [...(prev.instructionsDone || []), ...(result.instructionOutcome.done || [])],
-        instructionsError: result.instructionOutcome.ok ? prev.instructionsError : result.instructionOutcome.message,
-      } : {}),
       // The rule reader's "this sheet was skipped" lines are answered now.
       warnings: [
         ...(prev.warnings || []).filter((w) => !(result.ok && w.type === 'truncated' && /were skipped|Couldn't recognize the format of sheet/.test(w.text))),
@@ -235,32 +201,13 @@ export default function NewOrderStep2() {
     });
   };
 
-  // "Apply instructions": the instructions were typed or changed after a
-  // file was uploaded. Re-checked for every file of this order (the AI
-  // answer is cached per instructions + file), applied to the tabs each
-  // file filled. Nothing is re-imported, so edits made on the page stay.
-  const handleApplyInstructions = async () => {
-    if (busyRef.current || importing || !aiInstructions.trim() || uploadedFiles.length === 0) return;
-    busyRef.current = true;
-    setApplyingInstructions(true);
-    const outcomes = [];
-    try {
-      for (const f of uploadedFiles) {
-        if (!(f.categories || []).length) continue;
-        outcomes.push(await applyCustomInstructions(f.name, f.categories, undefined, aiInstructions.trim()));
-      }
-    } finally {
-      busyRef.current = false;
-      setApplyingInstructions(false);
-    }
-    const prev = importStatus || { ok: true, message: '' };
-    setChoiceAnswers((a) => Object.fromEntries(Object.entries(a).filter(([id]) => !id.startsWith('instr-'))));
-    setImportStatus(mergeInstructionOutcome(prev, outcomes));
-  };
-
   const handleDownloadForm = async () => {
-    const ai = aiOrderRef.current;
-    if (!ai || formExport?.busy) return;
+    if (formExport?.busy) return;
+    const { plaques, skipped } = draftPlaques(state);
+    if (!plaques.length) {
+      setFormExport({ error: skipped.length ? `Nothing in the order is ready yet: ${skipped.join('; ')}` : 'The order is empty — upload a file or fill in a tab first.' });
+      return;
+    }
     setFormExport({ busy: true });
     try {
       const res = await fetch(FORM_TEMPLATE_URL);
@@ -269,13 +216,16 @@ export default function NewOrderStep2() {
         return;
       }
       const { fillOrderTemplate } = await import('../utils/templateExport');
-      const out = await fillOrderTemplate(await res.arrayBuffer(), ai.categorized);
-      downloadBinaryFile(`${ai.fileName.replace(/\.[^.]+$/, '')} (FORM ANUGERAH).xlsx`, out.buffer, XLSX_MIME);
+      const out = await fillOrderTemplate(await res.arrayBuffer(), { plaques });
+      const first = (state.step2UploadedFiles || [])[0]?.name;
+      const base = (first || state.sekolah || 'Order').replace(/\.[^.]+$/, '').replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'Order';
+      downloadBinaryFile(`${base} (FORM ANUGERAH).xlsx`, out.buffer, XLSX_MIME);
       const placedTotal = Object.values(out.placed).reduce((a, n) => a + n, 0);
       setFormExport({
         notes: [
-          `${placedTotal} of ${out.plaqueCount} plaques written into the form (${Object.entries(out.placed).map(([k, n]) => `${k}: ${n}`).join(', ')}). The form shows the AI's reading as it came in — edits made on this page are not in it.`,
+          `${placedTotal} of ${out.plaqueCount} plaques written into the form (${Object.entries(out.placed).map(([k, n]) => `${k}: ${n}`).join(', ')}), as the order is on this page now. The form has a fixed place for each line, so a changed row order is not shown in it; the order itself keeps it.`,
           ...out.notes,
+          ...skipped.map((x) => `Not in the form (not ready to add to cart yet): ${x}`),
         ],
       });
     } catch (err) {
@@ -627,19 +577,6 @@ export default function NewOrderStep2() {
           {importStatus?.aiError && (
             <p className="hint-text" style={{ margin: '4px 0 0', color: '#c0392b', fontWeight: 600 }}>{importStatus.aiError}</p>
           )}
-          {importStatus?.ok && aiOrderRef.current && (
-            <div style={{ marginTop: 8 }}>
-              <button type="button" className="btn btn-secondary" disabled={!!formExport?.busy} onClick={handleDownloadForm}>
-                {formExport?.busy ? 'Filling the form…' : 'Download as FORM ANUGERAH (.xlsx)'}
-              </button>
-              {formExport?.error && <p className="hint-text" style={{ margin: '4px 0 0', color: '#c0392b', fontWeight: 600 }}>{formExport.error}</p>}
-              {formExport?.notes && (
-                <ul style={{ margin: '6px 0 0', paddingLeft: 18, fontSize: '0.9em' }}>
-                  {formExport.notes.map((n) => <li key={n}>{n}</li>)}
-                </ul>
-              )}
-            </div>
-          )}
           {aiSheets.length > 0 && (
             <button type="button" className="btn btn-secondary" style={{ marginTop: 8 }} disabled={aiReading} onClick={handleReadWithAi}>
               {aiReading ? 'AI is reading…' : `Read ${aiSheets.length} skipped sheet(s) with AI`}
@@ -660,38 +597,24 @@ export default function NewOrderStep2() {
         </div>
 
         {pdfAllowed && (
-          <div className="field" style={{ maxWidth: 560, margin: '0 auto var(--space-6)' }}>
-            <label htmlFor="aiInstructions">Custom Instructions for AI</label>
-            <textarea
-              id="aiInstructions"
-              className="input"
-              rows={4}
-              maxLength={4000}
-              value={aiInstructions}
-              onChange={(e) => patch({ step2AiInstructions: e.target.value })}
-              placeholder="Enter special instructions for AI... e.g. For file ABC, place the header 'Majlis...' at the bottom of the artwork."
-              style={{ width: '100%', boxSizing: 'border-box', resize: 'vertical', minHeight: 96 }}
-            />
-            <p className="hint-text" style={{ margin: '4px 0 0' }}>
-              Optional. Type these before uploading, one instruction per sentence or line. Name a file (&quot;For file ABC, …&quot;) to apply an
-              instruction to that file only; an instruction with no file name applies to every file. The AI can set the TAJUK BESAR
-              (header) to text you give and put it at the top or bottom of the plaque. Other formatting requests (font, size, spacing) are
-              copied into Remark for Production. Names and quantities always come from the file. Anything unclear is asked below before Add to Cart.
-            </p>
-            {uploadedFiles.length > 0 && instructionsStale && (
-              <button type="button" className="btn btn-secondary" style={{ marginTop: 8 }} disabled={applyingInstructions || importing} onClick={handleApplyInstructions}>
-                {applyingInstructions ? 'Applying instructions…' : `Apply instructions to ${uploadedFiles.length === 1 ? uploadedFiles[0].name : `${uploadedFiles.length} uploaded files`}`}
+          <AiChatPanel
+            messages={chatMessages}
+            onSend={sendChatMessage}
+            onUndo={undoChatMessage}
+            onClear={() => patch({ step2Chat: [] })}
+          >
+            <div style={{ marginTop: 8 }}>
+              <button type="button" className="btn btn-secondary" disabled={!!formExport?.busy} onClick={handleDownloadForm}>
+                {formExport?.busy ? 'Filling the form…' : 'Download Excel (FORM ANUGERAH)'}
               </button>
-            )}
-            {importStatus?.instructionsDone?.length > 0 && (
-              <ul style={{ margin: '6px 0 0', paddingLeft: 0, listStyle: 'none', color: '#1f8a3b', fontWeight: 600, fontSize: '0.9em' }}>
-                {importStatus.instructionsDone.map((d) => <li key={d}>✓ {d}</li>)}
-              </ul>
-            )}
-            {importStatus?.instructionsError && (
-              <p className="hint-text" style={{ margin: '4px 0 0', color: '#c0392b', fontWeight: 600 }}>{importStatus.instructionsError}</p>
-            )}
-          </div>
+              {formExport?.error && <p className="hint-text" style={{ margin: '4px 0 0', color: '#c0392b', fontWeight: 600 }}>{formExport.error}</p>}
+              {formExport?.notes && (
+                <ul style={{ margin: '6px 0 0', paddingLeft: 18, fontSize: '0.9em' }}>
+                  {formExport.notes.map((n) => <li key={n}>{n}</li>)}
+                </ul>
+              )}
+            </div>
+          </AiChatPanel>
         )}
 
         <div className="card-kicker">Jenis Anugerah (Category)</div>
