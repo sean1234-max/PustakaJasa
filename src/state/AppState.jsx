@@ -15,7 +15,8 @@ import { parseWordingDocx } from '../utils/docxImport';
 import * as XLSX from 'xlsx';
 import { buildWorkbookIr, renderIrText } from '../utils/fileIr';
 import { applyAiMapping } from '../utils/aiMapping';
-import { readSheetsWithAi, canUseAiReader } from '../lib/fileReadApi';
+import { readSheetsWithAi, readInstructionsWithAi, canUseAiReader } from '../lib/fileReadApi';
+import { applyInstructionPlan, buildInstructionTabs, instructionQuestionsToWarnings, planInstructions } from '../utils/aiInstructions';
 import { parseDocxOrderWithAi, parsePdfOrder } from '../utils/pdfImport';
 import { checkColumnTotals, checkExpansionTotals, checkLevelBreakdownMatch, checkAliranKelasTotals } from '../utils/importChecks';
 import { frontPgToFunctionDetails } from '../utils/frontPgDetails';
@@ -709,6 +710,7 @@ export function AppStateProvider({ children }) {
       logoDataUrl: null, logoFileName: '', logoRemark: '', schoolType: null, stepError: '',
       importFilePath: null, importFileName: null, importFiles: [],
       step2ImportStatus: null, step2ChoiceAnswers: {},
+      step2AiInstructions: '', step2UploadedFiles: [], step2InstructionsAppliedFor: {},
 
       category: null,
       lineValues: {}, matrixValues: {},
@@ -879,7 +881,10 @@ export function AppStateProvider({ children }) {
   // klasMatrixActive check) and isn't a realistic AddOn target.
   // `parsedOverride` (the AI sheet reader below) skips reading the file
   // and the backup upload — the file was already read and uploaded once.
-  const importFormAnugerahExcelInto = useCallback(async (file, fields, { applyFilter, parsedOverride } = {}) => {
+  // `instructions` (New Order only): the Custom Instructions for AI, sent
+  // with a PDF / Word file the AI reader reads (applied to the draft
+  // afterwards by applyCustomInstructions, not here).
+  const importFormAnugerahExcelInto = useCallback(async (file, fields, { applyFilter, parsedOverride, instructions = '' } = {}) => {
     let parsed = parsedOverride;
     if (!parsed) {
       try {
@@ -888,7 +893,7 @@ export function AppStateProvider({ children }) {
           // PDF orders go through the AI reader (pdfImport.js), so only
           // for the roles allowed to use it.
           parsed = canUseAiReader(stateRef.current.role)
-            ? await parsePdfOrder(buffer, file.name)
+            ? await parsePdfOrder(buffer, file.name, instructions)
             : { error: 'PDF orders are not available yet — please upload an .xlsx or .docx file.' };
         } else {
           parsed = /\.docx$/i.test(file.name) ? await parseWordingDocx(buffer) : parseFormAnugerahExcel(buffer);
@@ -896,7 +901,7 @@ export function AppStateProvider({ children }) {
           // and a name list, ...) goes to the AI reader, for the roles
           // allowed to use it.
           if (parsed.error && /\.docx$/i.test(file.name) && canUseAiReader(stateRef.current.role)) {
-            parsed = await parseDocxOrderWithAi(buffer, file.name, parsed.error);
+            parsed = await parseDocxOrderWithAi(buffer, file.name, parsed.error, instructions);
           }
         }
       } catch (err) {
@@ -1523,16 +1528,58 @@ export function AppStateProvider({ children }) {
     // A PDF/Word order read by the AI reader: its tabs, so the page can
     // offer them as a filled-in FORM ANUGERAH (templateExport.js).
     const aiCategorized = parsed.aiRead ? parsed.categorized : undefined;
-    return { ok: true, message: `Imported — ${messages.join('; ')}. Please review carefully before adding to cart.`, warnings, draft: finalState, skippedSheets, aiCategorized };
+    // The tabs this file filled (Custom Instructions are applied to these).
+    const categories = [
+      ...(parsed.klasMatrix && klasMatrixActive ? ['KLAS_MATRIX'] : []),
+      ...Object.entries(parsed.categorized || {}).filter(([k, secs]) => resolveCategory(k) && secs?.length).map(([k]) => k),
+    ];
+    return { ok: true, message: `Imported — ${messages.join('; ')}. Please review carefully before adding to cart.`, warnings, draft: finalState, skippedSheets, aiCategorized, categories };
   }, [patch]);
 
   // Thin, zero-behavior-change wrapper for the existing New Order call site
   // (NewOrderStep2.jsx) — always imports into the New Order draft namespace,
   // full import, no diff filter.
   const importFormAnugerahExcel = useCallback(
-    (file) => importFormAnugerahExcelInto(file, NEW_ORDER_IMPORT_FIELDS),
+    (file, { instructions } = {}) => importFormAnugerahExcelInto(file, NEW_ORDER_IMPORT_FIELDS, { instructions }),
     [importFormAnugerahExcelInto],
   );
+
+  // Custom Instructions for AI (New Order step 2): the AI says which of the
+  // typed instructions are for `fileName` and what they ask, and the
+  // supported ones are applied to the tabs that file filled (TAJUK BESAR
+  // text, its place in the Reference Sample line order; anything else is
+  // copied into Remark). See src/utils/aiInstructions.js. `base` is the
+  // draft to read the tabs from (the import's own just-committed draft,
+  // which `stateRef` may not hold yet); `typed` = the instructions to use.
+  // Resolves to
+  // { ok, done: [lines], warnings: [questions], message }; never throws.
+  const applyCustomInstructions = useCallback(async (fileName, catKeys, base, typed) => {
+    const st = base || stateRef.current;
+    // The instructions as they were when processing started (the box stays
+    // editable meanwhile).
+    const instructions = String(typed ?? stateRef.current.step2AiInstructions ?? '').trim();
+    if (!instructions || !canUseAiReader(st.role)) return { ok: true, done: [], warnings: [], skipped: true };
+    const tabs = buildInstructionTabs(st, catKeys);
+    const uploaded = (stateRef.current.step2UploadedFiles || []).map((f) => f.name);
+    const res = await readInstructionsWithAi({
+      instructions, fileName, files: uploaded.includes(fileName) ? uploaded : [...uploaded, fileName],
+      tabs: tabs.map(({ id, label, heading, lines }) => ({ id, label, heading, lines })),
+    });
+    if (!res.ok) return { ok: false, done: [], warnings: [], message: res.message };
+    const plan = planInstructions(res.reading, { fileName, uploaded, instructions, tabs });
+    // Applied inside the updater, to the latest draft (a pure function of
+    // it, so Strict Mode's double call is harmless) — the teacher may have
+    // edited the page while the AI was answering. The updater runs later,
+    // so what-was-done (which depends only on the plan) is read off a dry
+    // run here.
+    let { done } = applyInstructionPlan(stateRef.current, plan, { fileName, tabs });
+    patch((latest) => ({
+      ...applyInstructionPlan(latest, plan, { fileName, tabs }).patch,
+      step2InstructionsAppliedFor: { ...(latest.step2InstructionsAppliedFor || {}), [fileName]: instructions },
+    }));
+    if (plan.otherFiles && !done.length && !plan.questions.length) done = [`No instruction is for "${fileName}" — it was imported with the usual rules.`];
+    return { ok: true, done, warnings: instructionQuestionsToWarnings(plan.questions) };
+  }, [patch]);
 
   // AI sheet reader (universal file-reader plan, phase 1): the sheets of an
   // already-imported Excel file that the rule-based reader skipped are
@@ -1541,7 +1588,7 @@ export function AppStateProvider({ children }) {
   // values are then read from the file itself (aiMapping.js) and added to
   // the draft as new tabs, alongside what the rules already imported.
   // Returns { ok, message, warnings }; never throws.
-  const readSkippedSheetsWithAi = useCallback(async (file, sheetNames) => {
+  const readSkippedSheetsWithAi = useCallback(async (file, sheetNames, instructions = '') => {
     let ir;
     try {
       const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
@@ -1551,7 +1598,7 @@ export function AppStateProvider({ children }) {
       return { ok: false, message: 'Could not read this file. Please try again.' };
     }
     if (ir.blocks.length === 0) return { ok: false, message: 'Those sheets are empty — nothing to read.' };
-    const res = await readSheetsWithAi({ fileName: file.name, irText: renderIrText(ir), sheetNames: ir.blocks.map((b) => b.name) });
+    const res = await readSheetsWithAi({ fileName: file.name, irText: renderIrText(ir), sheetNames: ir.blocks.map((b) => b.name), instructions });
     if (!res.ok) return { ok: false, message: res.message };
     const { categorized, notes } = applyAiMapping(ir, res.mapping);
     if (Object.keys(categorized).length === 0) {
@@ -1731,7 +1778,7 @@ export function AppStateProvider({ children }) {
       patch({ cartToast: message });
       return null;
     }
-    patch((latest) => ({ lastOrderId: newId, orders: [newOrder, ...latest.orders], cart: [], cartToast: '', step2ImportStatus: null, step2ChoiceAnswers: {} }));
+    patch((latest) => ({ lastOrderId: newId, orders: [newOrder, ...latest.orders], cart: [], cartToast: '', step2ImportStatus: null, step2ChoiceAnswers: {}, step2AiInstructions: '', step2UploadedFiles: [], step2InstructionsAppliedFor: {} }));
     // crystal changes the teacher made before submitting (Cart → Edit Crystal): onto the order now
     if (st.cart.some((ci) => isCrystalCode(ci.jenisPlak))) saveCrystalDraft(newId).catch((err) => console.error('Order saved, but its crystal changes were not:', err));
     // who confirmed the artwork is stamped by the database (0089) — read it back for the order page
@@ -3276,7 +3323,7 @@ export function AppStateProvider({ children }) {
   const value = {
     state, patch, today: TODAY, login, logout,
     resetCurrentCategory, startNewOrder, addToCart, addAllToCart, removeFromCart, editCartCategory, restoreCartToDraft, submitOrder, checkDuplicateOrders, reorderOrder,
-    importFormAnugerahExcel, importFormAnugerahExcelInto, readSkippedSheetsWithAi,
+    importFormAnugerahExcel, importFormAnugerahExcelInto, readSkippedSheetsWithAi, applyCustomInstructions,
     openAmend, updateAmend,
     openAddOn, addOnAddToCart, removeFromAddOnCart, submitPendingAddOn, cancelPendingAddOn, rejectAddOn, approveAddOn, approveOrder, setInvoiceId, approveAndSetInvoiceId,
     setJenisPlakInvoiceGroup, renameInvoiceNumber,

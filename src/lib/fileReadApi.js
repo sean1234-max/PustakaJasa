@@ -14,9 +14,13 @@ export function canUseAiReader(role) {
 
 // Never throws. Resolves to { ok:true, mapping, cached } or
 // { ok:false, message } (budget used up, rate limit, too large, failure).
-export async function readSheetsWithAi({ fileName, irText, sheetNames }) {
+// `instructions` (optional): the user's Custom Instructions for AI, sent
+// with the file so the reader can follow the ones about how to read it.
+const withInstructions = (body, instructions) => (instructions && instructions.trim() ? { ...body, instructions: instructions.trim() } : body);
+
+export async function readSheetsWithAi({ fileName, irText, sheetNames, instructions }) {
   try {
-    const { data, error } = await supabase.functions.invoke('read-order-file', { body: { fileName, irText, sheetNames } });
+    const { data, error } = await supabase.functions.invoke('read-order-file', { body: withInstructions({ fileName, irText, sheetNames }, instructions) });
     if (error || !data) return { ok: false, message: 'The AI reader is not available right now — please add these sheets by hand.' };
     if (data.status === 'succeeded' && data.mapping) return { ok: true, mapping: data.mapping, cached: !!data.cached, runId: data.runId };
     return { ok: false, message: data.message || 'The AI could not read these sheets — please add them by hand.' };
@@ -27,10 +31,10 @@ export async function readSheetsWithAi({ fileName, irText, sheetNames }) {
 
 // Text PDFs (phase 2): irText is the PDF's structure map (pdfIr.js); the
 // answer is segment references (pdfMapping.js). Same shape as above.
-export async function readPdfWithAi({ fileName, irText }) {
+export async function readPdfWithAi({ fileName, irText, instructions }) {
   const fail = 'The AI reader is not available right now — please add this order by hand.';
   try {
-    const { data, error } = await supabase.functions.invoke('read-order-file', { body: { kind: 'pdf', fileName, irText } });
+    const { data, error } = await supabase.functions.invoke('read-order-file', { body: withInstructions({ kind: 'pdf', fileName, irText }, instructions) });
     if (error || !data) return { ok: false, message: fail };
     if (data.status === 'succeeded' && data.mapping) return { ok: true, reading: data.mapping, cached: !!data.cached, runId: data.runId };
     return { ok: false, message: data.message || 'The AI could not read this PDF — please add the order by hand.' };
@@ -64,6 +68,22 @@ export async function readPdfPlaquesWithAi({ fileName, pages, images }) {
     return { ok: true, pictures: data.mapping.pictures || [] };
   } catch {
     return { ok: false };
+  }
+}
+
+// Custom Instructions for AI (aiInstructions.js): which instructions are
+// for `fileName` and what each asks, given the tabs that file filled.
+// Resolves to { ok:true, reading } or { ok:false, message }; never throws.
+export async function readInstructionsWithAi({ instructions, fileName, files, tabs }) {
+  const fail = 'The AI could not check your custom instructions right now — the file was imported without them. Try "Apply instructions" again later.';
+  try {
+    const irText = JSON.stringify({ instructions, fileName, files, tabs });
+    const { data, error } = await supabase.functions.invoke('read-order-file', { body: { kind: 'instructions', fileName, irText } });
+    if (error || !data) return { ok: false, message: fail };
+    if (data.status === 'succeeded' && data.mapping) return { ok: true, reading: data.mapping, cached: !!data.cached };
+    return { ok: false, message: data.message ? `${data.message} The file was imported without your custom instructions.` : fail };
+  } catch {
+    return { ok: false, message: fail };
   }
 }
 

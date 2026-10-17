@@ -23,6 +23,10 @@ import { PDF_SCHEMA, PDF_SCHEMA_VERSION, validatePdfReading } from './pdfSchema.
 import { PDF_PROMPT_VERSION, PDF_SYSTEM_PROMPT, buildPdfUserPrompt } from './pdfPrompt.ts';
 import { HEADING_SCHEMA, HEADING_SYSTEM_PROMPT, HEADING_VERSION, buildHeadingUserText, validateHeading } from './headingSchema.ts';
 import { PLAQUE_SCHEMA, PLAQUE_SYSTEM_PROMPT, PLAQUE_VERSION, buildPlaqueUserParts, parsePlaqueInput, validatePlaques } from './plaqueSchema.ts';
+import {
+  INSTRUCTIONS_SCHEMA, INSTRUCTIONS_SYSTEM_PROMPT, INSTRUCTIONS_VERSION, MAX_INSTRUCTIONS_CHARS,
+  buildInstructionsUserText, parseInstructionsInput, validateInstructions, withInstructions,
+} from './instructionsSchema.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const PUBLISHABLE_KEY = JSON.parse(Deno.env.get('SUPABASE_PUBLISHABLE_KEYS')!)['default'];
@@ -43,6 +47,10 @@ const MAX_IMAGE_CHARS = 3_000_000;
 const PLAQUE_PIPELINE_VERSION = `plaque-${PLAQUE_VERSION}`;
 // kind "pdf-plaques": JSON { pages, images } of up to 10 page JPEGs.
 const MAX_PLAQUE_CHARS = 8_000_000;
+// kind "instructions": JSON { instructions, fileName, files, tabs }
+// (instructionsSchema.ts) — the user's Custom Instructions for AI.
+const INSTRUCTIONS_PIPELINE_VERSION = `instr-${INSTRUCTIONS_VERSION}`;
+const MAX_INSTRUCTIONS_INPUT_CHARS = 60_000;
 
 // The kinds of input this reader takes: Excel sheets the rule reader
 // skipped (phase 1), text PDFs (phase 2), and pictures of a PDF's pages
@@ -130,17 +138,32 @@ Deno.serve(async (req) => {
   try { body = await req.json(); } catch { return json({ error: 'Invalid request body.' }, 400); }
   const fileName = typeof body.fileName === 'string' ? body.fileName.slice(0, 200) : 'file';
   const irText = typeof body.irText === 'string' ? body.irText : '';
+  const isInstructions = body.kind === 'instructions';
   const isHeading = body.kind === 'pdf-heading';
   const isPlaques = body.kind === 'pdf-plaques';
   const isPicture = isHeading || isPlaques;
   const isPdf = body.kind === 'pdf' || isPicture;
   const sheetNames = Array.isArray(body.sheetNames) ? body.sheetNames.filter((s): s is string => typeof s === 'string').slice(0, MAX_SHEETS) : [];
-  if (!irText || (!isPdf && sheetNames.length === 0)) return json({ error: 'Nothing to read.' }, 400);
+  if (!irText || (!isPdf && !isInstructions && sheetNames.length === 0)) return json({ error: 'Nothing to read.' }, 400);
+  const instructionsInput = isInstructions && irText.length <= MAX_INSTRUCTIONS_INPUT_CHARS ? parseInstructionsInput(irText) : null;
+  if (isInstructions && !instructionsInput) return json({ status: 'too-large', message: `Your instructions could not be read — please keep them under ${MAX_INSTRUCTIONS_CHARS} characters.` });
+  // Custom Instructions sent along with an Excel / PDF / Word reading.
+  const userInstructions = !isPicture && !isInstructions && typeof body.instructions === 'string'
+    ? body.instructions.trim().slice(0, MAX_INSTRUCTIONS_CHARS) : '';
   if (isHeading && (irText.length > MAX_IMAGE_CHARS || !irText.startsWith('/9j/'))) return json({ status: 'too-large', message: 'This page picture could not be read.' });
   const plaqueInput = isPlaques ? parsePlaqueInput(irText, MAX_PLAQUE_CHARS) : null;
   if (isPlaques && !plaqueInput) return json({ status: 'too-large', message: 'These page pictures could not be read.' });
-  if (!isPicture && irText.length > MAX_IR_CHARS) return json({ status: 'too-large', message: isPdf ? 'This PDF is too large for the AI reader — please add it by hand.' : 'These sheets are too large for the AI reader — please add them by hand.' });
-  const kind: Kind = isPlaques
+  if (!isPicture && !isInstructions && irText.length > MAX_IR_CHARS) return json({ status: 'too-large', message: isPdf ? 'This PDF is too large for the AI reader — please add it by hand.' : 'These sheets are too large for the AI reader — please add them by hand.' });
+  const kind: Kind = isInstructions
+    ? {
+      pipeline: INSTRUCTIONS_PIPELINE_VERSION, schema: INSTRUCTIONS_SCHEMA, system: INSTRUCTIONS_SYSTEM_PROMPT, escalate: false,
+      user: () => buildInstructionsUserText(instructionsInput!),
+      check: (v) => {
+        const c = validateInstructions(v, instructionsInput!);
+        return c.ok ? { ok: true, value: c.value, unsure: false } : c;
+      },
+    }
+    : isPlaques
     ? {
       pipeline: PLAQUE_PIPELINE_VERSION, schema: PLAQUE_SCHEMA, system: PLAQUE_SYSTEM_PROMPT, escalate: false,
       user: () => buildPlaqueUserParts(plaqueInput!.pages, plaqueInput!.images),
@@ -163,14 +186,16 @@ Deno.serve(async (req) => {
     }
     : isPdf
     ? {
-      pipeline: PDF_PIPELINE_VERSION, schema: PDF_SCHEMA, system: PDF_SYSTEM_PROMPT, user: buildPdfUserPrompt,
+      pipeline: PDF_PIPELINE_VERSION, schema: PDF_SCHEMA, system: PDF_SYSTEM_PROMPT,
+      user: (ir) => withInstructions(buildPdfUserPrompt(ir), fileName, userInstructions),
       check: (v) => {
         const c = validatePdfReading(v);
         return c.ok ? { ok: true, value: c.value, unsure: c.value.groups.some((g) => g.confidence === 'low') } : c;
       },
     }
     : {
-      pipeline: PIPELINE_VERSION, schema: MAPPING_SCHEMA, system: SYSTEM_PROMPT, user: buildUserPrompt,
+      pipeline: PIPELINE_VERSION, schema: MAPPING_SCHEMA, system: SYSTEM_PROMPT,
+      user: (ir) => withInstructions(buildUserPrompt(ir), fileName, userInstructions),
       check: (v) => {
         const c = validateMapping(v, sheetNames);
         return c.ok ? { ok: true, value: c.value, unsure: c.value.blocks.some((b) => b.confidence === 'low') } : c;
@@ -178,7 +203,9 @@ Deno.serve(async (req) => {
     };
   const PIPELINE = kind.pipeline;
 
-  const inputSha = await sha256Hex(irText);
+  // Instructions change the answer, so they are part of the cache key; with
+  // none, the key is the same as before.
+  const inputSha = await sha256Hex(userInstructions ? `${irText}\n\u0000instructions:${userInstructions}` : irText);
 
   // Same input, same pipeline -> same answer, no model call.
   const { data: cached } = await admin.from('file_read_runs')
@@ -239,7 +266,7 @@ Deno.serve(async (req) => {
     }
     if (!check.ok) {
       await finish({ status: 'failed', model: modelUsed, error: `${res.stopReason}: ${check.error}`.slice(0, 500) });
-      return json({ status: 'failed', runId, message: isPdf ? 'The AI could not read this PDF — please add the order by hand.' : 'The AI could not read these sheets — please add them by hand.' });
+      return json({ status: 'failed', runId, message: isInstructions ? 'The AI could not work out your instructions — the order was imported without them.' : isPdf ? 'The AI could not read this PDF — please add the order by hand.' : 'The AI could not read these sheets — please add them by hand.' });
     }
     const mapping = check.value;
     await finish({ status: 'succeeded', model: modelUsed, mapping });
