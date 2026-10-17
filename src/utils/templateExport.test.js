@@ -73,6 +73,15 @@ describe('planTemplateFill', () => {
     const plan = planTemplateFill({ plaques: [{ heading: 'Hari Anugerah\nKualiti 2026', award: 'Terbaik Pentaksiran', line: 'Tahun 1', eline2: 'naib johan', code: '', qty: 2 }] });
     expect(plan.umum).toEqual([{ heading: 'HARI ANUGERAH\nKUALITI 2026', award: 'TERBAIK PENTAKSIRAN', line: 'TAHUN 1', eline2: 'NAIB JOHAN', code: '', qty: 2 }]);
   });
+
+  it('does not repeat the TAJUK BESAR in the award', () => {
+    const plan = planTemplateFill({ plaques: [
+      { heading: 'Hari Anugerah Kualiti 2026', award: 'Hari Anugerah Kualiti 2026\nTerbaik Pentaksiran', line: 'Tahun 1', eline2: '', code: '', qty: 1 },
+      { heading: 'HARI ANUGERAH KUALITI 2026', award: 'HARI ANUGERAH KUALITI 2026', line: '', eline2: '', code: '', qty: 1 },
+      { heading: 'HARI ANUGERAH KUALITI 2026', award: 'HARI ANUGERAH KUALITI 2026 PRASEKOLAH', line: '', eline2: '', code: '', qty: 1 },
+    ] });
+    expect(plan.umum.map((p) => p.award)).toEqual(['TERBAIK PENTAKSIRAN', '', 'HARI ANUGERAH KUALITI 2026 PRASEKOLAH']);
+  });
 });
 
 describe('fillOrderTemplate', () => {
