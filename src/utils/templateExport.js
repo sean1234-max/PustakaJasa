@@ -13,6 +13,13 @@ import * as XLSX from 'xlsx';
 //   kelas): the awards down the SUBJEK column, each Tahun's classes in its
 //   own Nama Kelas list.
 // - "ALIRAN TAHUN n PPKI" plaques -> the PPKI sheet, the same way.
+// - LONJAKAN SAUJANA / KEHADIRAN PENUH -> their own sheets, one row per
+//   Tahun; TOKOH awards -> the TOKOH sheet, one row per honour; a subject
+//   for each Tahun (MATA PELAJARAN TERBAIK) -> MP THP 1 / MP THP 2; the
+//   Selempang tab -> SELEMPANG; Function Details and the Remark -> FRONT PG
+//   (Sean, 2026-10-17: the same sheets staff fill by hand). On those
+//   sheets a plaque under another TAJUK BESAR than the rest goes to ORDER
+//   LAIN-LAIN, which can say its own heading.
 // - everything else -> ORDER LAIN-LAIN, one row per plaque wording.
 // A second plaque code (or more rows than a sheet holds) gets a copy of the
 // sheet, "<name> (2)", the way staff already do it by hand.
@@ -30,6 +37,12 @@ const DRAWING_CT = 'application/vnd.openxmlformats-officedocument.drawing+xml';
 
 const SHEET_MP1 = 'MP THP 1 (Kalau ada kelas)';
 const SHEET_MP2 = 'MP THP 2 (Kalau ada kelas)';
+const SHEET_MP_PLAIN = { 1: 'MP THP 1', 2: 'MP THP 2' };
+const SHEET_LONJAKAN = 'LONJAKAN SAUJANA';
+const SHEET_KEHADIRAN = 'KEHADIRAN PENUH';
+const SHEET_TOKOH = 'TOKOH';
+const SHEET_SELEMPANG = 'SELEMPANG';
+const SHEET_FRONT = 'FRONT PG';
 const SHEET_PPKI = ['PPKI,PRA', 'PPKI'];
 const SHEET_UMUM = ['ORDER LAIN-LAIN', 'UMUM (万能)', 'UMUM'];
 const DEFAULT_CLASS_ROWS = 12;
@@ -77,6 +90,29 @@ function plaquesOf(categorized) {
 
 const YEAR_CLASS_RE = /^([1-6])\s+([A-Z][A-Z0-9 .&'’-]*)$/;
 const PPKI_RE = /^(ALIRAN\s+TAHUN\s+[1-6])\s*PPKI$/;
+const TAHUN_RE = /^TAHUN ([1-6])$/;
+const SUBJECT_TAHUN_RE = /^(?:TAHUN\s*)?([1-6])$/;
+
+// Which of the one-award sheets a plaque belongs on, by its tab's kind
+// (draftForm.js) or, for a tab read from a Word or PDF order, its award.
+function sheetKind(p) {
+  const award = up(p.award);
+  if (p.kind === 'LONJAKAN' || /\bLONJAKAN SAUJANA\b/.test(award)) return 'lonjakan';
+  if (p.kind === 'KEHADIRAN' || /\bKEHADIRAN PENUH\b/.test(award)) return 'kehadiran';
+  if (p.kind === 'TOKOH_SHEET' || /^TOKOH\b/.test(award)) return 'tokoh';
+  const subjectYear = up(p.line) && !/\bTAHUN\b/.test(up(p.line)) && SUBJECT_TAHUN_RE.exec(up(p.eline2));
+  if (subjectYear && (p.kind === 'MP1' || p.kind === 'MP2' || /\bMATA PELAJARAN\b/.test(award))) return 'mpPlain';
+  return null;
+}
+
+// The TAJUK BESAR most of these plaques carry: they share the sheet's one
+// title box; the rest go to ORDER LAIN-LAIN.
+function mainHeading(items) {
+  const n = new Map();
+  items.forEach((p) => n.set(p.heading, (n.get(p.heading) || 0) + p.qty));
+  const top = [...n].sort((a, b) => b[1] - a[1])[0]?.[0];
+  return { main: items.filter((p) => p.heading === top), rest: items.filter((p) => p.heading !== top) };
+}
 
 // Awards given to every class of the group alike (same classes, same count
 // each) — the only shape the Nama Kelas sheets can hold. An award that
@@ -111,7 +147,10 @@ export function planTemplateFill(categorized) {
   const umum = [];
   const mpGroups = new Map();
   const ppkiGroups = new Map();
+  const byKind = { lonjakan: [], kehadiran: [], tokoh: [], mpPlain: [] };
   plaques.forEach((p) => {
+    const kind = sheetKind(p);
+    if (kind) { byKind[kind].push(p); return; }
     const line = up(p.line);
     const yc = !p.eline2 && YEAR_CLASS_RE.exec(line);
     const pk = !p.eline2 && PPKI_RE.exec(line);
@@ -160,7 +199,44 @@ export function planTemplateFill(categorized) {
     ppki.push({ code: g.code, heading: g.heading, awards, levels, sample: [awards[0], firstItems[0].line] });
   });
 
-  return { mp, ppki, umum, notes, plaqueCount: plaques.reduce((a, p) => a + p.qty, 0) };
+  // LONJAKAN SAUJANA / KEHADIRAN PENUH: one award, a row per Tahun.
+  const tahunList = (items) => {
+    const { main, rest } = mainHeading(items);
+    toUmum(rest);
+    const award = main[0]?.award || '';
+    toUmum(main.filter((p) => p.award !== award || p.eline2));
+    const rows = main.filter((p) => p.award === award && !p.eline2).map(({ line, qty, code }) => ({ label: line, qty, code }));
+    return rows.length ? { heading: main[0].heading, award, rows } : null;
+  };
+  const lonjakan = tahunList(byKind.lonjakan);
+  const kehadiran = tahunList(byKind.kehadiran);
+
+  // TOKOH: one honour per row, its whole wording in the TOKOH column.
+  const tokohMain = mainHeading(byKind.tokoh);
+  toUmum(tokohMain.rest);
+  const tokoh = tokohMain.main.length ? {
+    heading: tokohMain.main[0].heading,
+    rows: tokohMain.main.map((p) => ({ name: [p.award, p.line, p.eline2].filter(Boolean).join('\n'), qty: p.qty, code: p.code })),
+  } : null;
+
+  // MP THP 1 / 2: a subject per row, its count under each Tahun; one sheet
+  // per award and code.
+  const plainGroups = new Map();
+  byKind.mpPlain.forEach((p) => {
+    const year = Number(SUBJECT_TAHUN_RE.exec(up(p.eline2))[1]);
+    const band = year <= 3 ? 1 : 2;
+    const key = `${band}\u0000${p.code}\u0000${p.heading}\u0000${p.award}`;
+    if (!plainGroups.has(key)) plainGroups.set(key, { band, code: p.code, heading: p.heading, award: p.award, subjects: new Map(), sample: [p.line, `TAHUN ${year}`], items: [] });
+    const g = plainGroups.get(key);
+    const subject = up(p.line);
+    if (!g.subjects.has(subject)) g.subjects.set(subject, new Map());
+    const years = g.subjects.get(subject);
+    years.set(year, (years.get(year) || 0) + p.qty);
+    g.items.push(p);
+  });
+  const mpPlain = [...plainGroups.values()];
+
+  return { mp, ppki, lonjakan, kehadiran, tokoh, mpPlain, umum, notes, plaqueCount: plaques.reduce((a, p) => a + p.qty, 0) };
 }
 
 // ---------------------------------------------------------------------------
@@ -247,6 +323,40 @@ function layoutPpki(ws) {
     classRows: level ? classCapacity(ws, rows, level.c) : DEFAULT_CLASS_ROWS,
     title: titleCells(ws), plak: plakValueCell(ws),
   };
+}
+
+// The title box under "TOLONG ISI DI SINI": one line per row.
+function titleRows(ws) {
+  const ins = findCells(ws, 'TOLONG ISI DI SINI')[0];
+  return ins ? (i) => addr(ins.r + 1 + i, ins.c) : null;
+}
+
+// A list under a header row (LONJAKAN SAUJANA / KEHADIRAN PENUH: TAHUN;
+// TOKOH: TOKOH), down to its TOTAL row: each row's label, KUANTITI and
+// JENIS PLAK columns.
+function layoutList(ws, label) {
+  const head = findCells(ws, label)[0];
+  if (!head) return null;
+  const col = (re) => findCells(ws, '', (t) => re.test(t)).find((p) => p.r === head.r)?.c;
+  const qty = col(/^KUANTITI$/);
+  const plak = col(/^JENIS PLAK$/);
+  if (qty == null || plak == null) return null;
+  const range = XLSX.utils.decode_range(ws['!ref']);
+  const rows = [];
+  for (let r = head.r + 1; r <= range.e.r; r++) {
+    if (/^TOTAL/.test(textAt(ws, r, head.c))) break;
+    rows.push({ r, label: textAt(ws, r, head.c) });
+  }
+  return { labelCol: head.c, qtyCol: qty, plakCol: plak, rows, title: titleRows(ws) };
+}
+
+function layoutSelempang(ws) {
+  const acara = findCells(ws, 'ACARA')[0];
+  if (!acara) return null;
+  const col = (label) => findCells(ws, label).find((p) => p.r === acara.r)?.c;
+  const warna = col('WARNA');
+  const qty = col('KUANTITI');
+  return warna == null || qty == null ? null : { firstRow: acara.r + 1, acaraCol: acara.c, warnaCol: warna, qtyCol: qty };
 }
 
 function layoutUmum(ws) {
@@ -532,6 +642,138 @@ export async function fillOrderTemplate(templateBuffer, categorized, {
         setCell(doc, addr(layout.dataRow + i, layout.qtyCol), qty);
       });
       count(name, g.levels.reduce((a, l) => a + l.qty, 0) * awards.length);
+    }
+  }
+
+  const toExtra = (items) => umumExtra.push(...items.map(({ heading, award, line, eline2, qty, code }) => ({ heading, award, line, eline2, qty, code })));
+  const writeTitle = (doc, at, lines) => at && lines.forEach((text, i) => setCell(doc, at(i), text));
+
+  // MP THP 1 / MP THP 2: subjects down the SUBJEK column (the template's
+  // own row for a subject it lists, else the next empty row), the count
+  // under each Tahun.
+  for (const g of plan.mpPlain) {
+    const base = findName(SHEET_MP_PLAIN[g.band]);
+    const ws = base && wb.Sheets[base];
+    const layout = ws && layoutMp(ws);
+    const years = new Set([...g.subjects.values()].flatMap((m) => [...m.keys()]));
+    const listed = new Map();
+    const free = [];
+    (layout?.awardRows || []).forEach((r) => {
+      const t = textAt(ws, r, layout.subjekCol);
+      if (!t) free.push(r);
+      else if (!listed.has(t)) listed.set(t, r);
+    });
+    const subjects = [...g.subjects.keys()];
+    const fits = layout && [...years].every((y) => layout.levelCols.has(y))
+      && subjects.filter((x) => !listed.has(x)).length <= free.length;
+    if (!fits) {
+      notes.push(`The ${g.award || 'subject'} plaques (${g.code || 'no code'}) don't fit the ${base || SHEET_MP_PLAIN[g.band]} sheet, so they went to ORDER LAIN-LAIN.`);
+      toExtra(g.items);
+      continue;
+    }
+    const { doc, name } = await sheetCopy(base);
+    writeTitle(doc, titleRows(ws), [g.heading, g.award, ...g.sample]);
+    if (layout.plak && g.code) setCell(doc, layout.plak, g.code);
+    let n = 0;
+    subjects.forEach((subject) => {
+      const r = listed.get(subject) ?? free.shift();
+      setCell(doc, addr(r, layout.subjekCol), subject);
+      g.subjects.get(subject).forEach((qty, year) => { setCell(doc, addr(r, layout.levelCols.get(year)), qty); n += qty; });
+    });
+    count(name, n);
+  }
+
+  // LONJAKAN SAUJANA / KEHADIRAN PENUH: each Tahun on its own row; another
+  // line ("TAHAP 1") in an empty row below them.
+  for (const [g, sheet] of [[plan.lonjakan, SHEET_LONJAKAN], [plan.kehadiran, SHEET_KEHADIRAN]]) {
+    if (!g) continue;
+    const base = findName(sheet);
+    const ws = base && wb.Sheets[base];
+    const layout = ws && layoutList(ws, 'TAHUN');
+    if (!layout) {
+      notes.push(`This template has no ${sheet} sheet, so those plaques went to ORDER LAIN-LAIN.`);
+      toExtra(g.rows.map((x) => ({ heading: g.heading, award: g.award, line: x.label, eline2: '', qty: x.qty, code: x.code })));
+      continue;
+    }
+    const { doc, name } = await sheetCopy(base);
+    writeTitle(doc, layout.title, [g.heading, g.award, g.rows[0].label]);
+    const taken = new Set();
+    let n = 0;
+    g.rows.forEach((x) => {
+      const label = up(x.label);
+      const slot = (TAHUN_RE.test(label) && layout.rows.find((row) => row.label === label && !taken.has(row.r)))
+        || layout.rows.find((row) => !row.label && !taken.has(row.r));
+      if (!slot) {
+        toExtra([{ heading: g.heading, award: g.award, line: x.label, eline2: '', qty: x.qty, code: x.code }]);
+        return;
+      }
+      taken.add(slot.r);
+      if (!slot.label && label) setCell(doc, addr(slot.r, layout.labelCol), label);
+      setCell(doc, addr(slot.r, layout.qtyCol), x.qty);
+      if (x.code) setCell(doc, addr(slot.r, layout.plakCol), x.code);
+      n += x.qty;
+    });
+    count(name, n);
+  }
+
+  // TOKOH: one honour per row; the template's sample honours this order
+  // doesn't have are emptied.
+  if (plan.tokoh) {
+    const base = findName(SHEET_TOKOH);
+    const ws = base && wb.Sheets[base];
+    const layout = ws && layoutList(ws, 'TOKOH');
+    const rowsOf = layout ? layout.rows : [];
+    const fit = plan.tokoh.rows.slice(0, rowsOf.length);
+    const over = plan.tokoh.rows.slice(rowsOf.length);
+    if (over.length) {
+      notes.push(`${over.length} TOKOH award(s) didn't fit the ${base || SHEET_TOKOH} sheet, so they went to ORDER LAIN-LAIN.`);
+      toExtra(over.map((x) => ({ heading: plan.tokoh.heading, award: x.name, line: '', eline2: '', qty: x.qty, code: x.code })));
+    }
+    if (fit.length) {
+      const { doc, name } = await sheetCopy(base);
+      writeTitle(doc, layout.title, [plan.tokoh.heading, fit[0].name]);
+      rowsOf.forEach(({ r, label }, i) => {
+        const x = fit[i];
+        if (!x) { if (label) setCell(doc, addr(r, layout.labelCol), ''); return; }
+        setCell(doc, addr(r, layout.labelCol), x.name);
+        setCell(doc, addr(r, layout.qtyCol), x.qty);
+        if (x.code) setCell(doc, addr(r, layout.plakCol), x.code);
+      });
+      count(name, fit.reduce((a, x) => a + x.qty, 0));
+    }
+  }
+
+  // SELEMPANG: ACARA / WARNA / KUANTITI, one row each.
+  const sashes = (categorized?.selempang || []).filter((x) => Number(x.qty) > 0 || x.acara);
+  if (sashes.length) {
+    const base = findName(SHEET_SELEMPANG);
+    const layout = base && layoutSelempang(wb.Sheets[base]);
+    if (!layout) notes.push(`This template has no SELEMPANG sheet — please add the ${sashes.length} selempang row(s) by hand.`);
+    else {
+      const { doc } = await sheetCopy(base);
+      sashes.forEach((x, i) => {
+        const r = layout.firstRow + i;
+        setCell(doc, addr(r, layout.acaraCol), up(x.acara));
+        setCell(doc, addr(r, layout.warnaCol), up(x.warna));
+        if (Number(x.qty) > 0) setCell(doc, addr(r, layout.qtyCol), Number(x.qty));
+      });
+      notes.push(`${sashes.length} selempang row(s) written into SELEMPANG.`);
+    }
+  }
+
+  // FRONT PG: who the order is from, and the Remark, beside each label.
+  const front = categorized?.front;
+  const frontName = front && findName(SHEET_FRONT);
+  if (frontName) {
+    const ws = wb.Sheets[frontName];
+    const fields = [[/^SALES\s*:/, front.sales], [/^SEKOLAH\s*:/, front.sekolah], [/^CIKGU\s*\/\s*NO\.?\s*TEL\s*:/, front.cikgu], [/^REMARK\s*:/, front.remark]]
+      .filter(([, value]) => String(value || '').trim());
+    if (fields.length) {
+      const { doc } = await sheetCopy(frontName);
+      fields.forEach(([re, value]) => {
+        const at = findCells(ws, '', (t) => re.test(t))[0];
+        if (at) setCell(doc, addr(at.r, at.c + 1), String(value).trim().toUpperCase());
+      });
     }
   }
 

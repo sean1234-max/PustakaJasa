@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import fs from 'fs';
 import * as XLSX from 'xlsx';
 import { DOMParser, XMLSerializer } from '@xmldom/xmldom';
 import { fillOrderTemplate, planTemplateFill } from './templateExport';
@@ -116,5 +117,52 @@ describe('fillOrderTemplate', () => {
     expect(wb.SheetNames).toContain('ORDER LAIN-LAIN (2)');
     expect(v(wb, 'ORDER LAIN-LAIN (2)', 'C13')).toBe('ANUGERAH 4\nTAHUN 1');
     expect(res.placed).toEqual({ 'ORDER LAIN-LAIN': 3, 'ORDER LAIN-LAIN (2)': 2 });
+  });
+});
+
+describe('fillOrderTemplate, the one-award sheets (the real template)', () => {
+  const H = 'Hari Anugerah Kualiti 2026';
+  const P = (o) => ({ heading: H, line: '', eline2: '', code: '', qty: 1, ...o });
+  const template = () => fs.readFileSync('public/templates/FORM-ANUGERAH.xlsx');
+  const input = {
+    plaques: [
+      ...['BAHASA MELAYU', 'SEJARAH'].flatMap((s) => [4, 5].map((y) => P({ award: 'Mata Pelajaran Terbaik', line: s, eline2: `Tahun ${y}`, code: 'PKF 266' }))),
+      P({ kind: 'MP2', award: 'MATA PELAJARAN TERBAIK', line: 'Kimia', eline2: '6', code: 'PKF 266' }),
+      P({ kind: 'LONJAKAN', award: 'LONJAKAN SAUJANA', line: 'TAHUN 4', qty: 9, code: 'CPH / C' }),
+      P({ kind: 'LONJAKAN', award: 'LONJAKAN SAUJANA', line: 'Tahap 2', qty: 3, code: 'CPH / C' }),
+      P({ kind: 'KEHADIRAN', award: 'KEHADIRAN PENUH', line: 'TAHUN 6', qty: 4, code: 'PKC 263' }),
+      P({ kind: 'TOKOH_SHEET', award: 'TOKOH AKADEMIK\nTAHAP 1', qty: 2, code: 'W038 / B' }),
+      P({ award: 'Tokoh Sukan', qty: 2, code: 'SR-116 A / RED' }),
+      P({ award: 'Tokoh Nilam', line: 'Tahap 2', heading: `SK X\n${H}`, code: '4942' }),
+      P({ award: 'Terbaik PBD', line: 'Tahun 1', qty: 45, code: 'CPH / C' }),
+    ],
+    selempang: [{ acara: 'Nilam', warna: 'MERAH', qty: 2 }],
+    front: { sales: 'Sean', sekolah: 'SK Test', cikgu: 'Pn A / 012-3456789', remark: 'Hamper: GST 25 A x14' },
+  };
+
+  it('puts each award on its own sheet, the way staff fill the form', async () => {
+    const res = await fillOrderTemplate(template(), input, { DOMParser, XMLSerializer });
+    const wb = read(res.buffer);
+    // MP THP 2: the template's own subject rows, a new one in an empty row.
+    expect([v(wb, 'MP THP 2', 'B3'), v(wb, 'MP THP 2', 'B4'), v(wb, 'MP THP 2', 'B5'), v(wb, 'MP THP 2', 'B6')])
+      .toEqual(['HARI ANUGERAH KUALITI 2026', 'MATA PELAJARAN TERBAIK', 'BAHASA MELAYU', 'TAHUN 4']);
+    expect([v(wb, 'MP THP 2', 'B10'), v(wb, 'MP THP 2', 'C10'), v(wb, 'MP THP 2', 'D10')]).toEqual([1, 1, undefined]);
+    expect([v(wb, 'MP THP 2', 'A21'), v(wb, 'MP THP 2', 'B21')]).toEqual(['SEJARAH', 1]);
+    expect([v(wb, 'MP THP 2', 'A26'), v(wb, 'MP THP 2', 'D26')]).toEqual(['KIMIA', 1]);
+    expect(v(wb, 'MP THP 2', 'B36')).toBe('PKF 266');
+    // LONJAKAN SAUJANA: its Tahun row; another line in an empty row.
+    expect([v(wb, 'LONJAKAN SAUJANA', 'C3'), v(wb, 'LONJAKAN SAUJANA', 'B10'), v(wb, 'LONJAKAN SAUJANA', 'C10')]).toEqual(['LONJAKAN SAUJANA', 9, 'CPH / C']);
+    expect([v(wb, 'LONJAKAN SAUJANA', 'A13'), v(wb, 'LONJAKAN SAUJANA', 'B13')]).toEqual(['TAHAP 2', 3]);
+    expect([v(wb, 'KEHADIRAN PENUH', 'B13'), v(wb, 'KEHADIRAN PENUH', 'C13')]).toEqual([4, 'PKC 263']);
+    // TOKOH: the template's sample honours are replaced.
+    expect([v(wb, 'TOKOH', 'A7'), v(wb, 'TOKOH', 'D7'), v(wb, 'TOKOH', 'A8'), v(wb, 'TOKOH', 'A9')])
+      .toEqual(['TOKOH AKADEMIK\nTAHAP 1', 2, 'TOKOH SUKAN', undefined]);
+    // Another TAJUK BESAR: ORDER LAIN-LAIN, with its own heading.
+    expect([v(wb, 'ORDER LAIN-LAIN', 'C14'), v(wb, 'ORDER LAIN-LAIN', 'B15'), v(wb, 'ORDER LAIN-LAIN', 'C15')])
+      .toEqual(['TERBAIK PBD\nTAHUN 1', 'SK X\nHARI ANUGERAH KUALITI 2026', 'TOKOH NILAM\nTAHAP 2']);
+    expect([v(wb, 'SELEMPANG', 'A5'), v(wb, 'SELEMPANG', 'B5'), v(wb, 'SELEMPANG', 'C5')]).toEqual(['NILAM', 'MERAH', 2]);
+    expect([v(wb, 'FRONT PG', 'B1'), v(wb, 'FRONT PG', 'B2'), v(wb, 'FRONT PG', 'B4'), v(wb, 'FRONT PG', 'B32')])
+      .toEqual(['SEAN', 'SK TEST', 'PN A / 012-3456789', 'HAMPER: GST 25 A X14']);
+    expect(Object.values(res.placed).reduce((a, n) => a + n, 0)).toBe(res.plaqueCount);
   });
 });
