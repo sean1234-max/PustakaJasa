@@ -1429,22 +1429,43 @@ function parseAliranKelasSheet(ws) {
 // LONJAKAN SAUJANA / KEHADIRAN PENUH — identical shape: "TAHUN | KUANTITI |
 // JENIS PLAK | HARGA" down the left, one KUANTITI (and its OWN Jenis Plak)
 // per TAHUN 1-6. Lands in the matching plakPerRow list category (catalog.js).
-function parseTahunPlakRowSheet(ws) {
+// `allowNoTahun` (the fixed-name sheets only): a school that deleted the
+// TAHUN column — just "KUANTITI/QTY | JENIS PLAK" under its own heading
+// lines ("ANUGERAH INSPIRASI MURID" / "TAHAP 1") — reads as blank-TAHUN rows,
+// the heading lines staying the plaque's own wording.
+const NO_TAHUN_HEADERS = ['KUANTITI', 'QTY', 'JENIS PLAK', 'HARGA', 'HARGA PER UNIT', 'TOTAL HARGA'];
+
+function parseTahunPlakRowSheet(ws, { allowNoTahun = false } = {}) {
   const range = sheetRange(ws);
-  const tahunH = findLabelCells(ws, range, ['TAHUN'])[0];
-  if (!tahunH) return null;
-  const kuantitiH = findLabelCells(
+  const rowBand = (row) => ({ r1: row, r2: row, c1: range.c1, c2: range.c2 });
+  let tahunH = findLabelCells(ws, range, ['TAHUN'])[0];
+  let kuantitiH = tahunH && findLabelCells(
     ws, { r1: tahunH.row, r2: tahunH.row, c1: tahunH.col + 1, c2: range.c2 }, ['KUANTITI'],
   )[0];
-  if (!kuantitiH) return null;
-  const jpH = findLabelCells(
+  let jpH = kuantitiH && findLabelCells(
     ws, { r1: tahunH.row, r2: tahunH.row, c1: kuantitiH.col + 1, c2: range.c2 }, ['JENIS PLAK'],
   )[0];
+  if (!kuantitiH && allowNoTahun) {
+    // Only those columns on the header row: any other one (a NAMA list) is a
+    // layout this reader would misread, so it's reported instead.
+    const onlyPlakQty = (row) => {
+      const texts = [];
+      for (let c = range.c1; c <= range.c2; c++) if (cellText(ws, row, c)) texts.push(cellText(ws, row, c).trim().toUpperCase());
+      return texts.includes('JENIS PLAK') && texts.every((t) => NO_TAHUN_HEADERS.includes(t));
+    };
+    kuantitiH = findLabelCells(ws, range, ['KUANTITI', 'QTY']).find((h) => onlyPlakQty(h.row));
+    if (kuantitiH) {
+      tahunH = null;
+      jpH = findLabelCells(ws, rowBand(kuantitiH.row), ['JENIS PLAK'])[0];
+    }
+  }
+  if (!kuantitiH) return null;
+  const headerRow = kuantitiH.row;
 
   const tahunRows = [];
-  for (let r = tahunH.row + 1; r <= range.r2; r++) {
-    const label = cellText(ws, r, tahunH.col);
-    if (isTotalLabel(label)) break;
+  for (let r = headerRow + 1; r <= range.r2; r++) {
+    const label = tahunH ? cellText(ws, r, tahunH.col) : '';
+    if (isTotalLabel(tahunH ? label : cellText(ws, r, kuantitiH.col))) break;
     const qty = cellNum(ws, r, kuantitiH.col);
     const jenisPlak = jpH ? cellText(ws, r, jpH.col) : '';
     // A blank TAHUN label doesn't mean an unused row — a teacher can leave it
@@ -1464,12 +1485,12 @@ function parseTahunPlakRowSheet(ws) {
   if (tahunRows.length === 0) return null;
 
   const instructionCell = findLabelCells(
-    ws, { r1: range.r1, r2: tahunH.row, c1: range.c1, c2: range.c2 }, ['TOLONG ISI DI SINI'],
+    ws, { r1: range.r1, r2: headerRow, c1: range.c1, c2: range.c2 }, ['TOLONG ISI DI SINI'],
   )[0];
   const titleCol = instructionCell ? instructionCell.col : range.c1;
   const linesStart = (instructionCell?.row || 0) + 1;
   const lines = readRefLinesInBand(
-    ws, { r1: linesStart, r2: tahunH.row - 1, c1: titleCol, c2: titleCol }, linesStart, tahunH.row - 1,
+    ws, { r1: linesStart, r2: headerRow - 1, c1: titleCol, c2: titleCol }, linesStart, headerRow - 1,
     undefined, !!instructionCell,
   );
 
@@ -2217,7 +2238,7 @@ export function parseFormAnugerahExcel(arrayBuffer) {
   [['LONJAKAN SAUJANA'], ['KEHADIRAN PENUH']].forEach(([name]) => {
     const sheet = findSheet(wb, name);
     if (!sheet) return;
-    const parsed2 = parseTahunPlakRowSheet(sheet);
+    const parsed2 = parseTahunPlakRowSheet(sheet, { allowNoTahun: true });
     if (parsed2) { parsed2.sourceSheet = name; allSections.push(parsed2); } else unread(sheet);
   });
 
