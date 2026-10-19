@@ -4,6 +4,7 @@ import JSZip from 'jszip';
 import * as XLSX from 'xlsx';
 import { DOMParser, XMLSerializer } from '@xmldom/xmldom';
 import { fillOrderTemplate, planTemplateFill } from './templateExport';
+import { parseFormAnugerahExcel } from './excelImport';
 
 // A made-up, cut-down FORM ANUGERAH: the labels the filler looks for, in
 // the same places as the real template.
@@ -255,5 +256,26 @@ describe('fillOrderTemplate, TOKOH NAMA MURID and line breaks', () => {
     const zip = await JSZip.loadAsync(res.buffer);
     expect(await zip.file('xl/workbook.xml').async('string')).toMatch(/activeTab="0"/);
     expect(await zip.file('xl/worksheets/sheet14.xml').async('string')).not.toContain('tabSelected');
+  });
+  it('writes a tab of its own on a sheet named after it, in its format', async () => {
+    const T = (tab, kind, award, line, code, qty) => ({ kind, tab, heading: 'MAJLIS', award, line, eline2: '', code, qty });
+    const plaques = [
+      T('IKON PENGAWAS', 'TOKOH_SHEET', 'IKON PENGAWAS', 'TAHUN 3', 'PK 261 / A', 2),
+      T('IKON PENGAWAS', 'TOKOH_SHEET', 'IKON PENGAWAS', 'TAHUN 4', 'PK 261 / A', 2),
+      T('ANUGERAH PENGHARGAAN PENGAWAS PUSAT SUMBER SEKOLAH', 'UMUM', 'ANUGERAH\nPENGHARGAAN PENGAWAS PUSAT SUMBER SEKOLAH', 'TAHUN 6', 'CPH / A', 36),
+      T('', 'TOKOH_SHEET', 'TOKOH NILAM', 'LELAKI', 'W038 / B', 1),
+    ];
+    const res = await fillOrderTemplate(fs.readFileSync('public/templates/FORM-ANUGERAH.xlsx'), { plaques }, { DOMParser, XMLSerializer });
+    const wb = XLSX.read(res.buffer, { type: 'array' });
+    const shown = wb.Workbook.Sheets.filter((s) => !s.Hidden).map((s) => s.name);
+    expect(shown).toEqual(['FRONT PG', 'TOKOH', 'IKON PENGAWAS', 'ANUGERAH PENGHARGAAN PENGAWAS P']);
+    expect(wb.SheetNames.at(-1)).toBe('SENARAI PLAK');
+    expect([wb.Sheets['IKON PENGAWAS'].A7?.v, wb.Sheets['IKON PENGAWAS'].B8?.v]).toEqual(['IKON PENGAWAS', 'TAHUN 4']);
+    expect(wb.Sheets.TOKOH.A7?.v).toBe('TOKOH NILAM');
+    expect(res.plaqueCount).toBe(41);
+    // Read back, each is a tab of the same name.
+    const back = parseFormAnugerahExcel(res.buffer);
+    const tabs = Object.values(back.categorized).flat().map((sec) => sec.sourceSheet);
+    expect(tabs).toEqual(expect.arrayContaining(['TOKOH', 'IKON PENGAWAS', 'ANUGERAH PENGHARGAAN PENGAWAS P']));
   });
 });
