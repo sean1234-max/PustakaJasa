@@ -35,8 +35,19 @@ export function reservedCrystalsOf(order) {
     .map((g) => `${g.jenisPlak.replace(/^CRYSTAL \/\s*/i, '')} (${g.count})`);
 }
 
-function ArtworkStatus({ order, onConfirmArtwork }) {
+// Manual (0102): sent on without a confirmed preview, a designer draws it.
+export const MANUAL_ARTWORK_NOTE = 'MANUAL — Need designer design';
+
+function ArtworkStatus({ order, onConfirmArtwork, onManualArtwork }) {
   const [error, setError] = useState('');
+  if (order.artworkConfirmedAt && order.artworkManual) {
+    const by = [order.artworkConfirmedByName, order.artworkConfirmedByRole].filter(Boolean).join(', ');
+    return (
+      <p className="hint-text" style={{ color: '#b45309', fontWeight: 600 }}>
+        {MANUAL_ARTWORK_NOTE}{by ? ` (${by})` : ''} · {formatDate(toMalaysiaDay(order.artworkConfirmedAt))}
+      </p>
+    );
+  }
   if (order.artworkConfirmedAt) {
     const by = order.artworkConfirmedByName === 'Existing order' ? 'existing order'
       : [order.artworkConfirmedByName, order.artworkConfirmedByRole].filter(Boolean).join(', ');
@@ -51,13 +62,18 @@ function ArtworkStatus({ order, onConfirmArtwork }) {
       <p className="hint-text" style={{ color: '#b45309', fontWeight: 600, margin: 0 }}>
         Artwork not confirmed yet — the crystals can&apos;t be made until it is.
       </p>
-      {onConfirmArtwork && (
-        <ConfirmButton
-          label="Confirm Artwork" style={{ marginTop: 'var(--space-2)' }}
-          question="Is the crystal artwork in the preview below correct (design, words, logo)?"
-          confirmLabel="Yes, confirm" cancelLabel="Not yet"
-          onConfirm={async () => setError((await onConfirmArtwork()) || '')}
-        />
+      {(onConfirmArtwork || onManualArtwork) && (
+        <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-2)', flexWrap: 'wrap' }}>
+          {onConfirmArtwork && (
+            <ConfirmButton
+              label="Confirm Artwork"
+              question="Is the crystal artwork in the preview below correct (design, words, logo)?"
+              confirmLabel="Yes, confirm" cancelLabel="Not yet"
+              onConfirm={async () => setError((await onConfirmArtwork()) || '')}
+            />
+          )}
+          {onManualArtwork && <ManualArtworkButton onManual={async () => setError((await onManualArtwork()) || '')} />}
+        </div>
       )}
       {error && <p className="hint-text" style={{ color: '#b91c1c' }}>{error}</p>}
     </div>
@@ -67,7 +83,20 @@ function ArtworkStatus({ order, onConfirmArtwork }) {
 // makeAi: bump it to have the preview open every crystal in Illustrator (Production's Generate AI
 // File), saved in makeAiFolder (the plaques' OUTPUT folder) when given.
 // onMakeAiSent: called once the crystals of a makeAi are handed to the helper (or couldn't be).
-export default function CrystalPreview({ order, role = 'view', selected = null, onConfirmArtwork = null, showArtwork = true, canMake = true, makeAi = 0, makeAiFolder = '', onMakeAiSent = null }) {
+// Manual: send the crystal to Production without confirming the preview — a
+// designer draws it (Sean, 2026-10-19).
+export function ManualArtworkButton({ onManual, style }) {
+  return (
+    <ConfirmButton
+      label="Manual" className="btn btn-secondary" style={style}
+      question="Send the crystal to Production without confirming the preview? Production will see it needs a designer to design it."
+      confirmLabel="Yes, manual" cancelLabel="Not yet"
+      onConfirm={onManual}
+    />
+  );
+}
+
+export default function CrystalPreview({ order, role = 'view', selected = null, onConfirmArtwork = null, onManualArtwork = null, showArtwork = true, canMake = true, makeAi = 0, makeAiFolder = '', onMakeAiSent = null }) {
   const frame = useRef(null);
   const sentRef = useRef(onMakeAiSent);
   sentRef.current = onMakeAiSent;
@@ -120,7 +149,7 @@ export default function CrystalPreview({ order, role = 'view', selected = null, 
         Each crystal in this order, drawn on its design with the words filled in.
         {role === 'teacher' && ' To change the font, size or place of a crystal\'s words, pick it and click ✎ Edit, then Save for this order only. To change the words, use Edit Order.'}
       </p>
-      {showArtwork && <ArtworkStatus order={order} onConfirmArtwork={onConfirmArtwork} />}
+      {showArtwork && <ArtworkStatus order={order} onConfirmArtwork={onConfirmArtwork} onManualArtwork={onManualArtwork} />}
       {reserved.length > 0 && (
         <p className="hint-text" style={{ color: '#8a6d00', fontWeight: 600 }}>
           Still RESERVED (no name yet) — not shown until the names are in: {reserved.join(', ')}.

@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import { useAppState } from '../state/useAppState';
+import { ManualArtworkButton } from '../components/CrystalPreview';
 import { statusPillStyle, isAddonInFlight, invoiceLabel, invoiceSource } from '../data/catalog';
 import { matchesOrderSearch } from '../utils/orderSearch';
 import OrderUrgentBadge from '../components/OrderUrgentBadge';
@@ -26,7 +27,7 @@ const FILTERS = [
 ];
 
 export default function SalesDashboard() {
-  const { state, openAmend, openAddOn, confirmArtwork } = useAppState();
+  const { state, openAmend, openAddOn, confirmArtwork, manualArtwork } = useAppState();
   const [artworkErr, setArtworkErr] = useState({});
   const navigate = useNavigate();
   const [filter, setFilter] = useState(FILTERS[0].status);
@@ -219,6 +220,15 @@ export default function SalesDashboard() {
                           confirmLabel="Yes, confirm" cancelLabel="Not yet"
                           onConfirm={async () => {
                             const err = await confirmArtwork(ord.id);
+                            setArtworkErr((e) => ({ ...e, [ord.id]: err || '' }));
+                          }}
+                        />
+                      )}
+                      {needsArtwork && (
+                        <ManualArtworkButton
+                          style={{ flex: 1 }}
+                          onManual={async () => {
+                            const err = await manualArtwork(ord.id);
                             setArtworkErr((e) => ({ ...e, [ord.id]: err || '' }));
                           }}
                         />

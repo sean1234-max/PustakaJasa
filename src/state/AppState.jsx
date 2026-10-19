@@ -24,7 +24,7 @@ import { buildCategoryCartItems } from './categoryCartItems';
 import { AppStateContext } from './AppStateContext';
 import { saveCrystalDraft, clearCrystalDraft } from '../lib/crystalDraft';
 import {
-  fetchOrders, fetchOrderById, insertOrder, updateOrder, approveAddonAsOrder, nextOrderSeq, fetchAllSalesmen, reassignOrderSalesman,
+  fetchOrders, fetchOrderById, markArtworkManual, insertOrder, updateOrder, approveAddonAsOrder, nextOrderSeq, fetchAllSalesmen, reassignOrderSalesman,
   findPossibleDuplicates,
 } from '../lib/ordersApi';
 import {
@@ -2932,6 +2932,24 @@ export function AppStateProvider({ children }) {
     return null;
   }, [patch]);
 
+  // Manual (Sean, 2026-10-19): the salesman sends the crystal on without confirming the
+  // preview — Production sees it needs a designer (0102). Same return as confirmArtwork.
+  const manualArtwork = useCallback(async (orderId) => {
+    try {
+      await markArtworkManual(orderId);
+    } catch (err) {
+      console.error('Failed to mark the artwork manual in Supabase:', err);
+      return describeOrderWriteError(err, 'update');
+    }
+    try {
+      const fresh = await fetchOrderById(orderId);
+      if (fresh) patch((st) => ({ orders: st.orders.map((o) => (o.id === orderId ? fresh : o)) }));
+    } catch (err) {
+      console.error('Marked manual, but could not reload the order:', err);
+    }
+    return null;
+  }, [patch]);
+
   // Production or the order's salesman types the real names over its "Reserved" rows
   // (0097, Sean 2026-10-17). names: { rowId: name }. Returns an error message, or null.
   const fillReservedNames = useCallback(async (orderId, names) => {
@@ -3371,7 +3389,7 @@ export function AppStateProvider({ children }) {
     markTypingDone,
     updateReferenceOrder,
     markReviewDone,
-    markAddOnReviewed, saveProductionPrices, markKivDone, markKivProductionDone, confirmArtwork, fillReservedNames,
+    markAddOnReviewed, saveProductionPrices, markKivDone, markKivProductionDone, confirmArtwork, manualArtwork, fillReservedNames,
     openProductionEdit,
     loadExcelIntoProductionEdit,
     saveProductionEdit,
