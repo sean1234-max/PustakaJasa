@@ -2899,7 +2899,7 @@ export function AppStateProvider({ children }) {
       flashProductionToast('This order’s KIV & ARTWORK part is not ready to be marked done.');
       return;
     }
-    if (!order.invoiceId) {
+    if (!order.invoiceId && !order.parentOrderId) {
       flashProductionToast('Waiting for Store Admin to assign an Invoice Number before this can be marked done.');
       return;
     }
@@ -2925,7 +2925,8 @@ export function AppStateProvider({ children }) {
       flashProductionToast('This order is not ready to be marked done.');
       return;
     }
-    if (slice.isDefault && !order.invoiceId) {
+    // a Tambahan's own order (0091) is billed under its original's invoice
+    if (slice.isDefault && !order.invoiceId && !order.parentOrderId) {
       flashProductionToast('Waiting for Store Admin to assign an Invoice Number before this can be marked done.');
       return;
     }

@@ -1069,6 +1069,14 @@ export function invoiceLabel(order, invoiceId = order?.invoiceId) {
   return `${invoiceId} (${Number(part('day'))}/${Number(part('month'))}/${part('year')})`;
 }
 
+// A Tambahan's own order (0091) has no Invoice Number of its own: it is billed
+// under its original order's (Sean, 2026-10-19). Its original, when loaded,
+// stands in for it; any other order is itself.
+export function invoiceSource(order, orders) {
+  if (!order?.parentOrderId || order.invoiceId) return order;
+  return (orders || []).find((o) => o.id === order.parentOrderId) || order;
+}
+
 // Who entered the order's Invoice Number, when it wasn't Store Admin — e.g.
 // "Entered by Production (Siti)" (Production Manager can enter one, 0086).
 export function invoiceSetByNote(order) {

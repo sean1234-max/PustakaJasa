@@ -6,7 +6,7 @@ import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import OrderPrintout from '../components/OrderPrintout';
 import AddOnTag from '../components/AddOnTag';
 import { useAppState } from '../state/useAppState';
-import { STATUS_STAGES, statusPillStyle, formatDate, standardUnitPrice, toMalaysiaDay, isAddonInFlight, addonStageText, invoiceLabel } from '../data/catalog';
+import { STATUS_STAGES, statusPillStyle, formatDate, standardUnitPrice, toMalaysiaDay, isAddonInFlight, addonStageText, invoiceLabel, invoiceSource } from '../data/catalog';
 import CancelOrderControl from '../components/CancelOrderControl';
 import { reconstructBlocksForCategory } from '../utils/computeBlocks';
 import { splitOrderCategories } from '../utils/exportCsv';
@@ -98,7 +98,7 @@ export default function OrderDetails() {
   if (!order) return null;
 
   const idx = STATUS_STAGES.indexOf(sliceStatus);
-  const invoiceIdLabel = idx >= 2 ? (invoiceLabel(order, viewInvoiceId || order.invoiceId) || `INV-${order.id.replace('ORD-', '')}`) : '-';
+  const invoiceIdLabel = idx >= 2 ? ((viewInvoiceId ? invoiceLabel(order, viewInvoiceId) : invoiceLabel(invoiceSource(order, state.orders))) || `INV-${order.id.replace('ORD-', '')}`) : '-';
 
   const totalQty = priceRows.reduce((sum, it) => sum + (Number(it.qty) || 0), 0);
   const totalHarga = priceRows.reduce((sum, it) => sum + it.harga, 0);
@@ -258,7 +258,7 @@ export default function OrderDetails() {
         {/* Print-only — see the "Print Order" button above. */}
         <OrderPrintout
           original={originalOrder}
-          order={order} invoiceId={viewInvoiceId || order.invoiceId} printedAt={order.printedAt}
+          order={order} invoiceId={viewInvoiceId || invoiceSource(order, state.orders).invoiceId} printedAt={order.printedAt}
           priceTable={{ rows: priceRows, plakCatalog: state.plakCatalog, totalQty, totalHarga, priceAdjusted }}
           catBlockGroups={catBlockGroups}
         />

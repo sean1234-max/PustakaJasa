@@ -11,7 +11,7 @@ import OrderPrintout from '../components/OrderPrintout';
 import AddOnTag from '../components/AddOnTag';
 import { duplicateReasons } from '../utils/duplicateOrders';
 import { useAppState } from '../state/useAppState';
-import { statusPillStyle, formatDate, MANUAL_MAX_QTY, shipmentDatePassed, toMalaysiaDay, malaysiaToday, isReviewed, isAddonInFlight, invoiceLabel, invoiceSetByNote, resolveCategory } from '../data/catalog';
+import { statusPillStyle, formatDate, MANUAL_MAX_QTY, shipmentDatePassed, toMalaysiaDay, malaysiaToday, isReviewed, isAddonInFlight, invoiceLabel, invoiceSetByNote, invoiceSource, resolveCategory } from '../data/catalog';
 import { redLinesProblem, RED_LINES_SUFFIX } from '../utils/redLines';
 import { reconstructOrderDetailGroups, reconstructBlocksForCategory, noopUpdaters } from '../utils/computeBlocks';
 import { getExportableCategories, splitOrderCategories, getOrderJenisPlakGroups, getPlakProductionMode, summarizeRowsForManual, buildCsvRows, rowsToCsv, buildCategoryCsvFilename, combineCsvRows, buildCombinedCsvFilename, validateExport, getInvoiceIdForJenisPlak, getPartialSplitNotes, needsKiv, kivInProduction, kivParts, isCrystalCode, firstKivCategory, crystalWithPlak, lateNamesOrder, hasLateNames } from '../utils/exportCsv';
@@ -585,7 +585,7 @@ export default function ProductionOrderDetail() {
             <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Invoice</div>
             <div style={{ marginTop: 'var(--space-2)' }}>
               <div className="dim">Invoice Number</div>
-              <div>{invoiceLabel(order, isFiltered ? viewInvoiceId : order.invoiceId) || 'Not assigned yet — Store Admin handles this.'}</div>
+              <div>{(isFiltered ? invoiceLabel(order, viewInvoiceId) : invoiceLabel(invoiceSource(order, state.orders))) || 'Not assigned yet — Store Admin handles this.'}</div>
               {order.invoiceId && invoiceSetByNote(order) && <div className="dim">{invoiceSetByNote(order)}</div>}
               <ProductionInvoiceEntry order={order} />
             </div>
@@ -811,7 +811,7 @@ export default function ProductionOrderDetail() {
         {/* Print-only — see "Print Order" on the Summary page. */}
         <OrderPrintout
           original={originalOrder}
-          order={order} invoiceId={isFiltered ? viewInvoiceId : order.invoiceId} printedAt={printedAt}
+          order={order} invoiceId={isFiltered ? viewInvoiceId : invoiceSource(order, state.orders).invoiceId} printedAt={printedAt}
           urgent={order.urgent} stamp={stamp} showSales showRemark
           priceTable={{
             rows: visibleItems, plakCatalog: state.plakCatalog, totalQty, totalHarga: effectiveTotalAmount,

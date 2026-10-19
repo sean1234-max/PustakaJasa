@@ -8,7 +8,6 @@ import { getOrderInvoiceSlices } from '../utils/orderBatches';
 import { fetchMyAssignedSalesmen, fetchAllSalesmen } from '../lib/ordersApi';
 import { prioritizeUrgentOrders, URGENT_ORDERS_SHEET_URL } from '../utils/urgentOrder';
 import OrderUrgentBadge from '../components/OrderUrgentBadge';
-import AddOnTag from '../components/AddOnTag';
 
 // Store Admin (formerly "Invoicing Department" — role renamed 0047) can see
 // and act on every order, including ones still 'Reviewing Order' — a
@@ -43,7 +42,11 @@ export default function StoreAdminDashboard() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
 
-  const orders = state.orders || EMPTY_ORDERS;
+  // A Tambahan's own order (parent_order_id, 0091) is billed in AutoCount and
+  // never gets an Invoice Number here, so Store Admin doesn't list it at all
+  // (Sean, 2026-10-19).
+  const allOrders = state.orders || EMPTY_ORDERS;
+  const orders = useMemo(() => allOrders.filter((o) => !o.parentOrderId), [allOrders]);
   const isManager = !!state.isStoreAdminManager;
 
   // A split order (orders.invoice_groups, 0070) shows one card per invoice
@@ -178,7 +181,6 @@ export default function StoreAdminDashboard() {
                 <div>
                   <div className="order-card-label">Order ID</div>
                   <div className="order-card-id">{ord.id}</div>
-                  <AddOnTag order={ord} />
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
                   <OrderUrgentBadge urgent={ord.urgent} />

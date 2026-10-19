@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  invoiceSource,
   flattenPlakCatalog, standardUnitPrice, tahunRangeYears, invoiceLabel, invoiceSetByNote,
   stockZoneFor, getStockStatus, statusPillStyle, STATUS_STAGES, ORDER_STATUSES,
   shipmentDatePassed, resolveSelempangWarna, isKelasSubject, kelasListLabel,
@@ -401,5 +402,18 @@ describe('invoiceSetByNote', () => {
     expect(invoiceSetByNote({ invoiceSetByRole: 'production', invoiceSetByName: 'Siti' })).toBe('Entered by Production (Siti)');
     expect(invoiceSetByNote({ invoiceSetByRole: 'store_admin', invoiceSetByName: 'Amy' })).toBe('');
     expect(invoiceSetByNote({})).toBe('');
+  });
+});
+
+describe('invoiceSource', () => {
+  const original = { id: 'ORD-0051', invoiceId: 'DWI-1' };
+  const tambahan = { id: 'ORD-0082', parentOrderId: 'ORD-0051', invoiceId: null };
+  it("uses a Tambahan's original order", () => {
+    expect(invoiceSource(tambahan, [original, tambahan])).toBe(original);
+  });
+  it('keeps the order itself otherwise', () => {
+    expect(invoiceSource(original, [original])).toBe(original);
+    expect(invoiceSource(tambahan, [tambahan])).toBe(tambahan);
+    expect(invoiceSource({ ...tambahan, invoiceId: 'DWI-2' }, [original]).invoiceId).toBe('DWI-2');
   });
 });
