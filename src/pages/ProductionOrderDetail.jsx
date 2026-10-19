@@ -611,7 +611,10 @@ export default function ProductionOrderDetail() {
             {partialSplitNotes.map((note) => (
               <p key={note} className="hint-text" style={{ color: '#b45309', marginTop: 'var(--space-2)' }}>{note}</p>
             ))}
-            <CrystalPreview order={order} role="production" selected={pickedCrystal} makeAi={crystalMakeAi} makeAiFolder={buildCombinedCsvFilename(order).replace(/\.csv$/i, '')} onMakeAiSent={() => crystalSent.current?.()} />
+            {/* Reviewing a Tambahan: only its own crystals, nothing to confirm or make yet (as SalesOrderSummary). */}
+            {addonView
+              ? <CrystalPreview order={effectiveOrder} role="production" showArtwork={false} />
+              : <CrystalPreview order={order} role="production" selected={pickedCrystal} makeAi={crystalMakeAi} makeAiFolder={buildCombinedCsvFilename(order).replace(/\.csv$/i, '')} onMakeAiSent={() => crystalSent.current?.()} />}
 
             {selempangBlocks.length > 0 && (
               <div style={{ marginTop: 'var(--space-6)' }}>
