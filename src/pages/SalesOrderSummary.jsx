@@ -25,7 +25,7 @@ const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: f
 const KIV_FLASH_MS = 1700; // 3 flashes (index.css .tab-flash / .kiv-row-flash)
 
 export default function SalesOrderSummary() {
-  const { state, today, approveOrder, approveAddOn, rejectAddOn, recordPrint, ensureOrderLoaded, loadCorrectedExcelPreview, openAmend, openAddOn, confirmArtwork, fillReservedNames } = useAppState();
+  const { state, today, approveOrder, approveAddOn, rejectAddOn, recordPrint, ensureOrderLoaded, loadCorrectedExcelPreview, openAmend, openAddOn, confirmArtwork, manualArtwork, fillReservedNames } = useAppState();
   const { id } = useParams();
   const navigate = useNavigate();
   const order = state.orders.find((o) => o.id === id);
@@ -372,7 +372,7 @@ export default function SalesOrderSummary() {
                 hideCategory combineJenisPlak
                 canPick={isCrystalCode} onPick={setPickedCrystal} picked={pickedCrystal}
               />
-              <CrystalPreview order={order} role="view" selected={pickedCrystal} onConfirmArtwork={() => confirmArtwork(order.id)} />
+              <CrystalPreview order={order} role="view" selected={pickedCrystal} onConfirmArtwork={() => confirmArtwork(order.id)} onManualArtwork={() => manualArtwork(order.id)} />
               </>
               )}
               {/* SELEMPANG's rows (ACARA / WARNA / QTY) also show right here on the

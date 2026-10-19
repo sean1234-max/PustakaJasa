@@ -132,6 +132,7 @@ function fromDbOrder(row) {
     artworkConfirmedAt: row.artwork_confirmed_at || null,
     artworkConfirmedByName: row.artwork_confirmed_by_name || null,
     artworkConfirmedByRole: row.artwork_confirmed_by_role || null,
+    artworkManual: !!row.artwork_manual,
     parentOrderId: row.parent_order_id || null,
   };
 }
@@ -205,6 +206,14 @@ export async function approveAddonAsOrder(orderId, items, priceAdjusted) {
   const { data, error } = await supabase.rpc('approve_addon', { p_order_id: orderId, p_items: items, p_price_adjusted: priceAdjusted });
   if (error) throw error;
   return data;
+}
+
+// Manual crystal artwork (0102): confirmed for Production, drawn by a designer.
+// Its own write, so toDbOrder's inserts never send the column.
+export async function markArtworkManual(id) {
+  const { error } = await supabase.from('orders')
+    .update({ artwork_confirmed_at: new Date().toISOString(), artwork_manual: true }).eq('id', id);
+  if (error) throw error;
 }
 
 export async function updateOrder(id, patch) {

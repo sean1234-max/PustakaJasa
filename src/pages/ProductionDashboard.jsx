@@ -10,6 +10,7 @@ import { countReservedPlaques, needsKiv, kivParts, hasMainPart, kivInProduction,
 import { prioritizeUrgentOrders } from '../utils/urgentOrder';
 import OrderUrgentBadge from '../components/OrderUrgentBadge';
 import AddOnTag from '../components/AddOnTag';
+import { MANUAL_ARTWORK_NOTE } from '../components/CrystalPreview';
 import { matchesOrderSearch } from '../utils/orderSearch';
 import { duplicateSummary } from '../utils/duplicateOrders';
 import ProductionInvoiceEntry from '../components/ProductionInvoiceEntry';
@@ -302,6 +303,9 @@ export default function ProductionDashboard() {
               {kivPending && !addonCard && <div className="hint-text" style={{ margin: '4px 0 0', fontWeight: 600, color: '#8a6d00' }}>Waiting: {parts.join(' / ')}</div>}
               {isKivCard && parts.includes('CRYSTAL') && !ord.artworkConfirmedAt && (
                 <div className="hint-text" style={{ margin: '4px 0 0', fontWeight: 600, color: '#b45309' }}>Artwork not confirmed yet</div>
+              )}
+              {isKivCard && parts.includes('CRYSTAL') && ord.artworkConfirmedAt && ord.artworkManual && (
+                <div className="hint-text" style={{ margin: '4px 0 0', fontWeight: 600, color: '#b45309' }}>{MANUAL_ARTWORK_NOTE}</div>
               )}
 
               <div className="order-card-meta" style={{ gridTemplateColumns: '1fr' }}>
