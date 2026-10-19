@@ -225,4 +225,23 @@ describe('fillOrderTemplate, TOKOH NAMA MURID and line breaks', () => {
     const wb = read(res.buffer);
     expect([v(wb, 'TOKOH', 'D4'), v(wb, 'TOKOH', 'B7'), v(wb, 'TOKOH', 'B8')]).toEqual(['LELAKI\nTAHAP 1', 'LELAKI\nTAHAP 1', '-']);
   });
+
+  it('adds rows above TOTAL when there are more honours than the TOKOH sheet has rows', async () => {
+    const plaques = Array.from({ length: 14 }, (_, i) => ({ kind: 'TOKOH_SHEET', heading: 'H', award: `Ikon ${i + 1}`, line: 'Tahun 3', eline2: '', code: 'PK 261 / A', qty: 2 }));
+    const res = await fillOrderTemplate(fs.readFileSync('public/templates/FORM-ANUGERAH.xlsx'), { plaques }, { DOMParser, XMLSerializer });
+    const wb = read(res.buffer);
+    expect(res.notes.join(' ')).not.toMatch(/didn't fit|Extra copies/);
+    expect(wb.SheetNames).not.toContain('TOKOH (2)');
+    const ws = wb.Sheets.TOKOH;
+    expect(Array.from({ length: 14 }, (_, i) => ws[`A${7 + i}`]?.v)).toEqual(plaques.map((p) => p.award.toUpperCase()));
+    expect([ws.B20?.v, ws.D20?.v, ws.E20?.v]).toEqual(['TAHUN 3', 2, 'PK 261 / A']);
+    expect([ws.A21?.v, ws.D21?.f, ws.H21?.f, ws.H20?.f, ws.G20?.f]).toEqual([
+      'TOTAL:', 'SUM(D7:D20)', 'SUM(H7:H20)', 'IFERROR(G20*D20,0)',
+      'IF(E20="","",IFERROR(VLOOKUP(E20,\'SENARAI PLAK\'!$A$2:$B$159,2,FALSE),""))',
+    ]);
+    const zip = await JSZip.loadAsync(res.buffer);
+    const xml = await zip.file('xl/worksheets/sheet12.xml').async('string');
+    expect(xml).toContain('sqref="E7:E20"');
+    expect(xml).toContain('sqref="G20"');
+  });
 });
