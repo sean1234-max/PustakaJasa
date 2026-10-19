@@ -509,6 +509,14 @@ function makeBook(zip, files, { DOMParser: DP, XMLSerializer: XS }) {
       .forEach((c) => {
         const s = wrapStyle(c.getAttribute('s'));
         if (s) c.setAttribute('s', String(s));
+        // A fixed-height row shows only the first line ("ANUGERAH" of
+        // "ANUGERAH / KECERIAAN KELAS TERBAIK"): tall enough for every line.
+        const row = c.parentNode;
+        const need = c.textContent.split('\n').length * 15 + 6;
+        if (row && Number(row.getAttribute('ht')) < need) {
+          row.setAttribute('ht', String(need));
+          row.setAttribute('customHeight', '1');
+        }
       }));
     if (stylesDoc && wrapped.size) zip.file('xl/styles.xml', ser(stylesDoc));
     docs.forEach((doc, path) => zip.file(path, ser(doc)));
