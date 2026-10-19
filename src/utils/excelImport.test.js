@@ -1150,6 +1150,22 @@ describe('parseFormAnugerahExcel — two-line TAJUK BESAR', () => {
     expect(section.lines['0']).toBe('HARI ANUGERAH KECEMERLANGAN MURID\nSK CONTOH');
     expect(section.lines['0b']).toBeUndefined();
   });
+
+  it('reads a TOKOH sheet whose name column is headed just "NAMA"', () => {
+    const buf = workbookFromSheets({
+      TOKOH: [
+        [null, null, null, 'TOLONG ISI DI SINI'],
+        [null, null, null, 'MAJLIS APRESIASI\n2026'],
+        [null, null, null, 'ANUGERAH PENGHARGAAN SETIAUSAHA HEM'],
+        [null, null, null, 'NAMA'],
+        [],
+        ['TOKOH', 'NAMA', 'GAMBAR (YES/NO)', 'KUANTITI', 'JENIS PLAK'],
+        ['PENGHARGAAN SETIAUSAHA HEM', 'NORZAILA BT AB.RAHMAN', 'NO', 1, 'CRYSTAL'],
+      ],
+    });
+    const section = (parseFormAnugerahExcel(buf).categorized?.TOKOH_SHEET || [])[0];
+    expect(section.tokohRows[0].namaMurid).toBe('NORZAILA BT AB.RAHMAN');
+  });
 });
 
 describe('computeBlocks — TAJUK BESAR + 0b share one number', () => {
