@@ -575,6 +575,89 @@ function setCell(doc, ref, value) {
   c.appendChild(is);
 }
 
+// Rewrites the cell references in a formula or range that point at this
+// sheet: `fn(col, colAbs, row, rowAbs)` returns the new reference. Text in
+// quotes and references to another sheet ('SENARAI PLAK'!$A$2) are kept.
+const mapRefs = (text, fn) => text.replace(
+  /"[^"]*"|(?:'[^']*'|[A-Za-z_][\w.]*)!\$?[A-Z]{1,3}\$?\d+(?::\$?[A-Z]{1,3}\$?\d+)?|(\$?)([A-Z]{1,3})(\$?)(\d+)(?![\w(])/g,
+  (m, ca, col, ra, row) => (col ? fn(col, ca, Number(row), ra) : m),
+);
+// A copied row's own formulas: references to row `from` move to `to`
+// (absolute rows stay).
+const moveRow = (text, from, to) => mapRefs(text, (col, ca, row, ra) => `${ca}${col}${ra}${!ra && row === from ? to : row}`);
+
+// Adds `n` rows to a list just above its TOTAL row (1-based `totalRow`):
+// each a copy of the last list row (styles, formulas, Jenis Plak dropdown,
+// conditional format), the TOTAL row and everything under it pushed down,
+// and every range that ended on the last list row (the TOTAL's SUM, the
+// dropdown) stretched over the new rows.
+function insertListRows(doc, totalRow, n) {
+  if (n <= 0) return;
+  const last = totalRow - 1;
+  const sheetData = doc.getElementsByTagNameNS(MAIN_NS, 'sheetData')[0];
+  const rows = Array.from(sheetData.getElementsByTagNameNS(MAIN_NS, 'row'));
+  const shift = (text) => mapRefs(text, (col, ca, row, ra) => `${ca}${col}${ra}${row >= totalRow ? row + n : row}`);
+  // A list range (D7:D17 — or the template's H7:H16, one short) grows to
+  // the new last row.
+  const stretch = (text) => text.replace(/(\$?[A-Z]{1,3}\$?)(\d+):(\$?[A-Z]{1,3}\$?)(\d+)/g, (m, c1, r1, c2, r2) => (
+    Number(r1) < last && (Number(r2) === last || Number(r2) === last - 1) ? `${c1}${r1}:${c2}${last + n}` : m));
+  // Shared formulas (H7:H17's IFERROR(G7*D7,0)): a copied row gets the
+  // master's formula written out for its own row.
+  const masters = new Map();
+  rows.forEach((row) => Array.from(row.getElementsByTagNameNS(MAIN_NS, 'f')).forEach((f) => {
+    if (f.getAttribute('t') === 'shared' && f.textContent) masters.set(f.getAttribute('si'), { text: f.textContent, row: Number(row.getAttribute('r')) });
+  }));
+  rows.filter((row) => Number(row.getAttribute('r')) >= totalRow).reverse().forEach((row) => {
+    row.setAttribute('r', String(Number(row.getAttribute('r')) + n));
+    Array.from(row.getElementsByTagNameNS(MAIN_NS, 'c')).forEach((c) => {
+      c.setAttribute('r', shift(c.getAttribute('r')));
+      Array.from(c.getElementsByTagNameNS(MAIN_NS, 'f')).forEach((f) => { f.textContent = stretch(shift(f.textContent)); });
+    });
+  });
+  const model = rows.find((row) => Number(row.getAttribute('r')) === last);
+  const before = rows.find((row) => Number(row.getAttribute('r')) >= totalRow) || null;
+  for (let i = 1; i <= n; i++) {
+    const r = last + i;
+    const copy = model.cloneNode(true);
+    copy.setAttribute('r', String(r));
+    Array.from(copy.getElementsByTagNameNS(MAIN_NS, 'c')).forEach((c) => {
+      c.setAttribute('r', c.getAttribute('r').replace(/\d+$/, String(r)));
+      Array.from(c.getElementsByTagNameNS(MAIN_NS, 'f')).forEach((f) => {
+        const master = f.getAttribute('t') === 'shared' ? masters.get(f.getAttribute('si')) : null;
+        const text = master ? moveRow(master.text, master.row, r) : moveRow(f.textContent, last, r);
+        Array.from(f.attributes).map((a) => a.name).forEach((a) => f.removeAttribute(a));
+        f.textContent = text;
+      });
+    });
+    sheetData.insertBefore(copy, before);
+  }
+  const root = doc.documentElement;
+  const dim = root.getElementsByTagNameNS(MAIN_NS, 'dimension')[0];
+  if (dim) dim.setAttribute('ref', shift(dim.getAttribute('ref')));
+  Array.from(root.getElementsByTagNameNS(MAIN_NS, 'mergeCell')).forEach((m) => m.setAttribute('ref', shift(m.getAttribute('ref'))));
+  Array.from(root.getElementsByTagNameNS(MAIN_NS, 'dataValidation')).forEach((v) => v.setAttribute('sqref', stretch(shift(v.getAttribute('sqref')))));
+  const cfs = Array.from(root.getElementsByTagNameNS(MAIN_NS, 'conditionalFormatting'));
+  let priority = Math.max(0, ...Array.from(root.getElementsByTagNameNS(MAIN_NS, 'cfRule')).map((x) => Number(x.getAttribute('priority')) || 0));
+  cfs.forEach((cf) => {
+    const sq = cf.getAttribute('sqref');
+    const one = /^([A-Z]{1,3})(\d+)$/.exec(sq);
+    if (one && Number(one[2]) === last) {
+      let at = cf;
+      for (let i = 1; i <= n; i++) {
+        const copy = cf.cloneNode(true);
+        copy.setAttribute('sqref', `${one[1]}${last + i}`);
+        Array.from(copy.getElementsByTagNameNS(MAIN_NS, 'cfRule')).forEach((rule) => rule.setAttribute('priority', String(++priority)));
+        Array.from(copy.getElementsByTagNameNS(MAIN_NS, 'formula')).forEach((f) => { f.textContent = moveRow(f.textContent, last, last + i); });
+        at.parentNode.insertBefore(copy, at.nextSibling);
+        at = copy;
+      }
+    } else {
+      cf.setAttribute('sqref', stretch(shift(sq)));
+      Array.from(cf.getElementsByTagNameNS(MAIN_NS, 'formula')).forEach((f) => { f.textContent = shift(f.textContent); });
+    }
+  });
+}
+
 // ---------------------------------------------------------------------------
 
 // The template's own sample subjects (BAHASA MELAYU, BAHASA CINA …) in
@@ -772,14 +855,21 @@ export async function fillOrderTemplate(templateBuffer, categorized, {
     const ws = base && wb.Sheets[base];
     const layout = ws && layoutList(ws, 'TOKOH');
     const rowsOf = layout ? layout.rows : [];
-    // More honours than the sheet has rows: the rest go on another copy of
-    // the TOKOH sheet ("TOKOH (2)"), read back as its own TOKOH tab.
+    // More honours than the sheet has rows: rows are added above its TOTAL.
     if (!rowsOf.length) {
       notes.push(`${plan.tokoh.rows.length} TOKOH award(s) didn't fit the ${base || SHEET_TOKOH} sheet, so they went to ORDER LAIN-LAIN.`);
       toExtra(plan.tokoh.rows.map((x) => ({ heading: plan.tokoh.heading, award: x.name, line: x.nama, eline2: '', qty: x.qty, code: x.code })));
-    }
-    for (const fit of rowsOf.length ? chunk(plan.tokoh.rows, rowsOf.length) : []) {
+    } else {
+      const fit = plan.tokoh.rows;
       const { doc, name } = await sheetCopy(base);
+      const slots = [...rowsOf];
+      const extra = fit.length - slots.length;
+      if (extra > 0) {
+        // slots[].r is 0-based: the TOTAL row is two Excel rows past it.
+        const lastRow = slots[slots.length - 1].r;
+        insertListRows(doc, lastRow + 2, extra);
+        for (let i = 1; i <= extra; i++) slots.push({ r: lastRow + i, label: '' });
+      }
       // The line under the award (LELAKI / TAHAP 1) is the NAMA MURID, and
       // the CONTOH's ③ NAMA line (Sean, 2026-10-17). A blank NAMA MURID
       // engraves the CONTOH's ③, so an honour with no such line gets "-"
@@ -787,7 +877,7 @@ export async function fillOrderTemplate(templateBuffer, categorized, {
       const namaCol = layout.namaCol;
       const sample = namaCol != null ? fit.find((x) => x.nama) : null;
       writeTitle(doc, layout.title, [plan.tokoh.heading, (sample || fit[0]).name, sample ? sample.nama : '']);
-      rowsOf.forEach(({ r, label }, i) => {
+      slots.forEach(({ r, label }, i) => {
         const x = fit[i];
         if (!x) { if (label) setCell(doc, addr(r, layout.labelCol), ''); return; }
         const together = namaCol == null && x.nama;
