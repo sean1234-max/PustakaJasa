@@ -1624,14 +1624,20 @@ function parseTokohAnugerahSheet(ws) {
 // same way the website does (resolveSelempangWarna) but an unrecognised one
 // is still kept as raw text so the teacher can fix it on Step 2 rather than
 // have the row silently vanish.
-function parseSelempangSheet(ws) {
-  const range = sheetRange(ws);
+function selempangHeaders(ws, range) {
   const acaraH = findLabelCells(ws, range, ['ACARA'])[0];
   if (!acaraH) return null;
   const onRow = findLabelCells(ws, { r1: acaraH.row, r2: acaraH.row, c1: range.c1, c2: range.c2 }, ['WARNA', 'KUANTITI']);
   const warnaH = onRow.find((h) => h.label === 'WARNA');
   const kuantitiH = onRow.find((h) => h.label === 'KUANTITI');
-  if (!warnaH) return null;
+  return warnaH ? { acaraH, warnaH, kuantitiH } : null;
+}
+
+function parseSelempangSheet(ws) {
+  const range = sheetRange(ws);
+  const headers = selempangHeaders(ws, range);
+  if (!headers) return null;
+  const { acaraH, warnaH, kuantitiH } = headers;
   const rows = [];
   for (let r = acaraH.row + 1; r <= range.r2; r++) {
     const acara = cellText(ws, r, acaraH.col);
@@ -2257,7 +2263,11 @@ export function parseFormAnugerahExcel(arrayBuffer) {
   const selempangSheet = findSheet(wb, 'SELEMPANG');
   if (selempangSheet) {
     const selempangSection = parseSelempangSheet(selempangSheet);
-    if (selempangSection) { selempangSection.sourceSheet = 'SELEMPANG'; allSections.push(selempangSection); } else unread(selempangSheet);
+    // The untouched template still has its ACARA / WARNA header — left
+    // blank, nothing to read. Its CONTOH WARNA legend's colour codes
+    // (0050-0053) would otherwise pass for typed-in quantities.
+    if (selempangSection) { selempangSection.sourceSheet = 'SELEMPANG'; allSections.push(selempangSection); }
+    else if (!selempangHeaders(selempangSheet, sheetRange(selempangSheet))) unread(selempangSheet);
   }
 
   allSections.push(...findPerasmiSections(wb));
