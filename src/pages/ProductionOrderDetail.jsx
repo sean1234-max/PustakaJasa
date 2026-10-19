@@ -613,7 +613,7 @@ export default function ProductionOrderDetail() {
             ))}
             {/* Reviewing a Tambahan: only its own crystals, nothing to confirm or make yet (as SalesOrderSummary). */}
             {addonView
-              ? <CrystalPreview order={effectiveOrder} role="production" showArtwork={false} />
+              ? <CrystalPreview order={effectiveOrder} role="production" selected={pickedCrystal} showArtwork={false} canMake={false} />
               : <CrystalPreview order={order} role="production" selected={pickedCrystal} makeAi={crystalMakeAi} makeAiFolder={buildCombinedCsvFilename(order).replace(/\.csv$/i, '')} onMakeAiSent={() => crystalSent.current?.()} />}
 
             {selempangBlocks.length > 0 && (
