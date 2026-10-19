@@ -20,6 +20,7 @@ import { parseDocxOrderWithAi, parsePdfOrder } from '../utils/pdfImport';
 import { checkColumnTotals, checkExpansionTotals, checkLevelBreakdownMatch, checkAliranKelasTotals } from '../utils/importChecks';
 import { frontPgToFunctionDetails } from '../utils/frontPgDetails';
 import { FORM_TEMPLATE_URL, draftToFormParsed } from '../utils/formRoundTrip';
+import { draftPlaques } from '../utils/draftForm';
 import { buildCategoryCartItems } from './categoryCartItems';
 import { AppStateContext } from './AppStateContext';
 import { saveCrystalDraft, clearCrystalDraft } from '../lib/crystalDraft';
@@ -1585,8 +1586,18 @@ export function AppStateProvider({ children }) {
       console.error('Could not put the order into the FORM ANUGERAH layout:', err);
       conv = { error: 'the form could not be made' };
     }
+    const base = removeDraftTabs(first.draft, keys);
+    // A tab the form fills that already has another file's order in it
+    // would be overwritten, so those stay as read.
+    if (!conv.error) {
+      const taken = Object.entries(conv.parsed.categorized || {})
+        .filter(([k, secs]) => secs?.length && !keys.includes(k))
+        .filter(([k]) => { const d = draftPlaques(base, { only: [k] }); return d.plaques.length + d.selempang.length + d.skipped.length > 0; })
+        .map(([k]) => resolveCategory(k)?.label || k);
+      if (taken.length) conv = { error: `the ${taken.join(', ')} tab already has an order in it` };
+    }
     const second = conv.error ? null : await importFormAnugerahExcelInto(file, NEW_ORDER_IMPORT_FIELDS, {
-      parsedOverride: conv.parsed, base: removeDraftTabs(first.draft, keys),
+      parsedOverride: conv.parsed, base,
     });
     if (!second?.ok) {
       const why = conv.error || second?.message || 'the form could not be read back';
@@ -1633,13 +1644,16 @@ export function AppStateProvider({ children }) {
     if (Object.keys(categorized).length === 0) {
       return { ok: false, message: 'The AI found no order rows in those sheets.', warnings: notes.map((text) => ({ type: 'truncated', text })) };
     }
-    const result = await importFormAnugerahExcelInto(file, NEW_ORDER_IMPORT_FIELDS, { parsedOverride: { categorized, notes } });
+    const read = await importFormAnugerahExcelInto(file, NEW_ORDER_IMPORT_FIELDS, { parsedOverride: { categorized, notes } });
+    // Shown in the FORM ANUGERAH layout, like a Word / PDF order (Sean,
+    // 2026-10-19: the TOKOH tab, as in the downloaded form).
+    const result = read.ok ? await convertImportToForm(file, read) : read;
     const remaining = memoryOnly ? sheetNames.filter((n) => !learned.includes(n)) : [];
     const message = memoryOnly
       ? `${learned.length} more sheet(s) read with layouts learned earlier — ${Object.keys(categorized).length} new tab(s). Check them against the file before adding to cart.`
       : `AI-read sheets imported — ${Object.keys(categorized).length} new tab(s). Check every AI-read tab carefully against the file before adding to cart.`;
     return { ...result, message, learnedSheets: learned, remaining };
-  }, [importFormAnugerahExcelInto]);
+  }, [importFormAnugerahExcelInto, convertImportToForm]);
 
   const removeFromCart = useCallback((id) => {
     patch((st) => ({ cart: st.cart.filter((c) => c.id !== id) }));

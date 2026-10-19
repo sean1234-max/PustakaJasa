@@ -245,4 +245,15 @@ describe('fillOrderTemplate, TOKOH NAMA MURID and line breaks', () => {
     expect(xml).toContain('sqref="E7:E20"');
     expect(xml).toContain('sqref="G20"');
   });
+  it('hides the sheets the order leaves empty, keeping FRONT PG', async () => {
+    const plaques = [{ kind: 'TOKOH_SHEET', heading: 'H', award: 'Ikon Pengawas', line: 'Tahun 3', eline2: '', code: 'PK 261 / A', qty: 2 }];
+    const res = await fillOrderTemplate(fs.readFileSync('public/templates/FORM-ANUGERAH.xlsx'), { plaques }, { DOMParser, XMLSerializer });
+    const wb = XLSX.read(res.buffer, { type: 'array' });
+    const shown = wb.Workbook.Sheets.filter((s) => !s.Hidden).map((s) => s.name);
+    expect(shown).toEqual(['FRONT PG', 'TOKOH']);
+    expect(wb.Workbook.Sheets.find((s) => s.name === 'SENARAI PLAK').Hidden).toBeTruthy();
+    const zip = await JSZip.loadAsync(res.buffer);
+    expect(await zip.file('xl/workbook.xml').async('string')).toMatch(/activeTab="0"/);
+    expect(await zip.file('xl/worksheets/sheet14.xml').async('string')).not.toContain('tabSelected');
+  });
 });
