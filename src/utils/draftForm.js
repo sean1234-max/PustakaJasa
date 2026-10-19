@@ -18,6 +18,7 @@ import { buildCsvRows } from './exportCsv';
 // `priceOf(code)`: the website's own price for a plaque code (the Jenis
 // Plak catalog Add to Cart charges), for the form's SENARAI PLAK (Sean,
 // 2026-10-17); null when the catalog doesn't know it.
+// `only`: just these tabs (a Word / PDF file's own, see formRoundTrip.js).
 const codeKey = (code) => String(code || '').toUpperCase().replace(/\s+/g, '');
 function catalogPrices(catalog) {
   const flat = flattenPlakCatalog(catalog);
@@ -30,9 +31,9 @@ function catalogPrices(catalog) {
 
 const kindOf = (catKey) => (isDynamicCategoryKey(catKey) ? catKey.split('::')[1] : catKey);
 
-export function draftPlaques(draft) {
+export function draftPlaques(draft, { only = null } = {}) {
   const dynamic = Object.keys(draft.visibleBlocksByCategory || {}).filter(isDynamicCategoryKey);
-  const keys = [...ACTIVE_CATEGORIES.map((c) => c.key), ...dynamic];
+  const keys = [...ACTIVE_CATEGORIES.map((c) => c.key), ...dynamic].filter((k) => !only || only.includes(k));
   const byWording = new Map();
   const skipped = [];
   const unready = [];
