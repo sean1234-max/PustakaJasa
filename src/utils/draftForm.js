@@ -13,7 +13,8 @@ import { buildCsvRows } from './exportCsv';
 // problem is named in `unready`. `skipped`: tabs with no plaque at all yet.
 // Each plaque carries `kind`, its tab's own sheet kind (LONJAKAN, TOKOH_SHEET,
 // MP2 …; a tab read from a renamed sheet keeps its base kind), so the form
-// can put it on that sheet. `selempang`: the Selempang tab's rows; `front`:
+// can put it on that sheet; `tab`: a tab of its own's name, the sheet the
+// form writes it on (in that kind's format). `selempang`: the Selempang tab's rows; `front`:
 // the Function Details the FRONT PG shows (Sean, 2026-10-17).
 // `priceOf(code)`: the website's own price for a plaque code (the Jenis
 // Plak catalog Add to Cart charges), for the form's SENARAI PLAK (Sean,
@@ -54,9 +55,11 @@ export function draftPlaques(draft, { only = null } = {}) {
     const res = strict.error ? buildCategoryCartItems(draft, catKey, { lenient: true }) : strict;
     if (!res.items?.length) { skipped.push(`${label}: ${strict.error || 'nothing to add'}`); return; }
     if (strict.error) unready.push(`${label}: ${strict.error}`);
+    // A tab of its own (IKON PENGAWAS …) gets its own sheet in the form.
+    const tab = isDynamicCategoryKey(catKey) ? label : '';
     const { rows } = buildCsvRows({ schoolLanguage: draft.schoolLanguage, items: res.items }, catKey, res.items);
     rows.forEach(([heading, , award, line, eline2, code]) => {
-      const p = { kind: kindOf(catKey), heading: heading || '', award: award || '', line: line || '', eline2: eline2 || '', code: code || '' };
+      const p = { kind: kindOf(catKey), tab, heading: heading || '', award: award || '', line: line || '', eline2: eline2 || '', code: code || '' };
       const key = JSON.stringify(p);
       const have = byWording.get(key);
       if (have) have.qty += 1;

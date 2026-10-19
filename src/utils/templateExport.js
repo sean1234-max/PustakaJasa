@@ -428,7 +428,7 @@ function makeBook(zip, files, { DOMParser: DP, XMLSerializer: XS }) {
 
   // A copy of a sheet as it is in the template (before any write), with
   // its own copy of the sheet's pictures, placed right after the last copy.
-  const cloneSheet = async (baseName, newName, pristine) => {
+  const cloneSheet = async (baseName, newName, pristine, { atEnd = false } = {}) => {
     const base = sheetEls().find((s) => up(s.getAttribute('name')) === up(baseName));
     const basePath = sheetPath(baseName);
     const num = nextNum('xl/worksheets/sheet');
@@ -465,6 +465,12 @@ function makeBook(zip, files, { DOMParser: DP, XMLSerializer: XS }) {
     el.setAttribute('name', newName);
     el.setAttribute('sheetId', String(Math.max(0, ...sheetEls().map((s) => Number(s.getAttribute('sheetId')) || 0)) + 1));
     el.setAttributeNS(REL_NS, 'r:id', rid);
+    if (atEnd) {
+      // after every other sheet, before the hidden price list
+      const prices = sheetEls().find((s) => up(s.getAttribute('name')) === SHEET_PRICES);
+      base.parentNode.insertBefore(el, prices || null);
+      return path;
+    }
     let after = base;
     for (let k = 2; ; k++) {
       const next = sheetEls().find((s) => up(s.getAttribute('name')) === up(`${baseName} (${k})`));
@@ -473,6 +479,18 @@ function makeBook(zip, files, { DOMParser: DP, XMLSerializer: XS }) {
     }
     after.parentNode.insertBefore(el, after.nextSibling);
     return path;
+  };
+
+  // A sheet name Excel takes (31 characters, none of []:*?/\) that no sheet
+  // has yet: "IKON PENGAWAS", then "IKON PENGAWAS (2)" ….
+  const freshName = (want) => {
+    const stem = String(want).replace(/[[\]:*?/\\]/g, ' ').replace(/\s+/g, ' ').trim() || 'SHEET';
+    const taken = new Set(sheetEls().map((s) => up(s.getAttribute('name'))));
+    for (let k = 1; ; k++) {
+      const tail = k === 1 ? '' : ` (${k})`;
+      const name = `${stem.slice(0, 31 - tail.length).trim()}${tail}`;
+      if (!taken.has(up(name))) return name;
+    }
   };
 
   // A cell written with a line break gets its style's "wrap text" copy, so
@@ -561,7 +579,7 @@ function makeBook(zip, files, { DOMParser: DP, XMLSerializer: XS }) {
     });
   };
 
-  return { sheetPath, sheetDoc, cloneSheet, showOnly, save };
+  return { sheetPath, sheetDoc, cloneSheet, freshName, showOnly, save };
 }
 
 const colNum = (ref) => XLSX.utils.decode_cell(ref).c;
@@ -704,14 +722,26 @@ const chunk = (list, size) => {
 };
 const sheetName = (base, k) => (k === 0 ? base : `${base} (${k + 1})`.slice(0, 31));
 
-// Fills a copy of the blank template. Returns { buffer, notes, placed }
-// where `placed` counts plaques per sheet; never throws on an order it
+// Fills a copy of the blank template. Returns { buffer, notes, placed,
+// sheets } where `placed` counts plaques per sheet and `sheets` names (in
+// capitals) the ones left showing; never throws on an order it
 // can't place (that part goes to the notes instead).
 export async function fillOrderTemplate(templateBuffer, categorized, {
   DOMParser: DP = globalThis.DOMParser, XMLSerializer: XS = globalThis.XMLSerializer,
 } = {}) {
-  const plan = planTemplateFill(categorized);
-  const notes = [...plan.notes];
+  // A tab of its own on the website (IKON PENGAWAS, …) gets sheets named
+  // after it, in the format of the sheet its plaques fit (TOKOH, MP THP …;
+  // Sean, 2026-10-19); the other tabs fill the template's own sheets.
+  const groups = new Map([['', []]]);
+  (Array.isArray(categorized?.plaques) ? categorized.plaques : []).forEach((p) => {
+    const tab = String(p.tab || '').trim();
+    if (!groups.has(tab)) groups.set(tab, []);
+    groups.get(tab).push(p);
+  });
+  const plans = Array.isArray(categorized?.plaques)
+    ? [...groups].filter(([, plaques]) => plaques.length).map(([tab, plaques]) => ({ tab, plan: planTemplateFill({ plaques }) }))
+    : [{ tab: '', plan: planTemplateFill(categorized) }];
+  const notes = plans.flatMap(({ plan }) => plan.notes);
   const placed = {};
   const zip = await JSZip.loadAsync(templateBuffer);
   const wb = XLSX.read(templateBuffer, { type: 'array', cellFormula: true });
@@ -726,199 +756,253 @@ export async function fillOrderTemplate(templateBuffer, categorized, {
   const pristine = new Map();
   const used = new Map();
   const filled = new Set();
-  // The k-th copy of a template sheet (k = 0: the sheet itself).
+  let tab = '';
+  const tabSheets = [];
+  // The k-th copy of a template sheet (k = 0: the sheet itself); for a tab
+  // of its own, a new copy named after the tab.
   const sheetCopy = async (base) => {
-    const k = used.get(base) || 0;
-    used.set(base, k + 1);
     const path = book.sheetPath(base);
     if (!pristine.has(base)) pristine.set(base, await zip.file(path).async('string'));
+    if (tab) {
+      const name = book.freshName(tab);
+      const p = await book.cloneSheet(base, name, pristine.get(base), { atEnd: true });
+      filled.add(up(name));
+      tabSheets.push(name);
+      return { doc: await book.sheetDoc(p), name };
+    }
+    const k = used.get(base) || 0;
+    used.set(base, k + 1);
     const p = k === 0 ? path : await book.cloneSheet(base, sheetName(base, k), pristine.get(base));
     filled.add(up(sheetName(base, k)));
     return { doc: await book.sheetDoc(p), name: sheetName(base, k) };
   };
   const count = (name, n) => { placed[name] = (placed[name] || 0) + n; };
-  const umumExtra = [];
+  for (const group of plans) {
+    const { plan } = group;
+    tab = group.tab;
+    const umumExtra = [];
 
-  // MP THP 1 / 2 (Kalau ada kelas)
-  for (const g of plan.mp) {
-    const base = findName(g.band === 1 ? SHEET_MP1 : SHEET_MP2);
-    const layout = base && layoutMp(wb.Sheets[base]);
-    const yearsOk = layout && [...g.years.keys()].every((y) => layout.blocks.has(y));
-    const classesOk = layout && [...g.years.values()].every((list) => list.length <= layout.classRows);
-    if (!layout || !yearsOk || !classesOk || !layout.awardRows.length) {
-      notes.push(`The ${g.band === 1 ? 'Tahun 1-3' : 'Tahun 4-6'} class awards (${g.code || 'no code'}) don't fit the ${base || 'MP THP (Kalau ada kelas)'} sheet, so they went to ORDER LAIN-LAIN.`);
-      g.awards.forEach((award) => g.years.forEach((list, year) => list.forEach(({ kelas, qty }) => umumExtra.push({ heading: g.heading, award, line: `${year} ${kelas}`, eline2: '', qty, code: g.code }))));
-      continue;
+    // MP THP 1 / 2 (Kalau ada kelas)
+    for (const g of plan.mp) {
+      const base = findName(g.band === 1 ? SHEET_MP1 : SHEET_MP2);
+      const layout = base && layoutMp(wb.Sheets[base]);
+      const yearsOk = layout && [...g.years.keys()].every((y) => layout.blocks.has(y));
+      const classesOk = layout && [...g.years.values()].every((list) => list.length <= layout.classRows);
+      if (!layout || !yearsOk || !classesOk || !layout.awardRows.length) {
+        notes.push(`The ${g.band === 1 ? 'Tahun 1-3' : 'Tahun 4-6'} class awards (${g.code || 'no code'}) don't fit the ${base || 'MP THP (Kalau ada kelas)'} sheet, so they went to ORDER LAIN-LAIN.`);
+        g.awards.forEach((award) => g.years.forEach((list, year) => list.forEach(({ kelas, qty }) => umumExtra.push({ heading: g.heading, award, line: `${year} ${kelas}`, eline2: '', qty, code: g.code }))));
+        continue;
+      }
+      for (const awards of chunk(g.awards, layout.awardRows.length)) {
+        const { doc, name } = await sheetCopy(base);
+        if (layout.title && g.heading) setCell(doc, layout.title.heading, g.heading);
+        if (layout.title) setCell(doc, layout.title.sample, g.sample.join('\n'));
+        if (layout.plak && g.code) setCell(doc, layout.plak, g.code);
+        let n = 0;
+        const perYear = new Map();
+        g.years.forEach((list, year) => {
+          const b = layout.blocks.get(year);
+          list.forEach(({ kelas, qty }, i) => {
+            setCell(doc, addr(layout.dataRow + i, b.nameCol), kelas);
+            setCell(doc, addr(layout.dataRow + i, b.qtyCol), qty);
+            n += qty;
+          });
+          perYear.set(year, list.reduce((a, x) => a + x.qty, 0));
+        });
+        // Each award's count per Tahun is written as a number (the template's
+        // own SUM gives the same), so the file reads right even before Excel
+        // recalculates it, and a Tahun this order doesn't have stays empty.
+        awards.forEach((a, i) => {
+          const r = layout.awardRows[i];
+          setCell(doc, addr(r, layout.subjekCol), a);
+          layout.levelCols.forEach((col, year) => setCell(doc, addr(r, col), perYear.get(year) || ''));
+        });
+        clearUnusedSubjects(doc, wb.Sheets[base], layout, awards.length);
+        count(name, n * awards.length);
+      }
     }
-    for (const awards of chunk(g.awards, layout.awardRows.length)) {
+
+    // PPKI
+    for (const g of plan.ppki) {
+      const base = findName(SHEET_PPKI);
+      const layout = base && layoutPpki(wb.Sheets[base]);
+      if (!layout || g.levels.length > layout.classRows || !layout.awardRows.length) {
+        notes.push(`The PPKI awards (${g.code || 'no code'}) don't fit the PPKI sheet, so they went to ORDER LAIN-LAIN.`);
+        g.awards.forEach((award) => g.levels.forEach(({ label, qty }) => umumExtra.push({ heading: g.heading, award, line: `${label} PPKI`, eline2: '', qty, code: g.code })));
+        continue;
+      }
+      for (const awards of chunk(g.awards, layout.awardRows.length)) {
+        const { doc, name } = await sheetCopy(base);
+        if (layout.title && g.heading) setCell(doc, layout.title.heading, g.heading);
+        if (layout.title) setCell(doc, layout.title.sample, g.sample.join('\n'));
+        if (layout.plak && g.code) setCell(doc, layout.plak, g.code);
+        const perAward = g.levels.reduce((a, l) => a + l.qty, 0);
+        awards.forEach((a, i) => {
+          setCell(doc, addr(layout.awardRows[i], layout.subjekCol), a);
+          if (layout.levelCol != null) setCell(doc, addr(layout.awardRows[i], layout.levelCol), perAward);
+        });
+        clearUnusedSubjects(doc, wb.Sheets[base], layout, awards.length);
+        g.levels.forEach(({ label, qty }, i) => {
+          setCell(doc, addr(layout.dataRow + i, layout.nameCol), label);
+          setCell(doc, addr(layout.dataRow + i, layout.qtyCol), qty);
+        });
+        count(name, g.levels.reduce((a, l) => a + l.qty, 0) * awards.length);
+      }
+    }
+
+    const toExtra = (items) => umumExtra.push(...items.map(({ heading, award, line, eline2, qty, code }) => ({ heading, award, line, eline2, qty, code })));
+    const writeTitle = (doc, at, lines) => at && lines.forEach((text, i) => setCell(doc, at(i), text));
+
+    // MP THP 1 / MP THP 2: subjects down the SUBJEK column (the template's
+    // own row for a subject it lists, else the next empty row), the count
+    // under each Tahun.
+    for (const g of plan.mpPlain) {
+      const base = findName(SHEET_MP_PLAIN[g.band]);
+      const ws = base && wb.Sheets[base];
+      const layout = ws && layoutMp(ws);
+      const years = new Set([...g.subjects.values()].flatMap((m) => [...m.keys()]));
+      const listed = new Map();
+      const free = [];
+      (layout?.awardRows || []).forEach((r) => {
+        const t = textAt(ws, r, layout.subjekCol);
+        if (!t) free.push(r);
+        else if (!listed.has(t)) listed.set(t, r);
+      });
+      const subjects = [...g.subjects.keys()];
+      const fits = layout && [...years].every((y) => layout.levelCols.has(y))
+        && subjects.filter((x) => !listed.has(x)).length <= free.length;
+      if (!fits) {
+        notes.push(`The ${g.award || 'subject'} plaques (${g.code || 'no code'}) don't fit the ${base || SHEET_MP_PLAIN[g.band]} sheet, so they went to ORDER LAIN-LAIN.`);
+        toExtra(g.items);
+        continue;
+      }
       const { doc, name } = await sheetCopy(base);
-      if (layout.title && g.heading) setCell(doc, layout.title.heading, g.heading);
-      if (layout.title) setCell(doc, layout.title.sample, g.sample.join('\n'));
+      writeTitle(doc, titleRows(ws), [g.heading, g.award, ...g.sample]);
       if (layout.plak && g.code) setCell(doc, layout.plak, g.code);
       let n = 0;
-      const perYear = new Map();
-      g.years.forEach((list, year) => {
-        const b = layout.blocks.get(year);
-        list.forEach(({ kelas, qty }, i) => {
-          setCell(doc, addr(layout.dataRow + i, b.nameCol), kelas);
-          setCell(doc, addr(layout.dataRow + i, b.qtyCol), qty);
-          n += qty;
+      subjects.forEach((subject) => {
+        const r = listed.get(subject) ?? free.shift();
+        setCell(doc, addr(r, layout.subjekCol), subject);
+        g.subjects.get(subject).forEach((qty, year) => { setCell(doc, addr(r, layout.levelCols.get(year)), qty); n += qty; });
+      });
+      count(name, n);
+    }
+
+    // LONJAKAN SAUJANA / KEHADIRAN PENUH: each Tahun on its own row; another
+    // line ("TAHAP 1") in an empty row below them.
+    for (const [g, sheet] of [[plan.lonjakan, SHEET_LONJAKAN], [plan.kehadiran, SHEET_KEHADIRAN]]) {
+      if (!g) continue;
+      const base = findName(sheet);
+      const ws = base && wb.Sheets[base];
+      const layout = ws && layoutList(ws, 'TAHUN');
+      if (!layout) {
+        notes.push(`This template has no ${sheet} sheet, so those plaques went to ORDER LAIN-LAIN.`);
+        toExtra(g.rows.map((x) => ({ heading: g.heading, award: g.award, line: x.label, eline2: '', qty: x.qty, code: x.code })));
+        continue;
+      }
+      const { doc, name } = await sheetCopy(base);
+      writeTitle(doc, layout.title, [g.heading, g.award, g.rows[0].label]);
+      const taken = new Set();
+      let n = 0;
+      g.rows.forEach((x) => {
+        const label = up(x.label);
+        const slot = (TAHUN_RE.test(label) && layout.rows.find((row) => row.label === label && !taken.has(row.r)))
+          || layout.rows.find((row) => !row.label && !taken.has(row.r));
+        if (!slot) {
+          toExtra([{ heading: g.heading, award: g.award, line: x.label, eline2: '', qty: x.qty, code: x.code }]);
+          return;
+        }
+        taken.add(slot.r);
+        if (!slot.label && label) setCell(doc, addr(slot.r, layout.labelCol), label);
+        setCell(doc, addr(slot.r, layout.qtyCol), x.qty);
+        if (x.code) setCell(doc, addr(slot.r, layout.plakCol), x.code);
+        n += x.qty;
+      });
+      count(name, n);
+    }
+
+    // TOKOH: one honour per row; the template's sample honours this order
+    // doesn't have are emptied.
+    if (plan.tokoh) {
+      const base = findName(SHEET_TOKOH);
+      const ws = base && wb.Sheets[base];
+      const layout = ws && layoutList(ws, 'TOKOH');
+      const rowsOf = layout ? layout.rows : [];
+      // More honours than the sheet has rows: rows are added above its TOTAL.
+      if (!rowsOf.length) {
+        notes.push(`${plan.tokoh.rows.length} TOKOH award(s) didn't fit the ${base || SHEET_TOKOH} sheet, so they went to ORDER LAIN-LAIN.`);
+        toExtra(plan.tokoh.rows.map((x) => ({ heading: plan.tokoh.heading, award: x.name, line: x.nama, eline2: '', qty: x.qty, code: x.code })));
+      } else {
+        const fit = plan.tokoh.rows;
+        const { doc, name } = await sheetCopy(base);
+        const slots = [...rowsOf];
+        const extra = fit.length - slots.length;
+        if (extra > 0) {
+          // slots[].r is 0-based: the TOTAL row is two Excel rows past it.
+          const lastRow = slots[slots.length - 1].r;
+          insertListRows(doc, lastRow + 2, extra);
+          for (let i = 1; i <= extra; i++) slots.push({ r: lastRow + i, label: '' });
+        }
+        // The line under the award (LELAKI / TAHAP 1) is the NAMA MURID, and
+        // the CONTOH's ③ NAMA line (Sean, 2026-10-17). A blank NAMA MURID
+        // engraves the CONTOH's ③, so an honour with no such line gets "-"
+        // (no line) once ③ is filled.
+        const namaCol = layout.namaCol;
+        const sample = namaCol != null ? fit.find((x) => x.nama) : null;
+        writeTitle(doc, layout.title, [plan.tokoh.heading, (sample || fit[0]).name, sample ? sample.nama : '']);
+        slots.forEach(({ r, label }, i) => {
+          const x = fit[i];
+          if (!x) { if (label) setCell(doc, addr(r, layout.labelCol), ''); return; }
+          const together = namaCol == null && x.nama;
+          setCell(doc, addr(r, layout.labelCol), together ? `${x.name}\n${x.nama}` : x.name);
+          if (namaCol != null && (x.nama || sample)) setCell(doc, addr(r, namaCol), x.nama || '-');
+          setCell(doc, addr(r, layout.qtyCol), x.qty);
+          if (x.code) setCell(doc, addr(r, layout.plakCol), x.code);
         });
-        perYear.set(year, list.reduce((a, x) => a + x.qty, 0));
-      });
-      // Each award's count per Tahun is written as a number (the template's
-      // own SUM gives the same), so the file reads right even before Excel
-      // recalculates it, and a Tahun this order doesn't have stays empty.
-      awards.forEach((a, i) => {
-        const r = layout.awardRows[i];
-        setCell(doc, addr(r, layout.subjekCol), a);
-        layout.levelCols.forEach((col, year) => setCell(doc, addr(r, col), perYear.get(year) || ''));
-      });
-      clearUnusedSubjects(doc, wb.Sheets[base], layout, awards.length);
-      count(name, n * awards.length);
-    }
-  }
-
-  // PPKI
-  for (const g of plan.ppki) {
-    const base = findName(SHEET_PPKI);
-    const layout = base && layoutPpki(wb.Sheets[base]);
-    if (!layout || g.levels.length > layout.classRows || !layout.awardRows.length) {
-      notes.push(`The PPKI awards (${g.code || 'no code'}) don't fit the PPKI sheet, so they went to ORDER LAIN-LAIN.`);
-      g.awards.forEach((award) => g.levels.forEach(({ label, qty }) => umumExtra.push({ heading: g.heading, award, line: `${label} PPKI`, eline2: '', qty, code: g.code })));
-      continue;
-    }
-    for (const awards of chunk(g.awards, layout.awardRows.length)) {
-      const { doc, name } = await sheetCopy(base);
-      if (layout.title && g.heading) setCell(doc, layout.title.heading, g.heading);
-      if (layout.title) setCell(doc, layout.title.sample, g.sample.join('\n'));
-      if (layout.plak && g.code) setCell(doc, layout.plak, g.code);
-      const perAward = g.levels.reduce((a, l) => a + l.qty, 0);
-      awards.forEach((a, i) => {
-        setCell(doc, addr(layout.awardRows[i], layout.subjekCol), a);
-        if (layout.levelCol != null) setCell(doc, addr(layout.awardRows[i], layout.levelCol), perAward);
-      });
-      clearUnusedSubjects(doc, wb.Sheets[base], layout, awards.length);
-      g.levels.forEach(({ label, qty }, i) => {
-        setCell(doc, addr(layout.dataRow + i, layout.nameCol), label);
-        setCell(doc, addr(layout.dataRow + i, layout.qtyCol), qty);
-      });
-      count(name, g.levels.reduce((a, l) => a + l.qty, 0) * awards.length);
-    }
-  }
-
-  const toExtra = (items) => umumExtra.push(...items.map(({ heading, award, line, eline2, qty, code }) => ({ heading, award, line, eline2, qty, code })));
-  const writeTitle = (doc, at, lines) => at && lines.forEach((text, i) => setCell(doc, at(i), text));
-
-  // MP THP 1 / MP THP 2: subjects down the SUBJEK column (the template's
-  // own row for a subject it lists, else the next empty row), the count
-  // under each Tahun.
-  for (const g of plan.mpPlain) {
-    const base = findName(SHEET_MP_PLAIN[g.band]);
-    const ws = base && wb.Sheets[base];
-    const layout = ws && layoutMp(ws);
-    const years = new Set([...g.subjects.values()].flatMap((m) => [...m.keys()]));
-    const listed = new Map();
-    const free = [];
-    (layout?.awardRows || []).forEach((r) => {
-      const t = textAt(ws, r, layout.subjekCol);
-      if (!t) free.push(r);
-      else if (!listed.has(t)) listed.set(t, r);
-    });
-    const subjects = [...g.subjects.keys()];
-    const fits = layout && [...years].every((y) => layout.levelCols.has(y))
-      && subjects.filter((x) => !listed.has(x)).length <= free.length;
-    if (!fits) {
-      notes.push(`The ${g.award || 'subject'} plaques (${g.code || 'no code'}) don't fit the ${base || SHEET_MP_PLAIN[g.band]} sheet, so they went to ORDER LAIN-LAIN.`);
-      toExtra(g.items);
-      continue;
-    }
-    const { doc, name } = await sheetCopy(base);
-    writeTitle(doc, titleRows(ws), [g.heading, g.award, ...g.sample]);
-    if (layout.plak && g.code) setCell(doc, layout.plak, g.code);
-    let n = 0;
-    subjects.forEach((subject) => {
-      const r = listed.get(subject) ?? free.shift();
-      setCell(doc, addr(r, layout.subjekCol), subject);
-      g.subjects.get(subject).forEach((qty, year) => { setCell(doc, addr(r, layout.levelCols.get(year)), qty); n += qty; });
-    });
-    count(name, n);
-  }
-
-  // LONJAKAN SAUJANA / KEHADIRAN PENUH: each Tahun on its own row; another
-  // line ("TAHAP 1") in an empty row below them.
-  for (const [g, sheet] of [[plan.lonjakan, SHEET_LONJAKAN], [plan.kehadiran, SHEET_KEHADIRAN]]) {
-    if (!g) continue;
-    const base = findName(sheet);
-    const ws = base && wb.Sheets[base];
-    const layout = ws && layoutList(ws, 'TAHUN');
-    if (!layout) {
-      notes.push(`This template has no ${sheet} sheet, so those plaques went to ORDER LAIN-LAIN.`);
-      toExtra(g.rows.map((x) => ({ heading: g.heading, award: g.award, line: x.label, eline2: '', qty: x.qty, code: x.code })));
-      continue;
-    }
-    const { doc, name } = await sheetCopy(base);
-    writeTitle(doc, layout.title, [g.heading, g.award, g.rows[0].label]);
-    const taken = new Set();
-    let n = 0;
-    g.rows.forEach((x) => {
-      const label = up(x.label);
-      const slot = (TAHUN_RE.test(label) && layout.rows.find((row) => row.label === label && !taken.has(row.r)))
-        || layout.rows.find((row) => !row.label && !taken.has(row.r));
-      if (!slot) {
-        toExtra([{ heading: g.heading, award: g.award, line: x.label, eline2: '', qty: x.qty, code: x.code }]);
-        return;
+        count(name, fit.reduce((a, x) => a + x.qty, 0));
       }
-      taken.add(slot.r);
-      if (!slot.label && label) setCell(doc, addr(slot.r, layout.labelCol), label);
-      setCell(doc, addr(slot.r, layout.qtyCol), x.qty);
-      if (x.code) setCell(doc, addr(slot.r, layout.plakCol), x.code);
-      n += x.qty;
-    });
-    count(name, n);
-  }
+    }
 
-  // TOKOH: one honour per row; the template's sample honours this order
-  // doesn't have are emptied.
-  if (plan.tokoh) {
-    const base = findName(SHEET_TOKOH);
-    const ws = base && wb.Sheets[base];
-    const layout = ws && layoutList(ws, 'TOKOH');
-    const rowsOf = layout ? layout.rows : [];
-    // More honours than the sheet has rows: rows are added above its TOTAL.
-    if (!rowsOf.length) {
-      notes.push(`${plan.tokoh.rows.length} TOKOH award(s) didn't fit the ${base || SHEET_TOKOH} sheet, so they went to ORDER LAIN-LAIN.`);
-      toExtra(plan.tokoh.rows.map((x) => ({ heading: plan.tokoh.heading, award: x.name, line: x.nama, eline2: '', qty: x.qty, code: x.code })));
-    } else {
-      const fit = plan.tokoh.rows;
-      const { doc, name } = await sheetCopy(base);
-      const slots = [...rowsOf];
-      const extra = fit.length - slots.length;
-      if (extra > 0) {
-        // slots[].r is 0-based: the TOTAL row is two Excel rows past it.
-        const lastRow = slots[slots.length - 1].r;
-        insertListRows(doc, lastRow + 2, extra);
-        for (let i = 1; i <= extra; i++) slots.push({ r: lastRow + i, label: '' });
+    // ORDER LAIN-LAIN: one row per plaque wording.
+    const rows = [...plan.umum, ...umumExtra];
+    if (rows.length) {
+      const base = findName(SHEET_UMUM);
+      const layout = base && layoutUmum(wb.Sheets[base]);
+      if (!layout || !layout.rows.length) {
+        notes.push(`${rows.length} plaque wording(s) need the ORDER LAIN-LAIN sheet, which this template doesn't have — please add them by hand.`);
+      } else {
+        const heading = rows.find((r) => r.heading)?.heading || '';
+        for (const part of chunk(rows, layout.rows.length)) {
+          const { doc, name } = await sheetCopy(base);
+          if (layout.contoh.l0 && heading) setCell(doc, layout.contoh.l0, heading);
+          // ② the award, ③ its TAHUN / TAHAP line, ④ the line under that
+          // (Sean, 2026-10-17: each on its own line of the plaque).
+          const contoh = { l1: part[0].award, l2: part[0].line, l3: part[0].eline2 };
+          ['l1', 'l2', 'l3'].forEach((k) => layout.contoh[k] && setCell(doc, layout.contoh[k], contoh[k]));
+          part.forEach((p, i) => {
+            const r = layout.rows[i];
+            // ① blank = the CONTOH heading; a plaque with another heading
+            // carries its own.
+            if (layout.cols.l0 != null && p.heading && p.heading !== heading) setCell(doc, addr(r, layout.cols.l0), p.heading);
+            // A blank line would mean "same as CONTOH": "-" is the form's
+            // "no such line". A form without the ③ / ④ columns keeps the
+            // lines together in ②.
+            const own = layout.cols.l2 != null && layout.cols.l3 != null
+              ? { l1: p.award, l2: p.line, l3: p.eline2 }
+              : { l1: [p.award, p.line, p.eline2].filter(Boolean).join('\n'), l2: '', l3: '' };
+            ['l1', 'l2', 'l3'].forEach((k) => {
+              if (layout.cols[k] == null) return;
+              setCell(doc, addr(r, layout.cols[k]), own[k] || (k === 'l1' || (layout.contoh[k] && contoh[k]) ? '-' : ''));
+            });
+            setCell(doc, addr(r, layout.cols.qty), p.qty);
+            if (p.code) setCell(doc, addr(r, layout.cols.plak), p.code);
+          });
+          count(name, part.reduce((a, p) => a + p.qty, 0));
+        }
       }
-      // The line under the award (LELAKI / TAHAP 1) is the NAMA MURID, and
-      // the CONTOH's ③ NAMA line (Sean, 2026-10-17). A blank NAMA MURID
-      // engraves the CONTOH's ③, so an honour with no such line gets "-"
-      // (no line) once ③ is filled.
-      const namaCol = layout.namaCol;
-      const sample = namaCol != null ? fit.find((x) => x.nama) : null;
-      writeTitle(doc, layout.title, [plan.tokoh.heading, (sample || fit[0]).name, sample ? sample.nama : '']);
-      slots.forEach(({ r, label }, i) => {
-        const x = fit[i];
-        if (!x) { if (label) setCell(doc, addr(r, layout.labelCol), ''); return; }
-        const together = namaCol == null && x.nama;
-        setCell(doc, addr(r, layout.labelCol), together ? `${x.name}\n${x.nama}` : x.name);
-        if (namaCol != null && (x.nama || sample)) setCell(doc, addr(r, namaCol), x.nama || '-');
-        setCell(doc, addr(r, layout.qtyCol), x.qty);
-        if (x.code) setCell(doc, addr(r, layout.plakCol), x.code);
-      });
-      count(name, fit.reduce((a, x) => a + x.qty, 0));
     }
   }
+  tab = '';
 
   // SELEMPANG: ACARA / WARNA / KUANTITI, one row each.
   const sashes = (categorized?.selempang || []).filter((x) => Number(x.qty) > 0 || x.acara);
@@ -977,52 +1061,14 @@ export async function fillOrderTemplate(templateBuffer, categorized, {
         const { doc } = await sheetCopy(priceName);
         changes.forEach(([ref, price]) => setCell(doc, ref, price));
       }
-      const missing = [...new Set(plan.allCodes)].filter((c) => !listed.has(up(c)));
+      const missing = [...new Set(plans.flatMap(({ plan }) => plan.allCodes))].filter((c) => !listed.has(up(c)));
       if (missing.length) notes.push(`Not in the form's price list (SENARAI PLAK), so their HARGA is blank: ${missing.join(', ')}.`);
-    }
-  }
-
-  // ORDER LAIN-LAIN: one row per plaque wording.
-  const rows = [...plan.umum, ...umumExtra];
-  if (rows.length) {
-    const base = findName(SHEET_UMUM);
-    const layout = base && layoutUmum(wb.Sheets[base]);
-    if (!layout || !layout.rows.length) {
-      notes.push(`${rows.length} plaque wording(s) need the ORDER LAIN-LAIN sheet, which this template doesn't have — please add them by hand.`);
-    } else {
-      const heading = rows.find((r) => r.heading)?.heading || '';
-      for (const part of chunk(rows, layout.rows.length)) {
-        const { doc, name } = await sheetCopy(base);
-        if (layout.contoh.l0 && heading) setCell(doc, layout.contoh.l0, heading);
-        // ② the award, ③ its TAHUN / TAHAP line, ④ the line under that
-        // (Sean, 2026-10-17: each on its own line of the plaque).
-        const contoh = { l1: part[0].award, l2: part[0].line, l3: part[0].eline2 };
-        ['l1', 'l2', 'l3'].forEach((k) => layout.contoh[k] && setCell(doc, layout.contoh[k], contoh[k]));
-        part.forEach((p, i) => {
-          const r = layout.rows[i];
-          // ① blank = the CONTOH heading; a plaque with another heading
-          // carries its own.
-          if (layout.cols.l0 != null && p.heading && p.heading !== heading) setCell(doc, addr(r, layout.cols.l0), p.heading);
-          // A blank line would mean "same as CONTOH": "-" is the form's
-          // "no such line". A form without the ③ / ④ columns keeps the
-          // lines together in ②.
-          const own = layout.cols.l2 != null && layout.cols.l3 != null
-            ? { l1: p.award, l2: p.line, l3: p.eline2 }
-            : { l1: [p.award, p.line, p.eline2].filter(Boolean).join('\n'), l2: '', l3: '' };
-          ['l1', 'l2', 'l3'].forEach((k) => {
-            if (layout.cols[k] == null) return;
-            setCell(doc, addr(r, layout.cols[k]), own[k] || (k === 'l1' || (layout.contoh[k] && contoh[k]) ? '-' : ''));
-          });
-          setCell(doc, addr(r, layout.cols.qty), p.qty);
-          if (p.code) setCell(doc, addr(r, layout.cols.plak), p.code);
-        });
-        count(name, part.reduce((a, p) => a + p.qty, 0));
-      }
     }
   }
 
   const copies = [...used].filter(([, k]) => k > 1).map(([b, k]) => `${b} (${k - 1} extra)`);
   if (copies.length) notes.push(`Extra copies of ${copies.join(', ')} were added; FRONT PG's totals don't include them.`);
+  if (tabSheets.length) notes.push(`Sheets for the order's own tabs (${tabSheets.join(', ')}) were added; FRONT PG's totals don't include them.`);
   // Only FRONT PG and the sheets the order filled show; the empty ones are
   // hidden (Sean, 2026-10-19), not deleted, so they can still be unhidden.
   const frontPg = findName(SHEET_FRONT);
@@ -1030,5 +1076,5 @@ export async function fillOrderTemplate(templateBuffer, categorized, {
   await book.showOnly(filled);
   book.save();
   const buffer = await zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' });
-  return { buffer, notes, placed, plaqueCount: plan.plaqueCount };
+  return { buffer, notes, placed, sheets: [...filled], plaqueCount: plans.reduce((a, { plan }) => a + plan.plaqueCount, 0) };
 }

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import { DOMParser, XMLSerializer } from '@xmldom/xmldom';
 import { draftToFormParsed } from './formRoundTrip';
+import { makeDynamicCategoryKey } from '../data/catalog';
 
 const template = () => {
   const b = fs.readFileSync('public/templates/FORM-ANUGERAH.xlsx');
@@ -56,5 +57,21 @@ describe('draftToFormParsed, line order', () => {
     d.lineValues['TOKOH_SHEET::0::refOrder'] = '0,2,3';
     const { error } = await draftToFormParsed(d, ['TOKOH_SHEET'], template(), opts);
     expect(error).toBeUndefined();
+  });
+});
+
+describe('draftToFormParsed, a tab of its own', () => {
+  it('comes back as a tab of the same name', async () => {
+    const key = makeDynamicCategoryKey('TOKOH_SHEET', 'IKON PENGAWAS');
+    const d = draft();
+    d.lineValues = { [`${key}::0::0`]: 'MAJLIS 2026', [`${key}::0::2`]: 'IKON PENGAWAS' };
+    d.rowsByBlock = { [`${key}::0`]: [{ id: 1, desc: 'IKON PENGAWAS', qty: '2', jenisPlak: 'MP399', namaMurid: 'TAHUN 3' }] };
+    d.visibleBlocksByCategory = { [key]: [0] };
+    const { parsed, error } = await draftToFormParsed(d, [key], template(), opts);
+    expect(error).toBeUndefined();
+    expect(Object.keys(parsed.categorized)).toEqual([key]);
+    const [sec] = parsed.categorized[key];
+    expect([sec.sourceSheet, sec.dynamicCategoryKey]).toEqual(['IKON PENGAWAS', key]);
+    expect(sec.tokohRows.filter((r) => r.qty).map((r) => [r.desc, r.namaMurid, r.qty])).toEqual([['IKON PENGAWAS', 'TAHUN 3', 2]]);
   });
 });

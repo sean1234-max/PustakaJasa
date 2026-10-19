@@ -30,5 +30,12 @@ export async function draftToFormParsed(draft, keys, templateBuffer, opts) {
   const placed = Object.values(out.placed).reduce((a, n) => a + n, 0);
   if (placed < out.plaqueCount) return { error: `only ${placed} of ${out.plaqueCount} plaques fit the form` };
   const parsed = parseFormAnugerahExcel(out.buffer);
-  return parsed.error ? { error: parsed.error } : { parsed };
+  if (parsed.error) return { error: parsed.error };
+  // Only what the order wrote: a sheet it left hidden still has the
+  // template's own sample rows (TOKOH MURID, TOKOH NILAM …).
+  const shown = new Set(out.sheets || []);
+  const categorized = Object.fromEntries(Object.entries(parsed.categorized || {})
+    .map(([k, secs]) => [k, (secs || []).filter((sec) => !sec.sourceSheet || shown.has(String(sec.sourceSheet).trim().toUpperCase()))])
+    .filter(([, secs]) => secs.length));
+  return { parsed: { ...parsed, categorized } };
 }
