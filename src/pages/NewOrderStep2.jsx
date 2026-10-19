@@ -16,9 +16,7 @@ import { checkEngravingText } from '../lib/grammarCheckApi';
 import { canUseAiReader } from '../lib/fileReadApi';
 import { downloadBinaryFile } from '../utils/downloadBlob';
 import { draftPlaques } from '../utils/draftForm';
-
-// The blank FORM ANUGERAH the order is written into (templateExport.js).
-const FORM_TEMPLATE_URL = '/templates/FORM-ANUGERAH.xlsx';
+import { FORM_TEMPLATE_URL } from '../utils/formRoundTrip';
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
 const DRAFT_FIELDS = {
@@ -31,7 +29,7 @@ const DRAFT_FIELDS = {
 const EDITABLE = { lines: true, rowDesc: true, rowQty: true, addRemoveRows: true, matrix: true, jenisPlak: true };
 
 export default function NewOrderStep2() {
-  const { state, patch, addToCart, addAllToCart, importFormAnugerahExcel, readSkippedSheetsWithAi } = useAppState();
+  const { state, patch, addToCart, addAllToCart, importFormAnugerahExcel, convertImportToForm, readSkippedSheetsWithAi } = useAppState();
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
   // The last import's result ({ ok, message, warnings }) and the answers to
@@ -106,6 +104,9 @@ export default function NewOrderStep2() {
     let status;
     try {
       result = await importFormAnugerahExcel(file);
+      // A Word / PDF order shows in the FORM ANUGERAH layout straight away
+      // (Sean, 2026-10-19), the same as an Excel order.
+      if (result.ok && /\.(docx|pdf)$/i.test(file.name)) result = await convertImportToForm(file, result);
       status = { ...result };
       delete status.aiCategorized;
       if (result.ok) {

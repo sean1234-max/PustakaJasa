@@ -19,6 +19,7 @@ import { readSheetsWithAi, canUseAiReader } from '../lib/fileReadApi';
 import { parseDocxOrderWithAi, parsePdfOrder } from '../utils/pdfImport';
 import { checkColumnTotals, checkExpansionTotals, checkLevelBreakdownMatch, checkAliranKelasTotals } from '../utils/importChecks';
 import { frontPgToFunctionDetails } from '../utils/frontPgDetails';
+import { FORM_TEMPLATE_URL, draftToFormParsed } from '../utils/formRoundTrip';
 import { buildCategoryCartItems } from './categoryCartItems';
 import { AppStateContext } from './AppStateContext';
 import { saveCrystalDraft, clearCrystalDraft } from '../lib/crystalDraft';
@@ -209,6 +210,24 @@ function restoreCategoryDraft(st, categoryKey) {
     nextColumnId: Math.max(st.nextColumnId, restored.nextId),
     visibleBlocksByCategory: { ...st.visibleBlocksByCategory, [categoryKey]: restored.visibleBlocksByCategory[categoryKey] },
   };
+}
+
+// Takes tabs off the New Order draft: a fixed category back to its blank
+// start, a tab of its own (dynamic key) off the page altogether.
+function removeDraftTabs(st, keys) {
+  let next = st;
+  keys.forEach((catKey) => {
+    next = { ...next, ...resetCategoryFields(catKey, next, 'visibleBlocksByCategory') };
+    if (!isDynamicCategoryKey(catKey)) return;
+    const drop = (obj) => Object.fromEntries(Object.entries(obj || {}).filter(([k]) => !k.startsWith(`${catKey}::`)));
+    const visible = { ...next.visibleBlocksByCategory };
+    delete visible[catKey];
+    next = {
+      ...next, lineValues: drop(next.lineValues), matrixValues: drop(next.matrixValues), rowsByBlock: drop(next.rowsByBlock),
+      columnsByBlock: drop(next.columnsByBlock), plakRows: drop(next.plakRows), visibleBlocksByCategory: visible,
+    };
+  });
+  return next;
 }
 
 function resetCategoryFields(catKey, st, visibleField) {
@@ -881,8 +900,9 @@ export function AppStateProvider({ children }) {
   // `parsedOverride` (the AI sheet reader below) skips reading the file
   // and the backup upload — the file was already read and uploaded once.
   // `instructions` (optional): how to read the file, in the user's words,
-  // sent with a PDF / Word file the AI reader reads.
-  const importFormAnugerahExcelInto = useCallback(async (file, fields, { applyFilter, parsedOverride, instructions = '' } = {}) => {
+  // sent with a PDF / Word file the AI reader reads. `base` (optional): the
+  // state to import into instead of the current one (convertImportToForm).
+  const importFormAnugerahExcelInto = useCallback(async (file, fields, { applyFilter, parsedOverride, instructions = '', base = null } = {}) => {
     let parsed = parsedOverride;
     if (!parsed) {
       try {
@@ -928,7 +948,7 @@ export function AppStateProvider({ children }) {
     // handing setState an already-finished plain object sidesteps the
     // problem entirely — merging the same finished object twice is a
     // no-op, not a double-push.
-    const st = stateRef.current;
+    const st = base || stateRef.current;
     let next = st;
 
     // Jenis Plak text the catalog can't place is left BLANK (never the raw
@@ -1546,6 +1566,42 @@ export function AppStateProvider({ children }) {
     (file, { instructions } = {}) => importFormAnugerahExcelInto(file, NEW_ORDER_IMPORT_FIELDS, { instructions }),
     [importFormAnugerahExcelInto],
   );
+
+  // A Word / PDF order straight into the FORM ANUGERAH layout (Sean,
+  // 2026-10-19): `first` (its import result) has its tabs written into the
+  // form and read back like an uploaded form (formRoundTrip.js), replacing
+  // them, so the order shows and is saved the way an Excel order is. When
+  // that can't be done whole, the tabs stay as read and a note says why.
+  const convertImportToForm = useCallback(async (file, first) => {
+    const keys = first.categories || [];
+    if (!first.ok || !first.draft || keys.length === 0) return first;
+    let conv;
+    try {
+      const res = await fetch(FORM_TEMPLATE_URL);
+      conv = res.ok
+        ? await draftToFormParsed(first.draft, keys, await res.arrayBuffer())
+        : { error: 'the blank FORM ANUGERAH template is not on the site' };
+    } catch (err) {
+      console.error('Could not put the order into the FORM ANUGERAH layout:', err);
+      conv = { error: 'the form could not be made' };
+    }
+    const second = conv.error ? null : await importFormAnugerahExcelInto(file, NEW_ORDER_IMPORT_FIELDS, {
+      parsedOverride: conv.parsed, base: removeDraftTabs(first.draft, keys),
+    });
+    if (!second?.ok) {
+      const why = conv.error || second?.message || 'the form could not be read back';
+      return { ...first, warnings: [...(first.warnings || []), { type: 'truncated', text: `Kept as read, not in the FORM ANUGERAH layout: ${why}.` }] };
+    }
+    // The first read's notes stay (what the AI says about the file), and so
+    // do its unmatched Jenis Plak codes: the form only carries them blank.
+    // Its cross-check questions were about the tabs just replaced.
+    const notes = (first.warnings || []).filter((w) => w.type === 'truncated' || w.type === 'plakMismatch');
+    return {
+      ...second,
+      message: `Read from the file and put into the FORM ANUGERAH layout. ${second.message}`,
+      warnings: [...notes, ...(second.warnings || [])],
+    };
+  }, [importFormAnugerahExcelInto]);
 
   // AI sheet reader (universal file-reader plan, phase 1): the sheets of an
   // already-imported Excel file that the rule-based reader skipped are
@@ -3301,7 +3357,7 @@ export function AppStateProvider({ children }) {
   const value = {
     state, patch, today: TODAY, login, logout,
     resetCurrentCategory, startNewOrder, addToCart, addAllToCart, removeFromCart, editCartCategory, restoreCartToDraft, submitOrder, checkDuplicateOrders, reorderOrder,
-    importFormAnugerahExcel, importFormAnugerahExcelInto, readSkippedSheetsWithAi,
+    importFormAnugerahExcel, importFormAnugerahExcelInto, convertImportToForm, readSkippedSheetsWithAi,
     openAmend, updateAmend,
     openAddOn, addOnAddToCart, removeFromAddOnCart, submitPendingAddOn, cancelPendingAddOn, rejectAddOn, approveAddOn, approveOrder, setInvoiceId, approveAndSetInvoiceId,
     setJenisPlakInvoiceGroup, renameInvoiceNumber,
