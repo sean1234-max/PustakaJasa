@@ -1592,9 +1592,10 @@ export function AppStateProvider({ children }) {
       const why = conv.error || second?.message || 'the form could not be read back';
       return { ...first, warnings: [...(first.warnings || []), { type: 'truncated', text: `Kept as read, not in the FORM ANUGERAH layout: ${why}.` }] };
     }
-    // The first read's notes stay (what the AI says about the file); its
-    // Jenis Plak and cross-check questions were about the tabs just replaced.
-    const notes = (first.warnings || []).filter((w) => w.type === 'truncated');
+    // The first read's notes stay (what the AI says about the file), and so
+    // do its unmatched Jenis Plak codes: the form only carries them blank.
+    // Its cross-check questions were about the tabs just replaced.
+    const notes = (first.warnings || []).filter((w) => w.type === 'truncated' || w.type === 'plakMismatch');
     return {
       ...second,
       message: `Read from the file and put into the FORM ANUGERAH layout. ${second.message}`,

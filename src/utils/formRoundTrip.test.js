@@ -42,3 +42,19 @@ describe('draftToFormParsed', () => {
     expect(error).toMatch(/no quantity yet/);
   });
 });
+
+describe('draftToFormParsed, line order', () => {
+  it('leaves the tabs as read when a tab engraves its lines in another order', async () => {
+    const d = draft();
+    d.lineValues['TOKOH_SHEET::0::refOrder'] = '0,3,2';
+    const { error } = await draftToFormParsed(d, ['TOKOH_SHEET'], template(), opts);
+    expect(error).toMatch(/different order/);
+  });
+
+  it('goes ahead when the lines are in the usual order', async () => {
+    const d = draft();
+    d.lineValues['TOKOH_SHEET::0::refOrder'] = '0,2,3';
+    const { error } = await draftToFormParsed(d, ['TOKOH_SHEET'], template(), opts);
+    expect(error).toBeUndefined();
+  });
+});
