@@ -257,7 +257,7 @@ export default function ProductionDashboard() {
                 <div>
                   <div className="order-card-label">Order ID</div>
                   <div className="order-card-id">{ord.id}</div>
-                  <AddOnTag order={ord} />
+                  <AddOnTag order={ord} pending={addonCard} />
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
                   {/* Production uploaded a corrected copy of the teacher's

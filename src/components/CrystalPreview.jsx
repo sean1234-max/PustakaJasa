@@ -67,7 +67,7 @@ function ArtworkStatus({ order, onConfirmArtwork }) {
 // makeAi: bump it to have the preview open every crystal in Illustrator (Production's Generate AI
 // File), saved in makeAiFolder (the plaques' OUTPUT folder) when given.
 // onMakeAiSent: called once the crystals of a makeAi are handed to the helper (or couldn't be).
-export default function CrystalPreview({ order, role = 'view', selected = null, onConfirmArtwork = null, showArtwork = true, makeAi = 0, makeAiFolder = '', onMakeAiSent = null }) {
+export default function CrystalPreview({ order, role = 'view', selected = null, onConfirmArtwork = null, showArtwork = true, canMake = true, makeAi = 0, makeAiFolder = '', onMakeAiSent = null }) {
   const frame = useRef(null);
   const sentRef = useRef(onMakeAiSent);
   sentRef.current = onMakeAiSent;
@@ -77,8 +77,9 @@ export default function CrystalPreview({ order, role = 'view', selected = null, 
   const [readyTick, setReadyTick] = useState(0); // counts "ready"s: a reloaded preview needs the rows again
   const rows = useMemo(() => crystalRowsOf(order), [order]);
   const reserved = useMemo(() => reservedCrystalsOf(order), [order]);
-  // Production makes the crystals only once the artwork is confirmed (it can still ✎ Edit them)
-  const locked = role === 'production' && showArtwork && !order?.artworkConfirmedAt;
+  // Production makes the crystals only once the artwork is confirmed (it can still ✎ Edit them),
+  // and never from a Tambahan still in review (`canMake` false)
+  const locked = role === 'production' && (!canMake || (showArtwork && !order?.artworkConfirmedAt));
   const src = `${STUDIO_PATH}/preview.html?theme=light&role=${encodeURIComponent(role)}${locked ? '&locked=1' : ''}`;
 
   useEffect(() => {
