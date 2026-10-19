@@ -843,6 +843,36 @@ describe('parseFormAnugerahExcel — renamed/duplicated template sheet becomes i
     ]);
   });
 
+  // Real order: the school deleted the TAHUN column on both sheets, keeping
+  // just KUANTITI/QTY + JENIS PLAK under their own heading lines.
+  it('LONJAKAN SAUJANA / KEHADIRAN PENUH without a TAHUN column read as one blank-TAHUN row', () => {
+    const parsed = parseFormAnugerahExcel(workbookFromSheets({
+      'LONJAKAN SAUJANA': [
+        [null, 'TOLONG ISI DI SINI'],
+        [null, 'HARI ANUGERAH 2026'],
+        [null, 'ANUGERAH INSPIRASI MURID'],
+        [null, 'TAHAP 1'],
+        ['JENIS PLAK', 'QTY', 'HARGA'],
+        ['PKF 266', 15, 10],
+      ],
+      'KEHADIRAN PENUH': [
+        [null, null, 'TOLONG ISI DI SINI'],
+        [null, null, 'HARI ANUGERAH 2026'],
+        [null, null, 'ANUGERAH KEHADIRAN EMAS'],
+        ['KUANTITI', 'JENIS PLAK', 'HARGA'],
+        [35, 'PKF 266', 10],
+        ['TOTAL:', 35],
+      ],
+    }));
+    expect(parsed.unrecognizedSheets || []).toEqual([]);
+    const lonjakan = parsed.categorized.LONJAKAN[0];
+    expect(lonjakan.lines).toEqual({ 0: 'HARI ANUGERAH 2026', 2: 'ANUGERAH\nINSPIRASI MURID', 3: 'TAHAP 1' });
+    expect(lonjakan.tahunRows).toEqual([{ tahun: '', label: '', qty: 15, jenisPlak: 'PKF 266' }]);
+    const kehadiran = parsed.categorized.KEHADIRAN[0];
+    expect(kehadiran.lines).toEqual({ 0: 'HARI ANUGERAH 2026', 2: 'ANUGERAH\nKEHADIRAN EMAS' });
+    expect(kehadiran.tahunRows).toEqual([{ tahun: '', label: '', qty: 35, jenisPlak: 'PKF 266' }]);
+  });
+
   it('a genuinely blank row (no label, no qty, no Jenis Plak) is still skipped', () => {
     const parsed = parseFormAnugerahExcel(workbookFromSheets({
       'LONJAKAN SAUJANA': [
