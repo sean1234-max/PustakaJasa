@@ -513,6 +513,16 @@ describe('buildCsvRows — TOKOH_SHEET NAMA MURID / Reserved', () => {
     expect(rows.every((r) => r[2] === 'TOKOH NILAM' && r[3] === '')).toBe(true);
   });
 
+  it('a TOKOH name ending in its own TAHUN, no NAMA MURID, CONTOH ③ a TAHUN: the year goes to ③ once', () => {
+    const items = ['TAHUN 3', 'TAHUN 4'].map((t, i) => {
+      const it = tokohItem(`y${i}`, { id: 10 + i, desc: `IKON PENGAWAS ${t}`, qty: 1 });
+      it.detail.lines['TOKOH_SHEET::0::3'] = 'TAHUN 3';
+      return it;
+    });
+    const { rows } = buildCsvRows({ ...order, items }, 'TOKOH_SHEET', items);
+    expect(rows.map((r) => r.slice(2, 4))).toEqual([['IKON PENGAWAS', 'TAHUN 3'], ['IKON PENGAWAS', 'TAHUN 4']]);
+  });
+
   it('a NAMA MURID of "-" has no event_line_1, even when the CONTOH has a ③', () => {
     const item = tokohItem('d', { id: 3, desc: 'TOKOH SUKAN', qty: 2, namaMurid: '-' });
     item.detail.lines['TOKOH_SHEET::0::3'] = 'LELAKI\nTAHAP 1';
