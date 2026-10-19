@@ -589,9 +589,18 @@ function formatTokohNamaMurid(namaMurid, contohLine3) {
 }
 
 const YEAR_LINE_RE = /^(TAHUN|TAHAP)\s*\d+$/i;
-function splitTrailingYear(desc, contohLine3) {
+// A TOKOH row whose award carries its own ③ ("… TERBAIK TAHUN 4", "…
+// TERBAIK PPKI") under a CONTOH whose ③ is a year: the part after the
+// CONTOH's ② wording, else a trailing TAHUN/TAHAP n, is the row's ③.
+function splitTrailingYear(desc, contohLine3, contohLine2) {
   if (!YEAR_LINE_RE.test(String(contohLine3 || '').trim())) return null;
-  const m = String(desc || '').trim().match(/^(.*\S)\s+((?:TAHUN|TAHAP)\s*\d+)$/i);
+  const flat = (t) => String(t || '').replace(/\s+/g, ' ').trim();
+  const name = flat(desc);
+  const head = flat(contohLine2);
+  if (head && name.toUpperCase().startsWith(`${head.toUpperCase()} `)) {
+    return { award: name.slice(0, head.length), year: name.slice(head.length + 1) };
+  }
+  const m = name.match(/^(.*\S)\s+((?:TAHUN|TAHAP)\s*\d+)$/i);
   return m ? { award: m[1], year: m[2] } : null;
 }
 
@@ -614,7 +623,7 @@ function buildRowsFromDescriptionRows(item, header, year, positionPart1, tokohNa
     // A TOKOH row named with its own year ("IKON PENGAWAS TAHUN 4") and no
     // NAMA MURID, under a CONTOH whose ③ is a year ("TAHUN 3"): that year is
     // the row's ③, not part of the award — else it engraves twice.
-    const ownYear = tokohNames && !(r.namaMurid || '').trim() ? splitTrailingYear(r.desc, contohLine3) : null;
+    const ownYear = tokohNames && !(r.namaMurid || '').trim() ? splitTrailingYear(r.desc, contohLine3, getLine(item, 2)) : null;
     // A TOKOH row's own award name is its position — same two-line split as
     // the ACARA line ("ANUGERAH MURID BERPOTENSI" -> "ANUGERAH" / the rest).
     const position = lonjakanStyle ? positionPart1 : breakAcaraLine(ownYear ? ownYear.award : (r.desc || ''));

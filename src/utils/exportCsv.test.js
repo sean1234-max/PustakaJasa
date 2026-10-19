@@ -523,6 +523,19 @@ describe('buildCsvRows — TOKOH_SHEET NAMA MURID / Reserved', () => {
     expect(rows.map((r) => r.slice(2, 4))).toEqual([['IKON PENGAWAS', 'TAHUN 3'], ['IKON PENGAWAS', 'TAHUN 4']]);
   });
 
+  it('a TOKOH name that starts with the CONTOH ② keeps the rest (TAHUN 1 / PPKI) as its ③', () => {
+    const items = ['TAHUN 1', 'PPKI'].map((t, i) => {
+      const it = tokohItem(`k${i}`, { id: 20 + i, desc: `ANUGERAH KECERIAAN KELAS TERBAIK ${t}`, qty: 2 });
+      it.detail.lines['TOKOH_SHEET::0::2'] = 'ANUGERAH\nKECERIAAN KELAS TERBAIK';
+      it.detail.lines['TOKOH_SHEET::0::3'] = 'TAHUN 1';
+      return it;
+    });
+    const { rows } = buildCsvRows({ ...order, items }, 'TOKOH_SHEET', items);
+    expect([rows[0].slice(2, 4), rows[2].slice(2, 4)]).toEqual([
+      ['ANUGERAH\nKECERIAAN KELAS TERBAIK', 'TAHUN 1'], ['ANUGERAH\nKECERIAAN KELAS TERBAIK', 'PPKI'],
+    ]);
+  });
+
   it('a NAMA MURID of "-" has no event_line_1, even when the CONTOH has a ③', () => {
     const item = tokohItem('d', { id: 3, desc: 'TOKOH SUKAN', qty: 2, namaMurid: '-' });
     item.detail.lines['TOKOH_SHEET::0::3'] = 'LELAKI\nTAHAP 1';

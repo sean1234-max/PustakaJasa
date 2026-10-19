@@ -213,6 +213,7 @@ describe('fillOrderTemplate, TOKOH NAMA MURID and line breaks', () => {
     const s = Number(/<c r="D4" s="(\d+)"/.exec(sheet)[1]);
     const xfs = /<cellXfs[^>]*>([\s\S]*?)<\/cellXfs>/.exec(styles)[1].match(/<xf\b[\s\S]*?(?:\/>|<\/xf>)/g);
     expect(xfs[s]).toContain('wrapText="1"');
+    expect(Number(/<row r="7"[^>]*\sht="([\d.]+)"/.exec(sheet)[1])).toBeGreaterThanOrEqual(36);
   });
 
   it('gives an honour with no NAMA MURID line a "-"', async () => {
