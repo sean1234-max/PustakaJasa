@@ -225,4 +225,17 @@ describe('fillOrderTemplate, TOKOH NAMA MURID and line breaks', () => {
     const wb = read(res.buffer);
     expect([v(wb, 'TOKOH', 'D4'), v(wb, 'TOKOH', 'B7'), v(wb, 'TOKOH', 'B8')]).toEqual(['LELAKI\nTAHAP 1', 'LELAKI\nTAHAP 1', '-']);
   });
+
+  it('puts honours past the TOKOH sheet\'s last row on a second TOKOH sheet, not ORDER LAIN-LAIN', async () => {
+    const plaques = Array.from({ length: 14 }, (_, i) => ({ kind: 'TOKOH_SHEET', heading: 'H', award: `Ikon ${i + 1}`, line: 'Tahun 3', eline2: '', code: 'PK 261 / A', qty: 2 }));
+    const res = await fillOrderTemplate(fs.readFileSync('public/templates/FORM-ANUGERAH.xlsx'), { plaques }, { DOMParser, XMLSerializer });
+    const wb = read(res.buffer);
+    expect(res.notes.join(' ')).not.toMatch(/didn't fit/);
+    expect(wb.SheetNames).toContain('TOKOH (2)');
+    const names = ['TOKOH', 'TOKOH (2)'].flatMap((n) => {
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1 });
+      return rows.map((r) => r[0]).filter((x) => /^IKON \d+$/.test(x || ''));
+    });
+    expect(names).toEqual(plaques.map((p) => p.award.toUpperCase()));
+  });
 });

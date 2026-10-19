@@ -772,13 +772,13 @@ export async function fillOrderTemplate(templateBuffer, categorized, {
     const ws = base && wb.Sheets[base];
     const layout = ws && layoutList(ws, 'TOKOH');
     const rowsOf = layout ? layout.rows : [];
-    const fit = plan.tokoh.rows.slice(0, rowsOf.length);
-    const over = plan.tokoh.rows.slice(rowsOf.length);
-    if (over.length) {
-      notes.push(`${over.length} TOKOH award(s) didn't fit the ${base || SHEET_TOKOH} sheet, so they went to ORDER LAIN-LAIN.`);
-      toExtra(over.map((x) => ({ heading: plan.tokoh.heading, award: x.name, line: x.nama, eline2: '', qty: x.qty, code: x.code })));
+    // More honours than the sheet has rows: the rest go on another copy of
+    // the TOKOH sheet ("TOKOH (2)"), read back as its own TOKOH tab.
+    if (!rowsOf.length) {
+      notes.push(`${plan.tokoh.rows.length} TOKOH award(s) didn't fit the ${base || SHEET_TOKOH} sheet, so they went to ORDER LAIN-LAIN.`);
+      toExtra(plan.tokoh.rows.map((x) => ({ heading: plan.tokoh.heading, award: x.name, line: x.nama, eline2: '', qty: x.qty, code: x.code })));
     }
-    if (fit.length) {
+    for (const fit of rowsOf.length ? chunk(plan.tokoh.rows, rowsOf.length) : []) {
       const { doc, name } = await sheetCopy(base);
       // The line under the award (LELAKI / TAHAP 1) is the NAMA MURID, and
       // the CONTOH's ③ NAMA line (Sean, 2026-10-17). A blank NAMA MURID
