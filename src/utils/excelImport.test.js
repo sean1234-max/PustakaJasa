@@ -105,6 +105,26 @@ describe('parseFormAnugerahExcel — SELEMPANG sheet', () => {
     const parsed = parseFormAnugerahExcel(buf);
     expect(parsed.categorized?.SELEMPANG).toBeUndefined();
   });
+
+  it('does not flag a blank SELEMPANG template as unrecognized because of its colour legend', () => {
+    const buf = workbookFromSheets({
+      SELEMPANG: [
+        ['TOLONG ISI DI SINI', null, null, null, null, null],
+        ['ACARA', 'WARNA', 'KUANTITI', null, 'CONTOH WARNA', null],
+        [null, null, null, null, 'BIRU', '0053'],
+        [null, null, null, null, 'HIJAU', '0052'],
+        [null, null, null, null, 'KUNING', '0051'],
+        [null, null, null, null, 'MERAH', 50],
+      ],
+      'MP THP 1': [
+        ['SUBJEK', 'KUANTITI'],
+        ['BAHASA MELAYU', 3],
+      ],
+    });
+    const parsed = parseFormAnugerahExcel(buf);
+    expect(parsed.categorized?.SELEMPANG).toBeUndefined();
+    expect(parsed.unrecognizedSheets || []).not.toContain('SELEMPANG');
+  });
 });
 
 describe('parseFormAnugerahExcel — "PPKI,PRA" sheet name (the real official template\'s actual PPKI tab)', () => {
