@@ -288,6 +288,18 @@ describe('CSV column remap — reference-sample lines -> CSV columns', () => {
       ['HARI ANUGERAH', '', 'LONJAKAN SAUJANA', 'TAHUN 4', '', 'DECO LIGHT', 'LONJAKAN SAUJANA', DEF, ''],
     ]);
   });
+
+  it('LONJAKAN: a row with no TAHUN follows the CONTOH ③ (e.g. 2026)', () => {
+    const item = {
+      id: 'l', jenisPlak: 'DECO LIGHT', qty: 2, categoryKey: 'LONJAKAN', blockIdx: 0,
+      detail: {
+        lines: { 'LONJAKAN::0::2': 'ANUGERAH\nLONJAKAN KEHADIRAN', 'LONJAKAN::0::3': '2026' },
+        rows: [{ id: 1, desc: '', qty: '1' }, { id: 2, desc: 'TAHUN 4', qty: '1' }],
+      },
+    };
+    const { rows } = buildCsvRows({ schoolLanguage: 'SK', items: [item] }, 'LONJAKAN', [item]);
+    expect(rows.map((r) => r[3])).toEqual(['2026', 'TAHUN 4']);
+  });
 });
 
 describe('SELEMPANG stays out of every Production export path', () => {

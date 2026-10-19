@@ -600,7 +600,7 @@ function buildRowsFromDescriptionRows(item, header, year, positionPart1, tokohNa
     //     -> event_line_1.
     //   LONJAKAN / KEHADIRAN (positionPrefixFromLine3 -> positionPart1 is
     //     line 2, "subjek/position") -> position; each row's own TAHUN
-    //     -> event_line_1.
+    //     -> event_line_1, or the CONTOH's ③ when TAHUN is blank.
     //   Main Template (retired, no positionPart1) -> row desc is the
     //     position, event_line_1 blank — unchanged.
     const lonjakanStyle = !tokohNames && !!positionPart1;
@@ -612,7 +612,8 @@ function buildRowsFromDescriptionRows(item, header, year, positionPart1, tokohNa
     const noNama = tokohNames && /^\s*-+\s*$/.test(r.namaMurid || '');
     const eventLine1 = noNama ? '' : tokohNames
       ? (formatTokohNamaMurid(r.namaMurid, contohLine3) || contohLine3)
-      : (lonjakanStyle ? (r.desc || '') : '');
+      // A row with no TAHUN follows the CONTOH's own ③ (e.g. "2026").
+      : (lonjakanStyle ? (r.desc || getLine(item, 3)) : '');
     const row = [header, year, position, eventLine1, ''];
     for (let i = 0; i < qty; i++) rows.push(row);
   });
