@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import { useAppState } from '../state/useAppState';
-import { statusPillStyle, isAddonInFlight, invoiceLabel } from '../data/catalog';
+import { statusPillStyle, isAddonInFlight, invoiceLabel, invoiceSource } from '../data/catalog';
 import { matchesOrderSearch } from '../utils/orderSearch';
 import OrderUrgentBadge from '../components/OrderUrgentBadge';
 import AddOnTag from '../components/AddOnTag';
@@ -193,7 +193,7 @@ export default function SalesDashboard() {
                     <div><div className="dim">Sales</div><div>{ord.sales || '—'}</div></div>
                   </div>
 
-                  <div className="order-card-invoice"><span className="dim">Invoice Number:</span> {invoiceLabel(ord) || '—'}</div>
+                  <div className="order-card-invoice"><span className="dim">Invoice Number:</span> {invoiceLabel(invoiceSource(ord, state.orders)) || '—'}</div>
                   <div className="dim" style={{ fontSize: 11 }}>{addonCard ? 'Tambahan Amount' : 'Total Amount'}</div>
                   <div className={`order-card-total${!addonCard && ord.priceAdjusted ? ' amount-adjusted' : ''}`}>
                     RM {shownAmount.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}

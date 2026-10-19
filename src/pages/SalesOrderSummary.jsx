@@ -8,7 +8,7 @@ import OrderPrintout from '../components/OrderPrintout';
 import AddOnTag from '../components/AddOnTag';
 import DatePicker from '../components/DatePicker';
 import { useAppState } from '../state/useAppState';
-import { statusPillStyle, standardUnitPrice, formatDate, defaultShipmentDate, toMalaysiaDay, malaysiaToday, isReviewed, isAddonInFlight, invoiceLabel } from '../data/catalog';
+import { statusPillStyle, standardUnitPrice, formatDate, defaultShipmentDate, toMalaysiaDay, malaysiaToday, isReviewed, isAddonInFlight, invoiceLabel, invoiceSource } from '../data/catalog';
 import CancelOrderControl from '../components/CancelOrderControl';
 import ReassignSalesmanControl from '../components/ReassignSalesmanControl';
 import { reconstructBlocksForCategory } from '../utils/computeBlocks';
@@ -310,7 +310,7 @@ export default function SalesOrderSummary() {
                 {/* Every other order-viewing screen (teacher, Store Admin,
                     Production) already shows this on screen — it used to be
                     printed-only here. */}
-                <div><div className="dim">Invoice Number</div><div>{invoiceLabel(order) || '—'}</div></div>
+                <div><div className="dim">Invoice Number</div><div>{invoiceLabel(invoiceSource(order, state.orders)) || '—'}</div></div>
                 {order.sekolah && <div><div className="dim">Sekolah</div><div>{order.sekolah}</div></div>}
                 {order.sales && <div><div className="dim">Sales</div><div>{order.sales}</div></div>}
                 {order.createdBySalesman && <div><div className="dim">Placed by</div><div>Salesman {order.snapshot?.placedBy || ''}</div></div>}
@@ -533,7 +533,7 @@ export default function SalesOrderSummary() {
         {/* Print-only — see the "Print Order" button, only shown once approved. */}
         <OrderPrintout
           original={addonView ? order : originalOrder}
-          order={addonView ? effectiveOrder : order} invoiceId={order.invoiceId} printedAt={order.printedAt}
+          order={addonView ? effectiveOrder : order} invoiceId={invoiceSource(order, state.orders).invoiceId} printedAt={order.printedAt}
           urgent={order.urgent} stamp={stamp} showSales showRemark
           priceTable={addonView ? {
             rows: addOnRows, priceDrafts: addOnPriceDrafts, setPrice: () => {}, plakCatalog: state.plakCatalog,

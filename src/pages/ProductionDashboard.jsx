@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import ConfirmButton from '../components/ConfirmButton';
 import { useAppState } from '../state/useAppState';
-import { statusPillStyle, formatDate, getLowStockAlerts, toMalaysiaDay, isAddonInFlight, invoiceLabel } from '../data/catalog';
+import { statusPillStyle, formatDate, getLowStockAlerts, toMalaysiaDay, isAddonInFlight, invoiceLabel, invoiceSource } from '../data/catalog';
 import { getOrderChangeStamp } from '../utils/orderStamp';
 import { getOrderInvoiceSlices } from '../utils/orderBatches';
 import { countReservedPlaques, needsKiv, kivParts, hasMainPart, kivInProduction, kivInTyping } from '../utils/exportCsv';
@@ -317,7 +317,7 @@ export default function ProductionDashboard() {
                 </div>
               </div>
 
-              <div className="order-card-invoice"><span className="dim">Invoice ID:</span> {invoiceLabel(ord) || '—'}</div>
+              <div className="order-card-invoice"><span className="dim">Invoice ID:</span> {invoiceLabel(invoiceSource(ord, state.orders)) || '—'}</div>
               {cardTab === 'approved' && <ProductionInvoiceEntry order={ord} />}
               <div className="dim" style={{ fontSize: 11 }}>{addonCard ? 'Tambahan Amount' : 'Total Amount'}</div>
               <div className={`order-card-total${!addonCard && ord.priceAdjusted ? ' amount-adjusted' : ''}`}>RM {shownAmount.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
@@ -374,14 +374,16 @@ export default function ProductionDashboard() {
                   <>
                     {/* ?invoice= tells ProductionOrderDetail which slice this
                         card represents (see getOrderInvoiceSlices) — a
-                        no-op for an un-split order. */}
+                        no-op for an un-split order. A Tambahan (parentOrderId)
+                        is billed under its original's invoice, so it never
+                        waits for one of its own. */}
                     <button type="button" className="btn btn-ghost" style={{ flex: 1 }} onClick={() => navigate(`/production/orders/${ord.id}${ord.invoiceId ? `?invoice=${encodeURIComponent(ord.invoiceId)}` : ''}`)}>
                       View Order
                     </button>
                     <ConfirmButton
-                      label={ord.invoiceId ? 'Done' : 'Awaiting Invoice'} style={{ flex: 1 }}
-                      disabled={!ord.invoiceId}
-                      title={!ord.invoiceId ? 'Waiting for Store Admin to assign an Invoice Number' : undefined}
+                      label={ord.invoiceId || ord.parentOrderId ? 'Done' : 'Awaiting Invoice'} style={{ flex: 1 }}
+                      disabled={!ord.invoiceId && !ord.parentOrderId}
+                      title={!ord.invoiceId && !ord.parentOrderId ? 'Waiting for Store Admin to assign an Invoice Number' : undefined}
                       question={isKivCard
                         ? `${parts.join(' + ')} done?`
                         : kivPending
