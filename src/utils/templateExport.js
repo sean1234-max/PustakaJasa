@@ -541,7 +541,27 @@ function makeBook(zip, files, { DOMParser: DP, XMLSerializer: XS }) {
     zip.file('[Content_Types].xml', ser(ctDoc));
   };
 
-  return { sheetPath, sheetDoc, cloneSheet, save };
+  // Hides every sheet not named in `keep` (upper-cased names); the first
+  // sheet still showing opens selected.
+  const showOnly = async (keep) => {
+    const els = sheetEls();
+    els.forEach((el) => { if (!keep.has(up(el.getAttribute('name')))) el.setAttribute('state', 'hidden'); });
+    const first = els.findIndex((el) => el.getAttribute('state') !== 'hidden');
+    if (first < 0) return;
+    for (const [i, el] of els.entries()) {
+      const doc = await sheetDoc(relTarget(el.getAttributeNS(REL_NS, 'id') || el.getAttribute('r:id')));
+      Array.from(doc.getElementsByTagNameNS(MAIN_NS, 'sheetView')).forEach((v) => {
+        if (i === first) v.setAttribute('tabSelected', '1');
+        else v.removeAttribute('tabSelected');
+      });
+    }
+    Array.from(wbDoc.getElementsByTagNameNS(MAIN_NS, 'workbookView')).forEach((v) => {
+      v.setAttribute('activeTab', String(first));
+      v.setAttribute('firstSheet', String(first));
+    });
+  };
+
+  return { sheetPath, sheetDoc, cloneSheet, showOnly, save };
 }
 
 const colNum = (ref) => XLSX.utils.decode_cell(ref).c;
@@ -705,6 +725,7 @@ export async function fillOrderTemplate(templateBuffer, categorized, {
 
   const pristine = new Map();
   const used = new Map();
+  const filled = new Set();
   // The k-th copy of a template sheet (k = 0: the sheet itself).
   const sheetCopy = async (base) => {
     const k = used.get(base) || 0;
@@ -712,6 +733,7 @@ export async function fillOrderTemplate(templateBuffer, categorized, {
     const path = book.sheetPath(base);
     if (!pristine.has(base)) pristine.set(base, await zip.file(path).async('string'));
     const p = k === 0 ? path : await book.cloneSheet(base, sheetName(base, k), pristine.get(base));
+    filled.add(up(sheetName(base, k)));
     return { doc: await book.sheetDoc(p), name: sheetName(base, k) };
   };
   const count = (name, n) => { placed[name] = (placed[name] || 0) + n; };
@@ -1001,6 +1023,11 @@ export async function fillOrderTemplate(templateBuffer, categorized, {
 
   const copies = [...used].filter(([, k]) => k > 1).map(([b, k]) => `${b} (${k - 1} extra)`);
   if (copies.length) notes.push(`Extra copies of ${copies.join(', ')} were added; FRONT PG's totals don't include them.`);
+  // Only FRONT PG and the sheets the order filled show; the empty ones are
+  // hidden (Sean, 2026-10-19), not deleted, so they can still be unhidden.
+  const frontPg = findName(SHEET_FRONT);
+  if (frontPg) filled.add(up(frontPg));
+  await book.showOnly(filled);
   book.save();
   const buffer = await zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' });
   return { buffer, notes, placed, plaqueCount: plan.plaqueCount };
