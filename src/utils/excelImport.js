@@ -1595,7 +1595,8 @@ function parseTokohAnugerahSheet(ws) {
   };
   const qtyCol = headerCol(/KUANTITI|KUANTITY|QTY/i);
   if (qtyCol == null) return null;
-  const namaCol = headerCol(/NAMA\s*MURID/i);
+  // Some schools' copies head it just "NAMA".
+  const namaCol = headerCol(/NAMA\s*MURID/i) ?? headerCol(/^\s*NAMA\s*$/i);
   const gambarCol = headerCol(/GAMBAR/i);
   const jpCol = headerCol(/JENIS\s*PLAK/i);
   const designCol = headerCol(/DESIGN/i);
