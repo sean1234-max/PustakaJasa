@@ -588,6 +588,13 @@ function formatTokohNamaMurid(namaMurid, contohLine3) {
   return idx === -1 ? name : `${name.slice(0, idx)}\n${name.slice(idx + 1)}`;
 }
 
+const YEAR_LINE_RE = /^(TAHUN|TAHAP)\s*\d+$/i;
+function splitTrailingYear(desc, contohLine3) {
+  if (!YEAR_LINE_RE.test(String(contohLine3 || '').trim())) return null;
+  const m = String(desc || '').trim().match(/^(.*\S)\s+((?:TAHUN|TAHAP)\s*\d+)$/i);
+  return m ? { award: m[1], year: m[2] } : null;
+}
+
 function buildRowsFromDescriptionRows(item, header, year, positionPart1, tokohNames) {
   const rows = [];
   const contohLine3 = tokohNames ? getLine(item, 3) : '';
@@ -604,14 +611,18 @@ function buildRowsFromDescriptionRows(item, header, year, positionPart1, tokohNa
     //   Main Template (retired, no positionPart1) -> row desc is the
     //     position, event_line_1 blank — unchanged.
     const lonjakanStyle = !tokohNames && !!positionPart1;
+    // A TOKOH row named with its own year ("IKON PENGAWAS TAHUN 4") and no
+    // NAMA MURID, under a CONTOH whose ③ is a year ("TAHUN 3"): that year is
+    // the row's ③, not part of the award — else it engraves twice.
+    const ownYear = tokohNames && !(r.namaMurid || '').trim() ? splitTrailingYear(r.desc, contohLine3) : null;
     // A TOKOH row's own award name is its position — same two-line split as
     // the ACARA line ("ANUGERAH MURID BERPOTENSI" -> "ANUGERAH" / the rest).
-    const position = lonjakanStyle ? positionPart1 : breakAcaraLine(r.desc || '');
+    const position = lonjakanStyle ? positionPart1 : breakAcaraLine(ownYear ? ownYear.award : (r.desc || ''));
     // A NAMA MURID of "-": no event_line_1 at all, not the CONTOH's ③
     // (Sean, 2026-10-17: TOKOH SUKAN beside TOKOH AKADEMIK / LELAKI).
     const noNama = tokohNames && /^\s*-+\s*$/.test(r.namaMurid || '');
     const eventLine1 = noNama ? '' : tokohNames
-      ? (formatTokohNamaMurid(r.namaMurid, contohLine3) || contohLine3)
+      ? (ownYear ? ownYear.year : (formatTokohNamaMurid(r.namaMurid, contohLine3) || contohLine3))
       // A row with no TAHUN follows the CONTOH's own ③ (e.g. "2026").
       : (lonjakanStyle ? (r.desc || getLine(item, 3)) : '');
     const row = [header, year, position, eventLine1, ''];
