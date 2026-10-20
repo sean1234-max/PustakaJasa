@@ -1,5 +1,6 @@
 import JSZip from 'jszip';
 import * as XLSX from 'xlsx';
+import { umumAnugerahSlot } from './umumLines';
 
 // AI reader -> the shop's own Excel order form (owner, 2026-10-16: "做").
 // A teacher's PDF or Word order, once read (pdfMapping.js), is written into
@@ -382,12 +383,16 @@ function layoutUmum(ws) {
   const rows = [];
   for (let r = no.r + 1; r <= range.e.r; r++) if (/^\d+$/.test(textAt(ws, r, no.c))) rows.push(r);
   // The CONTOH lines ①-④ above the list.
+  // Its "WARNA MERAH?" pick beside each line.
   const contoh = {};
+  const merah = {};
+  const merahHead = findCells(ws, '', (t) => /^WARNA MERAH/.test(t)).find((p) => p.r < no.r);
   ['①', '②', '③', '④'].forEach((mark, i) => {
     const p = findCells(ws, mark).find((q) => q.r < no.r && q.c === no.c);
     if (p) contoh[`l${i}`] = addr(p.r, p.c + 1);
+    if (p && merahHead) merah[`${i}`] = addr(p.r, merahHead.c);
   });
-  return { rows, cols, contoh };
+  return { rows, cols, contoh, merah };
 }
 
 // ---------------------------------------------------------------------------
@@ -979,6 +984,9 @@ export async function fillOrderTemplate(templateBuffer, categorized, {
           // (Sean, 2026-10-17: each on its own line of the plaque).
           const contoh = { l1: part[0].award, l2: part[0].line, l3: part[0].eline2 };
           ['l1', 'l2', 'l3'].forEach((k) => layout.contoh[k] && setCell(doc, layout.contoh[k], contoh[k]));
+          // An ANUGERAH line is red unless the form says otherwise.
+          const red = umumAnugerahSlot({ 1: contoh.l1, 2: contoh.l2, 3: contoh.l3 });
+          if (red && layout.merah[red]) setCell(doc, layout.merah[red], 'MERAH');
           part.forEach((p, i) => {
             const r = layout.rows[i];
             // ① blank = the CONTOH heading; a plaque with another heading

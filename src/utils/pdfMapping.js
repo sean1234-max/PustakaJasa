@@ -1,5 +1,6 @@
 import { makeDynamicCategoryKey } from '../data/catalog';
 import { cleanDocxPlakCode, wordingRowsToCategorized } from './docxImport';
+import { fileSaysTempat, withTempat } from './positionWords';
 
 // Turns the AI's reading of a text PDF (supabase/functions/read-order-file,
 // kind "pdf" — segment references, see pdfSchema.ts there) into the same
@@ -155,6 +156,9 @@ export function applyPdfReading(ir, reading) {
   const lists = [];
   const runs = [];
   let bad = 0;
+  // The file says "Tempat Pertama" somewhere: a bare PERTAMA line gets it too.
+  const tempat = fileSaysTempat(ir.segments.map((s) => s.text).join(' '));
+  let tempatAdded = 0;
 
   // REF without a "#1-6" range suffix.
   const baseRef = (ref) => String(ref ?? '').split('#')[0];
@@ -263,7 +267,9 @@ export function applyPdfReading(ir, reading) {
           if (lines[i].join && text.length) text[text.length - 1] += ` ${o.text}`;
           else text.push(o.text);
         });
-        rows.push({ lines: text, qty, kod, nameFirst });
+        const engraved = tempat ? text.map(withTempat) : text;
+        if (engraved.some((l, i) => l !== text[i])) tempatAdded += qty;
+        rows.push({ lines: engraved, qty, kod, nameFirst });
         if (!varies) fixedLines.push(text);
       });
     });
@@ -286,6 +292,7 @@ export function applyPdfReading(ir, reading) {
     else runs.push({ heading, rows });
   });
 
+  if (tempatAdded) notes.push(`The file says "Tempat Pertama", so TEMPAT was added before PERTAMA / KEDUA … on ${tempatAdded} plaque(s) — please check.`);
   (reading?.groups || []).flatMap((g) => [...(g.tajuk || []), g.code?.ref, g.total?.ref, g.each?.ref]).forEach(markUsed);
   const skipped = skippedListItems(ir, lists, usedIds);
   if (skipped.length) {
