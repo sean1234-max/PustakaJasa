@@ -1,6 +1,6 @@
 import * as XLSX from 'xlsx';
 import { makeDynamicCategoryKey } from '../data/catalog';
-import { classifyWordingLines, cleanDocxPlakCode, parseDocxQty, wordingRowsToCategorized } from './docxImport';
+import { classifyWordingLines, cleanDocxPlakCode, parseDocxQty, wordingRowsToCategorized, wordingRowsToUmum } from './docxImport';
 
 // Turns the AI sheet reader's answer (supabase/functions/read-order-file —
 // a MAPPING of which rows/columns hold what, by cell reference) into the
@@ -181,6 +181,15 @@ export function applyAiMapping(ir, mapping) {
     if (m.note) notes.push(`${where}: ${m.note}`);
     if (m.role === 'award-list') {
       const { rows, heading } = readAwardList(m, block, where, notes);
+      // One table of awards that differ only in ② (and Jenis Plak): one
+      // ORDER LAIN-LAIN-style tab named after the sheet, like the teacher's.
+      const umum = wordingRowsToUmum(rows, heading);
+      const umumKey = makeDynamicCategoryKey('UMUM', m.sheet);
+      if (umum && !categorized[umumKey]) {
+        categorized[umumKey] = [{ ...umum.section, sourceSheet: m.sheet, dynamicCategoryKey: umumKey }];
+        notes.push(...umum.notes.map((n) => `${where}: ${n}`));
+        return;
+      }
       if (!listRowsByHeading.has(heading)) listRowsByHeading.set(heading, []);
       listRowsByHeading.get(heading).push(...rows);
     } else if (m.role === 'class-matrix') {

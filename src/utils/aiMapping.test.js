@@ -163,3 +163,36 @@ describe('applyAiMapping — sample label heading and closing line', () => {
     expect(notes[0]).toMatch(/cell reference that isn't valid/);
   });
 });
+
+describe('applyAiMapping — one table of awards that differ only in ② (Sean, 2026-10-20)', () => {
+  const wb = workbook({
+    PENGHARGAAN: { aoa: [
+      ['', '', 'MAJLIS APRESIASI MURID\r\n2026'],
+      ['', '', 'ANUGERAH PENGHARGAAN PENGAWAS SEKOLAH'],
+      ['', '', 'TAHUN 6'],
+      ['JAWATAN', 'KUANTITI', 'JENIS PLAK'],
+      ['ANUGERAH PENGHARGAAN PENGAWAS SEKOLAH', 70, 'CPH B'],
+      ['ANUGERAH PENGHARGAAN PEMBIMBING RAKAN SEBAYA', 30, 'CPH C'],
+      ['ANUGERAH PENGHARGAAN KETUA KELAS', 11, 'CPH A'],
+    ] },
+  });
+  const ir = buildWorkbookIr(wb, ['PENGHARGAAN']);
+  const block = {
+    sheet: 'PENGHARGAAN', role: 'award-list', headingCells: ['C1'], titleCell: null, fixedCells: ['C3'], codeCell: null,
+    headerRow: 4, firstRow: 5, lastRow: 7, wordingColumns: ['A'], qtyColumn: 'B', codeColumn: 'C',
+    labelColumn: null, classColumns: [], confidence: 'high', note: null,
+  };
+
+  it('lands as one ORDER LAIN-LAIN-style tab named after the sheet, a row per award', () => {
+    const { categorized } = applyAiMapping(ir, { blocks: [block], questions: [] });
+    expect(Object.keys(categorized)).toEqual([makeDynamicCategoryKey('UMUM', 'PENGHARGAAN')]);
+    const [section] = categorized[makeDynamicCategoryKey('UMUM', 'PENGHARGAAN')];
+    expect(section.isUmumList).toBe(true);
+    expect(section.lines).toEqual({ 0: 'MAJLIS APRESIASI MURID\n2026', 1: 'ANUGERAH PENGHARGAAN PENGAWAS SEKOLAH', 2: 'TAHUN 6' });
+    expect(section.umumRows.map((r) => [r.l1, r.qty, r.jenisPlak])).toEqual([
+      ['', 70, 'CPH B'],
+      ['ANUGERAH PENGHARGAAN PEMBIMBING RAKAN SEBAYA', 30, 'CPH C'],
+      ['ANUGERAH PENGHARGAAN KETUA KELAS', 11, 'CPH A'],
+    ]);
+  });
+});

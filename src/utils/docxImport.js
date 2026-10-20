@@ -421,6 +421,35 @@ export function wordingRowsToCategorized(inputRows, heading = '', { keepOrder = 
   return { categorized, count: groupOrder.length, notes };
 }
 
+// A teacher's one table whose rows differ only in the award (②) and its
+// Jenis Plak — same TAJUK BESAR, same line under it ("TAHUN 6") — as one
+// ORDER LAIN-LAIN-style section, a row per award, instead of a tab per
+// award (Sean, 2026-10-20: the PENGHARGAAN sheet). null when the rows
+// aren't that shape (one award only, the lines under it differ, a name
+// list), so they're grouped as before.
+export function wordingRowsToUmum(inputRows, heading = '') {
+  const rows = inputRows.map((r) => ({ ...r, lines: (r.lines || []).flatMap(wordingLine).filter(Boolean) }));
+  if (rows.length < 2) return null;
+  const fields = wordingFieldsForRows(rows);
+  if (fields.some((f) => f.nameFirst || !f.position)) return null;
+  const tail = (f) => `${f.eventLine1}\u0000${f.eventLine2}`;
+  if (!fields[0].eventLine1 || fields.some((f) => tail(f) !== tail(fields[0]))) return null;
+  if (new Set(fields.map((f) => f.position)).size < 2) return null;
+  const lines = { 0: heading, 1: fields[0].position, 2: fields[0].eventLine1, 3: fields[0].eventLine2 };
+  Object.keys(lines).forEach((k) => { if (!lines[k]) delete lines[k]; });
+  const umumRows = [];
+  rows.forEach((r, ri) => {
+    const l1 = fields[ri].position === lines[1] ? '' : fields[ri].position;
+    const same = umumRows.find((u) => u.l1 === l1 && u.jenisPlak === r.kod);
+    if (same) { same.qty += r.qty; return; }
+    umumRows.push({ no: String(umumRows.length + 1), l0: '', l1, l2: '', l3: '', qty: r.qty, jenisPlak: r.kod || '', harga: '' });
+  });
+  const notes = [];
+  const uncoded = rows.filter((r) => !r.kod).reduce((a, r) => a + r.qty, 0);
+  if (uncoded) notes.push(`${uncoded} plaque(s) have no plaque code (KOD) — please pick the Jenis Plak by hand.`);
+  return { section: { lines, umumRows, isUmumList: true, skipLineDerivation: true, classes: [] }, notes };
+}
+
 // Schools often repeat the event heading as the first line of every
 // WORDING cell ("HARI ANUGERAH KUALITI 2026 / Terbaik PBD / Tahun 1"), or
 // put the school name above it ("SK ... / HARI ANUGERAH ... / Tokoh NILAM /
