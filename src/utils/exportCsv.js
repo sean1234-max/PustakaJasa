@@ -1017,7 +1017,8 @@ export function addInvoiceGaps(order, rows) {
 // .xlsx" (Sean, 2026-10-07); an order's second/third file gets "-2"/"-3".
 // The extension follows the stored file (.xlsx or .docx).
 export function buildOrderImportFilename(order, file = { path: order.importFilePath }, index = 0) {
-  const ext = /\.docx$/i.test(file?.path || '') ? '.docx' : '.xlsx';
+  // the teacher's own file type (a PDF / Word order is kept as uploaded, not as an Excel)
+  const ext = (String(file?.path || '').match(/\.(xlsx|xls|docx|pdf)$/i)?.[0] || '.xlsx').toLowerCase();
   const school = sanitizeFilenamePart(order.sekolah || 'Order');
   const salesman = sanitizeFilenamePart(order.sales || '');
   return `${sanitizeFilenamePart(order.id || '')}-${school}${salesman ? `(${salesman})` : ''}${index > 0 ? `-${index + 1}` : ''}${ext}`;
@@ -1068,7 +1069,7 @@ export function rowsToCsv(rows) {
 
 const WINDOWS_RESERVED_CHARS = /[\\/:*?"<>|]/g;
 
-function sanitizeFilenamePart(part) {
+export function sanitizeFilenamePart(part) {
   return part.replace(WINDOWS_RESERVED_CHARS, '-').replace(/\s+/g, ' ').trim();
 }
 

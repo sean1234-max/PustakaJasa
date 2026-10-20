@@ -1087,6 +1087,7 @@ describe('buildOrderImportFilename', () => {
     expect(buildOrderImportFilename({ id: 'ORD-0023', sekolah: 'SK SG SERAI KUANG', sales: 'onn', importFilePath: 'u/a.xlsx' }))
       .toBe('ORD-0023-SK SG SERAI KUANG(onn).xlsx');
     expect(buildOrderImportFilename({ id: 'ORD-0001', sekolah: 'SK A/B', sales: '', importFilePath: 'u/a.docx' })).toBe('ORD-0001-SK A-B.docx');
+    expect(buildOrderImportFilename({ id: 'ORD-0002', sekolah: 'SK C', sales: 'x', importFilePath: 'u/a.PDF' })).toBe('ORD-0002-SK C(x).pdf');
   });
 });
 

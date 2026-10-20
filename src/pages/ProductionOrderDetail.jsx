@@ -557,12 +557,10 @@ export default function ProductionOrderDetail() {
               </div>
             )}
 
-            {order.importFilePath && (
-              <div style={{ marginTop: 'var(--space-4)' }}>
-                <div className="dim">Original Excel (from the teacher)</div>
-                <ImportFileButtons order={order} buttonClassName="btn btn-primary" errorClassName="login-error" />
-              </div>
-            )}
+            <div style={{ marginTop: 'var(--space-4)' }}>
+              <div className="dim">{order.importFilePath ? 'Teacher’s file (Excel / Word / PDF) + the website’s Excel' : 'The website’s Excel'}</div>
+              <ImportFileButtons order={order} buttonClassName="btn btn-primary" errorClassName="login-error" websiteExcel />
+            </div>
 
             {!reviewing && <CorrectedExcelControl
               order={order}
