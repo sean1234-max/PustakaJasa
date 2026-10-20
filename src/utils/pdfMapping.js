@@ -1,6 +1,6 @@
 import { makeDynamicCategoryKey } from '../data/catalog';
 import { cleanDocxPlakCode, wordingRowsToCategorized } from './docxImport';
-import { fileSaysTempat, withTempat } from './positionWords';
+import { fileSaysTempat, tahunDigits, withTempat } from './positionWords';
 
 // Turns the AI's reading of a text PDF (supabase/functions/read-order-file,
 // kind "pdf" — segment references, see pdfSchema.ts there) into the same
@@ -272,10 +272,11 @@ export function applyPdfReading(ir, reading) {
           if (lines[i].join && text.length) text[text.length - 1] += ` ${o.text}`;
           else text.push(o.text);
         });
-        const engraved = tempat ? text.map(withTempat) : text;
-        if (engraved.some((l, i) => l !== text[i])) tempatAdded += qty;
+        const withTahun = text.map(tahunDigits);
+        const engraved = tempat ? withTahun.map(withTempat) : withTahun;
+        if (engraved.some((l, i) => l !== withTahun[i])) tempatAdded += qty;
         rows.push({ lines: engraved, qty, kod, nameFirst });
-        if (!varies) fixedLines.push(text);
+        if (!varies) fixedLines.push(engraved);
       });
     });
     oddOneOut(fixedLines).forEach(([odd, usual]) => notes.push(`${where}: one label reads "${odd}" where the others read "${usual}" — please check that label.`));

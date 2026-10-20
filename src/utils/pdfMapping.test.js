@@ -322,3 +322,17 @@ describe('applyPdfReading — TEMPAT before PERTAMA (Sean, 2026-10-20)', () => {
     expect(notes.join('\n')).not.toContain('TEMPAT');
   });
 });
+
+describe('applyPdfReading — TAHUN SATU as TAHUN 1 (Sean, 2026-10-20)', () => {
+  it('writes the year heading word as a number', () => {
+    const ir = buildPdfIr([{ page: 1, width: 600, height: 800, items: [
+      item('IHTIFAL 2026', 150, 100), item('MATA PELAJARAN TERBAIK', 150, 115), // p1s1-2
+      item('TAHUN', 300, 180), item('SATU', 250, 190), item('DUA', 350, 190), item('ADAB', 60, 200), // p1s3-6
+    ] }]);
+    const r = { groups: [{ name: 'X', code: null, total: null, each: null, tajuk: ['p1s1'], labels: [[['p1s2'], ['p1s6'], ['p1s3'], ['&', 'p1s4', 'p1s5']]], confidence: 'high', note: null }], questions: [] };
+    const text = JSON.stringify(applyPdfReading(ir, r).categorized);
+    expect(text).toContain('TAHUN 1');
+    expect(text).toContain('TAHUN 2');
+    expect(text).not.toContain('SATU');
+  });
+});

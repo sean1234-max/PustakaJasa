@@ -12,3 +12,11 @@ describe('TEMPAT before a bare position word (Sean, 2026-10-20)', () => {
       .toEqual(['TEMPAT PERTAMA', 'Tempat Kedua', 'TEMPAT KETIGA', 'TEMPAT PERTAMA', 'KEDUDUKAN PERTAMA', '1 IBNU SINA']);
   });
 });
+
+describe('TAHUN as a number (Sean, 2026-10-20)', () => {
+  it('turns TAHUN SATU … ENAM into TAHUN 1 … 6, inside a line too', async () => {
+    const { tahunDigits } = await import('./positionWords');
+    expect(['TAHUN SATU', 'Tahun dua', 'TAHUN LIMA IBNU SINA', 'TAHUN 3', 'SATU', 'TAHUN SATU MALAYSIA'].map(tahunDigits))
+      .toEqual(['TAHUN 1', 'Tahun 2', 'TAHUN 5 IBNU SINA', 'TAHUN 3', 'SATU', 'TAHUN 1 MALAYSIA']);
+  });
+});
