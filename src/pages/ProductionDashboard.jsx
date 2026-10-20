@@ -125,8 +125,11 @@ export default function ProductionDashboard() {
   const cardTabOf = (o) => (searching ? TABS.find((t) => t.match(o, today))?.key || '' : tab);
   // Searching (Sean, 2026-10-17): the matching orders' cards, from every tab — a KIV & ARTWORK
   // card only while it's in a tab; an order in no tab (Cancelled …) still shows its main card.
+  // A main card in no tab whose order's KIV card shows (all crystal / Reserved, nothing to type —
+  // ORD-0084, Sean 2026-10-20) is left out, as in the tabs.
+  const kivCardShown = (o) => orderSlices.some((k) => k._part === 'kiv' && k.id === o.id && cardTabOf(k));
   const filteredOrders = searching
-    ? orderSlices.filter((o) => matchesOrderSearch(o, search) && (o._part === 'main' || cardTabOf(o)))
+    ? orderSlices.filter((o) => matchesOrderSearch(o, search) && (o._part === 'main' ? !!cardTabOf(o) || !kivCardShown(o) : cardTabOf(o)))
     : prioritizeUrgentOrders(ordersInTab
       .filter((o) => !shipmentDateFilter || shipmentDateKey(o.shipmentDate) === shipmentDateFilter));
 
