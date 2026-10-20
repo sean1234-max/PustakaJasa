@@ -346,7 +346,9 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
     // 1..N for a gapless list. Safe in these branches specifically: unlike
     // Main Template / OTHERS (extendableReferenceSample), none of them has a
     // "Row N" Kuantiti column keyed off a line's own number.
-    if (isDynamicMatrix || isMatrix || (currentCat.positionFromRows && !currentCat.extendableReferenceSample)) {
+    // ALIRAN too (Sean, 2026-10-20, ORD-0089): an order with no KEDUDUKAN has no PERTAMA row, so
+    // TAJUK / ACARA / TAHUN read 1, 2, 3 like the Excel's ①②③, not 1, 3, 4.
+    if (isDynamicMatrix || isMatrix || currentCat.aliranKedudukan || (currentCat.positionFromRows && !currentCat.extendableReferenceSample)) {
       lines = numberLines(lines);
     }
 
