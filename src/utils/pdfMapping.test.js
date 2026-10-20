@@ -300,22 +300,22 @@ describe('applyPlaquePictures', () => {
 });
 
 describe('applyPdfReading — TEMPAT before PERTAMA (Sean, 2026-10-20)', () => {
-  const irWith = (extra) => buildPdfIr([{ page: 1, width: 600, height: 800, items: [
-    item('IHTIFAL 2026', 150, 100), item('KEDUDUKAN TERBAIK', 150, 115), item('1 IBNU SINA', 150, 130), item('PERTAMA', 150, 145), // p1s1-4
-    item('KEDUA', 150, 160), // p1s5
-    ...extra,
+  const ir = buildPdfIr([{ page: 1, width: 600, height: 800, items: [
+    item('IHTIFAL 2026', 150, 100), item('KEDUDUKAN TERBAIK', 150, 115), item('1 IBNU SINA', 150, 130), // p1s1-3
+    item('TEMPAT PERTAMA', 150, 145), item('KEDUA', 150, 160), // p1s4-5
+    item('PERTAMA', 60, 300), item('Tempat Pertama RM 12', 60, 400), // p1s6-7
   ] }]);
-  const reading = { groups: [{ name: 'X', code: null, total: null, each: null, tajuk: ['p1s1'], labels: [[['p1s2'], ['p1s3'], ['p1s4', 'p1s5']]], confidence: 'high', note: null }], questions: [] };
+  const reading = (ordinals) => ({ groups: [{ name: 'X', code: null, total: null, each: null, tajuk: ['p1s1'], labels: [[['p1s2'], ['p1s3'], ordinals]], confidence: 'high', note: null }], questions: [] });
 
-  it('adds TEMPAT when the file says "Tempat Pertama" anywhere', () => {
-    const { categorized, notes } = applyPdfReading(irWith([item('Tempat Pertama RM 12', 60, 400)]), reading);
+  it('adds TEMPAT when the batch itself says "Tempat Pertama"', () => {
+    const { categorized, notes } = applyPdfReading(ir, reading(['p1s4|PERTAMA', 'p1s5']));
     const text = JSON.stringify(categorized);
     expect(text).toContain('TEMPAT PERTAMA');
     expect(text).toContain('TEMPAT KEDUA');
     expect(notes.join('\n')).toContain('TEMPAT was added');
   });
-  it('keeps PERTAMA as it is when the file has no TEMPAT', () => {
-    const { categorized, notes } = applyPdfReading(irWith([]), reading);
+  it('keeps PERTAMA when "Tempat" is only elsewhere in the file (a price list)', () => {
+    const { categorized, notes } = applyPdfReading(ir, reading(['p1s6', 'p1s5']));
     const text = JSON.stringify(categorized);
     expect(text).toContain('"PERTAMA"');
     expect(text).not.toContain('TEMPAT');

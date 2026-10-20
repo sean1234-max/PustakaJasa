@@ -1,8 +1,8 @@
 // Position words on a plaque (Sean, 2026-10-20).
-//   - TEMPAT: when the file says "Tempat Pertama" anywhere (even only in its
-//     price list), a line that is just the ordinal (PERTAMA, KEDUA …) is
-//     engraved "TEMPAT PERTAMA"; a file without TEMPAT keeps "PERTAMA" — the
-//     same way "TAHUN" is kept only when the file has it.
+//   - TEMPAT: when the order's own wording says "Tempat Pertama", a line
+//     that is just the ordinal (PERTAMA, KEDUA …) is engraved "TEMPAT
+//     PERTAMA"; without it, "PERTAMA" stays — the same way "TAHUN" is kept
+//     only when the file has it. "Tempat" only in a price list doesn't count.
 //   - ANUGERAH: a plaque line with ANUGERAH in it is red by default (a
 //     MAJLIS / HARI ANUGERAH title line stays the black TAJUK BESAR).
 const ORDINALS = 'PERTAMA|KEDUA|KETIGA|KEEMPAT|KELIMA|KEENAM|KETUJUH|KELAPAN|KESEMBILAN|KESEPULUH';
