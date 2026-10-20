@@ -10,7 +10,8 @@ import { partialSplitQty } from './orderBatches';
 import { UMUM_SLOTS, umumSlotFields, umumClassifyText, umumRedSlots } from './umumLines';
 import { slotFieldsFor, visibleRefSlots, applyRedLines, redLinesProblem } from './redLines';
 
-export const CSV_COLUMNS = ['event_header', 'year', 'position', 'event_line_1', 'event_line_2', 'jenis_plak', 'category', 'line_order', 'position_black'];
+// invoice_gap: only on addInvoiceGaps' blank row — "<invoice before>|<invoice after>", written in that slot by SEAN.jsx
+export const CSV_COLUMNS = ['event_header', 'year', 'position', 'event_line_1', 'event_line_2', 'jenis_plak', 'category', 'line_order', 'position_black', 'invoice_gap'];
 
 // UMUM (ORDER LAIN-LAIN): the CONTOH lines ①–④ (slots 0–3) of this item, which plaque
 // field each one is (utils/umumLines.js), and a raw slot reader (no
@@ -988,8 +989,11 @@ export function combineCsvRows(groups) {
 // point shifts the gap by one; fine while Reserved and split invoices don't meet.
 export function addInvoiceGaps(order, rows) {
   const splitAt = {};
+  const gapLabel = {};
   (order?.invoiceGroups || []).forEach((g) => Object.entries(g.qtyByJenisPlak || {}).forEach(([jp, q]) => {
-    if (Number(q) > 0) splitAt[jp] = Number(q);
+    if (Number(q) <= 0) return;
+    splitAt[jp] = Number(q);
+    gapLabel[jp] = `${g.invoiceId || ''}|${order.invoiceId || ''}`;
   }));
   if (Object.keys(splitAt).length === 0) return rows;
   const JP = CSV_COLUMNS.indexOf('jenis_plak');
@@ -1004,6 +1008,7 @@ export function addInvoiceGaps(order, rows) {
     const blank = CSV_COLUMNS.map(() => '');
     blank[JP] = jp;
     blank[CAT] = r[CAT];
+    blank[CSV_COLUMNS.indexOf('invoice_gap')] = gapLabel[jp];
     return [r, blank];
   });
 }

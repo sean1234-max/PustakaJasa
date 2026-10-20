@@ -1230,7 +1230,7 @@ describe('addInvoiceGaps — a blank plaque between two invoices of one Jenis Pl
     const order = { invoiceId: 'INV1', invoiceGroups: [{ invoiceId: 'INV2', jenisPlakList: ['CPH / B'], qtyByJenisPlak: { 'CPH / B': 2 } }] };
     const out = addInvoiceGaps(order, [row('A'), row('B'), row('C'), row('X', 'PKC 246')]);
     expect(out.map((r) => r[3])).toEqual(['A', 'B', '', 'C', 'X']);
-    expect(out[2]).toEqual(['', '', '', '', '', 'CPH / B', 'TOKOH', '', '']);
+    expect(out[2]).toEqual(['', '', '', '', '', 'CPH / B', 'TOKOH', '', '', 'INV2|INV1']);
   });
   it('adds nothing without a partial split, or when the split takes every piece', async () => {
     const { addInvoiceGaps } = await import('./exportCsv');
