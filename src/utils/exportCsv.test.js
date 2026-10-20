@@ -1222,3 +1222,20 @@ describe('KIV: Reserved names filled in after typing (0097)', () => {
     expect(kivInTyping({ ...order, artworkConfirmedAt: '2026-10-17T01:00:00Z' })).toBe(true);
   });
 });
+
+describe('addInvoiceGaps — a blank plaque between two invoices of one Jenis Plak (ORD-0065)', () => {
+  const row = (name, jp = 'CPH / B') => ['MAJLIS', '', 'ANUGERAH', name, '', jp, 'TOKOH', '', ''];
+  it('puts one blank after the split invoice\'s pieces, keeping the list order', async () => {
+    const { addInvoiceGaps } = await import('./exportCsv');
+    const order = { invoiceId: 'INV1', invoiceGroups: [{ invoiceId: 'INV2', jenisPlakList: ['CPH / B'], qtyByJenisPlak: { 'CPH / B': 2 } }] };
+    const out = addInvoiceGaps(order, [row('A'), row('B'), row('C'), row('X', 'PKC 246')]);
+    expect(out.map((r) => r[3])).toEqual(['A', 'B', '', 'C', 'X']);
+    expect(out[2]).toEqual(['', '', '', '', '', 'CPH / B', 'TOKOH', '', '']);
+  });
+  it('adds nothing without a partial split, or when the split takes every piece', async () => {
+    const { addInvoiceGaps } = await import('./exportCsv');
+    const rows = [row('A'), row('B')];
+    expect(addInvoiceGaps({ invoiceGroups: [] }, rows)).toBe(rows);
+    expect(addInvoiceGaps({ invoiceGroups: [{ qtyByJenisPlak: { 'CPH / B': 2 } }] }, rows)).toHaveLength(2);
+  });
+});

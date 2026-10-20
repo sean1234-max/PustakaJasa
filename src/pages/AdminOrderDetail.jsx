@@ -7,7 +7,7 @@ import { useAppState } from '../state/useAppState';
 import { statusPillStyle, formatDate, toMalaysiaDay, invoiceLabel, invoiceSetByNote } from '../data/catalog';
 import CancelOrderControl from '../components/CancelOrderControl';
 import { reconstructOrderDetailGroups, reconstructBlocksForCategory } from '../utils/computeBlocks';
-import { getExportableCategories, splitOrderCategories, getOrderJenisPlakGroups, buildCsvRows, rowsToCsv, buildCategoryCsvFilename, combineCsvRows, buildCombinedCsvFilename, validateExport } from '../utils/exportCsv';
+import { getExportableCategories, splitOrderCategories, getOrderJenisPlakGroups, buildCsvRows, rowsToCsv, buildCategoryCsvFilename, combineCsvRows, addInvoiceGaps, buildCombinedCsvFilename, validateExport } from '../utils/exportCsv';
 import { downloadTextFile } from '../utils/downloadBlob';
 import ImportFileButtons from '../components/ImportFileButtons';
 
@@ -100,7 +100,7 @@ export default function AdminOrderDetail() {
   // Every (category, Jenis Plak) group's rows, one file — blocked outright
   // if any group is itself blocked (validateExport), same rule as the
   // per-group export.
-  const combinedRows = combineCsvRows(jenisPlakExport);
+  const combinedRows = addInvoiceGaps(order, combineCsvRows(jenisPlakExport));
   // A group still all "Reserved" (no names yet) is skipped, not blocking (same as ProductionOrderDetail).
   const combinedOk = jenisPlakExport.length > 0
     && jenisPlakExport.every((g) => g.check.ok || (g.csvData.rows.length === 0 && g.csvData.reservedCount > 0))

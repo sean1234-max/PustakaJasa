@@ -14,7 +14,7 @@ import { useAppState } from '../state/useAppState';
 import { statusPillStyle, formatDate, MANUAL_MAX_QTY, shipmentDatePassed, toMalaysiaDay, malaysiaToday, isReviewed, isAddonInFlight, invoiceLabel, invoiceSetByNote, invoiceSource, resolveCategory } from '../data/catalog';
 import { redLinesProblem, RED_LINES_SUFFIX } from '../utils/redLines';
 import { reconstructOrderDetailGroups, reconstructBlocksForCategory, noopUpdaters } from '../utils/computeBlocks';
-import { getExportableCategories, splitOrderCategories, getOrderJenisPlakGroups, getPlakProductionMode, summarizeRowsForManual, buildCsvRows, rowsToCsv, buildCategoryCsvFilename, combineCsvRows, buildCombinedCsvFilename, validateExport, getInvoiceIdForJenisPlak, getPartialSplitNotes, needsKiv, kivInProduction, kivParts, isCrystalCode, firstKivCategory, crystalWithPlak, lateNamesOrder, hasLateNames } from '../utils/exportCsv';
+import { getExportableCategories, splitOrderCategories, getOrderJenisPlakGroups, getPlakProductionMode, summarizeRowsForManual, buildCsvRows, rowsToCsv, buildCategoryCsvFilename, combineCsvRows, addInvoiceGaps, buildCombinedCsvFilename, validateExport, getInvoiceIdForJenisPlak, getPartialSplitNotes, needsKiv, kivInProduction, kivParts, isCrystalCode, firstKivCategory, crystalWithPlak, lateNamesOrder, hasLateNames } from '../utils/exportCsv';
 import { downloadTextFile } from '../utils/downloadBlob';
 import { getInvoiceItems } from '../utils/orderBatches';
 import ImportFileButtons from '../components/ImportFileButtons';
@@ -350,7 +350,7 @@ export default function ProductionOrderDetail() {
   const crystalsHere = crystalGroups.length > 0 && (kivCardView ? !!order.artworkConfirmedAt : crystalWithPlak(order));
   const plakGroups = jenisPlakExport.filter((g) => !isCrystalCode(g.jenisPlak));
   const reservedGroups = plakGroups.filter((g) => g.csvData.reservedCount > 0);
-  const combinedRows = combineCsvRows(plakGroups);
+  const combinedRows = addInvoiceGaps(order, combineCsvRows(plakGroups));
   const combinedOk = plakGroups.length > 0 && plakGroups.every((g) => g.check.ok || isAllReserved(g)) && combinedRows.length > 0;
   const handleExportCombined = () => {
     if (!combinedOk) return;

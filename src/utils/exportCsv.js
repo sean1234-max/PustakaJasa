@@ -979,6 +979,35 @@ export function combineCsvRows(groups) {
   return (groups || []).flatMap((g) => g.csvData.rows);
 }
 
+// A Jenis Plak split across two invoices (Store Admin moved part of it — invoice_groups'
+// qtyByJenisPlak): one blank plaque between the two invoices' plaques in the AI file / CSV
+// (Sean, 2026-10-20, ORD-0065). The order's own list order is kept: the first N go on the
+// split invoice (getInvoiceItems), then the blank, then the rest. The blank has only its Jenis
+// Plak and category, so SEAN.jsx lays out an empty slot; it's never billed or stocked.
+// ponytail: counts CSV rows in order, so a Reserved row (left out of the CSV) before the split
+// point shifts the gap by one; fine while Reserved and split invoices don't meet.
+export function addInvoiceGaps(order, rows) {
+  const splitAt = {};
+  (order?.invoiceGroups || []).forEach((g) => Object.entries(g.qtyByJenisPlak || {}).forEach(([jp, q]) => {
+    if (Number(q) > 0) splitAt[jp] = Number(q);
+  }));
+  if (Object.keys(splitAt).length === 0) return rows;
+  const JP = CSV_COLUMNS.indexOf('jenis_plak');
+  const CAT = CSV_COLUMNS.indexOf('category');
+  const total = rows.reduce((m, r) => ({ ...m, [r[JP]]: (m[r[JP]] || 0) + 1 }), {});
+  const seen = {};
+  return rows.flatMap((r) => {
+    const jp = r[JP];
+    if (!splitAt[jp]) return [r];
+    seen[jp] = (seen[jp] || 0) + 1;
+    if (seen[jp] !== splitAt[jp] || total[jp] <= splitAt[jp]) return [r];
+    const blank = CSV_COLUMNS.map(() => '');
+    blank[JP] = jp;
+    blank[CAT] = r[CAT];
+    return [r, blank];
+  });
+}
+
 // The teacher's upload is downloaded as "<order id>-<school>(<salesman>)
 // .xlsx" (Sean, 2026-10-07); an order's second/third file gets "-2"/"-3".
 // The extension follows the stored file (.xlsx or .docx).
