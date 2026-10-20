@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import { useAppState } from '../state/useAppState';
+import { addonRepeatsOrder, addonRepeatMessage } from '../utils/addonCheck';
 import { getStockStatus, formatDate, toMalaysiaDay, resolveCategory, malaysiaToday, malaysiaDayIso } from '../data/catalog';
 
 // The add-on's cart (Sean, 2026-10-09): the same Order Summary as New
@@ -66,6 +67,8 @@ export default function AddOnSummary() {
 
   const handleSubmit = async () => {
     if (submitting || stockViolation) return;
+    const repeat = addonRepeatsOrder(state.addOnCart, order?.items);
+    if (repeat && !window.confirm(addonRepeatMessage(order.id, repeat))) return;
     setSubmitting(true);
     const ok = await submitPendingAddOn({ shipmentDate: isSalesman ? shipDate : '' });
     setSubmitting(false);

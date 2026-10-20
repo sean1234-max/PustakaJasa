@@ -16,6 +16,7 @@ import { splitOrderCategories, isCrystalCode, firstKivCategory } from '../utils/
 import ReservedNamesForm from '../components/ReservedNamesForm';
 import CrystalPreview from '../components/CrystalPreview';
 import { getOrderChangeStamp } from '../utils/orderStamp';
+import { addonRepeatsOrder, addonRepeatMessage } from '../utils/addonCheck';
 import { isUrgentShipment } from '../utils/urgentOrder';
 
 // Read-only everywhere — this page only ever displays what the teacher
@@ -231,6 +232,8 @@ export default function SalesOrderSummary() {
 
   const handleApproveAddOn = async () => {
     if (busy) return;
+    const repeat = addonRepeatsOrder(addOnRows, order.items);
+    if (repeat && !window.confirm(addonRepeatMessage(order.id, repeat))) return;
     setBusy(true);
     await approveAddOn(order.id, addOnRows.map((r) => ({ ...r })));
     setBusy(false);
