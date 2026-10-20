@@ -2,8 +2,9 @@ import { useState } from 'react';
 import ConfirmButton from './ConfirmButton';
 import { useAppState } from '../state/useAppState';
 
-// Production Manager enters the Invoice Number when Store Admin forgot it
-// and the hard copy already reached Production (Sean, 2026-10-13). Same
+// Production enters the Invoice Number when Store Admin forgot it and the
+// hard copy already reached Production (Sean, 2026-10-13) — every Production
+// account, not only the manager (kesin, sean … — Sean, 2026-10-20). Same
 // save as Store Admin's (setInvoiceId: duplicate check, status → In
 // Production, urgent Sheet); the database records who and when (0086).
 // Shown only for a Salesman Approved order with no number yet.
@@ -11,7 +12,7 @@ export default function ProductionInvoiceEntry({ order }) {
   const { state, setInvoiceId } = useAppState();
   const [draft, setDraft] = useState('');
   const [saving, setSaving] = useState(false);
-  if (!state.isProductionManager || order.status !== 'Salesman Approved' || order.invoiceId) return null;
+  if (state.role !== 'production' || order.status !== 'Salesman Approved' || order.invoiceId) return null;
 
   const save = async () => {
     setSaving(true);
