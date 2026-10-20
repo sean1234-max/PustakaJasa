@@ -413,6 +413,12 @@ describe('ALIRAN TERBAIK — PERTAMA row can sit second (current form) or last (
       [1, 'HARI ANUGERAH 2026'], [2, 'PERTAMA'], [3, 'TERBAIK DALAM ALIRAN'], [4, 'TAHUN 1'],
     ]);
   });
+
+  it('no PERTAMA row (no KEDUDUKAN, ORD-0089): rows keep their order, ACARA on one line, TAHUN as the TAHUN line', () => {
+    const lines = deriveKlasMatrixSectionLines(sheet(['APRESIASI GEMILANG 2026', 'ANUGERAH TERBAIK', 'TAHUN 1']));
+    expect([lines[0], lines[2], lines['2b'], lines[3]]).toEqual(['APRESIASI GEMILANG 2026', 'ANUGERAH TERBAIK', 'TAHUN 1', undefined]);
+    expect(lines.refOrder).toBe('0,2,2b');
+  });
 });
 
 describe('UMUM (万能) — import → cart → CSV', () => {

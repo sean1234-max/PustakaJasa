@@ -1316,7 +1316,13 @@ function isOrdinalLine(text) {
 function aliranSlotsByContent(lines) {
   const rows = ['0', '2', '2b', '3'].filter((slot) => lines[slot] !== undefined).map((slot) => lines[slot]);
   const ordIdx = rows.findIndex(isOrdinalLine);
-  if (ordIdx === -1) return lines;
+  // No ordinal at all (an order with no KEDUDUKAN, "ikut sample, tukar TAHUN sahaja" — ORD-0089):
+  // the rows stay in their own order as TAJUK BESAR / ACARA / the TAHUN line, never the place line.
+  if (ordIdx === -1) {
+    const out = {};
+    ['0', '2', '2b', '3'].forEach((slot, i) => { if (rows[i] !== undefined) out[slot] = rows[i]; });
+    return out;
+  }
   const rest = rows.filter((_, i) => i !== ordIdx);
   const out = { '3': rows[ordIdx] };
   ['0', '2', '2b'].forEach((slot, i) => { if (rest[i] !== undefined) out[slot] = rest[i]; });
@@ -2325,7 +2331,8 @@ export function parseFormAnugerahExcel(arrayBuffer) {
     // ACARA (slot 2) / position (slot 2b): force the two-line wording split
     // for "ANUGERAH PBD ..." etc. (see acaraBreak.js).
     // UMUM lines are engraved exactly as typed.
-    if (!s.isUmumList) ['2', '2b'].forEach((slot) => { if (s.lines?.[slot]) s.lines[slot] = breakAcaraLine(s.lines[slot]); });
+    // ALIRAN's ACARA lands on a one-line box (event_line_1), so not the general ANUGERAH split.
+    if (!s.isUmumList) ['2', '2b'].forEach((slot) => { if (s.lines?.[slot]) s.lines[slot] = breakAcaraLine(s.lines[slot], !(s.isAliran || s.isAliranKelas)); });
     // `dynamicCategoryKey` (a renamed/duplicated template sheet — set just
     // above) takes priority over the fixed-name lookup, since its own
     // sourceSheet is never one of SOURCE_SHEET_TO_CATEGORY's literal keys.
