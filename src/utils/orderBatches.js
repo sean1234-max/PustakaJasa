@@ -32,7 +32,7 @@ export function combineByJenisPlak(items, { splitByPrice = false } = {}) {
     if (!byPlak.has(groupKey)) {
       byPlak.set(groupKey, {
         key: groupKey, jenisPlak: it.jenisPlak, ids: [], qty: 0, harga: 0,
-        originalHarga: 0, itemCount: 0, itemsWithOriginalPrice: 0,
+        originalHarga: 0, itemCount: 0, itemsWithOriginalPrice: 0, namedCount: 0,
       });
       order.push(groupKey);
     }
@@ -42,6 +42,7 @@ export function combineByJenisPlak(items, { splitByPrice = false } = {}) {
     row.qty += qty;
     row.harga += Number(it.harga) || 0;
     row.itemCount += 1;
+    if (it.nameSurcharge) row.namedCount += 1;
     // Only combine an Original Price Per Unit across merged rows when
     // EVERY one of them actually has one (see AppState.jsx's approveOrder/
     // approveAddOn) — otherwise leave it undefined so the merged row shows
@@ -58,6 +59,8 @@ export function combineByJenisPlak(items, { splitByPrice = false } = {}) {
     const hasOriginal = row.itemsWithOriginalPrice === row.itemCount;
     return {
       ...row,
+      // Every plaque on the line carries a student's name (+RM1, studentName.js).
+      named: row.namedCount === row.itemCount,
       unitPrice: row.qty > 0 ? row.harga / row.qty : 0,
       originalUnitPrice: hasOriginal && row.qty > 0 ? row.originalHarga / row.qty : null,
     };
