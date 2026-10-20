@@ -74,7 +74,7 @@ export default function PriceTable({
                       } : {})}
                     >
                       {!hideCategory && <td>{it.categoryLabel}</td>}
-                      <td>{it.jenisPlak}</td>
+                      <td>{it.jenisPlak}{(it.named ?? it.nameSurcharge) && <span className="hint-text"> (nama +RM1)</span>}</td>
                       {anyOriginalPrice && (
                         <td>{it.originalUnitPrice != null ? `RM ${it.originalUnitPrice.toFixed(2)}` : ''}</td>
                       )}

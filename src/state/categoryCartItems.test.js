@@ -120,8 +120,17 @@ describe('buildCategoryCartItems — TOKOH_SHEET (plakPerRow)', () => {
     expect(blocks).toHaveLength(1);
     expect(blocks[0].rows.map((r) => [r.desc, r.jenisPlak, r.hargaLabel])).toEqual([
       ['TOKOH MURID', 'MP399', 'RM 12.00'],
-      ['TOKOH NILAM', 'MP399', 'RM 12.00'],
+      // A student's name ("Siti") is RM1 more (studentName.js).
+      ['TOKOH NILAM', 'MP399', 'RM 13.00'],
     ]);
+  });
+
+  it('prices a plaque with a student name at the catalog price + RM1, as its own item', () => {
+    const { items } = buildCategoryCartItems(draftTokoh([
+      { id: 1, desc: 'TOKOH MURID', qty: '1', jenisPlak: 'MP399', namaMurid: 'NUR AINA BINTI AHMAD' },
+      { id: 2, desc: 'TOKOH NILAM', qty: '2', jenisPlak: 'MP399', namaMurid: 'TAHAP 1' },
+    ]), 'TOKOH_SHEET');
+    expect(items.map((it) => [it.unitPrice, it.harga, it.nameSurcharge])).toEqual([[13, 13, 1], [12, 24, undefined]]);
   });
 
   // Regression: two different honourees can share the same TOKOH award name

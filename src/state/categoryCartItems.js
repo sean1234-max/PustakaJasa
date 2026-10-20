@@ -1,5 +1,7 @@
 import { resolveCategory, SELEMPANG_CODE, isCustomPlakCode } from '../data/catalog';
 import { computeBlocks, snapshotDetail, noopUpdaters } from '../utils/computeBlocks';
+import { buildCsvRows } from '../utils/exportCsv';
+import { hasStudentName, NAME_SURCHARGE } from '../utils/studentName';
 
 // Turns one category's live draft (lineValues / matrixValues / rowsByBlock
 // / plakRows / columnsByBlock on `st`) into the cart items it would add,
@@ -233,5 +235,20 @@ export function buildCategoryCartItems(st, catKey, { lenient = false, allowTypos
       });
     });
   });
-  return { engaged, items: newItems };
+  return { engaged, items: newItems.map((it) => withNameSurcharge(it, catKey, st.schoolLanguage)) };
+}
+
+// Every plaque of the item engraved with a student's name: the catalog price
+// + RM1 (studentName.js). An item mixing named and unnamed plaques keeps its
+// price — TOKOH / ORDER LAIN-LAIN are an item per row, so theirs never mix.
+function withNameSurcharge(item, catKey, schoolLanguage) {
+  if (item.unitPrice == null || !item.jenisPlak) return item;
+  const { rows } = buildCsvRows({ schoolLanguage, items: [item] }, catKey, [item]);
+  if (!rows.length || !rows.every((r) => hasStudentName(r.slice(0, 5).join('\n')))) return item;
+  const unitPrice = Number(item.unitPrice) + NAME_SURCHARGE;
+  const detailRows = item.detail?.rows;
+  return {
+    ...item, unitPrice, harga: unitPrice * (Number(item.qty) || 0), nameSurcharge: NAME_SURCHARGE,
+    ...(detailRows?.length === 1 ? { detail: { ...item.detail, rows: [{ ...detailRows[0], unitPrice }] } } : {}),
+  };
 }
