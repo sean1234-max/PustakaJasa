@@ -1517,7 +1517,17 @@ export function AppStateProvider({ children }) {
     }
 
     const finalState = { ...next, [fields.category]: landOn || next[fields.category] };
-    setState(finalState);
+    // A Word / PDF order is read twice (convertImportToForm): the first read's file upload lands
+    // while the FORM ANUGERAH copy is being made, and this second write — built on that first
+    // read's draft (`base`) — must not wipe it, or the order is saved with no file (ORD-0090).
+    setState(base && fields.importFilePath
+      ? (latest) => ({
+        ...finalState,
+        [fields.importFilePath]: latest[fields.importFilePath],
+        [fields.importFileName]: latest[fields.importFileName],
+        ...(fields.importFilePath === 'importFilePath' ? { importFiles: latest.importFiles } : {}),
+      })
+      : finalState);
 
     // Keep the raw upload as a backup on the order — Production / Store
     // Admin / Admin download it to cross-check the order details (0055).
