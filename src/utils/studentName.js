@@ -7,4 +7,9 @@ export const NAME_SURCHARGE = 1;
 
 const NAME_WORD_RE = /(?:^|[\s(])(?:BIN|BINTI|BINTE|BT|BTE|A\/L|A\/P|MOHAMAD|MOHAMMAD|MUHAMMAD|MUHAMAD|MOHAMED|MOHAMMED|MOHD|MUHD|NUR|NURUL|NOOR|NOR|SITI|AHMAD|ABDUL|ABD)(?=$|[\s.,)])/i;
 
-export const hasStudentName = (text) => String(text || '').split('\n').some((line) => NAME_WORD_RE.test(line.trim()));
+// The school's own name is never a student's (ORD-0094: "SK TUN ABDUL AZIZ
+// MAJID 2026" on every plaque made each one look named).
+const SCHOOL_LINE_RE = /(?:^|[^A-Z])(?:SK|SJK|SJKC|SJKT|SMK|SMJK|SRK|SRJK|SEKOLAH)(?![A-Z])/i;
+
+export const hasStudentName = (text) => String(text || '').split('\n')
+  .some((line) => !SCHOOL_LINE_RE.test(line.trim()) && NAME_WORD_RE.test(line.trim()));
