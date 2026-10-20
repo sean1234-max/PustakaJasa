@@ -18,3 +18,13 @@ export function withTempat(line) {
   if (!ORDINAL_LINE_RE.test(t)) return line;
   return `${t === t.toUpperCase() ? 'TEMPAT' : 'Tempat'} ${t}`;
 }
+
+// "TAHUN SATU" -> "TAHUN 1": a year level is always engraved as a number,
+// even when the file's table heads its columns SATU / DUA / TIGA (Sean,
+// 2026-10-20).
+const TAHUN_WORDS = { SATU: 1, DUA: 2, TIGA: 3, EMPAT: 4, LIMA: 5, ENAM: 6 };
+const TAHUN_WORD_RE = /\b(TAHUN|Tahun|tahun)\s+(SATU|DUA|TIGA|EMPAT|LIMA|ENAM)\b/gi;
+export function tahunDigits(line) {
+  if (typeof line !== 'string') return line;
+  return line.replace(TAHUN_WORD_RE, (_, tahun, word) => `${tahun} ${TAHUN_WORDS[word.toUpperCase()]}`);
+}
