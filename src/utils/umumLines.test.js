@@ -131,3 +131,16 @@ describe('ANUGERAH is red by default (Sean, 2026-10-20)', () => {
     expect(umumRedSlots(lines('HARI ANUGERAH 2026', 'JOHAN'), '')).toEqual(['1']);
   });
 });
+
+describe('a place line is red first (Sean, 2026-10-20)', () => {
+  it('PERTAMA / TEMPAT KEDUA wins over ANUGERAH and other keywords', () => {
+    expect(umumRedSlots(lines('IHTIFAL 2026', 'KEDUDUKAN TERBAIK', '1 IBNU SINA', 'PERTAMA'), '')).toEqual(['3']);
+    expect(umumRedSlots(lines('IHTIFAL 2026', 'ANUGERAH CEMERLANG', 'TEMPAT KEDUA'), '')).toEqual(['2']);
+    expect(umumSlotFields(lines('IHTIFAL 2026', 'ANUGERAH CEMERLANG', 'TEMPAT KEDUA')))
+      .toEqual({ 0: 'event_header', 1: 'event_line_1', 2: 'position' });
+  });
+  it('no place line: ANUGERAH is red; a MERAH pick still wins', () => {
+    expect(umumRedSlots(lines('IHTIFAL 2026', 'ANUGERAH SAHSIAH', 'TAHUN 1'), '')).toEqual(['1']);
+    expect(umumRedSlots(lines('IHTIFAL 2026', 'ANUGERAH CEMERLANG', 'PERTAMA'), '1')).toEqual(['1']);
+  });
+});

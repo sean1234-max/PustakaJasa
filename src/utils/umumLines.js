@@ -20,11 +20,12 @@
 //     a line found by a position keyword (its MERAH box shows ticked). A
 //     guessed position, or one the teacher unticked (UMUM_NO_RED), still
 //     sits in the position spot but prints black (CSV position_black).
-//   - Nothing marked MERAH and a line below ① has ANUGERAH (not a MAJLIS /
-//     HARI ANUGERAH title): that line is in the red position, as if ticked,
-//     even when another keyword line comes first (Sean, 2026-10-20).
+//   - Nothing marked MERAH (Sean, 2026-10-20): a place line below ①
+//     (PERTAMA, TEMPAT KEDUA …) is the red position, as if ticked. With none,
+//     a line with ANUGERAH (not a MAJLIS / HARI ANUGERAH title) is, even
+//     when another keyword line comes first.
 
-import { ANUGERAH_RE } from './positionWords';
+import { ANUGERAH_RE, PLACE_LINE_RE } from './positionWords';
 
 export const UMUM_SLOTS = ['0', '1', '2', '3'];
 // Stored in the umumRed line when the teacher unticks the red line.
@@ -54,10 +55,13 @@ function firstRun(slots, kinds, kind, taken) {
   return run;
 }
 
-// The CONTOH line red by default: the first below ① with ANUGERAH in it
-// that isn't a title line, or '' (① with ANUGERAH is the ceremony's name).
-export function umumAnugerahSlot(contoh) {
-  return UMUM_SLOTS.slice(1).find((s) => ANUGERAH_RE.test(String(contoh[s] || '')) && kindOf(String(contoh[s])) === 'position') || '';
+// The CONTOH line red by default, below ①: a place line (PERTAMA, TEMPAT
+// KEDUA …), else the first with ANUGERAH that isn't a title line, else ''
+// (① with ANUGERAH is the ceremony's name).
+export function umumDefaultRedSlot(contoh) {
+  const below = UMUM_SLOTS.slice(1);
+  return below.find((s) => PLACE_LINE_RE.test(String(contoh[s] || '').trim()))
+    || below.find((s) => ANUGERAH_RE.test(String(contoh[s] || '')) && kindOf(String(contoh[s])) === 'position') || '';
 }
 
 // `contoh` = { '0': text, ... } (the CONTOH lines), `redSetting` = the slot
@@ -70,9 +74,11 @@ export function umumSlotFields(contoh, redSetting) {
   const assign = (list, field) => list.forEach((s) => { out[s] = field; taken.add(s); });
 
   const kinds = Object.fromEntries(slots.map((s) => [s, kindOf(contoh[s])]));
-  // An ANUGERAH line counts as ticked when the keywords would pick another.
-  const anugerah = redSetting ? '' : umumAnugerahSlot(contoh);
-  const redSlot = redSetting || (anugerah && !firstRun(slots, kinds, 'position', taken).includes(anugerah) ? anugerah : '');
+  // A place line counts as ticked; an ANUGERAH line too when the keywords
+  // would pick another.
+  const auto = redSetting ? '' : umumDefaultRedSlot(contoh);
+  const ticked = auto && (PLACE_LINE_RE.test(String(contoh[auto]).trim()) || !firstRun(slots, kinds, 'position', taken).includes(auto));
+  const redSlot = redSetting || (ticked ? auto : '');
   if (redSlot && slots.includes(redSlot)) {
     assign([redSlot], 'position');
     // A MAJLIS / school / year line is the TAJUK BESAR wherever it sits
@@ -112,6 +118,8 @@ export function umumRedSlots(contoh, redSetting) {
   if (redSetting === UMUM_NO_RED) return [];
   const fields = umumSlotFields(contoh, redSetting);
   if (redSetting && fields[redSetting] === 'position') return [redSetting];
+  const auto = redSetting ? '' : umumDefaultRedSlot(contoh);
+  if (auto && PLACE_LINE_RE.test(String(contoh[auto]).trim())) return [auto];
   return UMUM_SLOTS.filter((s) => fields[s] === 'position' && kindOf(String(contoh[s] || '')) === 'position');
 }
 
