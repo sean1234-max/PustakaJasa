@@ -3,12 +3,16 @@
 //     that is just the ordinal (PERTAMA, KEDUA …) is engraved "TEMPAT
 //     PERTAMA"; without it, "PERTAMA" stays — the same way "TAHUN" is kept
 //     only when the file has it. "Tempat" only in a price list doesn't count.
-//   - ANUGERAH: a plaque line with ANUGERAH in it is red by default (a
-//     MAJLIS / HARI ANUGERAH title line stays the black TAJUK BESAR).
+//   - Red by default: a place line (PERTAMA / TEMPAT PERTAMA …) first; with
+//     none, a line with ANUGERAH in it (a MAJLIS / HARI ANUGERAH title line
+//     stays the black TAJUK BESAR).
 const ORDINALS = 'PERTAMA|KEDUA|KETIGA|KEEMPAT|KELIMA|KEENAM|KETUJUH|KELAPAN|KESEMBILAN|KESEPULUH';
 const TEMPAT_RE = new RegExp(`\\bTEMPAT\\s+(?:KE-?\\s*\\d+|${ORDINALS})\\b`, 'i');
 const ORDINAL_LINE_RE = new RegExp(`^(?:${ORDINALS})$`, 'i');
 export const ANUGERAH_RE = /\bANUGERAH\b/i;
+// A line that is only a place (PERTAMA, TEMPAT KEDUA …): red ahead of an
+// ANUGERAH line (Sean, 2026-10-20).
+export const PLACE_LINE_RE = new RegExp(`^(?:TEMPAT\\s+)?(?:${ORDINALS})$`, 'i');
 
 export const fileSaysTempat = (text) => TEMPAT_RE.test(String(text || ''));
 
