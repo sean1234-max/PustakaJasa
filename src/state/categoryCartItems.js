@@ -18,7 +18,11 @@ import { computeBlocks, snapshotDetail, noopUpdaters } from '../utils/computeBlo
 // readiness checks, and a row or block with a quantity but no Jenis Plak
 // still becomes an item (jenisPlak ''), so the form can be downloaded,
 // finished in Excel and uploaded again (Sean, 2026-10-17).
-export function buildCategoryCartItems(st, catKey, { lenient = false } = {}) {
+// `{ allowTypos: true }` (Production's corrected Excel): a possible-typo hint
+// doesn't block — a student's name ("HANI", "AINA") isn't a typo, and
+// blocking dropped the whole category back to the order's old details
+// (ORD-0065, Sean 2026-10-20).
+export function buildCategoryCartItems(st, catKey, { lenient = false, allowTypos = false } = {}) {
   const { blocks, isMatrix, isDynamicMatrix } = computeBlocks(
     catKey, st.lineValues, st.matrixValues, st.rowsByBlock, st.plakRows, st.columnsByBlock, noopUpdaters, st.plakCatalog, st.schoolLanguage,
   );
@@ -101,7 +105,7 @@ export function buildCategoryCartItems(st, catKey, { lenient = false } = {}) {
     // a legitimate word it's never seen (a school's own event name, a
     // person's name) never trips this — only fixing the actual typo clears it.
     const typoLine = blk.lines.find((line) => line.typoHint) || (blk.rows || []).find((row) => row.typoHint);
-    if (typoLine) {
+    if (typoLine && !allowTypos) {
       return { engaged, error: `Possible typo in ${blockLabel}: "${typoLine.typoHint.word}" — or "${typoLine.typoHint.suggestion}"? Pick the right one under the word before adding to cart.` };
     }
     if (!hasQty) {

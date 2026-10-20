@@ -160,6 +160,22 @@ describe('buildCategoryCartItems — TOKOH_SHEET (plakPerRow)', () => {
     expect(res.error).toMatch(/ANIGERAH/);
   });
 
+  // Production's corrected Excel (ORD-0065): a flagged word (a student's
+  // name like "HANI") must not drop the category back to the old details.
+  it('builds anyway with allowTypos', () => {
+    const res = buildCategoryCartItems({
+      lineValues: { 'TOKOH_SHEET::0::0': 'Majlis ANIGERAH', 'TOKOH_SHEET::0::2': 'TOKOH MURID' },
+      matrixValues: {},
+      rowsByBlock: { 'TOKOH_SHEET::0': [{ id: 1, desc: 'TOKOH MURID', qty: '1', jenisPlak: 'MP399', namaMurid: 'Ali' }] },
+      plakRows: {},
+      columnsByBlock: {},
+      plakCatalog: [{ code: 'MP399', price: 12 }],
+      schoolLanguage: 'SK',
+    }, 'TOKOH_SHEET', { allowTypos: true });
+    expect(res.error).toBeUndefined();
+    expect(res.items).toHaveLength(1);
+  });
+
   it('does not block on a legitimate word the dictionary has never seen (a school\'s own name)', () => {
     const res = buildCategoryCartItems(draftTokoh([
       { id: 1, desc: 'TOKOH MURID', qty: '1', jenisPlak: 'MP399', namaMurid: 'Ali' },
