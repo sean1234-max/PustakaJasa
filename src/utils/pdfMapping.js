@@ -156,8 +156,6 @@ export function applyPdfReading(ir, reading) {
   const lists = [];
   const runs = [];
   let bad = 0;
-  // The file says "Tempat Pertama" somewhere: a bare PERTAMA line gets it too.
-  const tempat = fileSaysTempat(ir.segments.map((s) => s.text).join(' '));
   let tempatAdded = 0;
 
   // REF without a "#1-6" range suffix.
@@ -212,6 +210,13 @@ export function applyPdfReading(ir, reading) {
     const where = `"${String(g.name || `Batch ${gi + 1}`).slice(0, 80)}"`;
     if (g.confidence === 'low') notes.push(`${where}: the AI wasn't sure how to read this part of the PDF — please check every plaque carefully.`);
     if (g.note) notes.push(`${where}: ${g.note}`);
+
+    // This batch's own text says "Tempat Pertama" (a sample label the AI
+    // quoted only "PERTAMA" of): its bare PERTAMA lines get TEMPAT too. Text
+    // elsewhere in the file, like a price list, doesn't count (Sean, 2026-10-20).
+    const refs = [...(g.tajuk || []), g.code?.ref, g.total?.ref, g.each?.ref,
+      ...(g.labels || []).flat(2).filter((o) => o !== '&').flatMap((o) => String(o).split('|').filter((_, i) => i === 0 || i === 3))];
+    const tempat = fileSaysTempat(refs.map((r) => read(baseRef(r)) || '').join(' '));
 
     let kod = '';
     if (g.code) {
@@ -292,7 +297,7 @@ export function applyPdfReading(ir, reading) {
     else runs.push({ heading, rows });
   });
 
-  if (tempatAdded) notes.push(`The file says "Tempat Pertama", so TEMPAT was added before PERTAMA / KEDUA … on ${tempatAdded} plaque(s) — please check.`);
+  if (tempatAdded) notes.push(`The order's own wording says "Tempat Pertama", so TEMPAT was added before PERTAMA / KEDUA … on ${tempatAdded} plaque(s) — please check.`);
   (reading?.groups || []).flatMap((g) => [...(g.tajuk || []), g.code?.ref, g.total?.ref, g.each?.ref]).forEach(markUsed);
   const skipped = skippedListItems(ir, lists, usedIds);
   if (skipped.length) {
