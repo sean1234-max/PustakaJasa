@@ -279,3 +279,22 @@ describe('fillOrderTemplate, TOKOH NAMA MURID and line breaks', () => {
     expect(tabs).toEqual(expect.arrayContaining(['TOKOH', 'IKON PENGAWAS', 'ANUGERAH PENGHARGAAN PENGAWAS P']));
   });
 });
+
+describe('fillOrderTemplate, ANUGERAH red by default (Sean, 2026-10-20)', () => {
+  const P = (o) => ({ heading: 'Hari Anugerah Kualiti 2026', line: '', eline2: '', code: 'PKC 263', qty: 1, ...o });
+  it('picks MERAH beside an ORDER LAIN-LAIN CONTOH line with ANUGERAH, not beside the title', async () => {
+    const res = await fillOrderTemplate(fs.readFileSync('public/templates/FORM-ANUGERAH.xlsx'), {
+      plaques: [P({ award: 'Anugerah Sahsiah Terpuji', line: 'Tahun 1' })],
+    }, { DOMParser, XMLSerializer });
+    const wb = read(res.buffer);
+    const u = (ref) => v(wb, 'ORDER LAIN-LAIN', ref);
+    expect([u('B6'), u('F5'), u('F6'), u('F7')]).toEqual(['ANUGERAH SAHSIAH TERPUJI', undefined, 'MERAH', undefined]);
+  });
+  it('leaves MERAH blank when no line has ANUGERAH', async () => {
+    const res = await fillOrderTemplate(fs.readFileSync('public/templates/FORM-ANUGERAH.xlsx'), {
+      plaques: [P({ award: 'Kedudukan Terbaik', line: '1 Ibnu Sina', eline2: 'Pertama' })],
+    }, { DOMParser, XMLSerializer });
+    const wb = read(res.buffer);
+    expect(['F5', 'F6', 'F7', 'F8'].map((r) => v(wb, 'ORDER LAIN-LAIN', r))).toEqual([undefined, undefined, undefined, undefined]);
+  });
+});

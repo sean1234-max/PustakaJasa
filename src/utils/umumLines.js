@@ -20,6 +20,11 @@
 //     a line found by a position keyword (its MERAH box shows ticked). A
 //     guessed position, or one the teacher unticked (UMUM_NO_RED), still
 //     sits in the position spot but prints black (CSV position_black).
+//   - Nothing marked MERAH and a line below ① has ANUGERAH (not a MAJLIS /
+//     HARI ANUGERAH title): that line is in the red position, as if ticked,
+//     even when another keyword line comes first (Sean, 2026-10-20).
+
+import { ANUGERAH_RE } from './positionWords';
 
 export const UMUM_SLOTS = ['0', '1', '2', '3'];
 // Stored in the umumRed line when the teacher unticks the red line.
@@ -49,16 +54,25 @@ function firstRun(slots, kinds, kind, taken) {
   return run;
 }
 
-// `contoh` = { '0': text, ... } (the CONTOH lines), `redSlot` = the slot
-// marked MERAH ('' / undefined = none). Returns { slot: field } for every
+// The CONTOH line red by default: the first below ① with ANUGERAH in it
+// that isn't a title line, or '' (① with ANUGERAH is the ceremony's name).
+export function umumAnugerahSlot(contoh) {
+  return UMUM_SLOTS.slice(1).find((s) => ANUGERAH_RE.test(String(contoh[s] || '')) && kindOf(String(contoh[s])) === 'position') || '';
+}
+
+// `contoh` = { '0': text, ... } (the CONTOH lines), `redSetting` = the slot
+// marked MERAH ('' / undefined = none: an ANUGERAH line counts as marked). Returns { slot: field } for every
 // filled slot.
-export function umumSlotFields(contoh, redSlot) {
+export function umumSlotFields(contoh, redSetting) {
   const slots = UMUM_SLOTS.filter((s) => String(contoh[s] || '').trim());
   const out = {};
   const taken = new Set();
   const assign = (list, field) => list.forEach((s) => { out[s] = field; taken.add(s); });
 
   const kinds = Object.fromEntries(slots.map((s) => [s, kindOf(contoh[s])]));
+  // An ANUGERAH line counts as ticked when the keywords would pick another.
+  const anugerah = redSetting ? '' : umumAnugerahSlot(contoh);
+  const redSlot = redSetting || (anugerah && !firstRun(slots, kinds, 'position', taken).includes(anugerah) ? anugerah : '');
   if (redSlot && slots.includes(redSlot)) {
     assign([redSlot], 'position');
     // A MAJLIS / school / year line is the TAJUK BESAR wherever it sits
