@@ -1321,6 +1321,9 @@ function aliranSlotsByContent(lines) {
   if (ordIdx === -1) {
     const out = {};
     ['0', '2', '2b', '3'].forEach((slot, i) => { if (rows[i] !== undefined) out[slot] = rows[i]; });
+    // No place line to print red: the ANUGERAH line is the red one (same default as ORDER
+    // LAIN-LAIN, Sean 2026-10-20) — a MERAH tick, so Production can still change it.
+    if (out['2']) out.redLines = '2';
     return out;
   }
   const rest = rows.filter((_, i) => i !== ordIdx);

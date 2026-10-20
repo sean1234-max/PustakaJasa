@@ -1,3 +1,4 @@
+import { applyRedLines } from './redLines';
 import { describe, it, expect } from 'vitest';
 import * as XLSX from 'xlsx';
 import { parseFormAnugerahExcel, copiedSheetCategory, matchJenisPlakPath, deriveKlasMatrixSectionLines, readFrontPgInfo, splitCikguPhone } from './excelImport';
@@ -418,11 +419,15 @@ describe('ALIRAN TERBAIK — PERTAMA row can sit second (current form) or last (
     const lines = deriveKlasMatrixSectionLines(sheet(['APRESIASI GEMILANG 2026', 'ANUGERAH TERBAIK', 'TAHUN 1']));
     expect([lines[0], lines[2], lines['2b'], lines[3]]).toEqual(['APRESIASI GEMILANG 2026', 'ANUGERAH TERBAIK', 'TAHUN 1', undefined]);
     expect(lines.refOrder).toBe('0,2,2b');
+    expect(lines.redLines).toBe('2');
     const lineValues = Object.fromEntries(Object.entries(lines).map(([k, v]) => [`ALIRAN::0::${k}`, v]));
     const blk = computeBlocks('ALIRAN', lineValues, {}, {}, {}, {}, noopUpdaters, [], 'SK').blocks[0];
     expect(blk.lines.map((ln) => [ln.num, ln.value])).toEqual([
       [1, 'APRESIASI GEMILANG 2026'], [2, 'ANUGERAH TERBAIK'], [3, 'TAHUN 1'],
     ]);
+    expect(blk.lines.map((ln) => !!ln.redText)).toEqual([false, true, false]);
+    const red = applyRedLines(['APRESIASI GEMILANG 2026', '', '', 'ANUGERAH TERBAIK', 'TAHUN 3'], lineValues, 'ALIRAN::0::', resolveCategory('ALIRAN'));
+    expect(red.row).toEqual(['APRESIASI GEMILANG 2026', '', 'ANUGERAH TERBAIK', 'TAHUN 3', '']);
   });
 });
 
