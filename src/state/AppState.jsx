@@ -2274,11 +2274,11 @@ export function AppStateProvider({ children }) {
     // is skipped, same as submitPendingAddOn's own [...CATEGORIES, ...dynamicCats] sweep.
     const dynamicKeys = Object.keys(next[f.visibleBlocksByCategory] || {});
     [...CATEGORIES.map((c) => c.key), ...dynamicKeys].forEach((catKey) => {
-      const built = buildCategoryCartItems(draft, catKey);
+      const built = buildCategoryCartItems(draft, catKey, { allowTypos: true });
       if (built.items) { items.push(...built.items); return; }
       if (!built.error) return;
-      // Can't be built from the file alone (e.g. a word the AI check flags that was confirmed on
-      // the order — ORD-0059's "SINA"): keep the order's own saved details for it, never drop it.
+      // Can't be built from the file alone (e.g. a Jenis Plak it doesn't name; a possible
+      // typo no longer blocks here — ORD-0065): keep the order's own saved details for it, never drop it.
       const label = resolveCategory(catKey)?.label || catKey;
       const saved = (order.items || []).filter((it) => it.categoryKey === catKey);
       items.push(...saved);
