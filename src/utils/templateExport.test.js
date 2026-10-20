@@ -290,12 +290,20 @@ describe('fillOrderTemplate, ANUGERAH red by default (Sean, 2026-10-20)', () => 
     const u = (ref) => v(wb, 'ORDER LAIN-LAIN', ref);
     expect([u('B6'), u('F5'), u('F6'), u('F7')]).toEqual(['ANUGERAH SAHSIAH TERPUJI', undefined, 'MERAH', undefined]);
   });
-  it('leaves MERAH blank when no line has ANUGERAH or a place', async () => {
+  it('leaves MERAH blank when no line has ANUGERAH / KEHADIRAN / KEDUDUKAN or a place', async () => {
+    const res = await fillOrderTemplate(fs.readFileSync('public/templates/FORM-ANUGERAH.xlsx'), {
+      plaques: [P({ award: 'Pengawas Terbaik', line: '1 Ibnu Sina', eline2: 'Johan' })],
+    }, { DOMParser, XMLSerializer });
+    const wb = read(res.buffer);
+    expect(['F5', 'F6', 'F7', 'F8'].map((r) => v(wb, 'ORDER LAIN-LAIN', r))).toEqual([undefined, undefined, undefined, undefined]);
+  });
+
+  it('a KEDUDUKAN line is red too', async () => {
     const res = await fillOrderTemplate(fs.readFileSync('public/templates/FORM-ANUGERAH.xlsx'), {
       plaques: [P({ award: 'Kedudukan Terbaik', line: '1 Ibnu Sina', eline2: 'Johan' })],
     }, { DOMParser, XMLSerializer });
     const wb = read(res.buffer);
-    expect(['F5', 'F6', 'F7', 'F8'].map((r) => v(wb, 'ORDER LAIN-LAIN', r))).toEqual([undefined, undefined, undefined, undefined]);
+    expect(['F5', 'F6', 'F7', 'F8'].map((r) => v(wb, 'ORDER LAIN-LAIN', r))).toEqual([undefined, 'MERAH', undefined, undefined]);
   });
 });
 

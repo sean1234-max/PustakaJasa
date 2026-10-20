@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { umumSlotFields, umumRedSlots, UMUM_NO_RED } from './umumLines';
+import { umumSlotFields, umumRedSlots, umumDefaultRedSlot, UMUM_NO_RED } from './umumLines';
 
 const lines = (...texts) => Object.fromEntries(texts.map((t, i) => [`${i}`, t]).filter(([, t]) => t));
 
@@ -142,5 +142,23 @@ describe('a place line is red first (Sean, 2026-10-20)', () => {
   it('no place line: ANUGERAH is red; a MERAH pick still wins', () => {
     expect(umumRedSlots(lines('IHTIFAL 2026', 'ANUGERAH SAHSIAH', 'TAHUN 1'), '')).toEqual(['1']);
     expect(umumRedSlots(lines('IHTIFAL 2026', 'ANUGERAH CEMERLANG', 'PERTAMA'), '1')).toEqual(['1']);
+  });
+});
+
+describe('red by default — the same rule as the FORM ANUGERAH (Sean, 2026-10-20)', () => {
+  it('an ANUGERAH line that also says SEKOLAH is the red position, not part of the title', () => {
+    const c = { 0: 'MAJLIS APRESIASI HAL EHWAL MURID\n2026', 1: 'ANUGERAH\nPENGHARGAAN PENGAWAS SEKOLAH', 2: 'TAHUN 6' };
+    expect(umumDefaultRedSlot(c)).toBe('1');
+    expect(umumSlotFields(c, '')).toEqual({ 0: 'event_header', 1: 'position', 2: 'event_line_1' });
+    expect(umumRedSlots(c, '')).toEqual(['1']);
+  });
+
+  it('KEHADIRAN / KEDUDUKAN lines are red too', () => {
+    expect(umumRedSlots({ 0: 'MAJLIS ANUGERAH 2026', 1: 'KEHADIRAN PENUH', 2: 'TAHUN 6' }, '')).toEqual(['1']);
+    expect(umumRedSlots({ 0: 'MAJLIS ANUGERAH 2026', 1: 'TAHUN 6', 2: 'KEDUDUKAN 1' }, '')).toEqual(['2']);
+  });
+
+  it('a place line still comes first', () => {
+    expect(umumRedSlots({ 0: 'MAJLIS ANUGERAH 2026', 1: 'ANUGERAH SUKAN', 2: 'TEMPAT PERTAMA' }, '')).toEqual(['2']);
   });
 });

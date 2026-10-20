@@ -22,10 +22,11 @@
 //     sits in the position spot but prints black (CSV position_black).
 //   - Nothing marked MERAH (Sean, 2026-10-20): a place line below ①
 //     (PERTAMA, TEMPAT KEDUA …) is the red position, as if ticked. With none,
-//     a line with ANUGERAH (not a MAJLIS / HARI ANUGERAH title) is, even
-//     when another keyword line comes first.
+//     a line with ANUGERAH / KEHADIRAN / KEDUDUKAN (not a MAJLIS / HARI
+//     title, SEKOLAH in it or not) is, even when another keyword line comes
+//     first.
 
-import { ANUGERAH_RE, PLACE_LINE_RE } from './positionWords';
+import { RED_WORD_RES, PLACE_LINE_RE, TITLE_LINE_RE } from './positionWords';
 
 export const UMUM_SLOTS = ['0', '1', '2', '3'];
 // Stored in the umumRed line when the teacher unticks the red line.
@@ -56,12 +57,14 @@ function firstRun(slots, kinds, kind, taken) {
 }
 
 // The CONTOH line red by default, below ①: a place line (PERTAMA, TEMPAT
-// KEDUA …), else the first with ANUGERAH that isn't a title line, else ''
-// (① with ANUGERAH is the ceremony's name).
+// KEDUA …), else the first with ANUGERAH (then KEHADIRAN, then KEDUDUKAN) that isn't
+// a MAJLIS / HARI title line (SEKOLAH in it doesn't matter — "ANUGERAH
+// PENGHARGAAN PENGAWAS SEKOLAH", Sean 2026-10-20), else '' (① with ANUGERAH
+// is the ceremony's name).
 export function umumDefaultRedSlot(contoh) {
   const below = UMUM_SLOTS.slice(1);
   return below.find((s) => PLACE_LINE_RE.test(String(contoh[s] || '').trim()))
-    || below.find((s) => ANUGERAH_RE.test(String(contoh[s] || '')) && kindOf(String(contoh[s])) === 'position') || '';
+    || RED_WORD_RES.map((re) => below.find((s) => re.test(String(contoh[s] || '')) && !TITLE_LINE_RE.test(String(contoh[s])))).find(Boolean) || '';
 }
 
 // `contoh` = { '0': text, ... } (the CONTOH lines), `redSetting` = the slot
@@ -120,7 +123,7 @@ export function umumRedSlots(contoh, redSetting) {
   if (redSetting && fields[redSetting] === 'position') return [redSetting];
   const auto = redSetting ? '' : umumDefaultRedSlot(contoh);
   if (auto && PLACE_LINE_RE.test(String(contoh[auto]).trim())) return [auto];
-  return UMUM_SLOTS.filter((s) => fields[s] === 'position' && kindOf(String(contoh[s] || '')) === 'position');
+  return UMUM_SLOTS.filter((s) => fields[s] === 'position' && (s === auto || kindOf(String(contoh[s] || '')) === 'position'));
 }
 
 // The text each slot is classified by: the CONTOH line, or — when the
