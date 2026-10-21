@@ -209,6 +209,30 @@ describe('parseFormAnugerahExcel — PBD Tahun labels follow the sheet', () => {
 });
 
 describe('parseFormAnugerahExcel — ALIRAN TERBAIK (Kalau ada kelas)', () => {
+  it('reads PRA SEKOLAH / PPKI levels too, as the teacher wrote them (Sean, 2026-10-21)', () => {
+    const r = [];
+    r[0] = [null, null, null, null, 'TOLONG ISI DI SINI'];
+    r[1] = [null, null, null, null, 'HARI PENGHARGAAN MURID'];
+    r[2] = [null, null, null, null, 'ANUGERAH PENCAPAIAN TERBAIK'];
+    r[3] = [null, null, null, null, 'TAHUN 1 UTARID'];
+    r[4] = [null, null, null, null, 'PERTAMA'];
+    r[8] = ['TAHUN', 'KEDUDUKAN', null, 'TOTAL', null, null, 'PRASEKOLAH', null, null, 'PPKI', null, null, 'TAHUN 1'];
+    r[9] = [null, 'DARI', 'HINGGA KE', null, null, null, 'NAMA KELAS', 'QTY', null, 'NAMA KELAS', 'QTY', null, 'NAMA KELAS', 'QTY'];
+    r[10] = ['TAHUN 1', 'PERTAMA', 'KETIGA', 3, null, null, 'SAYANGKU', 1, null, '1 TOPAZ', 1, null, 'UTARID', 1];
+    r[11] = ['PRA SEKOLAH', 'PERTAMA', 'KETIGA', 3];
+    r[12] = ['PPKI', 'PERTAMA', 'KETIGA', 3];
+    r[13] = ['TOTAL:'];
+    r[19] = [null, 'JENIS PLAK', 'CATATAN', null, 'QTY', 'HARGA'];
+    r[20] = [null, null, 'DARI', 'HINGGA KE'];
+    r[21] = [null, 'PK 261 / C', 'PERTAMA', 'KETIGA'];
+    const parsed = parseFormAnugerahExcel(workbookFromSheets({ 'ALIRAN TERBAIK Kalau ada kelas': r.map((x) => x || []) }));
+    const section = (parsed.categorized?.ALIRAN_KELAS || [])[0];
+    expect(section.tahunRows.map((t) => [t.tahun, t.dari, t.hingga])).toEqual([['TAHUN 1', 1, 3], ['PRA SEKOLAH', 1, 3], ['PPKI', 1, 3]]);
+    expect(section.levelBreakdown.map((l) => [l.label, l.mainRows.map((m) => m.name)])).toEqual([
+      ['PRA SEKOLAH', ['SAYANGKU']], ['PPKI', ['1 TOPAZ']], ['TAHUN 1', ['UTARID']],
+    ]);
+  });
+
   it('reads the KEDUDUKAN table AND the per-Tahun Nama Kelas breakdown', () => {
     const r = [];
     r[0] = [null, null, null, null, 'TOLONG ISI DI SINI'];

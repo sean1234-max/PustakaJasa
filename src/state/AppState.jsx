@@ -1250,7 +1250,9 @@ export function AppStateProvider({ children }) {
           // TAHUN rows, each carrying a KEDUDUKAN "hingga" place or a flat
           // qty; plus a multi-row JENIS PLAK footer of position ranges.
           const byTahun = new Map(section.tahunRows.map((tr) => [tr.tahun, tr]));
-          newRowsByBlock[key] = ['TAHUN 1', 'TAHUN 2', 'TAHUN 3', 'TAHUN 4', 'TAHUN 5', 'TAHUN 6'].map((tahun) => {
+          // TAHUN 1-6, then the sheet's own extra levels (PRA SEKOLAH, PPKI — excelImport.js aliranLevel)
+          const extraLevels = section.tahunRows.map((tr) => tr.tahun).filter((t) => !/^TAHUN [1-6]$/.test(t));
+          newRowsByBlock[key] = ['TAHUN 1', 'TAHUN 2', 'TAHUN 3', 'TAHUN 4', 'TAHUN 5', 'TAHUN 6', ...extraLevels].map((tahun) => {
             const tr = byTahun.get(tahun);
             if (tr && tr.hingga) return { id: nextRowId++, desc: tahun, qty: String(tr.hingga - (tr.dari || 1) + 1), kedudukanHingga: tr.hingga };
             if (tr && tr.flatQty) return { id: nextRowId++, desc: tahun, qty: String(tr.flatQty), kedudukanHingga: 0 };

@@ -1342,6 +1342,15 @@ function aliranSlotsByContent(lines) {
   return out;
 }
 
+// ALIRAN's own levels besides TAHUN 1-6 (Sean, 2026-10-21: SKTSM): PRA SEKOLAH / PRASEKOLAH and
+// PPKI, kept as the teacher wrote them — engraved "PRA SEKOLAH SAYANGKU", "PPKI 1 TOPAZ".
+const ALIRAN_EXTRA_LEVEL_RE = /^(PRA\s*SEKOLAH|PRA\s*PPKI|PPKI)$/i;
+const levelKey = (s) => String(s || '').toUpperCase().replace(/\s+/g, '');
+function aliranLevel(label) {
+  const t = String(label || '').replace(/\s+/g, ' ').trim().toUpperCase();
+  return ALIRAN_EXTRA_LEVEL_RE.test(t) ? t : normalizeTahun(label);
+}
+
 function parseAliranSheet(ws) {
   const range = sheetRange(ws);
   const tahunH = findLabelCells(ws, range, ['TAHUN'])[0];
@@ -1357,7 +1366,7 @@ function parseAliranSheet(ws) {
   for (let r = headerRow + 1; r <= range.r2; r++) {
     const label = cellText(ws, r, tahunH.col);
     if (isTotalLabel(label)) break;
-    const tahun = normalizeTahun(label);
+    const tahun = aliranLevel(label);
     if (!tahun) continue;
     const dari = ordinalToNum(cellText(ws, r, dariH.col));
     const hingga = ordinalToNum(cellText(ws, r, hinggaH.col));
@@ -1436,7 +1445,8 @@ function parseAliranKelasSheet(ws) {
   if (hasNamaKelasData) {
     levelBreakdown = blocks
       .map((b) => ({
-        label: normalizeTahun(b.label) || b.label,
+        // the left table's own spelling (PRASEKOLAH here, PRA SEKOLAH there: one level)
+        label: base.tahunRows.find((tr) => levelKey(tr.tahun) === levelKey(b.label))?.tahun || normalizeTahun(b.label) || b.label,
         mainRows: readPpkiListRows(ws, range, b.nkCol, b.qtyCol, b.headerRow + 1),
         moralRows: [],
       }))
