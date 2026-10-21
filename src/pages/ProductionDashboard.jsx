@@ -151,6 +151,10 @@ export default function ProductionDashboard() {
           <div className="card-title" style={{ marginBottom: 'var(--space-2)' }}>Production Orders</div>
           <p className="hint-text" style={{ margin: 0 }}>Open an order and export each category's CSV for the AI file — no need to wait for an invoice number.</p>
         </div>
+        {/* the website's own Crystal Studio (public/crystal/): templates and school logos, editable by Production / Admin */}
+        <a href="/crystal/index.html" target="_blank" rel="noreferrer" className="btn btn-primary" style={{ whiteSpace: 'nowrap' }}>
+          Crystal Studio
+        </a>
       </div>
 
       {lowStockAlerts.length > 0 && (
