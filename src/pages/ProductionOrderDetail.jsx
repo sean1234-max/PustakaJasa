@@ -23,6 +23,7 @@ import ProductionPriceEditor from '../components/ProductionPriceEditor';
 import ProductionInvoiceEntry from '../components/ProductionInvoiceEntry';
 import ReservedNamesForm from '../components/ReservedNamesForm';
 import { getAiFileHelperStatus, startAiFileHelperJob, getAiFileHelperJob } from '../lib/aiFileHelper';
+import { schoolFolderFor } from '../data/schoolFolders';
 import { getOrderChangeStamp } from '../utils/orderStamp';
 
 // 3 flashes × 0.5s (index.css .kiv-row-flash), then the rows go back to normal
@@ -404,7 +405,7 @@ export default function ProductionOrderDetail() {
         setCrystalPrep(false);
       }
       if (!combinedOk) return;
-      const id = await startAiFileHelperJob(buildCombinedCsvFilename(order), rowsToCsv(combinedRows));
+      const id = await startAiFileHelperJob(buildCombinedCsvFilename(order), rowsToCsv(combinedRows), schoolFolderFor(order.sekolah));
       setAiFileJob({ id, status: 'queued', message: '', files: [] });
     } catch (err) {
       setAiFileErr(err.message || 'Could not start the AI file run. Please try again.');
@@ -622,7 +623,7 @@ export default function ProductionOrderDetail() {
             {/* Reviewing a Tambahan: only its own crystals, nothing to confirm or make yet (as SalesOrderSummary). */}
             {addonView
               ? <CrystalPreview order={effectiveOrder} role="production" selected={pickedCrystal} showArtwork={false} canMake={false} />
-              : <CrystalPreview order={order} role="production" selected={pickedCrystal} canMake={kivCardView || !kivParts(order).includes('CRYSTAL')} makeAi={crystalMakeAi} makeAiFolder={buildCombinedCsvFilename(order).replace(/\.csv$/i, '')} onMakeAiSent={() => crystalSent.current?.()} />}
+              : <CrystalPreview order={order} role="production" selected={pickedCrystal} canMake={kivCardView || !kivParts(order).includes('CRYSTAL')} makeAi={crystalMakeAi} makeAiFolder={buildCombinedCsvFilename(order).replace(/\.csv$/i, '')} makeAiSchool={schoolFolderFor(order.sekolah)} onMakeAiSent={() => crystalSent.current?.()} />}
 
             {selempangBlocks.length > 0 && (
               <div style={{ marginTop: 'var(--space-6)' }}>
@@ -675,6 +676,7 @@ export default function ProductionOrderDetail() {
                         {aiFileJob.status === 'running' && 'Running in Illustrator now…'}
                         {aiFileJob.status === 'error' && `Failed: ${aiFileJob.message || 'unknown error'}`}
                         {aiFileJob.status === 'done' && `Done — ${aiFileJob.files.length} file(s) saved to ${aiFileJob.outputFolder} (opened on this computer).`}
+                        {aiFileJob.status === 'done' && aiFileJob.schoolCopy && `\n${aiFileJob.schoolCopy}`}
                       </p>
                     )}
                     {aiFileErr && <div className="login-error" style={{ marginTop: 4 }}>{aiFileErr}</div>}

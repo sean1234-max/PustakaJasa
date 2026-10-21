@@ -21,12 +21,14 @@ import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { checkCrystalJob, crystalOutDir, writeCrystalScript } from './crystal-job.mjs';
+import { copyToSchool, resolveSchoolDir } from './school-folder.mjs';
 
 const execFileAsync = promisify(execFile);
 
 export const PORT = 47821;
 // 2: crystals too (POST /crystal) — the website asks for at least this to open crystals
-const VERSION = 2;
+// 3: a copy in the school's folder too (school-folder.mjs, Sean 2026-10-21)
+const VERSION = 3;
 const HELPER_DIR = path.dirname(fileURLToPath(import.meta.url));
 const TEMP_DIR = path.join(tmpdir(), 'pustakajasa-ai-helper');
 // crystals can carry pictures and .svg artwork (Crystal Studio), so more room than a CSV needs
@@ -161,7 +163,7 @@ function openFolder(folder) {
 const jobs = new Map();
 let queue = Promise.resolve();
 
-async function runJob(job, filename, csv) {
+async function runJob(job, filename, csv, school) {
   job.status = 'running';
   const aiFileDir = resolveAiFileDir();
   const outputRoot = path.join(aiFileDir, 'OUTPUT');
@@ -185,7 +187,10 @@ async function runJob(job, filename, csv) {
     job.files = [...after].filter(([name, mtime]) => before.get(name) !== mtime).map(([name]) => name);
     job.message = log;
     job.status = /Cancelled|失败: /.test(log) && !/存成:/.test(log) ? 'error' : 'done';
-    if (job.status === 'done') openFolder(outputFolder);
+    if (job.status === 'done') {
+      job.schoolCopy = copyToSchool(outputFolder, school, resolveSchoolDir(HELPER_DIR));
+      openFolder(outputFolder);
+    }
   } catch (err) {
     job.status = 'error';
     job.message = err.stderr ? `Illustrator call failed: ${err.stderr.toString()}` : err.message;
@@ -194,7 +199,7 @@ async function runJob(job, filename, csv) {
   }
   // SEAN.jsx's own summary too — which batches were saved, skipped rows and
   // why — so a run that "worked but made fewer files" can be read back here.
-  console.log(`[${new Date().toISOString()}] ${filename} -> ${job.status} (${job.files.length} file(s))\n${job.message}\n`);
+  console.log(`[${new Date().toISOString()}] ${filename} -> ${job.status} (${job.files.length} file(s))\n${job.message}\n${job.schoolCopy || ''}\n`);
 }
 
 function runIllustrator(scriptPath) {
@@ -217,6 +222,8 @@ async function runCrystalJob(job, checked) {
     const after = listAiFilesWithMtime(job.outputFolder);
     job.files = [...after.keys()].filter((n) => before.get(n) !== after.get(n));
     job.status = job.files.length ? 'done' : 'error';
+    // with the plaques' folder (Generate AI File): the school's folder gets a copy too
+    if (job.status === 'done' && checked.folder) job.schoolCopy = copyToSchool(job.outputFolder, checked.school, resolveSchoolDir(HELPER_DIR));
     openFolder(job.outputFolder);
   } catch (err) {
     job.status = 'error';
@@ -233,13 +240,13 @@ async function runCrystalJob(job, checked) {
 
 // One Illustrator run at a time — a second click just waits its turn.
 function queueJob(run, outputFolder = '') {
-  const job = { id: randomUUID(), status: 'queued', message: '', outputFolder, files: [] };
+  const job = { id: randomUUID(), status: 'queued', message: '', outputFolder, files: [], schoolCopy: '' };
   jobs.set(job.id, job);
   if (jobs.size > 50) jobs.delete(jobs.keys().next().value);
   queue = queue.then(() => run(job));
   return job;
 }
-const startJob = (filename, csv) => queueJob((job) => runJob(job, filename, csv));
+const startJob = (filename, csv, school) => queueJob((job) => runJob(job, filename, csv, school));
 function startCrystalJob(body) {
   const checked = checkCrystalJob(body);
   // quiet: no "saved" pop-up in Illustrator holding the run open — the page shows the report
@@ -293,7 +300,7 @@ function startServer() {
           send(400, { error: 'filename and csv are required' });
           return;
         }
-        send(202, { jobId: startJob(body.filename, body.csv).id });
+        send(202, { jobId: startJob(body.filename, body.csv, typeof body.school === 'string' ? body.school.slice(0, 200) : '').id });
         return;
       }
       if (req.method === 'POST' && pathname === '/crystal') {

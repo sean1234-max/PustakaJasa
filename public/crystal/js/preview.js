@@ -237,7 +237,7 @@ const setWorked = () => { try { localStorage.setItem("crystal-ever", "1"); } cat
 // ai: open in Illustrator, through the AI File helper on this PC (see to-illustrator.js), each saved as
 // .ai. Else: all crystals in one PDF.
 // folder: save in the plaques' OUTPUT folder (the website's Generate AI File) instead of OUTPUT/CRYSTAL
-async function generateAll(ai, folder = "") {
+async function generateAll(ai, folder = "", school = "") {
   if (generating) return;
   // the whole order, whichever tab / crystal is on screen (the website's Generate AI File may ask
   // while one crystal is open — then there's no ALL grid, nor its button)
@@ -276,7 +276,8 @@ async function generateAll(ai, folder = "") {
         list.push({ item: f.c.it, entry: own ? { state: own, images: scene.images, logo: lg } : { scene, logo: lg }, name: f.name, qty: f.c.t.qty, design: f.c.g.jenis, header: f.c.t.row.event_header });
       }
       const { job, without } = await vectorJob(list, order);
-      if (folder) job.folder = folder;
+      // with the plaques (Generate AI File): their folder, and the school's for its copy (helper v3)
+      if (folder) { job.folder = folder; job.school = school || logoFrom.school || ""; }
       const svgs = [];
       for (const i of without) svgs.push({ name: files[i].name, svg: await picture(files[i].c.it, files[i].c.g.jenis, files[i].c.t.row, 300, true) });
       say(everWorked() ? "Opening in Illustrator…" : "Opening in Illustrator… (the first time, Chrome asks to let this site reach this computer: choose Allow)");
@@ -548,7 +549,7 @@ window.addEventListener("message", (e) => {
     // plaques only then — Illustrator coming to the front sends this tab to the background, where
     // the browser all but stops the drawing (ORD-9016)
     const done = () => window.parent.postMessage({ type: "crystal-make-ai-sent" }, location.origin);
-    generateAll(true, typeof e.data.folder === "string" ? e.data.folder : "").then(done, done);
+    generateAll(true, typeof e.data.folder === "string" ? e.data.folder : "", typeof e.data.school === "string" ? e.data.school : "").then(done, done);
   }
   // the website picked a Jenis Plak (a row of its price table clicked): show that design's tab
   if (e.data.type === "crystal-select" && typeof e.data.jenis === "string") {

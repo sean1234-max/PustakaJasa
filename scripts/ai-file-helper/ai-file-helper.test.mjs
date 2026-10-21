@@ -81,3 +81,49 @@ describe('crystals (POST /crystal)', async () => {
     expect(cleanName('a/b:c*  d.', 80)).toBe('a b c d');
   });
 });
+
+describe('copy to the school folder (Sean, 2026-10-21)', async () => {
+  const { findSchoolFolder, copyToSchool, schoolKey } = await import('./school-folder.mjs');
+  const fs = await import('node:fs');
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const names = ['SK KUANG', 'SJKC KUANG', 'SK PUTRAJAYA PRESINT 16 (2)', 'SK PUTRAJAYA PRESINT 16 (1)', 'SK TAMAN SERI PAGI', 'SK SEKSYEN 7'];
+
+  it('keeps schoolKey identical to Crystal Studio\'s (public/crystal/js/logos.js)', () => {
+    const fn = (src) => src.slice(src.indexOf('export function schoolKey'), src.indexOf('\nconst WORDS'));
+    const words = (src) => src.match(/^const WORDS = .*$/m)[0];
+    const here = fs.readFileSync(new URL('./school-folder.mjs', import.meta.url), 'utf8');
+    const site = fs.readFileSync(new URL('../../public/crystal/js/logos.js', import.meta.url), 'utf8');
+    expect(fn(here)).toBe(fn(site));
+    expect(words(here)).toBe(words(site));
+  });
+
+  it('finds the one folder with the same name, written either way', () => {
+    expect(findSchoolFolder('/r', 'SK PUTRAJAYA PRESINT 16(2)', names).name).toBe('SK PUTRAJAYA PRESINT 16 (2)');
+    expect(findSchoolFolder('/r', 'SK TMN SERI PAGI', names).name).toBe('SK TAMAN SERI PAGI');
+    expect(findSchoolFolder('/r', 'SJK (C) KUANG', names).name).toBe('SJKC KUANG');
+  });
+
+  it('copies nothing when no folder, or more than one, has that name', () => {
+    expect(findSchoolFolder('/r', 'SK SEKSYEN 7 B.B.BANGI', names).error).toMatch(/no school folder/);
+    expect(findSchoolFolder('/r', 'SJK (C) KUANG', [...names, 'SJK(C) KUANG']).error).toMatch(/more than one/);
+    // …unless the website names one of them exactly (src/data/schoolFolders.js)
+    expect(findSchoolFolder('/r', 'SJK(C) KUANG', [...names, 'SJK(C) KUANG']).name).toBe('SJK(C) KUANG');
+    expect(schoolKey('SK KUANG')).not.toBe(schoolKey('SJKC KUANG'));
+  });
+
+  it('copies the .ai files into <school>/<output folder name>, leaving OUTPUT as it is', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'pj-school-'));
+    const out = path.join(tmp, 'OUTPUT', '(DWI-1) - SK KUANG');
+    fs.mkdirSync(out, { recursive: true });
+    fs.writeFileSync(path.join(out, 'a.ai'), 'x');
+    fs.writeFileSync(path.join(out, 'log.txt'), 'x');
+    fs.mkdirSync(path.join(tmp, 'SCHOOLS', 'SK KUANG'), { recursive: true });
+    const msg = copyToSchool(out, 'SK KUANG', path.join(tmp, 'SCHOOLS'));
+    expect(msg).toMatch(/Copied 1 file/);
+    expect(fs.readdirSync(path.join(tmp, 'SCHOOLS', 'SK KUANG', '(DWI-1) - SK KUANG'))).toEqual(['a.ai']);
+    expect(fs.existsSync(path.join(out, 'a.ai'))).toBe(true);
+    expect(copyToSchool(out, 'SK NOWHERE', path.join(tmp, 'SCHOOLS'))).toMatch(/Not copied/);
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+});

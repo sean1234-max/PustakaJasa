@@ -31,7 +31,7 @@ async function follow(jobId) {
     try { job = await (await fetch(HELPER + "/jobs/" + encodeURIComponent(jobId))).json(); } catch (e) {}
     if (!job) return report("The AI File helper stopped answering — check Illustrator and the OUTPUT/CRYSTAL folder.");
     if (job.status === "done" || job.status === "error") {
-      return report((job.status === "error" ? "Failed: " : "") + (job.message || job.status) + (job.files && job.files.length ? `\n${job.files.length} .ai file(s) in ${job.outputFolder}` : ""));
+      return report((job.status === "error" ? "Failed: " : "") + (job.message || job.status) + (job.files && job.files.length ? `\n${job.files.length} .ai file(s) in ${job.outputFolder}` : "") + (job.schoolCopy ? `\n${job.schoolCopy}` : ""));
     }
   }
 }

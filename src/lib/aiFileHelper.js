@@ -16,11 +16,12 @@ export async function getAiFileHelperStatus() {
   }
 }
 
-export async function startAiFileHelperJob(filename, csv) {
+// school: the order's — the helper (v3) also copies the files into that school's NAS folder
+export async function startAiFileHelperJob(filename, csv, school = '') {
   const res = await fetch(`${HELPER_URL}/generate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ filename, csv }),
+    body: JSON.stringify({ filename, csv, school }),
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(body.error || `AI File helper returned ${res.status}`);

@@ -54,7 +54,8 @@ export function checkCrystalJob(body) {
     if (own) r.platform = own; else delete r.platform;
   }
   // folder: the plaques' own OUTPUT folder name (Generate AI File — Sean, 2026-10-15), or none
-  return { rows, files, platform, label: cleanName(job.label, 80), folder: cleanName(job.folder, 120) };
+  // school: the order's, for the copy in the school's folder (school-folder.mjs)
+  return { rows, files, platform, label: cleanName(job.label, 80), folder: cleanName(job.folder, 120), school: cleanName(job.school, 200) };
 }
 
 // A file from our storage -> dest. Node first; on Windows, if Node can't connect (an antivirus or

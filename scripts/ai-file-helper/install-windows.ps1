@@ -27,7 +27,7 @@ Remove-Item (Join-Path $startup "ai-file-watcher.vbs") -ErrorAction SilentlyCont
 New-Item -ItemType Directory -Force -Path $dest | Out-Null
 Copy-Item -Force (Join-Path $PSScriptRoot "ai-file-helper.mjs") $helper
 # crystals (Open in Illustrator from the Crystal Preview) need these two next to it
-foreach ($f in @("crystal-job.mjs", "crystal-illustrator.mjs")) { Copy-Item -Force (Join-Path $PSScriptRoot $f) (Join-Path $dest $f) }
+foreach ($f in @("crystal-job.mjs", "crystal-illustrator.mjs", "school-folder.mjs")) { Copy-Item -Force (Join-Path $PSScriptRoot $f) (Join-Path $dest $f) }
 
 # A hidden VBScript wrapper runs it at login without a console window.
 $vbsContent = @"

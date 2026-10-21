@@ -81,7 +81,8 @@ function ArtworkStatus({ order, onConfirmArtwork, onManualArtwork }) {
 }
 
 // makeAi: bump it to have the preview open every crystal in Illustrator (Production's Generate AI
-// File), saved in makeAiFolder (the plaques' OUTPUT folder) when given.
+// File), saved in makeAiFolder (the plaques' OUTPUT folder) when given; makeAiSchool: the school's NAS
+// folder for the helper's copy (src/data/schoolFolders.js).
 // onMakeAiSent: called once the crystals of a makeAi are handed to the helper (or couldn't be).
 // Manual: send the crystal to Production without confirming the preview — a
 // designer draws it (Sean, 2026-10-19).
@@ -96,7 +97,7 @@ export function ManualArtworkButton({ onManual, style }) {
   );
 }
 
-export default function CrystalPreview({ order, role = 'view', selected = null, onConfirmArtwork = null, onManualArtwork = null, showArtwork = true, canMake = true, makeAi = 0, makeAiFolder = '', onMakeAiSent = null }) {
+export default function CrystalPreview({ order, role = 'view', selected = null, onConfirmArtwork = null, onManualArtwork = null, showArtwork = true, canMake = true, makeAi = 0, makeAiFolder = '', makeAiSchool = '', onMakeAiSent = null }) {
   const frame = useRef(null);
   const sentRef = useRef(onMakeAiSent);
   sentRef.current = onMakeAiSent;
@@ -131,7 +132,7 @@ export default function CrystalPreview({ order, role = 'view', selected = null, 
 
   useEffect(() => {
     if (status !== 'ready' || !makeAi) return;
-    frame.current?.contentWindow?.postMessage({ type: 'crystal-make-ai', folder: makeAiFolder }, window.location.origin);
+    frame.current?.contentWindow?.postMessage({ type: 'crystal-make-ai', folder: makeAiFolder, school: makeAiSchool }, window.location.origin);
   }, [status, makeAi]); // eslint-disable-line react-hooks/exhaustive-deps -- only a new click sends
 
   // a crystal row picked in the price table: show that design and scroll to it
