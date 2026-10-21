@@ -17,6 +17,16 @@ function workbookFromSheets(sheets) {
 }
 
 describe('matchJenisPlakPath', () => {
+  // Real order: "VB / D / RED" imported as "VB / B / RED" — the "B" inside
+  // "VB" (and the "D" inside "RED") counted as a mention of that finish letter.
+  it('matches a one-letter finish only as its own word, not inside the product code', () => {
+    const colours = () => [{ code: 'RED' }, { code: 'BLUE' }];
+    const tree = [{ code: 'VB', children: ['A', 'B', 'C', 'D'].map((code) => ({ code, children: colours() })) }];
+    expect(matchJenisPlakPath('VB / D / RED', tree)).toBe('VB / D / RED');
+    expect(matchJenisPlakPath('VB / C / BLUE', tree)).toBe('VB / C / BLUE');
+    expect(matchJenisPlakPath('VB / B / RED', tree)).toBe('VB / B / RED');
+  });
+
   it('matches a root-level code directly, walking down to the mentioned finish', () => {
     const tree = [
       { code: 'SM-13187', children: [{ code: 'GOLD', children: [{ code: 'NORMAL' }, { code: 'BASE A' }] }] },
