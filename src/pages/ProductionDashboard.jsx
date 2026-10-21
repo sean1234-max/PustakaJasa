@@ -307,7 +307,9 @@ export default function ProductionDashboard() {
               {isKivCard && parts.filter((part) => cardTab !== 'typing' || part !== 'SHORT SUPPLY').map((part) => (
                 <div key={part} className="order-stamp-inline" style={{ marginTop: 'var(--space-1)' }}>{part}</div>
               ))}
-              {kivPending && !addonCard && <div className="hint-text" style={{ margin: '4px 0 0', fontWeight: 600, color: '#8a6d00' }}>Waiting: {parts.join(' / ')}</div>}
+              {/* The order's plaques card, when its crystals have their own card: ACARA (Sean, 2026-10-21) */}
+              {!isKivCard && !addonCard && parts.includes('CRYSTAL') && <div className="order-stamp-inline" style={{ marginTop: 'var(--space-1)' }}>ACARA</div>}
+              {kivPending && !addonCard && parts.includes('SHORT SUPPLY') && <div className="hint-text" style={{ margin: '4px 0 0', fontWeight: 600, color: '#8a6d00' }}>Waiting: SHORT SUPPLY</div>}
               {isKivCard && parts.includes('CRYSTAL') && !ord.artworkConfirmedAt && (
                 <div className="hint-text" style={{ margin: '4px 0 0', fontWeight: 600, color: '#b45309' }}>Artwork not confirmed yet</div>
               )}
