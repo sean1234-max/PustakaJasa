@@ -1941,14 +1941,22 @@ const MIN_INDEPENDENT_CODE_LEN = 2;
 // digits stripped on both sides — "MP 393 (GOLD BASE A)", "MP-393" and
 // "MP393" are all the same code to a teacher. The as-written pass stays
 // first so a code that already matched keeps matching exactly as before.
+// A one-letter code (finish "A"/"B"/"D") only counts as its own word —
+// otherwise the "B" in "VB" or the "D" in "RED" turned "VB / D / RED" into
+// "VB / B / RED". The squashed pass has no words left, so skips them.
+function mentionsCode(text, code, squashed) {
+  if (code.length >= MIN_INDEPENDENT_CODE_LEN) return text.includes(code);
+  return !squashed && new RegExp(`(^|[^A-Z0-9])${code}([^A-Z0-9]|$)`).test(text);
+}
+
 function findBestCodeMatch(nodes, normalized, minLen = MIN_INDEPENDENT_CODE_LEN) {
-  for (const squash of [(s) => s, (s) => s.replace(/[^A-Z0-9]/g, '')]) {
+  for (const [squash, squashed] of [[(s) => s, false], [(s) => s.replace(/[^A-Z0-9]/g, ''), true]]) {
     const text = squash(normalized);
     let best = null;
     let bestLen = -1;
     nodes.forEach((node) => {
       const codeNorm = squash(normalizeForPlakMatch(node.code));
-      if (codeNorm && codeNorm.length >= minLen && text.includes(codeNorm) && codeNorm.length > bestLen) {
+      if (codeNorm && codeNorm.length >= minLen && mentionsCode(text, codeNorm, squashed) && codeNorm.length > bestLen) {
         best = node;
         bestLen = codeNorm.length;
       }
