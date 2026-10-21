@@ -1440,3 +1440,29 @@ describe('template sheets whose layout was changed', () => {
     expect(parsed.unrecognizedSheets).toEqual(['PPKI', 'KEHADIRAN PENUH']);
   });
 });
+
+describe('parseFormAnugerahExcel — an ALIRAN sheet turned into a list of awards (Sean, 2026-10-21)', () => {
+  it('reads it as one ORDER LAIN-LAIN tab: CONTOH, the award line MERAH, a row per award (per place when ranged)', () => {
+    const r = [];
+    r[0] = [null, null, null, null, 'TOLONG ISI DI SINI'];
+    r[1] = [null, null, null, null, 'HARI PENGHARGAAN MURID\nTAHUN 2026'];
+    r[2] = [null, null, null, null, 'ANUGERAH KHAS KURIKULUM'];
+    r[6] = [null, 'ANUGERAH', 'KEDUDUKAN', null, 'TOTAL'];
+    r[7] = [null, null, 'DARI', 'HINGGA KE'];
+    r[8] = [null, 'ANUGERAH KHAS KURIKULUM', '-', null, 1];
+    r[9] = [null, 'ANUGERAH KHAS KOKURIKULUM', 'PERTAMA', 'KEDUA', 2];
+    r[17] = [null, 'TOTAL:', null, null, 3];
+    r[20] = [null, 'JENIS PLAK', 'CATATAN', null, 'QTY', 'HARGA'];
+    r[21] = [null, null, 'DARI', 'HINGGA KE'];
+    r[22] = [null, 'W038-C', '-', null, 3, 81];
+    const parsed = parseFormAnugerahExcel(workbookFromSheets({ '9. ANUGERAH KHAS': r.map((x) => x || []) }));
+    const [section] = Object.values(parsed.categorized).flat();
+    expect(section.isUmumList).toBe(true);
+    expect(section.lines).toEqual({ 0: 'HARI PENGHARGAAN MURID\nTAHUN 2026', 1: 'ANUGERAH KHAS KURIKULUM', umumRed: '1' });
+    expect(section.umumRows.map((u) => [u.l1, u.l2, u.qty, u.jenisPlak, u.harga])).toEqual([
+      ['', '', 1, 'W038-C', '27'],
+      ['ANUGERAH KHAS KOKURIKULUM', 'PERTAMA', 1, 'W038-C', '27'],
+      ['ANUGERAH KHAS KOKURIKULUM', 'KEDUA', 1, 'W038-C', '27'],
+    ]);
+  });
+});

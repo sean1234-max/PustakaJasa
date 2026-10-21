@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import { ordinalToNum, resolveSelempangWarna, makeDynamicCategoryKey, DEFAULT_REF_ORDER, ALIRAN_REF_ORDER, parseDisplayDate, isKelasSubject } from '../data/catalog';
+import { ordinalToNum, numToOrdinal, resolveSelempangWarna, makeDynamicCategoryKey, DEFAULT_REF_ORDER, ALIRAN_REF_ORDER, parseDisplayDate, isKelasSubject } from '../data/catalog';
 import { breakAcaraLine } from './acaraBreak';
 
 // Reads a teacher's own filled-in copy of the FORM ANUGERAH Excel template —
@@ -1455,6 +1455,85 @@ function parseAliranKelasSheet(ws) {
   return { ...base, levelBreakdown, isAliran: false, isAliranKelas: true };
 }
 
+// An ALIRAN TERBAIK sheet a teacher turned into a list of awards (Sean, 2026-10-21: SKTSM's
+// "9. ANUGERAH KHAS"): the left column headed ANUGERAH instead of TAHUN, one award per row, each
+// with a KEDUDUKAN range or just a TOTAL; the JENIS PLAK footer below. Read as an ORDER LAIN-LAIN
+// list — the CONTOH lines as ①…, the award line MERAH, a row per award (per place when it has a
+// KEDUDUKAN range, the place on the line after the award). null when the sheet isn't that shape.
+function parseAnugerahListSheet(ws) {
+  const range = sheetRange(ws);
+  const awardH = findLabelCells(ws, range, ['ANUGERAH'])[0];
+  const kedH = findLabelCells(ws, range, ['KEDUDUKAN'])[0];
+  if (!awardH || !kedH || kedH.row !== awardH.row) return null;
+  const sub = { r1: kedH.row, r2: kedH.row + 1, c1: range.c1, c2: range.c2 };
+  const dariH = findLabelCells(ws, sub, ['DARI'])[0];
+  const hinggaH = findLabelCells(ws, sub, ['HINGGA KE'])[0];
+  if (!dariH || !hinggaH) return null;
+  const awards = [];
+  for (let r = dariH.row + 1; r <= range.r2; r++) {
+    const award = cellText(ws, r, awardH.col);
+    if (isTotalLabel(award)) break;
+    if (!award) continue;
+    const dari = ordinalToNum(cellText(ws, r, dariH.col));
+    const hingga = ordinalToNum(cellText(ws, r, hinggaH.col));
+    const total = cellNum(ws, r, hinggaH.col + 1);
+    if (dari && hingga && hingga >= dari) awards.push({ award, dari, hingga });
+    else if (total > 0) awards.push({ award, qty: total });
+  }
+  if (!awards.length) return null;
+
+  // JENIS PLAK footer: each code with its own place range (or none), and its unit price
+  const plakH = findLabelCells(ws, range, ['JENIS PLAK']).find((h) => h.row > dariH.row);
+  const plaks = [];
+  if (plakH) {
+    const fDari = findLabelCells(ws, { r1: plakH.row, r2: plakH.row + 1, c1: range.c1, c2: range.c2 }, ['DARI'])[0];
+    const fHingga = findLabelCells(ws, { r1: plakH.row, r2: plakH.row + 1, c1: range.c1, c2: range.c2 }, ['HINGGA KE'])[0];
+    const qtyH = findLabelCells(ws, { r1: plakH.row, r2: plakH.row + 1, c1: range.c1, c2: range.c2 }, ['QTY', 'KUANTITI'])[0];
+    const hargaH = findLabelCells(ws, { r1: plakH.row, r2: plakH.row + 1, c1: range.c1, c2: range.c2 }, ['HARGA'])[0];
+    for (let r = (fDari ? fDari.row : plakH.row) + 1; r <= range.r2; r++) {
+      const code = cellText(ws, r, plakH.col);
+      if (isTotalLabel(code)) break;
+      if (!code) continue;
+      const qty = qtyH ? cellNum(ws, r, qtyH.col) : 0;
+      const harga = hargaH ? cellNum(ws, r, hargaH.col) : 0;
+      plaks.push({
+        code,
+        dari: fDari ? ordinalToNum(cellText(ws, r, fDari.col)) : null,
+        hingga: fHingga ? ordinalToNum(cellText(ws, r, fHingga.col)) : null,
+        unit: qty > 0 && harga > 0 ? String(Math.round((harga / qty) * 100) / 100) : '',
+      });
+    }
+  }
+  const plakFor = (place) => (place ? plaks.find((p) => p.dari && place >= p.dari && place <= (p.hingga || p.dari)) : null)
+    || plaks.find((p) => !p.dari) || plaks[0] || { code: '', unit: '' };
+
+  // CONTOH: the lines under TOLONG ISI DI SINI, as written (a line break in a cell kept)
+  const ins = findLabelCells(ws, { r1: range.r1, r2: awardH.row, c1: range.c1, c2: range.c2 }, ['TOLONG ISI DI SINI'])[0];
+  const contoh = [];
+  if (ins) for (let r = ins.row + 1; r < awardH.row && contoh.length < 4; r++) { const t = cellText(ws, r, ins.col); if (t) contoh.push(t); }
+  let awardSlot = contoh.findIndex((t) => awards.some((a) => a.award.toUpperCase() === t.toUpperCase()));
+  if (awardSlot < 0) { awardSlot = Math.min(contoh.length, 3); contoh[awardSlot] = awards[0].award; }
+  const placeSlot = awardSlot + 1 <= 3 ? awardSlot + 1 : null;
+  const lines = { umumRed: String(awardSlot) };
+  contoh.forEach((t, i) => { if (t) lines[`${i}`] = t; });
+
+  const umumRows = [];
+  const push = (award, place, qty) => {
+    const plak = plakFor(place);
+    umumRows.push({
+      no: String(umumRows.length + 1), l0: '', l1: '', l2: '', l3: '',
+      [`l${awardSlot}`]: award.toUpperCase() === String(contoh[awardSlot] || '').toUpperCase() ? '' : award,
+      ...(place && placeSlot != null ? { [`l${placeSlot}`]: numToOrdinal(place) } : {}),
+      qty, jenisPlak: plak.code, harga: plak.unit,
+    });
+  };
+  awards.forEach((a) => {
+    if (a.dari) for (let p = a.dari; p <= a.hingga; p++) push(a.award, p, 1);
+    else push(a.award, null, a.qty);
+  });
+  return { lines, umumRows, isUmumList: true, skipLineDerivation: true, classes: [] };
+}
+
 // LONJAKAN SAUJANA / KEHADIRAN PENUH — identical shape: "TAHUN | KUANTITI |
 // JENIS PLAK | HARGA" down the left, one KUANTITI (and its OWN Jenis Plak)
 // per TAHUN 1-6. Lands in the matching plakPerRow list category (catalog.js).
@@ -2129,6 +2208,15 @@ export function parseFormAnugerahExcel(arrayBuffer) {
       aliranLike.sourceSheet = name;
       aliranLike.dynamicCategoryKey = makeDynamicCategoryKey(hasKelas ? 'ALIRAN_KELAS' : 'ALIRAN', name);
       allSections.push(aliranLike);
+      return;
+    }
+
+    // An ALIRAN sheet turned into a list of awards (ANUGERAH instead of TAHUN): an ORDER LAIN-LAIN tab
+    const anugerahList = parseAnugerahListSheet(ws);
+    if (anugerahList) {
+      anugerahList.sourceSheet = name;
+      anugerahList.dynamicCategoryKey = makeDynamicCategoryKey('UMUM', name);
+      allSections.push(anugerahList);
       return;
     }
 
