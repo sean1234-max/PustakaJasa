@@ -120,12 +120,22 @@ export default function ProductionOrderDetail() {
     const saved = Object.fromEntries((order.items || []).flatMap((it) => (
       Object.entries(it.detail?.lines || {}).filter(([k]) => k.endsWith('::refOrder') || k.endsWith('::redLines'))
     )));
+    // Prices adjusted by hand on the order (Adjust Prices) carry over too, by Jenis Plak (ORD-0058, Sean 2026-10-21).
+    const ownPrice = order.priceAdjusted ? new Map((order.items || []).map((it) => [it.jenisPlak, Number(it.unitPrice)])) : new Map();
+    const withOwnPrice = (it) => {
+      const price = ownPrice.get(it.jenisPlak);
+      if (!(price >= 0) || price === Number(it.unitPrice)) return it;
+      const rows = Array.isArray(it.detail?.rows)
+        ? it.detail.rows.map((r) => (r.jenisPlak === it.jenisPlak || (!r.jenisPlak && r.unitPrice != null) ? { ...r, unitPrice: price } : r))
+        : it.detail?.rows;
+      return { ...it, unitPrice: price, harga: (Number(it.qty) || 0) * price, ...(it.detail ? { detail: { ...it.detail, rows } } : {}) };
+    };
     const items = correctedItems.map((it) => {
       const prefix = `${it.categoryKey}::${it.blockIdx ?? 0}::`;
       const own = Object.fromEntries(Object.entries(saved).filter(([k]) => k === `${prefix}refOrder` || k === `${prefix}redLines`));
-      return it.detail && Object.keys(own).length
+      return withOwnPrice(it.detail && Object.keys(own).length
         ? { ...it, detail: { ...it.detail, lines: { ...(it.detail.lines || {}), ...own } } }
-        : it;
+        : it);
     });
     return { ...order, items };
   }, [order, correctedItems, kivCardView, addonView]);
