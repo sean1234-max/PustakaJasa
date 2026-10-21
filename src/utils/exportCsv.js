@@ -37,7 +37,8 @@ function buildUmumRows(item) {
   const rows = [];
   (item.detail?.rows || []).forEach((r) => {
     const qty = Number(r.qty) || 0;
-    if (qty <= 0) return;
+    // still waiting for its name: left out until it's filled in (buildCsvRows counts it)
+    if (qty <= 0 || reservedField(item, r)) return;
     const out = { event_header: [], position: [], event_line_1: [], event_line_2: [] };
     UMUM_SLOTS.forEach((s) => {
       if (!fields[s]) return;
@@ -77,14 +78,28 @@ export function getLineOrder(item, cat) {
 // engraving text, so it is kept OUT of the production CSV until the real
 // name replaces "Reserved" (via Amend / Add-On).
 // "Reserved", "Reserve" (ORD-0013 was typed without the D) or "KIV" (Sean,
-// 2026-10-14), any case.
+// 2026-10-14), any case; "NAMA MURID" too — the name isn't known yet (Sean, 2026-10-21).
 export function isReservedName(name) {
-  return typeof name === 'string' && /^(reserved?|kiv)$/i.test(name.trim());
+  return typeof name === 'string' && /^(reserved?|kiv|nama\s+murid)$/i.test(name.trim());
+}
+
+// Which field of an order row is still waiting for its name, or null: TOKOH's NAMA MURID,
+// or an ORDER LAIN-LAIN line ①–④ (the row's own text, blank = the CONTOH line, "-" = no
+// such line) — Sean, 2026-10-21. fill_reserved_names (0099) fills the same field.
+export function reservedField(item, r) {
+  if (isReservedName(r?.namaMurid)) return 'namaMurid';
+  if (!resolveCategory(item?.categoryKey)?.umumRows) return null;
+  const slot = UMUM_SLOTS.find((sl) => {
+    const own = String(r?.[`l${sl}`] ?? '').trim();
+    if (own === '-') return false;
+    return isReservedName(own || item.detail?.lines?.[`${item.categoryKey}::${item.blockIdx ?? 0}::${sl}`] || '');
+  });
+  return slot == null ? null : `l${slot}`;
 }
 
 // "RESERVE", "RESERVED" or "KIV" as a whole word anywhere in a row's text, any case (Sean,
 // 2026-10-14) — what KIV & ARTWORK's View Order jumps to and flashes. "KIVA" doesn't count.
-export const KIV_WORD = /\b(RESERVED?|KIV)\b/i;
+export const KIV_WORD = /\b(RESERVED?|KIV|NAMA\s+MURID)\b/i;
 export const hasKivWord = (values) => values.some((v) => typeof v === 'string' && KIV_WORD.test(v));
 
 // The first of `categoryKeys` (tab order) with an item row carrying a KIV word, or null.
@@ -97,7 +112,7 @@ export function firstKivCategory(order, categoryKeys) {
 // 2026-10-13) — they're made later, in Production's KIV tab.
 export function countReservedPlaques(order) {
   return (order?.items || []).reduce((sum, it) => sum + (Array.isArray(it.detail?.rows) ? it.detail.rows : [])
-    .filter((r) => isReservedName(r.namaMurid))
+    .filter((r) => reservedField(it, r))
     .reduce((n, r) => n + (Number(r.qty) || 0), 0), 0);
 }
 
@@ -109,7 +124,7 @@ export function countReservedPlaques(order) {
 // shipment once both its plaque part and this part are done.
 export const isCrystalCode = (code) => /^CRYSTAL \//i.test(String(code || '').trim());
 const itemAllReserved = (it) => Array.isArray(it.detail?.rows) && it.detail.rows.length > 0
-  && it.detail.rows.every((r) => isReservedName(r.namaMurid));
+  && it.detail.rows.every((r) => reservedField(it, r));
 
 const hasCrystal = (order) => (order?.items || []).some((it) => isCrystalCode(it.jenisPlak));
 
@@ -865,6 +880,9 @@ export function buildCsvRows(order, categoryKey, items) {
     } else if (cat?.hasNamaKelasList) {
       itemRows = buildOthersRows(item, header, year, getLine(item, 2));
     } else if (cat?.umumRows) {
+      (item.detail?.rows || []).forEach((r) => {
+        if (reservedField(item, r)) reservedCount += Number(r.qty) || 0;
+      });
       itemRows = buildUmumRows(item);
     } else if (cat?.positionFromRows) {
       if (cat.tokohRowFields) {

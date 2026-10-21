@@ -1240,3 +1240,24 @@ describe('addInvoiceGaps — a blank plaque between two invoices of one Jenis Pl
     expect(addInvoiceGaps({ invoiceGroups: [{ qtyByJenisPlak: { 'CPH / B': 2 } }] }, rows)).toHaveLength(2);
   });
 });
+
+describe('Reserved names on ORDER LAIN-LAIN (Sean, 2026-10-21)', () => {
+  const lines = { 'UMUM::0::0': 'ANUGERAH KHAS', 'UMUM::0::1': 'TOKOH MURID 2026', 'UMUM::0::2': 'NAMA MURID', 'UMUM::0::umumRed': '1' };
+  const item = (rows) => ({ id: 'u', categoryKey: 'UMUM', blockIdx: 0, jenisPlak: 'PK 1', qty: rows.length, detail: { lines, rows } });
+  it('a line ①–④ reading NAMA MURID / RESERVED (own or the CONTOH) waits for its name, and stays out of the CSV', async () => {
+    const { reservedField, countReservedPlaques, buildCsvRows, isReservedName } = await import('./exportCsv');
+    expect(isReservedName('Nama  Murid')).toBe(true);
+    const it1 = item([
+      { id: 1, l1: 'TOKOH A', l2: 'NAMA MURID', qty: '1' },
+      { id: 2, l1: 'TOKOH B', qty: '2' },
+      { id: 3, l1: 'TOKOH C', l2: 'ALI BIN ABU', qty: '1' },
+      { id: 4, l1: 'TOKOH D', l2: '-', l3: 'reserved', qty: '1' },
+    ]);
+    expect(it1.detail.rows.map((r) => reservedField(it1, r))).toEqual(['l2', 'l2', null, 'l3']);
+    expect(countReservedPlaques({ items: [it1] })).toBe(4);
+    const { rows, reservedCount } = buildCsvRows({ schoolLanguage: 'SK', items: [it1] }, 'UMUM', [it1]);
+    expect(reservedCount).toBe(4);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].slice(0, 5).join('|')).toContain('ALI BIN ABU');
+  });
+});

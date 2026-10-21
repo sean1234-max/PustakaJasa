@@ -4,7 +4,7 @@
 // A crystal row has Preview crystal (Sean, 2026-10-17): the crystal drawn with the names typed so
 // far, before Save, so the salesman sees how it will look.
 import { useState } from 'react';
-import { isReservedName, isCrystalCode } from '../utils/exportCsv';
+import { isReservedName, isCrystalCode, reservedField } from '../utils/exportCsv';
 import { resolveCategory } from '../data/catalog';
 import CrystalPreview from './CrystalPreview';
 
@@ -13,7 +13,7 @@ function withTypedNames(order, filled) {
   return {
     ...order,
     items: (order.items || []).map((it) => (Array.isArray(it.detail?.rows) && it.detail.rows.some((r) => filled[r.id])
-      ? { ...it, detail: { ...it.detail, rows: it.detail.rows.map((r) => (filled[r.id] ? { ...r, namaMurid: filled[r.id] } : r)) } }
+      ? { ...it, detail: { ...it.detail, rows: it.detail.rows.map((r) => (filled[r.id] ? { ...r, [reservedField(it, r) || 'namaMurid']: filled[r.id] } : r)) } }
       : it)),
   };
 }
@@ -25,8 +25,15 @@ export default function ReservedNamesForm({ order, onSave }) {
   // { order, jenisPlak }: the preview as of the last Preview crystal click
   const [preview, setPreview] = useState(null);
   const rows = (order?.items || []).flatMap((it) => (Array.isArray(it.detail?.rows) ? it.detail.rows : [])
-    .filter((r) => r.id && isReservedName(r.namaMurid))
-    .map((r) => ({ ...r, category: resolveCategory(it.categoryKey)?.label || it.categoryKey, jenisPlak: r.jenisPlak || it.jenisPlak })));
+    .filter((r) => r.id && reservedField(it, r))
+    .map((r) => ({
+      ...r, category: resolveCategory(it.categoryKey)?.label || it.categoryKey, jenisPlak: r.jenisPlak || it.jenisPlak,
+      // ORDER LAIN-LAIN: the award is its own line ①–④ (the row's, else the CONTOH's)
+      desc: reservedField(it, r) === 'namaMurid' ? r.desc
+        : [0, 1, 2, 3].map((sl) => String(r[`l${sl}`] || it.detail?.lines?.[`${it.categoryKey}::${it.blockIdx ?? 0}::${sl}`] || '').trim())
+          .filter((t) => t && t !== '-' && !isReservedName(t)).join(' / '),
+      placeholder: reservedField(it, r) === 'namaMurid' ? r.namaMurid : 'NAMA MURID',
+    })));
   if (order?.status !== 'In Production' || rows.length === 0) return null;
 
   const hasCrystal = rows.some((r) => isCrystalCode(r.jenisPlak));
@@ -59,7 +66,7 @@ export default function ReservedNamesForm({ order, onSave }) {
               <td>{r.qty}</td>
               <td>
                 <input
-                  className="input" value={names[r.id] || ''} placeholder={r.namaMurid}
+                  className="input" value={names[r.id] || ''} placeholder={r.placeholder}
                   aria-label={`Name for ${r.desc || 'this plaque'}`}
                   onChange={(e) => setNames((n) => ({ ...n, [r.id]: e.target.value }))}
                 />
