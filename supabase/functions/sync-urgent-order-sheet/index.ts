@@ -28,6 +28,24 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// The urgent list just changed, so KIT DOC's red rows are refreshed here on the
+// server (highlight-urgent-kitdoc, as the same caller) — not by the website,
+// whose tab may be running code from before the feature (Sean, 2026-10-21:
+// an 8:56 sync from a stale tab never turned Kent's row red). A failure only
+// leaves the red one change behind; the sync itself still succeeds.
+async function refreshKitDocHighlight(authHeader: string) {
+  try {
+    const resp = await fetch(`${SUPABASE_URL}/functions/v1/highlight-urgent-kitdoc`, {
+      method: 'POST',
+      headers: { Authorization: authHeader, apikey: PUBLISHABLE_KEY, 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    if (!resp.ok) console.error('KIT DOC highlight failed:', resp.status, await resp.text());
+  } catch (err) {
+    console.error('KIT DOC highlight failed:', err);
+  }
+}
+
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -184,7 +202,10 @@ Deno.serve(async (req) => {
   // order's — bottom-up so earlier indexes stay valid. Nothing else moves.
   if (!order.urgent) {
     const matches = ids.map((r, i) => (r[0] === order.id ? i : -1)).filter((i) => i >= 0).reverse();
-    if (matches.length === 0) return jsonResponse({ ok: true, removed: 0 });
+    if (matches.length === 0) {
+      await refreshKitDocHighlight(authHeader);
+      return jsonResponse({ ok: true, removed: 0 });
+    }
     const tabTitle = tab.replace(/^'|'$/g, '').replace(/''/g, "'");
     const metaResp = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}?fields=sheets.properties(sheetId,title)`, { headers });
     if (!metaResp.ok) {
@@ -204,6 +225,7 @@ Deno.serve(async (req) => {
       console.error('Google Sheets row delete failed:', delResp.status, await delResp.text());
       return jsonResponse({ error: 'Could not remove the order from the tracking sheet. Please try again.' }, 502);
     }
+    await refreshKitDocHighlight(authHeader);
     return jsonResponse({ ok: true, removed: matches.length });
   }
 
@@ -219,5 +241,6 @@ Deno.serve(async (req) => {
     return jsonResponse({ error: 'Could not write to the tracking sheet. Please try again.' }, 502);
   }
 
+  await refreshKitDocHighlight(authHeader);
   return jsonResponse({ ok: true });
 });

@@ -20,7 +20,7 @@ export async function syncUrgentOrderToSheet(payload) {
     throw new Error(message);
   }
   if (data?.error) throw new Error(data.error);
-  highlightUrgentKitDoc();
+  // KIT DOC's red rows are refreshed by the sync function itself (server side).
   return data;
 }
 
