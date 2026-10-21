@@ -316,3 +316,31 @@ describe('fillOrderTemplate, a place line is red first (Sean, 2026-10-20)', () =
     expect(['F6', 'F7', 'F8'].map((r) => v(wb, 'ORDER LAIN-LAIN', r))).toEqual([undefined, undefined, 'MERAH']);
   });
 });
+
+describe('fillOrderTemplate, tabs with the same Reference Sample share a sheet (Sean, 2026-10-21)', () => {
+  const T = (tab, award, code, eline2 = '2026') => ({ kind: 'KLAS_MATRIX', tab, heading: '', award, line: 'SK BUKIT RIMAU', eline2, code, qty: 1 });
+  it('writes award tabs that differ only in the award on one ORDER LAIN-LAIN sheet, read back as one tab', async () => {
+    const plaques = [
+      T('CEMERLANG BAHASA MELAYU TAHAP 1', 'CEMERLANG BAHASA MELAYU\nTAHAP 1', 'PKC 246'),
+      T('CEMERLANG MATEMATIK TAHAP 1', 'CEMERLANG MATEMATIK\nTAHAP 1', 'PKC 246'),
+      T('PENGAWAS TERBAIK', 'PENGAWAS TERBAIK', 'PKF 266'),
+      T('OTHER YEAR', 'MURID HARAPAN', 'CPH / C', '2025'),
+    ];
+    const res = await fillOrderTemplate(fs.readFileSync('public/templates/FORM-ANUGERAH.xlsx'), { plaques }, { DOMParser, XMLSerializer });
+    const wb = XLSX.read(res.buffer, { type: 'array' });
+    const shown = wb.Workbook.Sheets.filter((s) => !s.Hidden).map((s) => s.name);
+    expect(shown).toEqual(['FRONT PG', 'CEMERLANG BAHASA MELAYU TAHAP 1', 'OTHER YEAR']);
+    expect(res.placed['CEMERLANG BAHASA MELAYU TAHAP 1']).toBe(3);
+    const back = parseFormAnugerahExcel(res.buffer);
+    const merged = Object.values(back.categorized).flat().find((sec) => sec.sourceSheet === 'CEMERLANG BAHASA MELAYU TAHAP 1');
+    expect(merged.umumRows.map((r) => [r.qty, r.jenisPlak])).toEqual([[1, 'PKC 246'], [1, 'PKC 246'], [1, 'PKF 266']]);
+  });
+  it('also when the AI took the lines under the award as the TAJUK BESAR (TAHAP on some awards only)', async () => {
+    const H = (tab, award, line) => ({ kind: 'KLAS_MATRIX', tab, heading: 'HARI KECEMERLANGAN SAHSIAH DIRI MURID\nSK BUKIT RIMAU 2026', award, line, eline2: '', code: 'PKC 246', qty: 1 });
+    const plaques = [H('A', 'CEMERLANG BAHASA MELAYU', 'TAHAP 1'), H('B', 'CEMERLANG BAHASA MELAYU', 'TAHAP 2'), H('C', 'CEMERLANG PENDIDIKAN MORAL', '')];
+    const res = await fillOrderTemplate(fs.readFileSync('public/templates/FORM-ANUGERAH.xlsx'), { plaques }, { DOMParser, XMLSerializer });
+    const wb = XLSX.read(res.buffer, { type: 'array' });
+    expect(wb.Workbook.Sheets.filter((s) => !s.Hidden).map((s) => s.name)).toEqual(['FRONT PG', 'A']);
+    expect(res.placed.A).toBe(3);
+  });
+});
