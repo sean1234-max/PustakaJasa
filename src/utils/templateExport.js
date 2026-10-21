@@ -162,6 +162,8 @@ export function planTemplateFill(categorized) {
   const ppkiGroups = new Map();
   const byKind = { lonjakan: [], kehadiran: [], tokoh: [], mpPlain: [] };
   plaques.forEach((p) => {
+    // a row of a merged list (mergeSameSampleTabs): ORDER LAIN-LAIN as it is
+    if (p.oneSheet) { umum.push(p); return; }
     const kind = sheetKind(p);
     if (kind) { byKind[kind].push(p); return; }
     const line = up(p.line);
@@ -727,34 +729,37 @@ const chunk = (list, size) => {
 };
 const sheetName = (base, k) => (k === 0 ? base : `${base} (${k + 1})`.slice(0, 31));
 
-// Tabs of their own that would each be an ORDER LAIN-LAIN sheet with the same
-// Reference Sample — the same TAJUK BESAR and last line, the same MERAH line —
-// differing only in the award (and the line under it), share one sheet, a row
-// per award, named after the first (Sean, 2026-10-21: a Word list of 38
-// awards was 38 sheets). Other tabs keep their own sheets.
-const PLAN_SHEETS = ['mp', 'ppki', 'mpPlain'];
-function sampleKey({ tab, plan }) {
-  if (!tab || !plan.umum.length || plan.lonjakan || plan.kehadiran || plan.tokoh || PLAN_SHEETS.some((k) => plan[k].length)) return null;
-  const sigs = new Set(plan.umum.map((p) => `${p.heading}\u0000${p.eline2}`));
-  if (sigs.size !== 1) return null;
-  const first = plan.umum[0];
-  return `${[...sigs][0]}\u0000${umumDefaultRedSlot({ 1: first.award, 2: first.line, 3: first.eline2 })}`;
+// Tabs of their own with the same Reference Sample — the same TAJUK BESAR and
+// last line, the same MERAH line — that each hold one plaque wording, differing
+// only in the award (and the line under it), share one ORDER LAIN-LAIN sheet, a
+// row per award, named after the first (Sean, 2026-10-21: a Word list of 38
+// awards was 38 sheets). An award starting TOKOH among them stays a row too.
+// Word / PDF / ORDER LAIN-LAIN tabs only; tabs with their own sheet format
+// (TOKOH, MP THP …) and class lists keep their own sheets.
+const LIST_KINDS = ['KLAS_MATRIX', 'UMUM'];
+function sampleKey(plaques) {
+  if (!plaques.every((p) => LIST_KINDS.includes(p.kind))) return null;
+  if (new Set(plaques.map((p) => `${p.award}\u0000${p.line}\u0000${p.eline2}`)).size !== 1) return null;
+  const p = plaques[0];
+  // the award (①) is the varying line: only a red line below it must match
+  const red = umumDefaultRedSlot({ 1: p.award, 2: p.line, 3: p.eline2 });
+  return `${p.heading}\u0000${p.eline2}\u0000${red === '1' ? '' : red}`;
 }
-export function mergeSameSampleTabs(plans) {
-  const out = [];
-  const at = new Map();
-  plans.forEach((group) => {
-    const key = sampleKey(group);
-    const i = key == null ? undefined : at.get(key);
-    if (i == null) {
-      if (key != null) at.set(key, out.length);
-      out.push(group);
-      return;
-    }
-    const into = out[i];
-    out[i] = { ...into, plan: { ...into.plan, umum: [...into.plan.umum, ...group.plan.umum], notes: [...into.plan.notes, ...group.plan.notes] } };
+export function mergeSameSampleTabs(groups) {
+  const byKey = new Map();
+  groups.forEach(([tab, plaques]) => {
+    const key = tab && sampleKey(plaques);
+    if (key) byKey.set(key, [...(byKey.get(key) || []), tab]);
   });
-  return out;
+  const into = new Map();
+  byKey.forEach((tabs) => { if (tabs.length > 1) tabs.forEach((t) => into.set(t, tabs[0])); });
+  const out = new Map();
+  groups.forEach(([tab, plaques]) => {
+    const target = into.get(tab) ?? tab;
+    const rows = into.has(tab) ? plaques.map((p) => ({ ...p, oneSheet: true })) : plaques;
+    out.set(target, [...(out.get(target) || []), ...rows]);
+  });
+  return [...out];
 }
 
 // Fills a copy of the blank template. Returns { buffer, notes, placed,
@@ -774,7 +779,7 @@ export async function fillOrderTemplate(templateBuffer, categorized, {
     groups.get(tab).push(p);
   });
   const plans = Array.isArray(categorized?.plaques)
-    ? mergeSameSampleTabs([...groups].filter(([, plaques]) => plaques.length).map(([tab, plaques]) => ({ tab, plan: planTemplateFill({ plaques }) })))
+    ? mergeSameSampleTabs([...groups].filter(([, plaques]) => plaques.length)).map(([tab, plaques]) => ({ tab, plan: planTemplateFill({ plaques }) }))
     : [{ tab: '', plan: planTemplateFill(categorized) }];
   const notes = plans.flatMap(({ plan }) => plan.notes);
   const placed = {};

@@ -324,16 +324,17 @@ describe('fillOrderTemplate, tabs with the same Reference Sample share a sheet (
       T('CEMERLANG BAHASA MELAYU TAHAP 1', 'CEMERLANG BAHASA MELAYU\nTAHAP 1', 'PKC 246'),
       T('CEMERLANG MATEMATIK TAHAP 1', 'CEMERLANG MATEMATIK\nTAHAP 1', 'PKC 246'),
       T('PENGAWAS TERBAIK', 'PENGAWAS TERBAIK', 'PKF 266'),
+      T('TOKOH ANUGERAH KOKURIKULUM', 'TOKOH ANUGERAH KOKURIKULUM', 'YK - 628'),
       T('OTHER YEAR', 'MURID HARAPAN', 'CPH / C', '2025'),
     ];
     const res = await fillOrderTemplate(fs.readFileSync('public/templates/FORM-ANUGERAH.xlsx'), { plaques }, { DOMParser, XMLSerializer });
     const wb = XLSX.read(res.buffer, { type: 'array' });
     const shown = wb.Workbook.Sheets.filter((s) => !s.Hidden).map((s) => s.name);
     expect(shown).toEqual(['FRONT PG', 'CEMERLANG BAHASA MELAYU TAHAP 1', 'OTHER YEAR']);
-    expect(res.placed['CEMERLANG BAHASA MELAYU TAHAP 1']).toBe(3);
+    expect(res.placed['CEMERLANG BAHASA MELAYU TAHAP 1']).toBe(4);
     const back = parseFormAnugerahExcel(res.buffer);
     const merged = Object.values(back.categorized).flat().find((sec) => sec.sourceSheet === 'CEMERLANG BAHASA MELAYU TAHAP 1');
-    expect(merged.umumRows.map((r) => [r.qty, r.jenisPlak])).toEqual([[1, 'PKC 246'], [1, 'PKC 246'], [1, 'PKF 266']]);
+    expect(merged.umumRows.map((r) => [r.qty, r.jenisPlak])).toEqual([[1, 'PKC 246'], [1, 'PKC 246'], [1, 'PKF 266'], [1, 'YK - 628']]);
   });
   it('also when the AI took the lines under the award as the TAJUK BESAR (TAHAP on some awards only)', async () => {
     const H = (tab, award, line) => ({ kind: 'KLAS_MATRIX', tab, heading: 'HARI KECEMERLANGAN SAHSIAH DIRI MURID\nSK BUKIT RIMAU 2026', award, line, eline2: '', code: 'PKC 246', qty: 1 });
