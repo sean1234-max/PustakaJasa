@@ -20,5 +20,20 @@ export async function syncUrgentOrderToSheet(payload) {
     throw new Error(message);
   }
   if (data?.error) throw new Error(data.error);
+  highlightUrgentKitDoc();
   return data;
+}
+
+// Store Admin's KIT DOC sheet: a row turns red when its invoice is an urgent
+// order's and its DW PRODUCTION box is ticked (highlight-urgent-kitdoc, Sean
+// 2026-10-20). The function reads the whole urgent list itself, so it's
+// re-run after every change to that list. Fire-and-forget: a failure only
+// leaves the red marks one change behind, never blocks the order.
+export function highlightUrgentKitDoc() {
+  supabase.functions.invoke('highlight-urgent-kitdoc', { body: {} })
+    .then(({ data, error }) => {
+      if (error || data?.error) console.error('KIT DOC highlight failed:', error || data.error);
+      else if (data?.duplicates?.length) console.warn('KIT DOC: invoice on more than one row, not highlighted:', data.duplicates);
+    })
+    .catch((err) => console.error('KIT DOC highlight failed:', err));
 }

@@ -36,7 +36,7 @@ import {
 import { supabase } from '../lib/supabaseClient';
 import { uploadOrderImportFile, getOrderImportUrl } from '../lib/storageApi';
 import { withImportFile, orderImportFields } from '../utils/importFiles';
-import { syncUrgentOrderToSheet } from '../lib/urgentSheetApi';
+import { syncUrgentOrderToSheet, highlightUrgentKitDoc } from '../lib/urgentSheetApi';
 import { isUrgentShipment, urgentSheetAction, SHIPMENT_EDITABLE_STATUSES } from '../utils/urgentOrder';
 import { fetchCustomTypoWords } from '../lib/typoWordsApi';
 import { setCustomTypoWords } from '../utils/typoCheck';
@@ -2181,6 +2181,8 @@ export function AppStateProvider({ children }) {
     patch((latest) => ({
       orders: latest.orders.map((o) => (o.id === orderId ? { ...o, ...cancelFields } : o)),
     }));
+    // a cancelled order is no longer urgent: its KIT DOC row loses the red
+    if (order.urgent) highlightUrgentKitDoc();
 
     // Stock restore is best-effort AFTER the cancel is committed. A failure
     // here leaves the order correctly cancelled but the stock not yet
