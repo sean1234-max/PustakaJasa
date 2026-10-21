@@ -23,7 +23,7 @@ describe('breakAcaraLine', () => {
     expect(breakAcaraLine('ANUGERAH MURID BERPOTENSI')).toBe('ANUGERAH\nMURID BERPOTENSI');
     expect(breakAcaraLine('ANUGERAH SAHSIAH TERPUJI')).toBe('ANUGERAH\nSAHSIAH TERPUJI');
     expect(breakAcaraLine('ANUGERAH MURID AKTIF')).toBe('ANUGERAH\nMURID AKTIF');
-    expect(breakAcaraLine('ANUGERAH KHAS PROGRAM PENDIDIKAN INKLUSIF')).toBe('ANUGERAH KHAS\nPROGRAM PENDIDIKAN INKLUSIF');
+    expect(breakAcaraLine('ANUGERAH KHAS PROGRAM PENDIDIKAN INKLUSIF')).toBe('ANUGERAH KHAS PROGRAM PENDIDIKAN INKLUSIF');
     expect(breakAcaraLine('ANUGERAH KEHADIRAN')).toBe('ANUGERAH\nKEHADIRAN');
   });
   it('leaves everything else alone, including text that already has a line break', () => {
@@ -52,7 +52,7 @@ describe('CSV export applies the ACARA two-line split', () => {
     expect(rows[0][3]).toBe('BM');
   });
   it('keeps ANUGERAH KHAS on one line (Sean, 2026-10-21)', () => {
-    expect(breakAcaraLine('ANUGERAH KHAS MURID INKLUSIF')).toBe('ANUGERAH KHAS\nMURID INKLUSIF');
+    expect(breakAcaraLine('ANUGERAH KHAS MURID INKLUSIF')).toBe('ANUGERAH KHAS MURID INKLUSIF');
     expect(breakAcaraLine('ANUGERAH KHAS')).toBe('ANUGERAH KHAS');
     expect(breakAcaraLine('ANUGERAH KHAS MURID INKLUSIF', false)).toBe('ANUGERAH KHAS MURID INKLUSIF');
   });
