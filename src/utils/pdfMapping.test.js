@@ -336,3 +336,41 @@ describe('applyPdfReading — TAHUN SATU as TAHUN 1 (Sean, 2026-10-20)', () => {
     expect(text).not.toContain('SATU');
   });
 });
+
+describe('applyPdfReading — a list of awards is one tab (Sean, 2026-10-21)', () => {
+  // A Word table: each award over the same event lines, 1 plaque each.
+  const awardPages = [{
+    page: 1, width: 600, height: 800, items: [
+      item('PKC 246', 70, 80),
+      item('CEMERLANG BAHASA MELAYU', 70, 100), item('TAHAP 1', 70, 115),
+      item('CEMERLANG MATEMATIK', 70, 130), item('TAHAP 1', 70, 145),
+      item('CEMERLANG PENDIDIKAN MORAL', 70, 160),
+      item('HARI KECEMERLANGAN SAHSIAH DIRI MURID', 300, 200),
+      item('SK BUKIT RIMAU', 300, 215), item('2026', 300, 230),
+    ],
+  }];
+  const ir = buildPdfIr(awardPages);
+  const tail = [['p1s7'], ['p1s8'], ['p1s9']];
+  const awardReading = {
+    groups: [{
+      name: 'ANUGERAH UNIT KURIKULUM', code: { ref: 'p1s1', text: 'PKC 246' }, total: null, tajuk: [], each: null,
+      labels: [[['p1s2'], ['p1s3'], ...tail], [['p1s4'], ['p1s5'], ...tail], [['p1s6'], ...tail]],
+      confidence: 'high', note: null,
+    }],
+    questions: [],
+  };
+
+  it('puts every award on one ORDER LAIN-LAIN-style tab, a row each', () => {
+    const { categorized } = applyPdfReading(ir, awardReading);
+    expect(Object.keys(categorized)).toHaveLength(1);
+    const [section] = Object.values(categorized)[0];
+    expect(section.sourceSheet).toBe('ANUGERAH UNIT KURIKULUM');
+    expect(section.isUmumList).toBe(true);
+    expect(section.umumRows.map((r) => [r.qty, r.jenisPlak])).toEqual([[1, 'PKC 246'], [1, 'PKC 246'], [1, 'PKC 246']]);
+  });
+
+  it('keeps a tab per award when only two awards are listed', () => {
+    const two = { ...awardReading, groups: [{ ...awardReading.groups[0], labels: awardReading.groups[0].labels.slice(0, 2) }] };
+    expect(Object.keys(applyPdfReading(ir, two).categorized)).toHaveLength(2);
+  });
+});

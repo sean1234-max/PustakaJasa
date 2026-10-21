@@ -1,5 +1,5 @@
 import { makeDynamicCategoryKey } from '../data/catalog';
-import { cleanDocxPlakCode, wordingRowsToCategorized } from './docxImport';
+import { cleanDocxPlakCode, wordingRowsToCategorized, wordingRowsToUmum } from './docxImport';
 import { fileSaysTempat, tahunDigits, withTempat } from './positionWords';
 
 // Turns the AI's reading of a text PDF (supabase/functions/read-order-file,
@@ -149,6 +149,9 @@ export function splitSchoolLines(lines) {
   return out;
 }
 
+// A batch listing this many different awards becomes one tab (see runs below).
+const MIN_AWARDS_FOR_ONE_TAB = 3;
+
 export function applyPdfReading(ir, reading) {
   const notes = [];
   const { read, segs } = makeSegmentReader(ir);
@@ -295,7 +298,7 @@ export function applyPdfReading(ir, reading) {
     // Runs of labels under one heading, in the file's order.
     const last = runs[runs.length - 1];
     if (last && last.heading === heading) last.rows.push(...rows);
-    else runs.push({ heading, rows });
+    else runs.push({ heading, rows, name: String(g.name || '').trim() });
   });
 
   if (tempatAdded) notes.push(`The order's own wording says "Tempat Pertama", so TEMPAT was added before PERTAMA / KEDUA … on ${tempatAdded} plaque(s) — please check.`);
@@ -307,8 +310,24 @@ export function applyPdfReading(ir, reading) {
 
   const categorized = {};
   let count = 0;
-  runs.forEach(({ rows, heading }) => {
+  runs.forEach(({ rows, heading, name }) => {
     if (!rows.length) return;
+    // A list of awards that share everything below the award (a Word table:
+    // CEMERLANG BAHASA MELAYU / TAHAP 1, CEMERLANG MATEMATIK / TAHAP 1 … each
+    // over the same HARI KECEMERLANGAN … lines): one ORDER LAIN-LAIN-style tab,
+    // a row per award, instead of a tab per award (Sean, 2026-10-21) — like
+    // the Excel AI reader (aiMapping.js). Fewer awards keep their own tabs.
+    const umum = new Set(rows.map((r) => r.lines[0])).size >= MIN_AWARDS_FOR_ONE_TAB && wordingRowsToUmum(rows, heading);
+    if (umum) {
+      const base = name || 'ORDER LAIN-LAIN';
+      let label = base;
+      for (let n = 2; categorized[makeDynamicCategoryKey('UMUM', label)]; n++) label = `${base} (${n})`;
+      const key = makeDynamicCategoryKey('UMUM', label);
+      categorized[key] = [{ ...umum.section, sourceSheet: label, dynamicCategoryKey: key }];
+      count += umum.section.umumRows.length;
+      notes.push(...umum.notes.map((n) => `"${label}": ${n}`));
+      return;
+    }
     const grouped = wordingRowsToCategorized(rows, heading, { keepOrder: true });
     Object.entries(grouped.categorized).forEach(([key, sections]) => {
       // Same award again further down the file: its own tab, numbered.
