@@ -1313,6 +1313,8 @@ function isOrdinalLine(text) {
   return !!ordinalToNum(s) && !/^\d+$/.test(s);
 }
 
+const TAHUN_SAMPLE_RE = /^TAHUN\s*[1-6](?![\d/])/i;
+
 function aliranSlotsByContent(lines) {
   const rows = ['0', '2', '2b', '3'].filter((slot) => lines[slot] !== undefined).map((slot) => lines[slot]);
   const ordIdx = rows.findIndex(isOrdinalLine);
@@ -1328,6 +1330,14 @@ function aliranSlotsByContent(lines) {
   }
   const rest = rows.filter((_, i) => i !== ordIdx);
   const out = { '3': rows[ordIdx] };
+  // A "TAHUN 1 DINAMIK" sample is the TAHUN line however few rows there are — never the ACARA,
+  // or every plaque engraves the sample's TAHUN as well as its own (ORD-0074, Sean 2026-10-21).
+  const tahunIdx = rest.length < 3 ? rest.findIndex((t) => TAHUN_SAMPLE_RE.test(String(t || '').trim())) : -1;
+  if (tahunIdx > 0) {
+    out['2b'] = rest[tahunIdx];
+    rest.filter((_, i) => i !== tahunIdx).forEach((t, i) => { out[['0', '2'][i]] = t; });
+    return out;
+  }
   ['0', '2', '2b'].forEach((slot, i) => { if (rest[i] !== undefined) out[slot] = rest[i]; });
   return out;
 }

@@ -415,6 +415,11 @@ describe('ALIRAN TERBAIK — PERTAMA row can sit second (current form) or last (
     expect(sheet(['HARI ANUGERAH 2026', 'TERBAIK DALAM ALIRAN', 'TAHUN 1', 'TEMPAT PERTAMA']).lines).toEqual(expected);
   });
 
+  it('takes a "TAHUN 1 DINAMIK" sample as the TAHUN line, not the ACARA (ORD-0074)', () => {
+    expect(sheet(['ANUGERAH BITARA 2026', 'TEMPAT PERTAMA', 'TAHUN 1 DINAMIK']).lines)
+      .toEqual({ 0: 'ANUGERAH BITARA 2026', '2b': 'TAHUN 1 DINAMIK', 3: 'TEMPAT PERTAMA' });
+  });
+
   it('defaults the row order to TAJUK → PERTAMA → ACARA → TAHUN, numbered 1-4 on screen', () => {
     const lines = deriveKlasMatrixSectionLines(sheet(['HARI ANUGERAH 2026', 'TERBAIK DALAM ALIRAN', 'TAHUN 1', 'PERTAMA']));
     expect(lines.refOrder).toBe('0,3,2,2b');
