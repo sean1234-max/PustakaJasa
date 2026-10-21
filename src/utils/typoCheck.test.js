@@ -63,3 +63,10 @@ describe('keeping or fixing a flagged word', () => {
     expect(replaceWord('ADABI GEMILANG', 'ADAB', 'ARAB')).toBe('ADABI GEMILANG');
   });
 });
+
+describe('KEMAS (Sean, 2026-10-21)', () => {
+  it('BERPENAMPILAN KEMAS is not a typo of KELAS', async () => {
+    const { findPossibleTypo } = await import('./typoCheck');
+    expect(findPossibleTypo('BERPENAMPILAN KEMAS TAHAP 1')).toBeFalsy();
+  });
+});

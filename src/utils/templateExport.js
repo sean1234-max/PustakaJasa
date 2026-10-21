@@ -1,6 +1,6 @@
 import JSZip from 'jszip';
 import * as XLSX from 'xlsx';
-import { umumDefaultRedSlot } from './umumLines';
+import { umumDefaultRedSlot, UMUM_SLOTS, UMUM_NO_RED } from './umumLines';
 
 // AI reader -> the shop's own Excel order form (owner, 2026-10-16: "做").
 // A teacher's PDF or Word order, once read (pdfMapping.js), is written into
@@ -82,7 +82,8 @@ function yearOnOwnLine(heading) {
 function plaquesOf(categorized) {
   const caps = (p) => {
     const heading = String(p.heading ?? '').toUpperCase();
-    return { ...p, heading: yearOnOwnLine(heading), award: dropHeading(String(p.award ?? '').toUpperCase(), heading), line: String(p.line ?? '').toUpperCase(), eline2: String(p.eline2 ?? '').toUpperCase() };
+    const upSlots = (list) => (Array.isArray(list) ? list.map((t) => String(t ?? '').toUpperCase()) : list);
+    return { ...p, heading: yearOnOwnLine(heading), award: dropHeading(String(p.award ?? '').toUpperCase(), heading), line: String(p.line ?? '').toUpperCase(), eline2: String(p.eline2 ?? '').toUpperCase(), slots: upSlots(p.slots), contoh: upSlots(p.contoh) };
   };
   if (Array.isArray(categorized?.plaques)) return categorized.plaques.filter((p) => p.qty > 0).map(caps);
   const out = [];
@@ -162,8 +163,9 @@ export function planTemplateFill(categorized) {
   const ppkiGroups = new Map();
   const byKind = { lonjakan: [], kehadiran: [], tokoh: [], mpPlain: [] };
   plaques.forEach((p) => {
-    // a row of a merged list (mergeSameSampleTabs): ORDER LAIN-LAIN as it is
-    if (p.oneSheet) { umum.push(p); return; }
+    // a row of a merged list (mergeSameSampleTabs), or an ORDER LAIN-LAIN row with its own ①–④
+    // (draftForm.js `slots`): ORDER LAIN-LAIN as it is
+    if (p.oneSheet || p.slots) { umum.push(p); return; }
     const kind = sheetKind(p);
     if (kind) { byKind[kind].push(p); return; }
     const line = up(p.line);
@@ -739,6 +741,12 @@ const sheetName = (base, k) => (k === 0 ? base : `${base} (${k + 1})`.slice(0, 3
 const LIST_KINDS = ['KLAS_MATRIX', 'UMUM'];
 function sampleKey(plaques) {
   if (!plaques.every((p) => LIST_KINDS.includes(p.kind))) return null;
+  // ORDER LAIN-LAIN rows with their own ①–④: the same ②–④ and MERAH line
+  if (plaques.every((p) => p.slots)) {
+    const keys = new Set(plaques.map((p) => JSON.stringify([...p.slots.slice(1), p.red])));
+    return keys.size === 1 ? `S\u0000${[...keys][0]}` : null;
+  }
+  if (plaques.some((p) => p.slots)) return null;
   if (new Set(plaques.map((p) => `${p.award}\u0000${p.line}\u0000${p.eline2}`)).size !== 1) return null;
   const p = plaques[0];
   // the award (①) is the varying line: only a red line below it must match
@@ -1004,7 +1012,37 @@ export async function fillOrderTemplate(templateBuffer, categorized, {
     }
 
     // ORDER LAIN-LAIN: one row per plaque wording.
-    const rows = [...plan.umum, ...umumExtra];
+    // ORDER LAIN-LAIN rows with their own ①–④ (draftForm.js): the page's CONTOH and MERAH line,
+    // each row's lines where they differ (blank = same as CONTOH, "-" = no such line) — the
+    // form reads back exactly as the page (Sean, 2026-10-21). On sheets of their own.
+    const slotRows = plan.umum.filter((p) => p.slots);
+    if (slotRows.length) {
+      const base = findName(SHEET_UMUM);
+      const layout = base && layoutUmum(wb.Sheets[base]);
+      if (!layout || !layout.rows.length) {
+        notes.push(`${slotRows.length} plaque wording(s) need the ORDER LAIN-LAIN sheet, which this template doesn't have — please add them by hand.`);
+      } else {
+        for (const part of chunk(slotRows, layout.rows.length)) {
+          const { doc, name } = await sheetCopy(base);
+          const contoh = part[0].contoh || part[0].slots;
+          UMUM_SLOTS.forEach((sl, i) => layout.contoh[`l${i}`] && contoh[i] && setCell(doc, layout.contoh[`l${i}`], contoh[i]));
+          const red = part[0].red === UMUM_NO_RED ? '' : (part[0].red || umumDefaultRedSlot({ 1: contoh[1], 2: contoh[2], 3: contoh[3] }));
+          if (red && layout.merah[red]) setCell(doc, layout.merah[red], 'MERAH');
+          part.forEach((p, i) => {
+            const r = layout.rows[i];
+            UMUM_SLOTS.forEach((sl, k) => {
+              const col = layout.cols[`l${k}`];
+              if (col == null || p.slots[k] === contoh[k]) return;
+              setCell(doc, addr(r, col), p.slots[k] || '-');
+            });
+            setCell(doc, addr(r, layout.cols.qty), p.qty);
+            if (p.code) setCell(doc, addr(r, layout.cols.plak), p.code);
+          });
+          count(name, part.reduce((a, p) => a + p.qty, 0));
+        }
+      }
+    }
+    const rows = [...plan.umum.filter((p) => !p.slots), ...umumExtra];
     if (rows.length) {
       const base = findName(SHEET_UMUM);
       const layout = base && layoutUmum(wb.Sheets[base]);

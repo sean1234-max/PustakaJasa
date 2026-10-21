@@ -1,6 +1,7 @@
 import { ACTIVE_CATEGORIES, flattenPlakCatalog, isDynamicCategoryKey, priceInFlatCatalog, resolveCategory, resolveSelempangWarna } from '../data/catalog';
 import { buildCategoryCartItems } from '../state/categoryCartItems';
 import { buildCsvRows } from './exportCsv';
+import { UMUM_SLOTS } from './umumLines';
 
 // The order on the page (New Order step 2) as plaques for the FORM ANUGERAH
 // download (templateExport.js), Sean 2026-10-17: whatever is in the tabs now
@@ -57,6 +58,29 @@ export function draftPlaques(draft, { only = null } = {}) {
     if (strict.error) unready.push(`${label}: ${strict.error}`);
     // A tab of its own (IKON PENGAWAS …) gets its own sheet in the form.
     const tab = isDynamicCategoryKey(catKey) ? label : '';
+    // ORDER LAIN-LAIN: its ①–④ as on the page (`slots`, `red` = its MERAH line), so the form gets
+    // the same lines in the same boxes (Sean, 2026-10-21) — not rebuilt from the engraved fields.
+    if (resolveCategory(catKey)?.umumRows) {
+      res.items.forEach((it) => {
+        const lines = it.detail?.lines || {};
+        const pre = `${it.categoryKey}::${it.blockIdx ?? 0}::`;
+        (it.detail?.rows || []).forEach((r) => {
+          const qty = Number(r.qty) || 0;
+          if (qty <= 0) return;
+          const slots = UMUM_SLOTS.map((sl) => {
+            const own = String(r[`l${sl}`] ?? '').trim();
+            return own === '-' ? '' : (own || String(lines[pre + sl] ?? '').trim());
+          });
+          const contoh = UMUM_SLOTS.map((sl) => String(lines[pre + sl] ?? '').trim());
+          const p = { kind: kindOf(catKey), tab, slots, contoh, red: String(lines[`${pre}umumRed`] ?? ''), code: r.jenisPlak || it.jenisPlak || '', heading: '', award: slots[0], line: '', eline2: '' };
+          const key = JSON.stringify(p);
+          const have = byWording.get(key);
+          if (have) have.qty += qty;
+          else byWording.set(key, { ...p, qty });
+        });
+      });
+      return;
+    }
     const { rows } = buildCsvRows({ schoolLanguage: draft.schoolLanguage, items: res.items }, catKey, res.items);
     rows.forEach(([heading, , award, line, eline2, code]) => {
       const p = { kind: kindOf(catKey), tab, heading: heading || '', award: award || '', line: line || '', eline2: eline2 || '', code: code || '' };

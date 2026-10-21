@@ -337,40 +337,67 @@ describe('applyPdfReading — TAHUN SATU as TAHUN 1 (Sean, 2026-10-20)', () => {
   });
 });
 
-describe('applyPdfReading — a list of awards is one tab (Sean, 2026-10-21)', () => {
-  // A Word table: each award over the same event lines, 1 plaque each.
-  const awardPages = [{
-    page: 1, width: 600, height: 800, items: [
-      item('PKC 246', 70, 80),
-      item('CEMERLANG BAHASA MELAYU', 70, 100), item('TAHAP 1', 70, 115),
-      item('CEMERLANG MATEMATIK', 70, 130), item('TAHAP 1', 70, 145),
-      item('CEMERLANG PENDIDIKAN MORAL', 70, 160),
-      item('HARI KECEMERLANGAN SAHSIAH DIRI MURID', 300, 200),
-      item('SK BUKIT RIMAU', 300, 215), item('2026', 300, 230),
-    ],
-  }];
-  const ir = buildPdfIr(awardPages);
-  const tail = [['p1s7'], ['p1s8'], ['p1s9']];
-  const awardReading = {
-    groups: [{
-      name: 'ANUGERAH UNIT KURIKULUM', code: { ref: 'p1s1', text: 'PKC 246' }, total: null, tajuk: [], each: null,
-      labels: [[['p1s2'], ['p1s3'], ...tail], [['p1s4'], ['p1s5'], ...tail], [['p1s6'], ...tail]],
-      confidence: 'high', note: null,
-    }],
-    questions: [],
+describe('applyPdfReading — labels with a school line: ①②③④ by the school line (Sean, 2026-10-21)', () => {
+  // The Word of SK BUKIT RIMAU: a sample with the event lines, then table rows of awards.
+  const at = (str, x, y) => ({ str, x, y, w: str.length * 5, size: 10 });
+  const segs = [
+    'CEMERLANG BAHASA MELAYU', 'TAHAP 1', 'HARI KECEMERLANGAN SAHSIAH DIRI MURID', 'PROGRAM PENDIDIKAN KHAS INTEGRASI', 'SK BUKIT RIMAU', '2026',
+    'CEMERLANG PENDIDIKAN MORAL', 'TERBAIK PENGAKAP', 'LELAKI',
+    'TAHNIAH & SYABAS', 'MAJLIS GRADUASI', 'SK BUKIT RIMAU 2026', 'PKC 246', 'SHINING STICKER A',
+  ];
+  const ir = buildPdfIr([{ page: 1, width: 600, height: 900, items: segs.map((t, i) => at(t, 70, 100 + i * 30)) }]);
+  const ref = (t) => ir.segments.find((x) => x.text === t).id;
+  const tail = [[ref('HARI KECEMERLANGAN SAHSIAH DIRI MURID')], [ref('PROGRAM PENDIDIKAN KHAS INTEGRASI')], [ref('SK BUKIT RIMAU')], [ref('2026')]];
+  const awards = [
+    [[ref('CEMERLANG BAHASA MELAYU')], [ref('TAHAP 1')], ...tail],
+    [[ref('CEMERLANG PENDIDIKAN MORAL')], ...tail],
+    [[ref('TERBAIK PENGAKAP')], [ref('LELAKI')], ...tail],
+  ];
+  const expectOneTab = (categorized) => {
+    const tabs = Object.values(categorized).flat();
+    const cem = tabs.find((sec) => sec.sourceSheet === 'CEMERLANG BAHASA MELAYU TAHAP 1');
+    expect(cem.lines).toEqual({ 0: 'CEMERLANG BAHASA MELAYU TAHAP 1', 1: 'HARI KECEMERLANGAN SAHSIAH DIRI MURID\nPROGRAM PENDIDIKAN KHAS INTEGRASI', 2: 'SK BUKIT RIMAU', 3: '2026', umumRed: '0' });
+    expect(cem.umumRows.map((r) => [r.l0, r.qty])).toEqual([['', 1], ['CEMERLANG PENDIDIKAN MORAL', 1], ['TERBAIK PENGAKAP LELAKI', 1]]);
+    return tabs;
   };
 
-  it('puts every award on one ORDER LAIN-LAIN-style tab, a row each', () => {
-    const { categorized } = applyPdfReading(ir, awardReading);
-    expect(Object.keys(categorized)).toHaveLength(1);
-    const [section] = Object.values(categorized)[0];
-    expect(section.sourceSheet).toBe('ANUGERAH UNIT KURIKULUM');
-    expect(section.isUmumList).toBe(true);
-    expect(section.umumRows.map((r) => [r.qty, r.jenisPlak])).toEqual([[1, 'PKC 246'], [1, 'PKC 246'], [1, 'PKC 246']]);
+  it('one tab for the awards, whichever batches the AI made', () => {
+    const one = { groups: [{ name: 'A', code: null, total: null, tajuk: [], each: null, labels: awards, confidence: 'high', note: null }], questions: [] };
+    const each = { groups: awards.map((l, i) => ({ name: `G${i}`, code: null, total: null, tajuk: [], each: null, labels: [l], confidence: 'high', note: null })), questions: [] };
+    expect(expectOneTab(applyPdfReading(ir, one).categorized)).toHaveLength(1);
+    expect(expectOneTab(applyPdfReading(ir, each).categorized)).toHaveLength(1);
   });
 
-  it('keeps a tab per award when only two awards are listed', () => {
-    const two = { ...awardReading, groups: [{ ...awardReading.groups[0], labels: awardReading.groups[0].labels.slice(0, 2) }] };
-    expect(Object.keys(applyPdfReading(ir, two).categorized)).toHaveLength(2);
+  it('the same when the AI took the event lines as the TAJUK BESAR', () => {
+    const tajuk = [ref('HARI KECEMERLANGAN SAHSIAH DIRI MURID'), ref('PROGRAM PENDIDIKAN KHAS INTEGRASI')];
+    const short = awards.map((l) => l.filter((x) => !tajuk.includes(x[0])));
+    const reading = { groups: [{ name: 'A', code: null, total: null, tajuk, each: null, labels: short, confidence: 'high', note: null }], questions: [] };
+    expectOneTab(applyPdfReading(ir, reading).categorized);
+  });
+
+  it('a single label: ① its first line, ② the rest up to the school', () => {
+    const reading = { groups: [{ name: 'MURID GRADUASI', code: null, total: null, tajuk: [ref('TAHNIAH & SYABAS'), ref('MAJLIS GRADUASI')], each: null, labels: [[[ref('PROGRAM PENDIDIKAN KHAS INTEGRASI')], [ref('SK BUKIT RIMAU 2026')]]], confidence: 'high', note: null }], questions: [] };
+    const [sec] = Object.values(applyPdfReading(ir, reading).categorized).flat();
+    expect(sec.lines).toEqual({ 0: 'TAHNIAH & SYABAS', 1: 'MAJLIS GRADUASI\nPROGRAM PENDIDIKAN KHAS INTEGRASI', 2: 'SK BUKIT RIMAU 2026', umumRed: '0' });
+  });
+});
+
+describe('applyPdfReading — a plaque code over several lines of its cell (Sean, 2026-10-21)', () => {
+  const at = (str, x, y) => ({ str, x, y, w: str.length * 5, size: 10 });
+  const ir = buildPdfIr([{ page: 1, width: 600, height: 900, items: [
+    at('1', 10, 100), at('TERBAIK PENGAKAP', 110, 100), at('SM-13187', 310, 100),
+    at('SILVER', 310, 114), at('BASE C', 310, 128), at('(6 UNIT)', 310, 142),
+    at('2', 10, 170), at('PENGAWAS SEKOLAH', 110, 170), at('CPH B', 310, 170),
+    at('3', 10, 184), at('MURID HARAPAN', 110, 184), at('CPH C', 310, 184),
+  ] }]);
+  const ref = (t) => ir.segments.find((x) => x.text === t).id;
+  const group = (name, award, code) => ({ name, code: { ref: ref(code), text: code }, total: null, tajuk: [], each: null, labels: [[[ref(award)]]], confidence: 'high', note: null });
+  const codes = (reading) => Object.values(applyPdfReading(ir, reading).categorized).flat().map((sec) => sec.jenisPlak);
+
+  it('joins the lines below into one code, up to the (n UNIT) note', () => {
+    expect(codes({ groups: [group('K', 'TERBAIK PENGAKAP', 'SM-13187')], questions: [] })).toEqual(['SM-13187 / SILVER / BASE C']);
+  });
+  it('never takes the next table row\'s code', () => {
+    expect(codes({ groups: [group('P', 'PENGAWAS SEKOLAH', 'CPH B')], questions: [] })).toEqual(['CPH B']);
   });
 });

@@ -86,6 +86,29 @@ function skippedListItems(ir, lists, usedIds) {
   return out;
 }
 
+// A plaque code written over several lines of one table cell ("SM-13187" / "SILVER" / "BASE C" /
+// "(6 UNIT)"): when the AI quoted the whole first line, the short code-like lines right below it
+// in the same column join it — "SM-13187 / SILVER / BASE C" (Sean, 2026-10-21). A count, a price
+// or a bracketed note ends it.
+const CODE_PART_RE = /^[A-Z][A-Z0-9 .#-]{0,14}$/i;
+const CODE_STOP_RE = /^\(|UNIT|^RM\b|^\d+$/i;
+function codeLinesBelow(ir, seg, text) {
+  const last = seg?.[seg.length - 1];
+  if (!last || seg.length !== 1 || norm(last.text) !== norm(text)) return text;
+  const parts = [text];
+  // the row's first column (its No.): text there at a lower line is the next table row
+  const rowStart = Math.min(...ir.segments.filter((x) => x.page === last.page && x.y === last.y).map((x) => x.x));
+  let at = last;
+  for (;;) {
+    const next = ir.segments.find((x) => x.page === at.page && Math.abs(x.x - at.x) <= 2 && x.y > at.y && x.y - at.y <= 20);
+    if (!next || CODE_STOP_RE.test(next.text.trim()) || !CODE_PART_RE.test(next.text.trim())) break;
+    if (rowStart < next.x && ir.segments.some((x) => x.page === next.page && x.y === next.y && Math.abs(x.x - rowStart) <= 2)) break;
+    parts.push(next.text.trim());
+    at = next;
+  }
+  return parts.join(' / ');
+}
+
 function hasNumber(text, value) {
   return new RegExp(`(^|[^\\d])${value}([^\\d]|$)`).test(text);
 }
@@ -147,6 +170,83 @@ export function splitSchoolLines(lines) {
     carry = parts.length > 1;
   });
   return out;
+}
+
+// The school line of a label — where ③ starts (schoolLineTabs below): SK …, SJK(C) …, SMK …,
+// SEKOLAH KEBANGSAAN … ("SEKOLAH KLUSTER KECEMERLANGAN" is not one).
+const SCHOOL_LINE_RE = /^(SK|SJK\s*\(?\s*[CT]\s*\)?|SJKC|SJKT|SMK|SMJK|SMKA|SRA|SRAI|SABK|SEKOLAH\s+(KEBANGSAAN|JENIS|MENENGAH|RENDAH|AGAMA))\b/i;
+
+// Labels whose lines include a school line, as ORDER LAIN-LAIN tabs (Sean, 2026-10-21) — the
+// same layout whatever batches the AI made:
+//   ① the award (the lines that differ from label to label), MERAH
+//   ② the lines between the award and the school line, together (HARI KECEMERLANGAN … ⏎ PROGRAM …)
+//   ③ the school line          ④ the lines after it (2026)
+// Labels sharing ②–④ are one tab, a row per award, named after the first award. With a single
+// label, ① is its first line and ② the rest up to the school (TAHNIAH & SYABAS / MAJLIS GRADUASI ⏎
+// PROGRAM … / SK BUKIT RIMAU 2026). The TAJUK BESAR lines the AI gave go on top of the label.
+// Name lists (name first) are left to the old grouping. Returns { categorized, count, notes, taken }.
+function schoolLineTabs(items) {
+  const clean = (list) => list.map((t) => String(t ?? '').replace(/\s+/g, ' ').trim()).filter(Boolean);
+  const parsed = items.map(({ row, heading }) => {
+    if (row.nameFirst) return null;
+    const head = clean(String(heading || '').split('\n'));
+    const own = clean(row.lines);
+    const at = own.findIndex((t, i) => (head.length || i > 0) && SCHOOL_LINE_RE.test(t));
+    return at >= 0 && head.length + at > 0 ? { row, head, pre: own.slice(0, at), school: own[at], after: own.slice(at + 1).join('\n') } : null;
+  }).filter(Boolean);
+  const groups = new Map();
+  parsed.forEach((p) => {
+    const k = `${p.school}\u0000${p.after}`;
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(p);
+  });
+  // Several labels: ① is what differs from label to label; ② the TAJUK BESAR lines and the lines
+  // every label shares above the school line. One label: ① its first line, ② the rest.
+  const tabs = new Map();
+  groups.forEach((list) => {
+    let shared = list.length > 1 ? list[0].pre.slice(1) : [];
+    list.slice(1).forEach((p) => {
+      while (shared.length && (shared.length >= p.pre.length || shared.some((t, i) => p.pre[p.pre.length - shared.length + i] !== t))) shared = shared.slice(1);
+    });
+    list.forEach((p) => {
+      let award;
+      let middle;
+      if (list.length > 1) {
+        award = p.pre.slice(0, p.pre.length - shared.length).join(' ');
+        middle = [...p.head, ...shared];
+      } else {
+        const all = [...p.head, ...p.pre];
+        award = all[0] || '';
+        middle = all.slice(1);
+      }
+      const k = `${middle.join('\n')}\u0000${p.school}\u0000${p.after}`;
+      if (!tabs.has(k)) tabs.set(k, { slots: ['', middle.join('\n'), p.school, p.after], rows: [] });
+      tabs.get(k).rows.push({ award, qty: p.row.qty, kod: p.row.kod || '', row: p.row });
+    });
+  });
+  const categorized = {};
+  const notes = [];
+  let count = 0;
+  tabs.forEach(({ slots, rows }) => {
+    const contoh = rows[0].award;
+    const lines = { umumRed: '0' };
+    [contoh, ...slots.slice(1)].forEach((t, i) => { if (t) lines[`${i}`] = t; });
+    const umumRows = [];
+    rows.forEach((r) => {
+      const l0 = r.award === contoh ? '' : r.award;
+      const same = umumRows.find((u) => u.l0 === l0 && u.jenisPlak === r.kod);
+      if (same) { same.qty += r.qty; return; }
+      umumRows.push({ no: String(umumRows.length + 1), l0, l1: '', l2: '', l3: '', qty: r.qty, jenisPlak: r.kod, harga: '' });
+    });
+    let label = contoh.slice(0, 80) || 'ORDER LAIN-LAIN';
+    for (let n = 2; categorized[makeDynamicCategoryKey('UMUM', label)]; n++) label = `${contoh.slice(0, 80)} (${n})`;
+    const key = makeDynamicCategoryKey('UMUM', label);
+    categorized[key] = [{ lines, umumRows, isUmumList: true, skipLineDerivation: true, classes: [], sourceSheet: label, dynamicCategoryKey: key }];
+    count += umumRows.length;
+    const uncoded = rows.filter((r) => !r.kod).reduce((a, r) => a + r.qty, 0);
+    if (uncoded) notes.push(`"${label}": ${uncoded} plaque(s) have no plaque code (KOD) — please pick the Jenis Plak by hand.`);
+  });
+  return { categorized, count, notes, taken: new Set(parsed.map((p) => p.row)) };
 }
 
 // A batch listing this many different awards becomes one tab (see runs below).
@@ -224,7 +324,7 @@ export function applyPdfReading(ir, reading) {
     let kod = '';
     if (g.code) {
       const seg = read(g.code.ref);
-      if (seg != null && norm(seg).includes(norm(g.code.text))) kod = cleanDocxPlakCode(g.code.text);
+      if (seg != null && norm(seg).includes(norm(g.code.text))) kod = cleanDocxPlakCode(codeLinesBelow(ir, segs(g.code.ref), g.code.text));
       else notes.push(`${where}: the plaque code the AI gave isn't in the file — please pick the Jenis Plak by hand.`);
     }
 
@@ -310,7 +410,14 @@ export function applyPdfReading(ir, reading) {
 
   const categorized = {};
   let count = 0;
-  runs.forEach(({ rows, heading, name }) => {
+  // Labels with a school line: ORDER LAIN-LAIN tabs by their shared sample, over the whole file
+  // (schoolLineTabs). The rest are grouped as before, run by run.
+  const school = schoolLineTabs(runs.flatMap(({ rows, heading }) => rows.map((row) => ({ row, heading }))));
+  Object.entries(school.categorized).forEach(([key, sections]) => { categorized[key] = sections; });
+  count += school.count;
+  notes.push(...school.notes);
+  runs.forEach(({ rows: all, heading, name }) => {
+    const rows = all.filter((r) => !school.taken.has(r));
     if (!rows.length) return;
     // A list of awards that share everything below the award (a Word table:
     // CEMERLANG BAHASA MELAYU / TAHAP 1, CEMERLANG MATEMATIK / TAHAP 1 … each

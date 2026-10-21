@@ -345,3 +345,19 @@ describe('fillOrderTemplate, tabs with the same Reference Sample share a sheet (
     expect(res.placed.A).toBe(3);
   });
 });
+
+describe('fillOrderTemplate, ORDER LAIN-LAIN ①–④ as on the page (Sean, 2026-10-21)', () => {
+  it('writes the CONTOH, MERAH and each row\'s own lines, and reads back the same', async () => {
+    const contoh = ['CEMERLANG BAHASA MELAYU TAHAP 1', 'HARI KECEMERLANGAN SAHSIAH DIRI MURID\nPROGRAM PENDIDIKAN KHAS INTEGRASI', 'SK BUKIT RIMAU', '2026'];
+    const P = (award, qty, code) => ({ kind: 'UMUM', tab: 'CEMERLANG BAHASA MELAYU TAHAP 1', slots: [award, ...contoh.slice(1)], contoh, red: '0', code, qty, heading: '', award, line: '', eline2: '' });
+    const plaques = [P(contoh[0], 1, 'PKC 246'), P('TOKOH ANUGERAH KOKURIKULUM', 1, 'YK - 628'), P('PENGAWAS SEKOLAH', 10, 'CPH / B')];
+    const res = await fillOrderTemplate(fs.readFileSync('public/templates/FORM-ANUGERAH.xlsx'), { plaques }, { DOMParser, XMLSerializer });
+    const wb = XLSX.read(res.buffer, { type: 'array' });
+    expect(wb.Workbook.Sheets.filter((x) => !x.Hidden).map((x) => x.name)).toEqual(['FRONT PG', 'CEMERLANG BAHASA MELAYU TAHAP 1']);
+    const [sec] = Object.values(parseFormAnugerahExcel(res.buffer).categorized).flat().filter((x) => x.sourceSheet === 'CEMERLANG BAHASA MELAYU TAHAP 1');
+    expect(sec.lines).toEqual({ 0: contoh[0], 1: contoh[1], 2: contoh[2], 3: contoh[3], umumRed: '0' });
+    expect(sec.umumRows.map((r) => [r.l0, r.l1, r.qty, r.jenisPlak])).toEqual([
+      ['', '', 1, 'PKC 246'], ['TOKOH ANUGERAH KOKURIKULUM', '', 1, 'YK - 628'], ['PENGAWAS SEKOLAH', '', 10, 'CPH / B'],
+    ]);
+  });
+});
