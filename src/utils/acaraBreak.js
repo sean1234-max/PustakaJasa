@@ -4,6 +4,7 @@
 //   ANUGERAH MATA PELAJARAN TERBAIK     -> "ANUGERAH MATA PELAJARAN" / "TERBAIK"
 //   ANUGERAH KEHADIRAN PENUH/TERBAIK    -> "ANUGERAH" / "KEHADIRAN PENUH"|"KEHADIRAN TERBAIK"
 //   TERBAIK MATA PELAJARAN              -> "TERBAIK" / "MATA PELAJARAN"
+//   ANUGERAH KHAS ...                   -> "ANUGERAH KHAS" / the rest (never apart — Sean, 2026-10-21)
 //   any other ANUGERAH ...              -> "ANUGERAH" / the rest
 //     (ANUGERAH MURID BERPOTENSI, ANUGERAH SAHSIAH TERPUJI, ...)
 // The specific wordings above win over the general ANUGERAH rule, and an
@@ -16,7 +17,8 @@ const PBD_RE = /^(ANUGERAH\s+PBD)\s+(\S[\s\S]*)$/i;
 const MATA_PELAJARAN_RE = /^(ANUGERAH\s+MATA\s+PELAJARAN)\s+(TERBAIK)$/i;
 const KEHADIRAN_RE = /^(ANUGERAH)\s+(KEHADIRAN\s+(?:PENUH|TERBAIK))$/i;
 const TERBAIK_MATA_PELAJARAN_RE = /^(TERBAIK)\s+(MATA\s+PELAJARAN)$/i;
-const ANUGERAH_RE = /^(ANUGERAH)\s+(?!PBD\b|MATA\s+PELAJARAN\b)(\S[\s\S]*)$/i;
+const KHAS_RE = /^(ANUGERAH\s+KHAS)\s+(\S[\s\S]*)$/i;
+const ANUGERAH_RE = /^(ANUGERAH)\s+(?!PBD\b|MATA\s+PELAJARAN\b|KHAS\b)(\S[\s\S]*)$/i;
 
 // `generalAnugerah` false keeps a wording on one line unless a specific rule
 // above applies — for ACARA text that lands on a one-line box (ALIRAN's
@@ -26,6 +28,6 @@ export function breakAcaraLine(text, generalAnugerah = true) {
   if (!s.trim() || s.includes('\n')) return s;
   const m = s.trim().match(PBD_RE) || s.trim().match(MATA_PELAJARAN_RE)
     || s.trim().match(KEHADIRAN_RE) || s.trim().match(TERBAIK_MATA_PELAJARAN_RE)
-    || (generalAnugerah ? s.trim().match(ANUGERAH_RE) : null);
+    || (generalAnugerah ? s.trim().match(KHAS_RE) || s.trim().match(ANUGERAH_RE) : null);
   return m ? `${m[1]}\n${m[2]}` : s;
 }

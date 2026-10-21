@@ -203,7 +203,7 @@ describe('Word section -> engraved fields', () => {
     ]);
     expect(rows.map(({ position, line1, line2 }) => [position, line1, line2])).toEqual([
       ['ANUGERAH\nAKADEMIK TERBAIK', 'KELAS KHAS', 'TAHUN 2025/2026'],
-      ['ANUGERAH\nKHAS TOKOH', 'PELAJAR LELAKI 2024', ''],
+      ['ANUGERAH KHAS\nTOKOH', 'PELAJAR LELAKI 2024', ''],
     ]);
   });
 

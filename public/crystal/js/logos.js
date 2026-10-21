@@ -14,6 +14,8 @@ export function schoolKey(name) {
     [/ SEKOLAH JENIS KEBANGSAAN TAMIL /g, " SJKT "], [/ SEKOLAH JENIS KEBANGSAAN /g, " SJK "],
     [/ SEKOLAH KEBANGSAAN /g, " SK "], [/ SEKOLAH RENDAH /g, " SR "], [/ SEKOLAH MENENGAH /g, " SM "],
     [/ SJK C /g, " SJKC "], [/ SJK T /g, " SJKT "],
+    // "B.B.BANGI" / "BB BANGI" = BANDAR BARU BANGI (SK SEKSYEN 7 B.B.BANGI, Sean 2026-10-21)
+    [/ B B /g, " BANDAR BARU "], [/ BB /g, " BANDAR BARU "],
   ];
   for (const [re, to] of short) s = s.replace(re, to);
   // short forms of words written either way: TMN = TAMAN, SRI = SERI …
