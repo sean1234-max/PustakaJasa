@@ -1,6 +1,7 @@
 import JSZip from 'jszip';
-import { makeDynamicCategoryKey } from '../data/catalog';
+import { makeDynamicCategoryKey, resolveSelempangWarna } from '../data/catalog';
 import { readSelempangFromDocument } from './docxSelempang';
+import { schoolListSections } from './schoolList';
 
 // A second real-world order shape, completely different from any Excel
 // template: a Word table with one row per plaque (or per set of plaques).
@@ -75,6 +76,12 @@ function headerLabel(tc) {
 const WORDING_LABELS = ['WORDING', 'LABEL'];
 const QTY_LABELS = ['KUANTITI', 'BILANGAN', 'QTY', 'KUANTITI (UNIT)', 'UNIT'];
 const KOD_LABELS = ['KOD HADIAH', 'KOD', 'KOD PLAK', 'JENIS PLAK', 'CODE', 'JENIS', 'JENIS/KOD', 'KOD/JENIS'];
+// A school's own list table (Sean, 2026-10-22, SKTG: "NAMA | CODE | JUMLAH | HARGA") — these
+// labels count only beside a code column, and such a table reads top to bottom as the teacher
+// wrote it (schoolList.js) instead of being grouped by award.
+const LIST_WORDING_LABELS = ['NAMA', 'NAMA ANUGERAH', 'ANUGERAH'];
+const LIST_QTY_LABELS = ['JUMLAH', 'JUMLAH UNIT'];
+const HARGA_RE = /^HARGA\b/;
 // "JENIS / KOD" -> "JENIS/KOD", so a spaced slash still matches.
 const kodLabel = (t) => t.replace(/\s*\/\s*/g, '/');
 
@@ -87,13 +94,26 @@ function findWordingHeader(rows) {
     let wordingCol = -1;
     let qtyCol = -1;
     let kodCol = -1;
+    let hargaCol = -1;
+    let list = false;
     cells.forEach((tc, ci) => {
       const t = headerLabel(tc);
       if (wordingCol < 0 && WORDING_LABELS.includes(t)) wordingCol = ci;
       else if (qtyCol < 0 && QTY_LABELS.includes(t)) qtyCol = ci;
       else if (kodCol < 0 && KOD_LABELS.includes(kodLabel(t))) kodCol = ci;
+      else if (hargaCol < 0 && HARGA_RE.test(t)) hargaCol = ci;
     });
-    if (wordingCol >= 0 && qtyCol >= 0) return { headerRow: ri, wordingCol, qtyCol, kodCol };
+    if (wordingCol < 0 || qtyCol < 0) {
+      cells.forEach((tc, ci) => {
+        const t = headerLabel(tc);
+        if (wordingCol < 0 && LIST_WORDING_LABELS.includes(t)) { wordingCol = ci; list = true; }
+        else if (qtyCol < 0 && LIST_QTY_LABELS.includes(t)) { qtyCol = ci; list = true; }
+      });
+      if (kodCol < 0) list = false;
+    }
+    if (wordingCol >= 0 && qtyCol >= 0 && (list || ![wordingCol, qtyCol].some((c) => LIST_WORDING_LABELS.includes(headerLabel(cells[c])) || LIST_QTY_LABELS.includes(headerLabel(cells[c]))))) {
+      return { headerRow: ri, wordingCol, qtyCol, kodCol, hargaCol, list, cols: cells.length };
+    }
   }
   return null;
 }
@@ -123,11 +143,29 @@ export function cleanDocxPlakCode(raw) {
 
 const TOTAL_RE = /^(JUMLAH|TOTAL|JUMLAH BESAR|GRAND TOTAL)\b/i;
 
-function readTableRows(tbl, tableIdx, notes) {
+// The paragraph just above a table ("( KRISTAL ) OOS - DESIGN C"), '' when there is none.
+function textAbove(tbl) {
+  for (let el = tbl.previousSibling; el; el = el.previousSibling) {
+    if (el.nodeType !== 1 || el.namespaceURI !== W_NS) continue;
+    if (el.localName === 'tbl') return '';
+    if (el.localName === 'p') {
+      const text = paragraphText(el).replace(/\s+/g, ' ').trim();
+      if (text) return text;
+    }
+  }
+  return '';
+}
+
+// `carry`: the list header of the table before — a school's list goes on in tables with no
+// header row of their own (one table per plaque type), read with the same columns.
+function readTableRows(tbl, tableIdx, notes, carry = null) {
   const rows = directChildren(tbl, W_NS, 'tr');
-  const header = findWordingHeader(rows);
-  if (!header) return [];
-  const { headerRow, wordingCol, qtyCol, kodCol } = header;
+  let header = findWordingHeader(rows);
+  if (!header && carry && rows.length && directChildren(rows[0], W_NS, 'tc').length === carry.cols) header = { ...carry, headerRow: -1 };
+  if (!header) return { rows: [], header: null };
+  const { headerRow, wordingCol, qtyCol, kodCol, hargaCol = -1 } = header;
+  // "DESIGN C" written above the table goes with its code (a crystal's design)
+  const design = /\bDESIGN\s*([A-Z0-9])\b/i.exec(textAbove(tbl));
   const out = [];
   for (let ri = headerRow + 1; ri < rows.length; ri++) {
     const cells = directChildren(rows[ri], W_NS, 'tc');
@@ -156,9 +194,12 @@ function readTableRows(tbl, tableIdx, notes) {
       continue;
     }
     if (qty <= 0) continue;
-    out.push({ lines, qty, kod: cleanDocxPlakCode(kodRaw), where });
+    let kod = cleanDocxPlakCode(kodRaw);
+    if (design && kod && !/\bDESIGN\b/i.test(kod)) kod = `${kod} DESIGN ${design[1].toUpperCase()}`;
+    const unit = hargaCol >= 0 && cells[hargaCol] ? Number(cellText(cells[hargaCol]).replace(/[^0-9.]/g, '')) || 0 : 0;
+    out.push({ lines, qty, kod, unit, where });
   }
-  return out;
+  return { rows: out, header };
 }
 
 // Splits a WORDING cell's own lines into { title, tahun, namaKelas,
@@ -495,6 +536,32 @@ export function splitRowHeading(row, heading) {
   return { ...row, heading: row.lines.slice(0, at + 1).join('\n'), lines: row.lines.slice(at + 1) };
 }
 
+// Sashes typed as one-cell tables under a SELEMPANG heading (Sean, 2026-10-22, SKTG:
+// "KAIN SELEMPANG & LOGO SEKOLAH" / "( RM40 X 4 ) CODE 0050", then a box per sash with its
+// wording) — one sash each, the colour from the heading's code / colour word.
+function selempangTables(doc) {
+  const out = [];
+  Array.from(doc.getElementsByTagNameNS(W_NS, 'tbl')).forEach((tbl) => {
+    const trs = directChildren(tbl, W_NS, 'tr');
+    if (trs.length !== 1 || directChildren(trs[0], W_NS, 'tc').length !== 1) return;
+    const above = [];
+    for (let el = tbl.previousSibling; el && above.length < 4; el = el.previousSibling) {
+      if (el.nodeType !== 1 || el.namespaceURI !== W_NS) continue;
+      if (el.localName === 'p') { const t = paragraphText(el).replace(/\s+/g, ' ').trim(); if (t) above.push(t); continue; }
+      if (el.localName !== 'tbl') break;
+      const rows = directChildren(el, W_NS, 'tr');
+      if (rows.length !== 1 || directChildren(rows[0], W_NS, 'tc').length !== 1) break;
+    }
+    if (!above.some((t) => /SELEMPANG/i.test(t))) return;
+    const code = above.map((t) => /\b(00\d\d)\b|\b(MERAH|KUNING|HIJAU|BIRU)\b/i.exec(t)).find(Boolean);
+    const acara = cellLines(directChildren(trs[0], W_NS, 'tc')[0]).join(' ').replace(/\s+/g, ' ').trim();
+    if (!acara) return;
+    const resolved = code ? resolveSelempangWarna(code[1] || code[2]) : null;
+    out.push({ acara, warna: resolved ? resolved.warna : '', warnaCode: resolved ? resolved.code : '', qty: 1 });
+  });
+  return out.length ? { lines: {}, selempangRows: out, isSelempangList: true, skipLineDerivation: true, classes: [], sourceSheet: 'SELEMPANG' } : null;
+}
+
 const BAD_FILE = 'Could not read this file — please make sure it is a valid .docx file.';
 
 // Top-level entry point — same return shape as excelImport.js's
@@ -520,9 +587,13 @@ export async function parseWordingDocx(arrayBuffer, { DOMParser: DP = globalThis
 
   const notes = [];
   const rows = [];
+  const listRows = [];
+  let carry = null;
   Array.from(doc.getElementsByTagNameNS(W_NS, 'tbl')).forEach((tbl, tableIdx) => {
     const tableRows = [];
-    readTableRows(tbl, tableIdx, notes).forEach((r) => {
+    const read = readTableRows(tbl, tableIdx, notes, carry);
+    if (read.header) carry = read.header.list ? read.header : null;
+    read.rows.forEach((r) => {
       if (!r.isTotal) { tableRows.push(r); return; }
       // A JUMLAH/TOTAL row checks only its own table's rows above it.
       const sum = tableRows.reduce((s, x) => s + x.qty, 0);
@@ -530,20 +601,25 @@ export async function parseWordingDocx(arrayBuffer, { DOMParser: DP = globalThis
         notes.push(`${r.where}: the file's JUMLAH/TOTAL says ${r.qty}, but the rows above it add up to ${sum} — please check nothing is missing.`);
       }
     });
-    rows.push(...tableRows);
+    (read.header?.list ? listRows : rows).push(...tableRows);
   });
 
   const { categorized, count, notes: groupNotes } = wordingRowsToCategorized(rows.map((r) => splitRowHeading(r, heading)), heading);
   notes.push(...groupNotes);
-  if (count === 0) {
+  // A school's list table, top to bottom (schoolList.js)
+  schoolListSections(listRows.map((r) => ({ lines: foldBracketSubjects(r.lines), qty: r.qty, type: '', kod: r.kod, unit: r.unit, total: r.unit * r.qty })))
+    .forEach((sec) => { categorized[sec.isSelempangList ? 'SELEMPANG' : (sec.dynamicCategoryKey || 'UMUM')] = [sec]; });
+  if (count === 0 && listRows.length === 0) {
     return { klasMatrix: null, error: 'No recognized WORDING/KUANTITI or LABEL/BILANGAN table found in this file.' };
   }
 
-  if (!heading) notes.push('No event heading (MAJLIS ...) was found above the table — please type the TAJUK BESAR by hand.');
+  if (!heading && !listRows.length) notes.push('No event heading (MAJLIS ...) was found above the table — please type the TAJUK BESAR by hand.');
 
   // Selempang drawn as coloured boxes (docxSelempang.js).
   const selempang = readSelempangFromDocument(doc);
-  if (selempang.section) categorized.SELEMPANG = [selempang.section];
+  if (selempang.section && !categorized.SELEMPANG) categorized.SELEMPANG = [selempang.section];
+  const boxes = categorized.SELEMPANG ? null : selempangTables(doc);
+  if (boxes) categorized.SELEMPANG = [boxes];
   notes.push(...selempang.notes);
 
   return { categorized, notes, klasMatrix: null };

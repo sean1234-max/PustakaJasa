@@ -350,3 +350,28 @@ describe('a subject in brackets is engraved as the award\'s second line (Sean, 2
     expect(Object.values(categorized).flat().map((sec) => sec.lines[2])).toEqual(['MATA PELAJARAN TERBAIK TAHUN 6\nBAHASA MELAYU', 'MATA PELAJARAN TERBAIK TAHUN 6\nSAINS']);
   });
 });
+
+describe("a school's own list in Word (NAMA | CODE | JUMLAH | HARGA)", () => {
+  it('reads top to bottom as ORDER LAIN-LAIN, carries the header into the next tables, design from the line above, sashes from one-cell boxes', async () => {
+    const head = 'MAJLIS ANUGERAH 2026\n2026';
+    const buf = await makeDocx([
+      para('TEMPAHAN PLAK MAJLIS ANUGERAH SK CONTOH'),
+      para('( WOODEN PLAQE ) PKC 263'),
+      table([['NAMA', 'CODE', 'JUMLAH', 'HARGA'], [`${head}\nANUGERAH AKADEMIK TERBAIK\n1 BESTARI`, 'PKC 263', '3 PIECES', '12.00 (SEUNIT)'], [`${head}\nANUGERAH AKADEMIK TERBAIK\n1 BIJAK`, 'PKC 263', '3 PIECES', '12.00 (SEUNIT)']]),
+      para('( KRISTAL ) OOS - DESIGN C'),
+      table([[`${head}\nTOKOH MURID`, 'OOS', '1 PIECES', '39.00 (SEUNIT)']]),
+      para('KAIN SELEMPANG & LOGO SEKOLAH'),
+      para('( RM40 X 2 ) CODE 0050'),
+      table([['TOKOH MURID 2026']]),
+    ].join(''));
+    const { categorized } = await parse(buf);
+    const umum = categorized.UMUM[0];
+    expect(umum.lines).toMatchObject({ 0: head, 1: 'ANUGERAH AKADEMIK TERBAIK', 2: '1 BESTARI', umumRed: '1' });
+    expect(umum.umumRows.map((r) => [r.l1, r.l2, r.qty, r.jenisPlak, r.toRemark])).toEqual([
+      ['', '', 3, 'PKC 263', 'PKC 263/RM12.00/RM36.00'],
+      ['', '1 BIJAK', 3, 'PKC 263', 'PKC 263/RM12.00/RM36.00'],
+      ['TOKOH MURID', '-', 1, 'OOS DESIGN C', 'OOS DESIGN C/RM39.00/RM39.00'],
+    ]);
+    expect(categorized.SELEMPANG[0].selempangRows).toEqual([expect.objectContaining({ acara: 'TOKOH MURID 2026', warna: 'MERAH', qty: 1 })]);
+  });
+});

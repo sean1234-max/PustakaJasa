@@ -1509,3 +1509,13 @@ describe("a school's own one-row-per-item list (WORDING + BILANGAN)", () => {
     expect(sel.selempangRows).toEqual([expect.objectContaining({ acara: 'TOKOH KURIKULUM', warna: 'KUNING', qty: 1 })]);
   });
 });
+
+describe('matchJenisPlakPath: a letter O typed for a zero', () => {
+  it('reads "OOS DESIGN C" as CRYSTAL / 00S / DESIGN C, only when the code as written matches nothing', () => {
+    const designs = () => ['DESIGN A', 'DESIGN C'].map((code) => ({ code, children: [] }));
+    const tree = [{ code: 'CRYSTAL', children: [{ code: '00S', children: designs() }, { code: 'R-100', children: designs() }] }, { code: 'PKC 263', children: [] }];
+    expect(matchJenisPlakPath('OOS DESIGN C', tree)).toBe('CRYSTAL / 00S / DESIGN C');
+    expect(matchJenisPlakPath('R-100 DESIGN C', tree)).toBe('CRYSTAL / R-100 / DESIGN C');
+    expect(matchJenisPlakPath('BOOK', tree)).toBe('');
+  });
+});
