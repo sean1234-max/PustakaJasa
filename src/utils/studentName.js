@@ -13,3 +13,6 @@ const SCHOOL_LINE_RE = /(?:^|[^A-Z])(?:SK|SJK|SJKC|SJKT|SMK|SMJK|SRK|SRJK|SEKOLA
 
 export const hasStudentName = (text) => String(text || '').split('\n')
   .some((line) => !SCHOOL_LINE_RE.test(line.trim()) && NAME_WORD_RE.test(line.trim()));
+
+// Crystals and VB plaques are never charged the extra RM1 for a name (Sean, 2026-10-22).
+export const takesNameSurcharge = (jenisPlak) => !/^\s*(CRYSTAL|VB)\s*\//i.test(String(jenisPlak || ''));
