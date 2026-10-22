@@ -298,6 +298,7 @@ function renderSources() {
 // Everyone else only changes the crystals of the order they came from (Save for this order only).
 // (Sean, 2026-10-14: the account's role replaces the colleague's shared "Admin" password.)
 let unlocked = false; // set once in start() from the signed-in account
+let myRole = ""; // the signed-in account's role (start())
 function setAdmin(on) {
   unlocked = on;
   document.body.classList.toggle("admin", on);
@@ -1060,8 +1061,9 @@ $("saveOrder").onclick = async () => {
     await store.saveDesign({ id: orderDesignId(S.order), name: `Order ${S.order} — its own crystals`, data: { order: S.order, custom } });
     S.dirty = false;
     // the teacher checked and saved this order's crystals: that confirms its artwork (Production's
-    // own saves don't). Not allowed once the order is past In Production — the design still counts.
-    if (!unlocked) await store.confirmArtwork(S.order).catch((e) => console.warn("Artwork not marked confirmed:", e.message));
+    // own saves don't, nor the salesman's — he still presses Confirm Artwork, Sean 2026-10-22).
+    // Not allowed once the order is past In Production — the design still counts.
+    if (myRole === "teacher") await store.confirmArtwork(S.order).catch((e) => console.warn("Artwork not marked confirmed:", e.message));
     toast(n ? `Saved ${n} crystal${n === 1 ? "" : "s"} for order ${S.order} only. Back to the website…`
       : `Order ${S.order} uses the default template again. Back to the website…`);
     // back to the order on the website (this tab was opened by its ✎ Edit; its preview already shows it)
@@ -1403,6 +1405,7 @@ window.addEventListener("beforeunload", (e) => { if (S.dirty) { e.preventDefault
     return;
   }
   setAdmin(isStaff(me));
+  myRole = me.role;
   if (!(await store.ping())) {
     editor.showEmpty("This page has to be opened through the studio's own program, or it can't import or save.<br><br>" +
       "1. Stop Live Server (click <b>Port: 5500</b> at the bottom of VS Code)<br>" +

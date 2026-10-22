@@ -383,7 +383,8 @@ export default function SalesOrderSummary() {
                 hideCategory combineJenisPlak
                 canPick={isCrystalCode} onPick={setPickedCrystal} picked={pickedCrystal}
               />
-              <CrystalPreview order={order} role="view" selected={pickedCrystal} onConfirmArtwork={() => confirmArtwork(order.id)} onManualArtwork={() => manualArtwork(order.id)} />
+              {/* the salesman can ✎ Edit the crystals' look and place for this order too (Sean, 2026-10-22) */}
+              <CrystalPreview order={order} role={isOwn ? 'teacher' : 'view'} selected={pickedCrystal} onConfirmArtwork={() => confirmArtwork(order.id)} onManualArtwork={() => manualArtwork(order.id)} />
               </>
               )}
               {/* SELEMPANG's rows (ACARA / WARNA / QTY) also show right here on the

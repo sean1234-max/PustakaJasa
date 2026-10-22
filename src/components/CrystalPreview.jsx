@@ -4,8 +4,9 @@
 // which the Combined CSV itself leaves out (Sean, 2026-10-14). The preview draws each row on its
 // design and shows this order's own changes ("Save for this order only").
 //
-// role: 'production' (everything), 'teacher' (✎ Edit: change look and place for this order),
-// 'view' (Sales: look only). The database still decides what each account may save.
+// role: 'production' (everything), 'teacher' (the teacher, or the order's own salesman: ✎ Edit —
+// change look and place for this order), 'view' (look only). The database still decides what each
+// account may save.
 //
 // Artwork confirmation (Sean, 2026-10-14): shown above the preview. Until it is confirmed,
 // Production only looks (no download / Illustrator); onConfirmArtwork (Sales) adds the
