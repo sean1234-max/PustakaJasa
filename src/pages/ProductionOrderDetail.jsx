@@ -18,6 +18,7 @@ import { getExportableCategories, splitOrderCategories, getOrderJenisPlakGroups,
 import { downloadTextFile } from '../utils/downloadBlob';
 import { getInvoiceItems } from '../utils/orderBatches';
 import ImportFileButtons from '../components/ImportFileButtons';
+import ProductionChecks from '../components/ProductionChecks';
 import ShipmentUrgencyEditor from '../components/ShipmentUrgencyEditor';
 import ProductionPriceEditor from '../components/ProductionPriceEditor';
 import ProductionInvoiceEntry from '../components/ProductionInvoiceEntry';
@@ -661,6 +662,7 @@ export default function ProductionOrderDetail() {
                         {reservedGroups.map((g) => `${g.categoryLabel} – ${g.jenisPlak} (${g.csvData.reservedCount})`).join(', ')}.
                       </p>
                     )}
+                    <ProductionChecks order={effectiveOrder} groups={jenisPlakExport} />
                     <button
                       type="button" className="btn" style={{ marginTop: 8 }}
                       disabled={!generateOk || aiFileBusy} onClick={handleGenerateAiFile}

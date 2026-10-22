@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isAllowedRequest, sanitizeFolderName, PORT } from './ai-file-helper.mjs';
+import { isAllowedRequest, sanitizeFolderName, findTemplates, PORT } from './ai-file-helper.mjs';
 
 describe('isAllowedRequest', () => {
   const host = `127.0.0.1:${PORT}`;
@@ -125,5 +125,23 @@ describe('copy to the school folder (Sean, 2026-10-21)', async () => {
     expect(fs.existsSync(path.join(out, 'a.ai'))).toBe(true);
     expect(copyToSchool(out, 'SK NOWHERE', path.join(tmp, 'SCHOOLS'))).toMatch(/Not copied/);
     fs.rmSync(tmp, { recursive: true, force: true });
+  });
+});
+
+describe('findTemplates (POST /templates)', async () => {
+  const { mkdtempSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const path = (await import('node:path')).default;
+  it('finds what SEAN.jsx would open: product_mapping.csv, then E CUT number, then the code in a file name', () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'tpl-'));
+    ['E CUT 5 - PLAK B (241,242).ai', 'E CUT 10 - STAND MEDAL BASE C.ai', 'E TROFI JZ 19821.ai'].forEach((f) => writeFileSync(path.join(dir, f), ''));
+    writeFileSync(path.join(dir, 'product_mapping.csv'), 'code,filename\nPKC 263,"E CUT 5 - PLAK B (241,242).ai"\nMP393/GOLD/BASE C,"E CUT 10 - STAND MEDAL BASE C.ai"\n');
+    expect(findTemplates(dir, ['PKC 263', 'MP393 / GOLD / BASE C', 'JZ 19821', 'E CUT 5', 'VB / C / BLUE'])).toEqual({
+      'PKC 263': 'E CUT 5 - PLAK B (241,242).ai',
+      'MP393 / GOLD / BASE C': 'E CUT 10 - STAND MEDAL BASE C.ai',
+      'JZ 19821': 'E TROFI JZ 19821.ai',
+      'E CUT 5': 'E CUT 5 - PLAK B (241,242).ai',
+      'VB / C / BLUE': null,
+    });
   });
 });

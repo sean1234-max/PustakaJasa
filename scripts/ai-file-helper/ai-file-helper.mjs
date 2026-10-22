@@ -3,8 +3,11 @@
 // File" button. A web page can't check local folders or start Illustrator
 // itself (browser sandbox), so the page talks to this over loopback instead:
 //   GET  /status    -> is this computer's AI FILE folder (SEAN.jsx) reachable?
-//   POST /generate  -> { filename, csv } -> queue a SEAN.jsx run, returns jobId
+//   POST /generate  -> { filename, csv, school, operator } -> queue a SEAN.jsx run, returns jobId
+//                      (operator: the name SEAN.jsx would ask for; blank = it asks)
 //   GET  /jobs/:id  -> that run's status/result
+//   POST /templates -> { codes } -> which template .ai SEAN.jsx would open for each Jenis Plak
+//                      (null = none, so that AI file would be missing — Production's check)
 //   POST /crystal   -> { job, files } from the Crystal Preview / Crystal Studio -> the crystals
 //                      made in Illustrator from their original .ai (crystal-job.mjs), saved under
 //                      OUTPUT/CRYSTAL/<date time> - <school (order)>; returns jobId + folder
@@ -28,7 +31,9 @@ const execFileAsync = promisify(execFile);
 export const PORT = 47821;
 // 2: crystals too (POST /crystal) — the website asks for at least this to open crystals
 // 3: a copy in the school's folder too (school-folder.mjs, Sean 2026-10-21)
-const VERSION = 3;
+// 4: POST /templates (Production's check before Generate AI File) + the operator's name sent with
+//    /generate, so Illustrator doesn't ask for it (Sean 2026-10-22)
+const VERSION = 4;
 const HELPER_DIR = path.dirname(fileURLToPath(import.meta.url));
 const TEMP_DIR = path.join(tmpdir(), 'pustakajasa-ai-helper');
 // crystals can carry pictures and .svg artwork (Crystal Studio), so more room than a CSV needs
@@ -89,9 +94,10 @@ async function folderReachable(aiFileDir) {
 // The PRESET_* injection SEAN.jsx expects. JSON.stringify produces a safely
 // escaped JS string literal. PRESET_OPERATOR_NAME is deliberately left out:
 // the person at this computer answers Illustrator's own "your name" popup.
-function buildFullScript(aiFileDir, csvPath, logFileName) {
+function buildFullScript(aiFileDir, csvPath, logFileName, operator = '') {
   return [
     `var PRESET_CSV_PATH = ${JSON.stringify(csvPath)};`,
+    ...(operator ? [`var PRESET_OPERATOR_NAME = ${JSON.stringify(operator)};`] : []),
     `var PRESET_TEMPLATE_FOLDER_PATH = ${JSON.stringify(aiFileDir)};`,
     `var PRESET_LOG_FILE_NAME = ${JSON.stringify(logFileName)};`,
     '',
@@ -145,6 +151,44 @@ async function runOnWindows(scriptPath) {
   await execFileAsync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', psPath], { maxBuffer: 10 * 1024 * 1024 });
 }
 
+// The template .ai SEAN.jsx (findMatchingAiFile) opens for a Jenis Plak, the same way: its
+// product_mapping.csv first, then an "E CUT <n>" number, then the code inside a file name (spaces
+// ignored, any case). null when there's none — that group's AI file would never be made.
+const squash = (s) => String(s || '').replace(/\s+/g, '').toUpperCase();
+const eCutNumber = (s) => /E\s*CUT\s*(\d+)/i.exec(String(s || ''))?.[1] ?? null;
+function csvCells(line) {
+  const out = [];
+  let cur = '';
+  let quoted = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (quoted && ch === '"' && line[i + 1] === '"') { cur += '"'; i++; } else if (ch === '"') quoted = !quoted;
+    else if (ch === ',' && !quoted) { out.push(cur); cur = ''; } else cur += ch;
+  }
+  out.push(cur);
+  return out;
+}
+export function findTemplates(folder, codes) {
+  const files = existsSync(folder) ? readdirSync(folder).filter((n) => /\.ai$/i.test(n)) : [];
+  const mapping = new Map();
+  const mappingPath = path.join(folder, 'product_mapping.csv');
+  if (existsSync(mappingPath)) {
+    readFileSync(mappingPath, 'utf8').replace(/^\uFEFF/, '').split(/\r?\n/).slice(1).forEach((line) => {
+      const [code, file] = csvCells(line).map((c) => c.trim());
+      if (code && file) mapping.set(squash(code), file);
+    });
+  }
+  return Object.fromEntries(codes.map((code) => {
+    const mapped = mapping.get(squash(code));
+    if (mapped && files.includes(mapped)) return [code, mapped];
+    const n = eCutNumber(code);
+    const byNumber = n !== null && files.find((f) => eCutNumber(f) === n);
+    if (byNumber) return [code, byNumber];
+    const key = squash(code);
+    return [code, (key && files.find((f) => squash(f).includes(key))) || null];
+  }));
+}
+
 function listAiFilesWithMtime(folder) {
   const out = new Map();
   if (!existsSync(folder)) return out;
@@ -163,7 +207,7 @@ function openFolder(folder) {
 const jobs = new Map();
 let queue = Promise.resolve();
 
-async function runJob(job, filename, csv, school) {
+async function runJob(job, filename, csv, school, operator = '') {
   job.status = 'running';
   const aiFileDir = resolveAiFileDir();
   const outputRoot = path.join(aiFileDir, 'OUTPUT');
@@ -178,7 +222,7 @@ async function runJob(job, filename, csv, school) {
     const csvPath = path.join(TEMP_DIR, `${base}.csv`);
     writeFileSync(csvPath, csv, 'utf8');
     const scriptPath = path.join(TEMP_DIR, `${job.id}.jsx`);
-    writeFileSync(scriptPath, buildFullScript(aiFileDir, csvPath, logFileName), 'utf8');
+    writeFileSync(scriptPath, buildFullScript(aiFileDir, csvPath, logFileName, operator), 'utf8');
     const before = listAiFilesWithMtime(outputFolder);
     rmSync(logPath, { force: true });
     await runIllustrator(scriptPath);
@@ -246,7 +290,7 @@ function queueJob(run, outputFolder = '') {
   queue = queue.then(() => run(job));
   return job;
 }
-const startJob = (filename, csv, school) => queueJob((job) => runJob(job, filename, csv, school));
+const startJob = (filename, csv, school, operator) => queueJob((job) => runJob(job, filename, csv, school, operator));
 function startCrystalJob(body) {
   const checked = checkCrystalJob(body);
   // quiet: no "saved" pop-up in Illustrator holding the run open — the page shows the report
@@ -300,7 +344,14 @@ function startServer() {
           send(400, { error: 'filename and csv are required' });
           return;
         }
-        send(202, { jobId: startJob(body.filename, body.csv, typeof body.school === 'string' ? body.school.slice(0, 200) : '').id });
+        const text = (v, max) => (typeof v === 'string' ? v.slice(0, max) : '');
+        send(202, { jobId: startJob(body.filename, body.csv, text(body.school, 200), text(body.operator, 40).trim()).id });
+        return;
+      }
+      if (req.method === 'POST' && pathname === '/templates') {
+        const body = JSON.parse(await readBody(req));
+        const codes = Array.isArray(body.codes) ? body.codes.filter((c) => typeof c === 'string').slice(0, 500) : [];
+        send(200, { templates: findTemplates(resolveAiFileDir(), codes) });
         return;
       }
       if (req.method === 'POST' && pathname === '/crystal') {
