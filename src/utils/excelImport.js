@@ -1,6 +1,7 @@
 import * as XLSX from 'xlsx';
 import { ordinalToNum, numToOrdinal, resolveSelempangWarna, makeDynamicCategoryKey, DEFAULT_REF_ORDER, ALIRAN_REF_ORDER, parseDisplayDate, isKelasSubject } from '../data/catalog';
 import { breakAcaraLine } from './acaraBreak';
+import { foldBracketSubjects } from './docxImport';
 
 // Reads a teacher's own filled-in copy of the FORM ANUGERAH Excel template —
 // not just the new "KLAS MATRIX" sheet, but the ORIGINAL sheets teachers
@@ -1546,6 +1547,93 @@ function parseAnugerahListSheet(ws) {
   return { lines, umumRows, isUmumList: true, skipLineDerivation: true, classes: [] };
 }
 
+// A school's own order list (Sean, 2026-10-22: SKPP 8(2)'s "TEMPAHAN HADIAH …"): one header row
+// with a WORDING column and a BILANGAN / KUANTITI column (usually also JENIS HADIAH, KOD HADIAH,
+// HARGA), one row per item, its wording as stacked lines in one cell. Read by these rules, no AI:
+//   PLAK (or no type) — ORDER LAIN-LAIN rows: ① the first line, ② the second (MERAH, a bracketed
+//     subject as its second line — docxImport.js foldBracketSubjects), ③ the rest; a different ①
+//     is its own tab
+//   SELEMPANG — the SELEMPANG list: ACARA the lines after the first, WARNA the code column
+//   anything else with wording (SET ALAS TULIS …) — its own ORDER LAIN-LAIN tab
+// A row whose code the website doesn't sell goes to the Remark as "KOD/RM unit/RM total" instead
+// (AppState.jsx, `toRemark`); an item with no wording and no known code too. null when the sheet
+// isn't this shape. Returns sections.
+const LIST_WORDING_RE = /^(WORDING|LABEL)\b/;
+const LIST_QTY_RE = /^(BILANGAN|KUANTITI|QTY|UNIT)\b/;
+const LIST_KOD_RE = /^(KOD|CODE|JENIS PLAK)\b/;
+const LIST_TYPE_RE = /^(JENIS HADIAH|JENIS|ITEM|BARANG|HADIAH)\b/;
+const LIST_HARGA_RE = /^HARGA\b/;
+const LIST_TOTAL_RE = /^JUMLAH\b/;
+const money = (v) => { const n = Number(String(v ?? '').replace(/[^0-9.]/g, '')); return Number.isFinite(n) ? n : 0; };
+function parseSchoolListSheet(ws) {
+  const range = sheetRange(ws);
+  let head = null;
+  for (let r = range.r1; r <= Math.min(range.r2, range.r1 + 30) && !head; r++) {
+    const cols = {};
+    for (let c = range.c1; c <= range.c2; c++) {
+      const t = cellStr(ws, r, c).replace(/\s+/g, ' ').toUpperCase();
+      if (!t) continue;
+      if (cols.wording == null && LIST_WORDING_RE.test(t)) cols.wording = c;
+      else if (cols.qty == null && LIST_QTY_RE.test(t)) cols.qty = c;
+      else if (cols.kod == null && LIST_KOD_RE.test(t)) cols.kod = c;
+      else if (cols.type == null && LIST_TYPE_RE.test(t)) cols.type = c;
+      else if (cols.harga == null && LIST_HARGA_RE.test(t)) cols.harga = c;
+      else if (cols.total == null && LIST_TOTAL_RE.test(t)) cols.total = c;
+    }
+    if (cols.wording != null && cols.qty != null) head = { row: r, ...cols };
+  }
+  if (!head) return null;
+  const text = (r, c) => (c == null ? '' : cellStr(ws, r, c));
+  const items = [];
+  for (let r = head.row + 1; r <= range.r2; r++) {
+    const qty = cellNum(ws, r, head.qty);
+    if (qty <= 0) continue;
+    const lines = foldBracketSubjects(text(r, head.wording).split('\n').map((t) => t.replace(/[^\S\n]+/g, ' ').trim()).filter(Boolean));
+    const type = text(r, head.type).replace(/\s+/g, ' ').trim().toUpperCase();
+    const kod = text(r, head.kod).replace(/\s+/g, ' ').trim();
+    const unit = money(text(r, head.harga));
+    const total = money(text(r, head.total)) || unit * qty;
+    items.push({ lines, qty, type, kod, unit, total });
+  }
+  if (!items.length) return null;
+
+  const fmt = (n) => `RM${n.toFixed(2)}`;
+  const remark = (it) => `${it.kod || it.type}/${fmt(it.unit)}/${fmt(it.total)}`;
+  const sections = [];
+  const selempangRows = [];
+  const tabs = new Map();
+  items.forEach((it) => {
+    if (/SELEMPANG/.test(it.type)) {
+      const resolved = resolveSelempangWarna(it.kod);
+      selempangRows.push({ acara: (it.lines.length > 1 ? it.lines.slice(1) : it.lines).join(' '), warna: resolved ? resolved.warna : it.kod, warnaCode: resolved ? resolved.code : '', qty: it.qty });
+      return;
+    }
+    const plak = !it.type || /^PLAK\b/.test(it.type);
+    const slots = it.lines.length > 1 ? [it.lines[0], it.lines[1], it.lines.slice(2).join('\n'), ''] : ['', it.lines[0] || '', '', ''];
+    const name = plak ? (slots[0] || 'PLAK') : it.type.replace(/\s*\(.*\)\s*$/, '').trim();
+    const key = `${plak ? 'P' : 'X'}\u0000${name}`;
+    if (!tabs.has(key)) tabs.set(key, { name, plak, rows: [] });
+    tabs.get(key).rows.push({ ...it, slots, toRemark: remark(it), noWording: !it.lines.length });
+  });
+  let first = true;
+  tabs.forEach(({ name, plak, rows }) => {
+    const contoh = rows.find((r) => !r.noWording)?.slots || ['', '', '', ''];
+    const lines = { umumRed: '1' };
+    contoh.forEach((t, i) => { if (t) lines[`${i}`] = t; });
+    const umumRows = rows.map((r, i) => ({
+      no: String(i + 1),
+      ...Object.fromEntries(r.slots.map((t, k) => [`l${k}`, t === contoh[k] ? '' : (t || '-')])),
+      qty: r.qty, jenisPlak: r.kod, harga: r.unit ? String(r.unit) : '', toRemark: r.toRemark, noWording: r.noWording,
+    }));
+    const section = { lines, umumRows, isUmumList: true, skipLineDerivation: true, classes: [] };
+    if (plak && first) { section.sourceSheet = 'ORDER LAIN-LAIN'; first = false; }
+    else { section.sourceSheet = name; section.dynamicCategoryKey = makeDynamicCategoryKey('UMUM', name); }
+    sections.push(section);
+  });
+  if (selempangRows.length) sections.push({ lines: {}, selempangRows, isSelempangList: true, skipLineDerivation: true, classes: [], sourceSheet: 'SELEMPANG' });
+  return sections;
+}
+
 // LONJAKAN SAUJANA / KEHADIRAN PENUH — identical shape: "TAHUN | KUANTITI |
 // JENIS PLAK | HARGA" down the left, one KUANTITI (and its OWN Jenis Plak)
 // per TAHUN 1-6. Lands in the matching plakPerRow list category (catalog.js).
@@ -2319,6 +2407,10 @@ export function parseFormAnugerahExcel(arrayBuffer) {
     // purely so the review screen can label each imported section by its
     // actual origin ("PPKI", "MP THP 1", ...) instead of a bare ordinal
     // when a file lands more than one.
+    // A school's own one-row-per-item list (WORDING + BILANGAN): read by rules, not offered to AI
+    const schoolList = parseSchoolListSheet(ws);
+    if (schoolList) { allSections.push(...schoolList); return; }
+
     const sheetSections = [...scanSheetForSections(ws), ...scanSheetForRosters(ws, sampleCards)];
     sheetSections.forEach((s) => { s.sourceSheet = name; });
     if (sheetSections.length === 0 && sheetHasContent(ws)) unrecognizedSheets.push(name);

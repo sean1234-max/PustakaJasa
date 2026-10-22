@@ -952,6 +952,20 @@ export function AppStateProvider({ children }) {
     const st = base || stateRef.current;
     let next = st;
 
+    // A school's own list (excelImport.js parseSchoolListSheet): a row whose code the website
+    // doesn't sell (or with no wording) goes to the Remark as "KOD/RM unit/RM total" instead
+    // (Sean, 2026-10-22); a tab left with no rows isn't opened at all.
+    if (parsed.categorized) {
+      const toRemark = (ur) => ur.toRemark && (ur.noWording || !matchJenisPlakPath(ur.jenisPlak, st.plakCatalog));
+      const categorized = Object.fromEntries(Object.entries(parsed.categorized).map(([k, secs]) => [k, [].concat(secs || []).flatMap((sec) => {
+        if (!sec.isUmumList) return [sec];
+        sec.umumRows.filter(toRemark).forEach((ur) => remarkNotes.push(ur.toRemark));
+        const umumRows = sec.umumRows.filter((ur) => !toRemark(ur));
+        return umumRows.length ? [{ ...sec, umumRows }] : [];
+      })]).filter(([, secs]) => secs.length));
+      parsed = { ...parsed, categorized };
+    }
+
     // Jenis Plak text the catalog can't place is left BLANK (never the raw
     // text — see the populateMatrixSectionBlock note below) and recorded
     // here, so the page can tell the teacher right after the import which

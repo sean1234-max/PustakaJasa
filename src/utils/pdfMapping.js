@@ -1,5 +1,5 @@
 import { makeDynamicCategoryKey } from '../data/catalog';
-import { cleanDocxPlakCode, wordingRowsToCategorized, wordingRowsToUmum } from './docxImport';
+import { cleanDocxPlakCode, foldBracketSubjects, wordingRowsToCategorized, wordingRowsToUmum } from './docxImport';
 import { fileSaysTempat, tahunDigits, withTempat } from './positionWords';
 
 // Turns the AI's reading of a text PDF (supabase/functions/read-order-file,
@@ -186,11 +186,12 @@ const SCHOOL_LINE_RE = /^(SK|SJK\s*\(?\s*[CT]\s*\)?|SJKC|SJKT|SMK|SMJK|SMKA|SRA|
 // PROGRAM … / SK BUKIT RIMAU 2026). The TAJUK BESAR lines the AI gave go on top of the label.
 // Name lists (name first) are left to the old grouping. Returns { categorized, count, notes, taken }.
 function schoolLineTabs(items) {
-  const clean = (list) => list.map((t) => String(t ?? '').replace(/\s+/g, ' ').trim()).filter(Boolean);
+  // a line break inside a line is kept (a bracketed subject folded in as the award's second line)
+  const clean = (list) => list.map((t) => String(t ?? '').replace(/[^\S\n]+/g, ' ').trim()).filter(Boolean);
   const parsed = items.map(({ row, heading }) => {
     if (row.nameFirst) return null;
     const head = clean(String(heading || '').split('\n'));
-    const own = clean(row.lines);
+    const own = clean(foldBracketSubjects(row.lines));
     const at = own.findIndex((t, i) => (head.length || i > 0) && SCHOOL_LINE_RE.test(t));
     return at >= 0 && head.length + at > 0 ? { row, head, pre: own.slice(0, at), school: own[at], after: own.slice(at + 1).join('\n') } : null;
   }).filter(Boolean);

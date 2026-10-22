@@ -546,6 +546,21 @@ function makeBook(zip, files, { DOMParser: DP, XMLSerializer: XS }) {
         }
       }));
     if (stylesDoc && wrapped.size) zip.file('xl/styles.xml', ser(stylesDoc));
+    // A sheet's <dimension> grows to its last written cell: readers (the website's own upload
+    // included) go by it, so rows written past the template's (Selempang no. 8 on) were lost
+    // (Sean, 2026-10-22).
+    docs.forEach((doc) => {
+      const dim = doc.getElementsByTagNameNS(MAIN_NS, 'dimension')[0];
+      const refs = Array.from(doc.getElementsByTagNameNS(MAIN_NS, 'c')).map((c) => c.getAttribute('r')).filter(Boolean);
+      if (!dim || !refs.length) return;
+      const range = XLSX.utils.decode_range(dim.getAttribute('ref') || 'A1');
+      refs.forEach((ref) => {
+        const { r, c } = XLSX.utils.decode_cell(ref);
+        range.e.r = Math.max(range.e.r, r);
+        range.e.c = Math.max(range.e.c, c);
+      });
+      dim.setAttribute('ref', XLSX.utils.encode_range(range));
+    });
     docs.forEach((doc, path) => zip.file(path, ser(doc)));
     // Every total is recalculated when the file is opened; the old
     // calculation chain would point at cells that changed.

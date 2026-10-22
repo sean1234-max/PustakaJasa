@@ -361,3 +361,12 @@ describe('fillOrderTemplate, ORDER LAIN-LAIN ①–④ as on the page (Sean, 202
     ]);
   });
 });
+
+describe('fillOrderTemplate, rows past the template read back (Sean, 2026-10-22)', () => {
+  it('all 13 selempang come back when the form is uploaded again', async () => {
+    const selempang = Array.from({ length: 13 }, (_, i) => ({ acara: `TOKOH ${i + 1}`, warna: 'BIRU', qty: 1 }));
+    const res = await fillOrderTemplate(fs.readFileSync('public/templates/FORM-ANUGERAH.xlsx'), { plaques: [], selempang }, { DOMParser, XMLSerializer });
+    const rows = XLSX.utils.sheet_to_json(XLSX.read(res.buffer, { type: 'array' }).Sheets.SELEMPANG, { header: 1, defval: '' });
+    expect(rows.filter((r) => /^TOKOH \d+$/.test(r[0])).length).toBe(13);
+  });
+});

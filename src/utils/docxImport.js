@@ -310,13 +310,44 @@ const dropSubjectShortForm = (line) => String(line ?? '').replace(TRAILING_NOTE_
 // the award ("TOKOH AKADEMIK (LELAKI) / TAHAP 1" -> TOKOH AKADEMIK /
 // LELAKI / TAHAP 1), Sean 2026-10-17.
 const GENDER_NOTE_RE = /^(.*\S)\s*\(\s*(LELAKI|PEREMPUAN)\s*\)\s*$/i;
+// A subject in brackets — "MATA PELAJARAN TERBAIK TAHUN 6 (BAHASA MELAYU)", or "(BAHASA MELAYU)" on
+// the line below — is engraved: the award's second line, brackets off (Sean, 2026-10-22). Short
+// forms like (BM) are still dropped. Any full subject name of the website's MP sheets counts.
+const SUBJECT_NAMES = [
+  'BAHASA MELAYU', 'BAHASA INGGERIS', 'MATEMATIK', 'SAINS', 'PENDIDIKAN ISLAM', 'BAHASA ARAB',
+  'PENDIDIKAN SENI VISUAL', 'PENDIDIKAN JASMANI', 'PENDIDIKAN KESIHATAN', 'PENDIDIKAN MUZIK', 'PENDIDIKAN MORAL',
+  'BAHASA CINA', 'BAHASA TAMIL', 'SEJARAH', 'REKA BENTUK & TEKNOLOGI', 'REKA BENTUK TEKNOLOGI',
+  'PENDIDIKAN JASMANI & PENDIDIKAN KESIHATAN', 'PENDIDIKAN JASMANI & KESIHATAN',
+  'MATEMATIK AWAL', 'SAINS AWAL', 'KREATIVITI ESTETIKA', 'PENDIDIKAN SENI', 'TEKNOLOGI MAKLUMAT',
+];
+const subjectKey = (t) => String(t || '').toUpperCase().replace(/&/g, ' DAN ').replace(/[^A-Z0-9]+/g, ' ').trim();
+const SUBJECT_KEYS = new Set(SUBJECT_NAMES.map(subjectKey));
+const BRACKET_SUBJECT_RE = /^(.*?)\s*\(\s*([^()]+?)\s*\)\s*$/;
+// a bracketed subject at the end of the line (or the whole line): [before, subject] — else null
+export function bracketSubject(line) {
+  const m = BRACKET_SUBJECT_RE.exec(String(line ?? '').trim());
+  return m && SUBJECT_KEYS.has(subjectKey(m[2])) ? [m[1].trim(), m[2].replace(/\s+/g, ' ').trim()] : null;
+}
+// The lines with each bracketed subject folded into the award line above as its second line.
+export function foldBracketSubjects(lines) {
+  const out = [];
+  (lines || []).forEach((line) => {
+    const b = bracketSubject(line);
+    if (!b) { out.push(line); return; }
+    if (b[0]) out.push(`${b[0]}\n${b[1]}`);
+    else if (out.length) out[out.length - 1] = `${out[out.length - 1]}\n${b[1]}`;
+    else out.push(b[1]);
+  });
+  return out;
+}
+
 const wordingLine = (line) => {
   const m = GENDER_NOTE_RE.exec(String(line ?? '').trim());
   return m ? [dropSubjectShortForm(m[1]), m[2]] : [dropSubjectShortForm(line)];
 };
 
 export function wordingRowsToCategorized(inputRows, heading = '', { keepOrder = false } = {}) {
-  const rows = inputRows.map((r) => ({ ...r, lines: (r.lines || []).flatMap(wordingLine).filter(Boolean) }));
+  const rows = inputRows.map((r) => ({ ...r, lines: foldBracketSubjects(r.lines || []).flatMap(wordingLine).filter(Boolean) }));
   // Group by award title + plaque code. One title with two different codes
   // is two awards (each block carries one Jenis Plak) — both kept, each
   // labelled with its own code so neither silently takes the other's.
@@ -428,7 +459,7 @@ export function wordingRowsToCategorized(inputRows, heading = '', { keepOrder = 
 // aren't that shape (one award only, the lines under it differ, a name
 // list), so they're grouped as before.
 export function wordingRowsToUmum(inputRows, heading = '') {
-  const rows = inputRows.map((r) => ({ ...r, lines: (r.lines || []).flatMap(wordingLine).filter(Boolean) }));
+  const rows = inputRows.map((r) => ({ ...r, lines: foldBracketSubjects(r.lines || []).flatMap(wordingLine).filter(Boolean) }));
   if (rows.length < 2) return null;
   const fields = wordingFieldsForRows(rows);
   if (fields.some((f) => f.nameFirst || !f.position)) return null;

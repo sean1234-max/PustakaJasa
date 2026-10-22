@@ -338,3 +338,15 @@ describe('a Word order that repeats the heading in every WORDING cell', () => {
     expect(matchJenisPlakPath(cleanDocxPlakCode('CPH C'), tree)).toBe('CPH / C');
   });
 });
+
+describe('a subject in brackets is engraved as the award\'s second line (Sean, 2026-10-22)', () => {
+  it('folds (BAHASA MELAYU) into the line above or the same line, brackets off; (BM) stays a dropped note', async () => {
+    const { foldBracketSubjects, wordingRowsToCategorized } = await import('./docxImport');
+    expect(foldBracketSubjects(['MAJLIS 2026', 'MATA PELAJARAN TERBAIK TAHUN 6', '(BAHASA MELAYU)'])).toEqual(['MAJLIS 2026', 'MATA PELAJARAN TERBAIK TAHUN 6\nBAHASA MELAYU']);
+    expect(foldBracketSubjects(['MATA PELAJARAN TERBAIK (PENDIDIKAN JASMANI DAN KESIHATAN)'])).toEqual(['MATA PELAJARAN TERBAIK\nPENDIDIKAN JASMANI DAN KESIHATAN']);
+    expect(foldBracketSubjects(["ANUGERAH PENDETA ZA'ABA (BM)"])).toEqual(["ANUGERAH PENDETA ZA'ABA (BM)"]);
+    const rows = ['BAHASA MELAYU', 'SAINS'].map((sub) => ({ lines: ['MATA PELAJARAN TERBAIK TAHUN 6', `(${sub})`], qty: 8, kod: 'PK 261 B' }));
+    const { categorized } = wordingRowsToCategorized(rows);
+    expect(Object.values(categorized).flat().map((sec) => sec.lines[2])).toEqual(['MATA PELAJARAN TERBAIK TAHUN 6\nBAHASA MELAYU', 'MATA PELAJARAN TERBAIK TAHUN 6\nSAINS']);
+  });
+});

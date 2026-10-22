@@ -90,6 +90,8 @@ export default function SalesOrderSummary() {
   // "Salesman hantar sendiri" — the salesman delivers this order himself;
   // saved on Approve, printed on the order for Store Admin (0079).
   const [salesmanDeliveryDraft, setSalesmanDeliveryDraft] = useState(() => !!order?.salesmanDelivery);
+  // The salesman can edit the Remark while approving (Sean, 2026-10-22) — saved on Approve.
+  const [remarkDraft, setRemarkDraft] = useState(() => order?.remark || '');
   const [functionDateDraft, setFunctionDateDraft] = useState(() => (order?.functionDate ? toMalaysiaDay(order.functionDate) : null));
   const [dateError, setDateError] = useState('');
   // An order with no Shipment Date yet starts at a week after it was placed
@@ -223,6 +225,7 @@ export default function SalesOrderSummary() {
     if (shipmentDate) overrides.shipmentDate = shipmentDate;
     if (functionDateDraft) overrides.functionDate = functionDateDraft;
     overrides.salesmanDelivery = salesmanDeliveryDraft;
+    overrides.remark = remarkDraft.trim();
     setBusy(true);
     await approveOrder(order.id, updatedItems, overrides);
     setBusy(false);
@@ -357,7 +360,12 @@ export default function SalesOrderSummary() {
                   this SAME field but had nowhere to actually surface for
                   Sales, so it went unseen until the teacher happened to
                   mention it separately. See AppState.jsx's importFormAnugerahExcel. */}
-              {order.remark && (
+              {editable ? (
+                <div style={{ marginTop: 'var(--space-4)' }}>
+                  <label className="dim" htmlFor="salesRemark">Remark</label>
+                  <textarea id="salesRemark" rows={3} style={{ width: '100%' }} value={remarkDraft} onChange={(e) => setRemarkDraft(e.target.value)} />
+                </div>
+              ) : order.remark && (
                 <div style={{ marginTop: 'var(--space-4)' }}>
                   <div className="dim">Remark</div>
                   <div>{order.remark}</div>

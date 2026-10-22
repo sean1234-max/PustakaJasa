@@ -1479,3 +1479,33 @@ describe('parseFormAnugerahExcel — an ALIRAN sheet turned into a list of award
     ]);
   });
 });
+
+describe("a school's own one-row-per-item list (WORDING + BILANGAN)", () => {
+  it('reads plaques as ORDER LAIN-LAIN ①②③, other items as their own tab, SELEMPANG as the list', () => {
+    const buf = workbookFromSheets({
+      TEMPAHAN: [
+        ['TEMPAHAN HADIAH'],
+        ['BIL', 'JENIS HADIAH', 'KOD HADIAH', 'WORDING', 'BILANGAN', 'HARGA', 'JUMLAH'],
+        [1, 'PLAK', 'PK 261 B', 'MAJLIS 2026\nMATA PELAJARAN TERBAIK TAHUN 6\n(BAHASA MELAYU)', 8, 'RM9.00', 'RM72.00'],
+        [2, 'PLAK', 'PK 261 B', 'MAJLIS 2026\nANUGERAH CAHAYA\nTAHUN 6', 4, 9, 36],
+        [3, 'SET ALAS TULIS (A4)', '26-9F', 'MAJLIS 2026\nKELAS TERBAIK', 25, 9, 225],
+        [4, 'SELEMPANG', 'KUNING', 'MAJLIS 2026\nTOKOH KURIKULUM', 1, 15, 15],
+        [5, 'HAND BOUQUET', 'GTS 25 B', '', 13, 25, 325],
+        ['', '', '', 'JUMLAH', '', '', 673],
+      ],
+    });
+    const { categorized } = parseFormAnugerahExcel(buf.buffer);
+    const umum = [].concat(categorized.UMUM)[0];
+    expect(umum.lines).toMatchObject({ 0: 'MAJLIS 2026', 1: 'MATA PELAJARAN TERBAIK TAHUN 6\nBAHASA MELAYU', umumRed: '1' });
+    expect(umum.umumRows.map((r) => [r.qty, r.l1, r.l2, r.toRemark])).toEqual([
+      [8, '', '', 'PK 261 B/RM9.00/RM72.00'],
+      [4, 'ANUGERAH CAHAYA', 'TAHUN 6', 'PK 261 B/RM9.00/RM36.00'],
+    ]);
+    const alas = [].concat(categorized[makeDynamicCategoryKey('UMUM', 'SET ALAS TULIS')])[0];
+    expect(alas.umumRows[0]).toMatchObject({ qty: 25, jenisPlak: '26-9F', toRemark: '26-9F/RM9.00/RM225.00' });
+    const bouquet = [].concat(categorized[makeDynamicCategoryKey('UMUM', 'HAND BOUQUET')])[0];
+    expect(bouquet.umumRows[0]).toMatchObject({ noWording: true, toRemark: 'GTS 25 B/RM25.00/RM325.00' });
+    const sel = [].concat(categorized.SELEMPANG)[0];
+    expect(sel.selempangRows).toEqual([expect.objectContaining({ acara: 'TOKOH KURIKULUM', warna: 'KUNING', qty: 1 })]);
+  });
+});
