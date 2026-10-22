@@ -29,6 +29,26 @@ export function prioritizeUrgentOrders(orders) {
   return [...orders].sort((a, b) => Number(!!b.urgent) - Number(!!a.urgent));
 }
 
+// A Tambahan's cards sit right after its parent order's cards when both are in the list (Sean,
+// 2026-10-22: ORD-0088, a Tambahan of ORD-0069, beside 0069's ACARA and CRYSTAL cards); otherwise
+// it keeps its own place.
+export function keepTambahanWithParent(cards) {
+  const ids = new Set(cards.map((c) => c.id));
+  const children = new Map();
+  cards.forEach((c) => {
+    if (!c.parentOrderId || !ids.has(c.parentOrderId)) return;
+    children.set(c.parentOrderId, [...(children.get(c.parentOrderId) || []), c]);
+  });
+  const out = [];
+  cards.forEach((c, i) => {
+    if (c.parentOrderId && ids.has(c.parentOrderId)) return;
+    out.push(c);
+    const lastOfParent = !cards.slice(i + 1).some((n) => n.id === c.id);
+    if (lastOfParent) out.push(...(children.get(c.id) || []));
+  });
+  return out;
+}
+
 // An urgent order gives up 2.5% of its whole order total (add-ons
 // included) as commission (Sean, 2026-10-06). The Edge Function
 // sync-urgent-order-sheet writes the same figure to the Google Sheet.

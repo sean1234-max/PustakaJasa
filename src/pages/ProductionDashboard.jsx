@@ -7,7 +7,7 @@ import { statusPillStyle, formatDate, getLowStockAlerts, toMalaysiaDay, isAddonI
 import { getOrderChangeStamp } from '../utils/orderStamp';
 import { getOrderInvoiceSlices } from '../utils/orderBatches';
 import { countReservedPlaques, needsKiv, kivParts, hasMainPart, kivInProduction, kivInTyping } from '../utils/exportCsv';
-import { prioritizeUrgentOrders } from '../utils/urgentOrder';
+import { prioritizeUrgentOrders, keepTambahanWithParent } from '../utils/urgentOrder';
 import OrderUrgentBadge from '../components/OrderUrgentBadge';
 import AddOnTag from '../components/AddOnTag';
 import { MANUAL_ARTWORK_NOTE } from '../components/CrystalPreview';
@@ -128,10 +128,11 @@ export default function ProductionDashboard() {
   // A main card in no tab whose order's KIV card shows (all crystal / Reserved, nothing to type —
   // ORD-0084, Sean 2026-10-20) is left out, as in the tabs.
   const kivCardShown = (o) => orderSlices.some((k) => k._part === 'kiv' && k.id === o.id && cardTabOf(k));
-  const filteredOrders = searching
+  // a Tambahan's cards next to its parent's (keepTambahanWithParent)
+  const filteredOrders = keepTambahanWithParent(searching
     ? orderSlices.filter((o) => matchesOrderSearch(o, search) && (o._part === 'main' ? !!cardTabOf(o) || !kivCardShown(o) : cardTabOf(o)))
     : prioritizeUrgentOrders(ordersInTab
-      .filter((o) => !shipmentDateFilter || shipmentDateKey(o.shipmentDate) === shipmentDateFilter));
+      .filter((o) => !shipmentDateFilter || shipmentDateKey(o.shipmentDate) === shipmentDateFilter)));
 
   // Only shipment dates that actually have an order in this tab are
   // selectable — production shouldn't be able to pick a date with nothing
