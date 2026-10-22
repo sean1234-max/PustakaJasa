@@ -1518,4 +1518,7 @@ describe('matchJenisPlakPath: a letter O typed for a zero', () => {
     expect(matchJenisPlakPath('R-100 DESIGN C', tree)).toBe('CRYSTAL / R-100 / DESIGN C');
     expect(matchJenisPlakPath('BOOK', tree)).toBe('');
   });
+  it('reads "P261" as PK 261 A', () => {
+    expect(matchJenisPlakPath('P261', [{ code: 'PK 261', children: ['A', 'B', 'C'].map((code) => ({ code, children: [] })) }])).toBe('PK 261 / A');
+  });
 });

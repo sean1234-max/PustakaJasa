@@ -1,6 +1,6 @@
 import JSZip from 'jszip';
 import { makeDynamicCategoryKey, resolveSelempangWarna } from '../data/catalog';
-import { readSelempangFromDocument } from './docxSelempang';
+import { readSelempangFromDocument, readPlaqueBoxes } from './docxSelempang';
 import { schoolListSections } from './schoolList';
 
 // A second real-world order shape, completely different from any Excel
@@ -609,6 +609,14 @@ export async function parseWordingDocx(arrayBuffer, { DOMParser: DP = globalThis
   // A school's list table, top to bottom (schoolList.js)
   schoolListSections(listRows.map((r) => ({ lines: foldBracketSubjects(r.lines), qty: r.qty, type: '', kod: r.kod, unit: r.unit, total: r.unit * r.qty })))
     .forEach((sec) => { categorized[sec.isSelempangList ? 'SELEMPANG' : (sec.dynamicCategoryKey || 'UMUM')] = [sec]; });
+  // No table at all: plaques drawn as text boxes (docxSelempang.js readPlaqueBoxes), top to bottom
+  if (count === 0 && listRows.length === 0) {
+    const boxed = readPlaqueBoxes(doc);
+    notes.push(...boxed.notes);
+    boxed.items.forEach((it) => listRows.push({ ...it, lines: it.lines, unit: 0 }));
+    schoolListSections(listRows.map((r) => ({ lines: foldBracketSubjects(r.lines), qty: r.qty, type: '', kod: r.kod, unit: 0, total: 0 })))
+      .forEach((sec) => { categorized[sec.isSelempangList ? 'SELEMPANG' : (sec.dynamicCategoryKey || 'UMUM')] = [sec]; });
+  }
   if (count === 0 && listRows.length === 0) {
     return { klasMatrix: null, error: 'No recognized WORDING/KUANTITI or LABEL/BILANGAN table found in this file.' };
   }

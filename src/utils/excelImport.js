@@ -2137,8 +2137,14 @@ function findBestCodeMatch(nodes, normalized, minLen = MIN_INDEPENDENT_CODE_LEN)
 const zeroForO = (text) => String(text).replace(/\b[A-Z0-9-]*O[A-Z0-9-]*\b/gi, (w) => (
   /^O{2,}[A-Z]?$/i.test(w) || /\dO|O\d/i.test(w) ? w.replace(/O/gi, '0') : w));
 
+// Codes schools write short, as Sean reads them (2026-10-22: "P261" is PK 261 A) — tried only when
+// the code as written matches nothing. Keyed by the code with spaces and dashes taken out.
+const CODE_ALIASES = { P261: 'PK 261 A' };
+
 export function matchJenisPlakPath(rawText, plakTree) {
   const exact = matchJenisPlakPathAsWritten(rawText, plakTree);
+  const alias = CODE_ALIASES[String(rawText || '').toUpperCase().replace(/[\s-]/g, '')];
+  if (!exact && alias) return matchJenisPlakPathAsWritten(alias, plakTree);
   if (exact || !/O/i.test(String(rawText || ''))) return exact;
   const swapped = zeroForO(rawText);
   return swapped === rawText ? '' : matchJenisPlakPathAsWritten(swapped, plakTree);

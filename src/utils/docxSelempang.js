@@ -138,6 +138,53 @@ export function readSelempangFromDocument(doc) {
   };
 }
 
+// The lines of every text box drawn in this paragraph (Word's older VML copy under mc:Fallback
+// skipped), one array per box.
+function boxTexts(p) {
+  const boxes = [];
+  const lineOf = (para) => {
+    let t = '';
+    const walk = (node) => elements(node).forEach((el) => { if (is(el, W_NS, 't')) t += el.textContent; else if (is(el, W_NS, 'tab')) t += ' '; else walk(el); });
+    walk(para);
+    return t.replace(/\s+/g, ' ').trim();
+  };
+  const walk = (node) => elements(node).forEach((el) => {
+    if (el.namespaceURI === MC_NS && el.localName === 'Fallback') return;
+    if (is(el, W_NS, 'txbxContent')) { boxes.push(elements(el).filter((c) => is(c, W_NS, 'p')).map(lineOf).filter(Boolean)); return; }
+    walk(el);
+  });
+  walk(p);
+  return boxes;
+}
+
+// Plaques drawn as text boxes (Sean, 2026-10-22: SK LEFTENAN ADNAN prasekolah) — a line
+// "WOODEN PLAQUE (PKC 246) – 2 PCS" above, then a box per plaque with its wording and small
+// "2 PCS" boxes beside them. Each heading's PCS is shared evenly by the wording boxes under it.
+// -> { items: [{ lines, qty, kod }], notes } (items empty when the file isn't drawn this way).
+const BOX_HEADING_RE = /\(\s*([^()]+?)\s*\)\s*[–—-]?\s*(\d+)\s*(?:PCS|PC|UNIT|KEPING)\b/i;
+const PCS_BOX_RE = /^\d+\s*(?:PCS|PC|UNIT|KEPING)\.?$/i;
+export function readPlaqueBoxes(doc) {
+  const body = doc.getElementsByTagNameNS(W_NS, 'body')[0];
+  if (!body) return { items: [], notes: [] };
+  const groups = [];
+  let cur = null;
+  bodyParagraphs(body).forEach((p) => {
+    const text = ownText(p);
+    const m = text && !HEADING_RE.test(text) ? BOX_HEADING_RE.exec(text) : null;
+    if (m) { cur = { kod: m[1].trim(), total: Number(m[2]), boxes: [] }; groups.push(cur); }
+    if (!cur) return;
+    boxTexts(p).forEach((lines) => { if (lines.length && !(lines.length === 1 && PCS_BOX_RE.test(lines[0]))) cur.boxes.push(lines); });
+  });
+  const notes = [];
+  const items = groups.flatMap((g) => {
+    if (!g.boxes.length) return [];
+    const even = g.total % g.boxes.length === 0;
+    if (!even) notes.push(`"${g.kod}": ${g.total} PCS can't be shared evenly by its ${g.boxes.length} plaques — each is read as 1, please check the quantities.`);
+    return g.boxes.map((lines) => ({ lines, qty: even ? g.total / g.boxes.length : 1, kod: g.kod }));
+  });
+  return { items, notes };
+}
+
 // Same, from the .docx file itself (for the AI reader's path). Never throws.
 export async function readDocxSelempang(arrayBuffer, { DOMParser: DP = globalThis.DOMParser } = {}) {
   try {

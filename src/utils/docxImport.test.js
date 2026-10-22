@@ -375,3 +375,27 @@ describe("a school's own list in Word (NAMA | CODE | JUMLAH | HARGA)", () => {
     expect(categorized.SELEMPANG[0].selempangRows).toEqual([expect.objectContaining({ acara: 'TOKOH MURID 2026', warna: 'MERAH', qty: 1 })]);
   });
 });
+
+describe('plaques drawn as text boxes (no table)', () => {
+  it('reads each box as a plaque, the heading\'s code and PCS shared evenly, "2 PCS" boxes skipped', async () => {
+    const box = (text) => `<w:p><w:r><w:txbxContent>${text.split('\n').map((l) => `<w:p><w:r><w:t>${esc(l)}</w:t></w:r></w:p>`).join('')}</w:txbxContent></w:r></w:p>`;
+    const buf = await makeDocx([
+      para('PRASEKOLAH SK CONTOH'),
+      para('WOODEN PLAQUE (PKC 246) – 1 PCS'),
+      box('MAJLIS SERAH SIJIL\nIKON MURID CEMERLANG\nKELAS PRA GENIUS'),
+      para('WOODEN PLAQUE (P261) – 4 PCS'),
+      box('MAJLIS SERAH SIJIL\nIKON KEHADIRAN TERBAIK\nPRASEKOLAH DINAMIK'),
+      box('2 PCS'),
+      box('MAJLIS SERAH SIJIL\nIKON KEHADIRAN TERBAIK\nPRASEKOLAH GENIUS'),
+    ].join(''));
+    const { categorized, error } = await parse(buf);
+    expect(error).toBeUndefined();
+    const umum = categorized.UMUM[0];
+    expect(umum.lines).toMatchObject({ 0: 'MAJLIS SERAH SIJIL', 1: 'IKON MURID CEMERLANG', 2: 'KELAS PRA GENIUS' });
+    expect(umum.umumRows.map((r) => [r.l1, r.l2, r.qty, r.jenisPlak])).toEqual([
+      ['', '', 1, 'PKC 246'],
+      ['IKON KEHADIRAN TERBAIK', 'PRASEKOLAH DINAMIK', 2, 'P261'],
+      ['IKON KEHADIRAN TERBAIK', 'PRASEKOLAH GENIUS', 2, 'P261'],
+    ]);
+  });
+});
