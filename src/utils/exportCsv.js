@@ -702,7 +702,8 @@ function buildAliranRows(item, header, year, acara) {
         .filter((c) => (c.desc || '').trim());
       classes.forEach((c) => {
         const cq = Math.max(0, Number(c.qty) || 0);
-        const classLine = [tr.desc, c.desc.trim()].filter(Boolean).join(' ');
+        // "-": a level with no class names (only its QTY) — the level alone (Sean, 2026-10-22)
+        const classLine = [tr.desc, c.desc.trim() === '-' ? '' : c.desc.trim()].filter(Boolean).join(' ');
         if (hingga > 0) {
           if (!item.posDari) return; // flat plak doesn't take the ranked Tahuns
           const lo = Number(item.posDari);

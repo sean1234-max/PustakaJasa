@@ -1261,3 +1261,20 @@ describe('Reserved names on ORDER LAIN-LAIN (Sean, 2026-10-21)', () => {
     expect(rows[0].slice(0, 5).join('|')).toContain('ALI BIN ABU');
   });
 });
+
+describe('ALIRAN (Kalau ada kelas) — a class "-" engraves the level alone (Sean, 2026-10-22)', () => {
+  it('PPKI with QTY 3 each of PERTAMA-KETIGA: 9 plaques reading "PPKI"', async () => {
+    const { buildCsvRows } = await import('./exportCsv');
+    const item = {
+      id: 'k', categoryKey: 'ALIRAN_KELAS', blockIdx: 0, jenisPlak: 'MP393 / GOLD / BASE C', qty: 9, posDari: 1, posHingga: 3,
+      detail: {
+        lines: { 'ALIRAN_KELAS::0::0': 'HARI ANUGERAH CEMERLANG 2026', 'ALIRAN_KELAS::0::2': 'TERBAIK KEDUDUKAN DALAM KELAS', 'ALIRAN_KELAS::0::2b': 'TAHUN 1 ZAMRUD', 'ALIRAN_KELAS::0::3': 'TEMPAT PERTAMA' },
+        rows: [{ id: 1, desc: 'PPKI', qty: '9', kedudukanHingga: 3 }],
+        namaKelasBreakdown: { 'ALIRAN_KELAS::0::PPKI::main': [{ id: 2, desc: '-', qty: '3' }] },
+      },
+    };
+    const { rows } = buildCsvRows({ schoolLanguage: 'SK', items: [item] }, 'ALIRAN_KELAS', [item]);
+    expect(rows).toHaveLength(9);
+    expect(new Set(rows.map((x) => x[4]))).toEqual(new Set(['PPKI']));
+  });
+});

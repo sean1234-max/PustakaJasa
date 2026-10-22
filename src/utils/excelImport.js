@@ -1435,6 +1435,18 @@ function parseAliranSheet(ws) {
 // "TAHUN 2"/... headers up with each NAMA KELAS/QTY block). Each Tahun's
 // TOTAL is then (sum of its Nama Kelas QTY) x (its KEDUDUKAN range size),
 // computed live on the website — see computeBlocks.js's aliranNamaKelas.
+// A level whose classes have only a QTY, no NAMA KELAS (SK SEKSYEN 7's PPKI: just "3"): one class
+// named "-" — counted like any class, engraved as the level alone ("PPKI"), Sean 2026-10-22.
+function withUnnamedQty(rows, ws, range, block) {
+  if (rows.length) return rows;
+  const out = [];
+  for (let r = block.headerRow + 1; r <= range.r2; r++) {
+    if (isTotalLabel(cellText(ws, r, block.nkCol))) break;
+    if (!cellText(ws, r, block.nkCol) && cellNum(ws, r, block.qtyCol) > 0) out.push({ name: '-', qty: cellNum(ws, r, block.qtyCol) });
+  }
+  return out;
+}
+
 function parseAliranKelasSheet(ws) {
   const base = parseAliranSheet(ws);
   if (!base) return null;
@@ -1447,7 +1459,7 @@ function parseAliranKelasSheet(ws) {
       .map((b) => ({
         // the left table's own spelling (PRASEKOLAH here, PRA SEKOLAH there: one level)
         label: base.tahunRows.find((tr) => levelKey(tr.tahun) === levelKey(b.label))?.tahun || normalizeTahun(b.label) || b.label,
-        mainRows: readPpkiListRows(ws, range, b.nkCol, b.qtyCol, b.headerRow + 1),
+        mainRows: withUnnamedQty(readPpkiListRows(ws, range, b.nkCol, b.qtyCol, b.headerRow + 1), ws, range, b),
         moralRows: [],
       }))
       .filter((lb) => lb.label && lb.mainRows.length > 0);

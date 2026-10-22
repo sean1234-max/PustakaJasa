@@ -209,6 +209,19 @@ describe('parseFormAnugerahExcel — PBD Tahun labels follow the sheet', () => {
 });
 
 describe('parseFormAnugerahExcel — ALIRAN TERBAIK (Kalau ada kelas)', () => {
+  it('a level with only a QTY and no NAMA KELAS is one class "-" (Sean, 2026-10-22)', () => {
+    const r = [];
+    r[0] = [null, null, null, null, 'TOLONG ISI DI SINI'];
+    r[1] = [null, null, null, null, 'HARI ANUGERAH CEMERLANG 2026'];
+    r[8] = ['TAHUN', 'KEDUDUKAN', null, 'TOTAL', null, null, 'TAHUN 1', null, null, 'PPKI'];
+    r[9] = [null, 'DARI', 'HINGGA KE', null, null, null, 'NAMA KELAS', 'QTY', null, 'NAMA KELAS', 'QTY'];
+    r[10] = ['TAHUN 1', 'PERTAMA', 'KETIGA', 3, null, null, 'ZAMRUD', 1, null, null, 3];
+    r[11] = ['PPKI', 'PERTAMA', 'KETIGA', 9];
+    r[12] = ['TOTAL:'];
+    const section = (parseFormAnugerahExcel(workbookFromSheets({ 'ALIRAN TERBAIK Kalau ada kelas': r.map((x) => x || []) })).categorized?.ALIRAN_KELAS || [])[0];
+    expect(section.levelBreakdown.map((l) => [l.label, l.mainRows])).toEqual([['TAHUN 1', [{ name: 'ZAMRUD', qty: 1 }]], ['PPKI', [{ name: '-', qty: 3 }]]]);
+  });
+
   it('reads PRA SEKOLAH / PPKI levels too, as the teacher wrote them (Sean, 2026-10-21)', () => {
     const r = [];
     r[0] = [null, null, null, null, 'TOLONG ISI DI SINI'];
