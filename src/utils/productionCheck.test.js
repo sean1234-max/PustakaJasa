@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { plaqueProblems, checkPlaqueWording, checkPlaqueCounts } from './productionCheck';
+import { plaqueProblems, checkPlaqueWording, checkPlaqueCounts, checkAiReport } from './productionCheck';
 import { compareWords } from './sourceCheck';
 import { CSV_COLUMNS } from './exportCsv';
 
@@ -40,5 +40,31 @@ describe('compareWords', () => {
       orderText: 'SK TAMAN GEMBIRA',
     });
     expect(r).toEqual({ missing: ['BESTARI', 'BIJAK'], extra: ['TAHUN'] });
+  });
+});
+
+describe('checkAiReport', () => {
+  it('flags a file not made, a plaque count, text that changed, and a line broken where the CSV has none', () => {
+    const csvRows = [
+      row({ position: 'ANUGERAH KHAS NILAM', jenis_plak: 'PKC 263' }),
+      row({ position: 'TOKOH MURID', jenis_plak: 'PKC 263' }),
+      row({ position: 'X', jenis_plak: 'VB / C / RED' }),
+    ];
+    const report = {
+      files: [{ codes: 'PKC 263', file: 'E CUT 5 - OUTPUT.ai', state: 'saved', rows: 2, reason: '' }, { codes: 'VB / C / RED', file: '', state: 'skipped', rows: 1, reason: 'no matching .ai template' }],
+      counts: { 'PKC 263': 1 },
+      plaques: [
+        { code: 'PKC 263', field: 'position', csv: ['ANUGERAH KHAS NILAM'], laid: ['ANUGERAH KHAS', 'NILAM'] },
+        { code: 'PKC 263', field: 'event_header', csv: ['MAJLIS ANUGERAH 2026'], laid: ['MAJLIS ANUGERAH'] },
+        { code: 'PKC 263', field: 'event_line_1', csv: ['TAHUN 6'], laid: ['TAHUN 6'] },
+        { code: 'PKC 263', field: 'event_line_1', csv: ['MUHAMMAD AQIL BIN MOHD RAZALI'], laid: ['MUHAMMAD AQIL', 'BIN MOHD RAZALI'] },
+      ],
+    };
+    expect(checkAiReport(report, csvRows).map((i) => i.text)).toEqual([
+      'No AI file made for VB / C / RED — no matching .ai template (1 plaque(s))',
+      'PKC 263: the CSV has 2 plaque(s) but the AI file has 1',
+      'position broken onto 2 lines: "ANUGERAH KHAS / NILAM"',
+      'event_header: "MAJLIS ANUGERAH 2026" came out as "MAJLIS ANUGERAH"',
+    ]);
   });
 });

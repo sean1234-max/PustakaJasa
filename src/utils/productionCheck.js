@@ -60,3 +60,50 @@ export function checkPlaqueCounts(groups) {
     }];
   });
 }
+
+// After Generate AI File: SEAN.jsx's run report (AI File helper v5, job.report) against the CSV the
+// website sent. A file not made, a Jenis Plak with fewer / more plaques laid out than in the CSV,
+// a field whose words differ from the CSV (cut off / changed), a field broken onto more lines than
+// the CSV has. Same problem on many plaques = one issue.
+// SEAN.jsx breaks a name on purpose before BIN / BINTI / A/L / A/P (splitNameAtBin) — not a problem.
+const NAME_BREAK_RE = /^(BIN|BINTI|BT|A\/L|A\/P)\b/;
+const nameSplitOnly = (csv, laid) => laid.length === csv.filter(Boolean).length + 1 && laid.slice(1).some((l) => NAME_BREAK_RE.test(l));
+const squashText = (lines) => norm((lines || []).join(' ')); // \s also takes the no-break spaces SEAN.jsx adds
+export function checkAiReport(report, csvRows) {
+  if (!report) return [];
+  const issues = [];
+  (report.files || []).filter((f) => f.state !== 'saved').forEach((f) => issues.push({
+    kind: 'file', count: f.rows, sample: f.codes,
+    text: `No AI file made for ${f.codes || '(no code)'} — ${f.reason || f.state} (${f.rows} plaque(s))`,
+  }));
+  const ordered = {};
+  (csvRows || []).forEach((r) => {
+    if (!plaqueLines(r).length) return;
+    const code = r[JENIS_PLAK] || '';
+    ordered[code] = (ordered[code] || 0) + 1;
+  });
+  const skippedCodes = new Set((report.files || []).filter((f) => f.state !== 'saved').flatMap((f) => f.codes.split(', ')));
+  Object.entries(ordered).forEach(([code, n]) => {
+    const laid = report.counts?.[code] || 0;
+    if (laid !== n && !skippedCodes.has(code)) {
+      issues.push({ kind: 'count', count: Math.abs(n - laid), sample: code, text: `${code}: the CSV has ${n} plaque(s) but the AI file has ${laid}` });
+    }
+  });
+  const grouped = new Map();
+  (report.plaques || []).forEach((p) => {
+    const laidLines = p.laid.map(norm).filter(Boolean);
+    let key;
+    let text;
+    if (squashText(p.csv) !== squashText(laidLines)) {
+      key = `changed|${p.field}|${squashText(p.csv)}|${laidLines.join(' / ')}`;
+      text = `${p.field}: "${p.csv.join(' / ')}" came out as "${laidLines.join(' / ') || '(nothing)'}"`;
+    } else if (laidLines.length > p.csv.filter(Boolean).length && !nameSplitOnly(p.csv, laidLines)) {
+      key = `split|${p.field}|${laidLines.join(' / ')}`;
+      text = `${p.field} broken onto ${laidLines.length} lines: "${laidLines.join(' / ')}"`;
+    } else return;
+    const hit = grouped.get(key) || { kind: key.split('|')[0], text, count: 0, sample: p.code };
+    hit.count += 1;
+    grouped.set(key, hit);
+  });
+  return [...issues, ...[...grouped.values()].sort((a, b) => b.count - a.count)];
+}

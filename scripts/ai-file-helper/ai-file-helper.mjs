@@ -33,7 +33,8 @@ export const PORT = 47821;
 // 3: a copy in the school's folder too (school-folder.mjs, Sean 2026-10-21)
 // 4: POST /templates (Production's check before Generate AI File) + the operator's name sent with
 //    /generate, so Illustrator doesn't ask for it (Sean 2026-10-22)
-const VERSION = 4;
+// 5: a finished job carries SEAN.jsx's run report (`report`) for the check after Generate
+const VERSION = 5;
 const HELPER_DIR = path.dirname(fileURLToPath(import.meta.url));
 const TEMP_DIR = path.join(tmpdir(), 'pustakajasa-ai-helper');
 // crystals can carry pictures and .svg artwork (Crystal Studio), so more room than a CSV needs
@@ -207,6 +208,24 @@ function openFolder(folder) {
 const jobs = new Map();
 let queue = Promise.resolve();
 
+// SEAN.jsx's run report ("<log>_report.tsv", automated runs): every output file and every plaque
+// field as laid out -> { files: [{ codes, file, state, rows, reason }], plaques: [{ code, field,
+// csv: [lines], laid: [lines] }], counts: { code: plaques laid out } } for the website to compare with the CSV.
+const REPORT_LINE_SEP = '\u001f';
+export function parseRunReport(text) {
+  const files = [];
+  const plaques = [];
+  const counts = {};
+  // Illustrator on a Mac writes the lines with \r
+  String(text || '').split(/\r\n|\r|\n/).forEach((line) => {
+    const c = line.split('\t');
+    if (c[0] === 'Q') counts[c[1] || ''] = (counts[c[1] || ''] || 0) + 1;
+    if (c[0] === 'F') files.push({ codes: c[1] || '', file: c[2] || '', state: c[3] || '', rows: Number(c[4]) || 0, reason: c[5] || '' });
+    if (c[0] === 'P') plaques.push({ code: c[1] || '', field: c[2] || '', csv: (c[3] || '').split(REPORT_LINE_SEP), laid: (c[4] || '').split(REPORT_LINE_SEP).filter((l, i, a) => l || i < a.length - 1) });
+  });
+  return { files, plaques, counts };
+}
+
 async function runJob(job, filename, csv, school, operator = '') {
   job.status = 'running';
   const aiFileDir = resolveAiFileDir();
@@ -215,6 +234,7 @@ async function runJob(job, filename, csv, school, operator = '') {
   const outputFolder = path.join(outputRoot, base);
   const logFileName = `last_run_log_${job.id}.txt`;
   const logPath = path.join(outputRoot, logFileName);
+  const reportPath = logPath.replace(/\.txt$/, '_report.tsv');
   job.outputFolder = outputFolder;
   try {
     if (!(await folderReachable(aiFileDir))) throw new Error(`This computer can't reach ${aiFileDir}`);
@@ -225,7 +245,9 @@ async function runJob(job, filename, csv, school, operator = '') {
     writeFileSync(scriptPath, buildFullScript(aiFileDir, csvPath, logFileName, operator), 'utf8');
     const before = listAiFilesWithMtime(outputFolder);
     rmSync(logPath, { force: true });
+    rmSync(reportPath, { force: true });
     await runIllustrator(scriptPath);
+    if (existsSync(reportPath)) job.report = parseRunReport(readFileSync(reportPath, 'utf8'));
     const log = existsSync(logPath) ? readFileSync(logPath, 'utf8') : '(Illustrator ran, but no log file was written.)';
     const after = listAiFilesWithMtime(outputFolder);
     job.files = [...after].filter(([name, mtime]) => before.get(name) !== mtime).map(([name]) => name);
@@ -240,6 +262,7 @@ async function runJob(job, filename, csv, school, operator = '') {
     job.message = err.stderr ? `Illustrator call failed: ${err.stderr.toString()}` : err.message;
   } finally {
     rmSync(logPath, { force: true });
+    rmSync(reportPath, { force: true });
   }
   // SEAN.jsx's own summary too — which batches were saved, skipped rows and
   // why — so a run that "worked but made fewer files" can be read back here.

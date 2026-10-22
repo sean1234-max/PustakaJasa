@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { checkPlaqueWording, checkPlaqueCounts, plaqueLines } from '../utils/productionCheck';
+import { checkPlaqueWording, checkPlaqueCounts, checkAiReport, plaqueLines } from '../utils/productionCheck';
 import { fileText, compareWords } from '../utils/sourceCheck';
 import { isCrystalCode } from '../utils/exportCsv';
 import { orderImportFiles } from '../utils/importFiles';
@@ -98,6 +98,27 @@ export default function ProductionChecks({ order, groups }) {
       {[templates.note, words.note, words.skipped?.length ? `Not compared: ${words.skipped.join(', ')}.` : ''].filter(Boolean).map((n) => (
         <p key={n} className="hint-text" style={{ margin: '4px 0 0' }}>{n}</p>
       ))}
+    </div>
+  );
+}
+
+// After Generate AI File: what SEAN.jsx actually laid out against the CSV that was sent
+// (productionCheck.js checkAiReport). `report` comes with the finished helper job (v5 + the new SEAN.jsx).
+export function AiFileReportCheck({ report, rows }) {
+  if (!report) {
+    return <p className="hint-text" style={{ margin: '4px 0 0' }}>No check of the finished AI file — this computer needs the new AI File helper and the NAS needs the new SEAN.jsx.</p>;
+  }
+  const issues = checkAiReport(report, rows);
+  return (
+    <div style={{ margin: 'var(--space-2) 0', padding: 'var(--space-3)', border: `1px solid ${issues.length ? '#e0b252' : '#9ccc9c'}`, borderRadius: 6, background: issues.length ? '#fff8e6' : '#f1faf1' }}>
+      <div style={{ fontWeight: 700 }}>
+        {issues.length ? `⚠ The finished AI file — check these ${issues.length} thing(s)` : '✅ The finished AI file matches the order (every file made, every plaque, no line broken or cut off)'}
+      </div>
+      {issues.length > 0 && (
+        <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+          {issues.map((i) => <li key={`${i.kind}-${i.text}`}>{i.text}{i.count > 1 && i.kind !== 'file' && i.kind !== 'count' ? ` — ${i.count} plaque(s)` : ''} <span className="dim">({i.sample})</span></li>)}
+        </ul>
+      )}
     </div>
   );
 }

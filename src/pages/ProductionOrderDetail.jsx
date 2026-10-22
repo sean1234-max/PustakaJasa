@@ -18,7 +18,7 @@ import { getExportableCategories, splitOrderCategories, getOrderJenisPlakGroups,
 import { downloadTextFile } from '../utils/downloadBlob';
 import { getInvoiceItems } from '../utils/orderBatches';
 import ImportFileButtons from '../components/ImportFileButtons';
-import ProductionChecks from '../components/ProductionChecks';
+import ProductionChecks, { AiFileReportCheck } from '../components/ProductionChecks';
 import ShipmentUrgencyEditor from '../components/ShipmentUrgencyEditor';
 import ProductionPriceEditor from '../components/ProductionPriceEditor';
 import ProductionInvoiceEntry from '../components/ProductionInvoiceEntry';
@@ -170,6 +170,8 @@ export default function ProductionOrderDetail() {
   const [exportNote, setExportNote] = useState('');
   const exportNoteTimer = useRef(null);
   const [aiFileJob, setAiFileJob] = useState(null);
+  // the CSV rows the running job was sent — what its run report is checked against
+  const aiFileSentRows = useRef([]);
   const [aiFileChecking, setAiFileChecking] = useState(false);
   const [aiFileErr, setAiFileErr] = useState('');
   const [page, setPage] = useState('summary');
@@ -407,6 +409,7 @@ export default function ProductionOrderDetail() {
       }
       if (!combinedOk) return;
       const id = await startAiFileHelperJob(buildCombinedCsvFilename(order), rowsToCsv(combinedRows), schoolFolderFor(order.sekolah));
+      aiFileSentRows.current = combinedRows;
       setAiFileJob({ id, status: 'queued', message: '', files: [] });
     } catch (err) {
       setAiFileErr(err.message || 'Could not start the AI file run. Please try again.');
@@ -681,6 +684,7 @@ export default function ProductionOrderDetail() {
                         {aiFileJob.status === 'done' && aiFileJob.schoolCopy && `\n${aiFileJob.schoolCopy}`}
                       </p>
                     )}
+                    {aiFileJob?.status === 'done' && <AiFileReportCheck report={aiFileJob.report} rows={aiFileSentRows.current} />}
                     {aiFileErr && <div className="login-error" style={{ marginTop: 4 }}>{aiFileErr}</div>}
                   </div>
                 )}

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isAllowedRequest, sanitizeFolderName, findTemplates, PORT } from './ai-file-helper.mjs';
+import { isAllowedRequest, sanitizeFolderName, findTemplates, parseRunReport, PORT } from './ai-file-helper.mjs';
 
 describe('isAllowedRequest', () => {
   const host = `127.0.0.1:${PORT}`;
@@ -142,6 +142,29 @@ describe('findTemplates (POST /templates)', async () => {
       'JZ 19821': 'E TROFI JZ 19821.ai',
       'E CUT 5': 'E CUT 5 - PLAK B (241,242).ai',
       'VB / C / BLUE': null,
+    });
+  });
+});
+
+describe('parseRunReport', () => {
+  it("reads SEAN.jsx's report: output files and every plaque field as laid out", () => {
+    const text = [
+      'F\tPKC 263, PKF 266\tE CUT 5 - OUTPUT.ai\tsaved\t40\t',
+      'F\tVB / C / RED\t\tskipped\t3\tno matching .ai template',
+      'Q\tPKC 263',
+      'P\tPKC 263\tposition\tANUGERAH KHAS NILAM\tANUGERAH KHAS\u001fNILAM',
+      'P\tPKC 263\tevent_header\tMAJLIS\u001f2026\tMAJLIS\u001f2026',
+    ].join('\r');
+    expect(parseRunReport(text)).toEqual({
+      files: [
+        { codes: 'PKC 263, PKF 266', file: 'E CUT 5 - OUTPUT.ai', state: 'saved', rows: 40, reason: '' },
+        { codes: 'VB / C / RED', file: '', state: 'skipped', rows: 3, reason: 'no matching .ai template' },
+      ],
+      plaques: [
+        { code: 'PKC 263', field: 'position', csv: ['ANUGERAH KHAS NILAM'], laid: ['ANUGERAH KHAS', 'NILAM'] },
+        { code: 'PKC 263', field: 'event_header', csv: ['MAJLIS', '2026'], laid: ['MAJLIS', '2026'] },
+      ],
+      counts: { 'PKC 263': 1 },
     });
   });
 });
