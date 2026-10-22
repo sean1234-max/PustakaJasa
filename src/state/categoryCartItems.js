@@ -1,4 +1,4 @@
-import { resolveCategory, SELEMPANG_CODE, isCustomPlakCode } from '../data/catalog';
+import { resolveCategory, SELEMPANG_CODE, otherPlakIncomplete } from '../data/catalog';
 import { computeBlocks, snapshotDetail, noopUpdaters } from '../utils/computeBlocks';
 import { buildCsvRows } from '../utils/exportCsv';
 import { hasStudentName, takesNameSurcharge, NAME_SURCHARGE } from '../utils/studentName';
@@ -127,11 +127,11 @@ export function buildCategoryCartItems(st, catKey, { lenient = false, allowTypos
       }
     }
     // "OTHER - …" has no website price — it needs its own (typed with it,
-    // or the sheet's HARGA PER UNIT).
+    // or the sheet's HARGA PER UNIT); a bare "OTHER" from a file has no name either.
     const unpricedOther = [...(blk.plakPerRow ? blk.rows : blk.plakRows)]
-      .find((r) => isCustomPlakCode(r.jenisPlak) && r.unitPrice == null);
+      .find((r) => otherPlakIncomplete(r.jenisPlak, r.unitPrice));
     if (unpricedOther) {
-      return { engaged, error: `"${unpricedOther.jenisPlak}" in ${blockLabel} has no price — pick it again and fill in its Harga before adding to cart.` };
+      return { engaged, error: `"${unpricedOther.jenisPlak}" in ${blockLabel} needs its name and Harga — pick OTHER again and fill in both before adding to cart.` };
     }
     // ALIRAN TERBAIK: every plaque the Tahun table asks for must be covered
     // by a Jenis Plak footer row. The footer QTY can be derived or a

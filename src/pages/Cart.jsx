@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import { useAppState } from '../state/useAppState';
-import { formatDate, getStockStatus, resolveCategory } from '../data/catalog';
+import { formatDate, getStockStatus, resolveCategory, otherPlakIncomplete } from '../data/catalog';
 import CrystalPreview, { crystalRowsOf } from '../components/CrystalPreview';
 import CrystalConfirmModal from '../components/CrystalConfirmModal';
 import DuplicateOrderModal from '../components/DuplicateOrderModal';
@@ -93,6 +93,8 @@ export default function Cart() {
       })
       .find(Boolean);
   }, [groupedCartRowsByPlak, selempangQty, state.plakCatalog]);
+  // An OTHER with no name ("OTHER" read from a file) or no price can't be submitted (Sean, 2026-10-22).
+  const otherViolation = state.cart.find((ci) => otherPlakIncomplete(ci.jenisPlak, ci.unitPrice));
 
   // Crystals: the artwork is checked in the preview below before the order goes in (Sean,
   // 2026-10-14). Yes = confirmed. A teacher's No stops the submit; a salesman may submit
@@ -131,7 +133,7 @@ export default function Cart() {
   // The school's look-alike orders first (0094): if any, the person submitting
   // has to say it's a separate order before it goes.
   const handleSubmit = async (artworkConfirmed = false) => {
-    if (state.cart.length === 0 || submitting || stockViolation) return;
+    if (state.cart.length === 0 || submitting || stockViolation || otherViolation) return;
     setSubmitting(true);
     const found = await checkDuplicateOrders();
     setSubmitting(false);
@@ -265,12 +267,18 @@ export default function Cart() {
             Stock tidak cukup untuk &quot;{stockViolation.jenisPlak}&quot;{stockViolation.categoryLabel ? ` (${stockViolation.categoryLabel})` : ''} — baki {stockViolation.maxOrderable} sahaja boleh ditempah. Sila kurangkan kuantiti atau hubungi Salesman sebelum submit.
           </p>
         )}
+        {otherViolation && (
+          <p className="hint-text" style={{ color: '#c0392b', fontWeight: 600 }}>
+            &quot;{otherViolation.jenisPlak}&quot;{otherViolation.categoryLabel ? ` (${otherViolation.categoryLabel})` : ''} perlu nama dan harga — sila Edit kategori ini, pilih OTHER semula dan isi nama serta harga sebelum submit.
+            {' '}(OTHER needs its name and price — edit this category, pick OTHER again and fill in both before submitting.)
+          </p>
+        )}
         <DuplicateOrderModal sekolah={state.sekolah} orders={dupes?.found || null} busy={submitting} onYes={goAhead} onNo={() => setDupes(null)} />
         <div className="row-split">
           <button type="button" className="btn btn-ghost" onClick={() => { restoreCartToDraft(); navigate('/order/step2'); }}>← Back to Order</button>
           {state.cartToast && <span className="toast-inline">{state.cartToast}</span>}
           <button
-            type="button" className="btn btn-primary" disabled={state.cart.length === 0 || submitting || !!stockViolation || !!dupes}
+            type="button" className="btn btn-primary" disabled={state.cart.length === 0 || submitting || !!stockViolation || !!otherViolation || !!dupes}
             onClick={() => (hasCrystal ? setCrystalModal(true) : handleSubmit())}
           >
             {submitting ? 'Submitting…' : 'Submit Order'}

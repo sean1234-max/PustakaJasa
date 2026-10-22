@@ -1414,10 +1414,14 @@ describe('OTHER Jenis Plak needs a price at Add to Cart (Sean, 2026-10-07)', () 
   });
 
   it('blocks an OTHER row with no price, adds one priced when picked', () => {
-    expect(buildCategoryCartItems(st({}), 'LONJAKAN').error).toMatch(/has no price/);
+    expect(buildCategoryCartItems(st({}), 'LONJAKAN').error).toMatch(/needs its name and Harga/);
     const res = buildCategoryCartItems(st({ unitPrice: 33 }), 'LONJAKAN');
     expect(res.error).toBeUndefined();
     expect(res.items.map((it) => [it.unitPrice, it.harga])).toEqual([[33, 66]]);
+  });
+
+  it('blocks the bare word OTHER read from a file (no name), even with a price (Sean, 2026-10-22)', () => {
+    expect(buildCategoryCartItems(st({ jenisPlak: 'OTHER', unitPrice: 10 }), 'LONJAKAN').error).toMatch(/needs its name and Harga/);
   });
 });
 

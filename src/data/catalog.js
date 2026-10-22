@@ -847,6 +847,14 @@ export function isCustomPlakCode(code) {
   return /^OTHERS?\s*-/i.test((code || '').trim());
 }
 
+// An OTHER Jenis Plak that can't be ordered yet (Sean, 2026-10-22): the bare word "OTHER" read from a
+// file (no name for it), or an "OTHER - …" with no price. The teacher / salesman picks OTHER again
+// and fills in both before adding to cart / submitting.
+export function otherPlakIncomplete(code, unitPrice) {
+  const c = (code || '').trim();
+  return /^OTHERS?$/i.test(c) || (isCustomPlakCode(c) && (unitPrice == null || unitPrice === ''));
+}
+
 // The Jenis Plak catalog now lives in Supabase (plak_catalog_nodes —
 // see supabase/migrations/0006_catalog_admin.sql) so Production can add,
 // remove, edit prices, and hide/unhide codes live, without a code deploy.

@@ -15,6 +15,7 @@ import { reconstructBlocksForCategory } from '../utils/computeBlocks';
 import { splitOrderCategories, isCrystalCode, firstKivCategory } from '../utils/exportCsv';
 import ReservedNamesForm from '../components/ReservedNamesForm';
 import CrystalPreview from '../components/CrystalPreview';
+import ShipmentConfirmModal from '../components/ShipmentConfirmModal';
 import { getOrderChangeStamp } from '../utils/orderStamp';
 import { addonRepeatsOrder, addonRepeatMessage } from '../utils/addonCheck';
 import { isUrgentShipment } from '../utils/urgentOrder';
@@ -208,7 +209,10 @@ export default function SalesOrderSummary() {
   // dashboard) so Sales can immediately print the now-approved order —
   // the page re-renders read-only once order.status flips, and the Print
   // button takes its place where Approve was.
-  const handleApprove = async () => {
+  // Approve asks first, full screen, whether the Shipment Date is right (Sean, 2026-10-22):
+  // CONFIRM approves, NOT CONFIRM goes back to the date picker.
+  const [askShipment, setAskShipment] = useState(false);
+  const handleApprove = () => {
     if (busy) return;
     if (shipmentDate && functionDateDraft
       && new Date(shipmentDate.getFullYear(), shipmentDate.getMonth(), shipmentDate.getDate())
@@ -217,6 +221,19 @@ export default function SalesOrderSummary() {
       return;
     }
     setDateError('');
+    setAskShipment(true);
+  };
+  const notConfirmShipment = () => {
+    setAskShipment(false);
+    // straight to the Shipment Date picker, opened
+    setTimeout(() => {
+      const el = document.getElementById('salesShipmentDate');
+      el?.scrollIntoView({ block: 'center' });
+      el?.click();
+    }, 0);
+  };
+  const approveNow = async () => {
+    if (busy) return;
     const updatedItems = rows.map(({ priceKey: _priceKey, ...r }) => ({ ...r, unitPrice: r.unitPrice, harga: r.harga }));
     // Only overrides a date if Sales actually set one — never blanks an
     // existing shipment/function date just because the draft state happened
@@ -229,6 +246,7 @@ export default function SalesOrderSummary() {
     setBusy(true);
     await approveOrder(order.id, updatedItems, overrides);
     setBusy(false);
+    setAskShipment(false);
     // On success order.status flips locally and this page re-renders
     // read-only; on failure the error toast (state.updateToast) shows.
   };
@@ -489,6 +507,14 @@ export default function SalesOrderSummary() {
               <div className="row-split" style={{ marginTop: 'var(--space-6)' }}>
                 <button type="button" className="btn btn-ghost" onClick={() => setPage('details')}>View Order Details →</button>
                 {editable && <button type="button" className="btn btn-primary" onClick={handleApprove} disabled={busy}>{busy ? 'Approving…' : 'Approve'}</button>}
+                {editable && (
+                  <ShipmentConfirmModal
+                    open={askShipment} busy={busy}
+                    date={shipmentDate ? formatDate(shipmentDate) : ''}
+                    urgent={!!shipmentDate && isUrgentShipment(malaysiaToday(), shipmentDate)}
+                    onConfirm={approveNow} onNotConfirm={notConfirmShipment}
+                  />
+                )}
                 {awaitingReview && <button type="button" className="btn btn-primary" disabled>Waiting for Production review</button>}
                 {!reviewing && <button type="button" className="btn btn-primary" onClick={handlePrint}>Print Order</button>}
               </div>
