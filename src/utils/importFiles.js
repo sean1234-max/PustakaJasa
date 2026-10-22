@@ -8,6 +8,22 @@ export function withImportFile(items, path) {
   return path ? items.map((it) => ({ ...it, importFile: path })) : items;
 }
 
+// Each cart item tagged with the upload its tab came from (several files in one order, Sean
+// 2026-10-22: NewOrderStep2.jsx's step2UploadedFiles says which file filled which tab); the
+// draft's latest upload when that isn't known (yet).
+export function tagImportFiles(items, st) {
+  const uploaded = [...(st.step2UploadedFiles || [])].reverse();
+  const known = [...(st.importFiles || [])].reverse();
+  const pathFor = (catKey) => {
+    const owner = uploaded.find((f) => (f.categories || []).includes(catKey));
+    return (owner && known.find((f) => f.name === owner.name)?.path) || st.importFilePath;
+  };
+  return items.map((it) => {
+    const path = pathFor(it.categoryKey);
+    return path ? { ...it, importFile: path } : it;
+  });
+}
+
 // The order's import columns at submit, from the draft: the files its cart
 // items came from, in cart order (names from the draft's upload list). A
 // cart with no tagged item (added before the upload finished) falls back to

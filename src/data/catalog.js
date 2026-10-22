@@ -795,6 +795,20 @@ export function resolveCategory(key) {
   return { ...base, key, label };
 }
 
+// A tab another uploaded file already filled (Sean, 2026-10-22: several files in one order) — the
+// same kind of tab under the next free "<label> (2)", "(3)" … name, so both are kept.
+export function nextFreeCategoryKey(key, used) {
+  const cat = resolveCategory(key);
+  if (!cat) return key;
+  const rest = key.slice(DYNAMIC_KEY_PREFIX.length);
+  const kind = isDynamicCategoryKey(key) ? rest.slice(0, rest.indexOf('::')) : key;
+  const label = cat.label.replace(/\s*\(\d+\)$/, '');
+  for (let n = 2; ; n++) {
+    const next = makeDynamicCategoryKey(kind, `${label} (${n})`);
+    if (!used.has(next)) return next;
+  }
+}
+
 // Every category actually represented in an order/draft's items, including
 // any sheet-derived dynamic one (resolveCategory) — known categories keep
 // their catalog order, a dynamic one is appended after in first-appearance

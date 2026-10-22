@@ -89,29 +89,21 @@ export default function NewOrderStep2() {
   // double click is stopped by this ref, not the flag.
   const busyRef = useRef(false);
 
-  const handleImportFile = async (file) => {
-    if (!file || importing || busyRef.current) return;
-    if (!(pdfAllowed ? /\.(xlsx|docx|pdf)$/i : /\.(xlsx|docx)$/i).test(file.name)) {
-      setImportStatus({ ok: false, message: pdfAllowed ? 'Please upload an .xlsx, .docx or .pdf file.' : 'Please upload an .xlsx or .docx file.' });
-      return;
-    }
-    busyRef.current = true;
-    setImporting(true);
-    setImportStatus(null);
-    setChoiceAnswers({});
-    lastImportFileRef.current = file;
+  // One file into the draft. `keep`: tabs another uploaded file already filled — this file's copy
+  // of one opens as "<tab> (2)" (AppState.jsx). Returns the import result + the status to show.
+  const importOneFile = async (file, keep) => {
     let result;
     let status;
     try {
-      result = await importFormAnugerahExcel(file);
+      result = await importFormAnugerahExcel(file, { keep });
       // A Word / PDF order shows in the FORM ANUGERAH layout straight away
       // (Sean, 2026-10-19), the same as an Excel order.
-      if (result.ok && /\.(docx|pdf)$/i.test(file.name)) result = await convertImportToForm(file, result);
+      if (result.ok && /\.(docx|pdf)$/i.test(file.name)) result = await convertImportToForm(file, result, { keep });
       status = { ...result };
       delete status.aiCategorized;
       if (result.ok) {
-        // This upload session's files, and the tabs each one filled — a
-        // later file that fills the same tab takes it over.
+        // This upload session's files, and the tabs each one filled — the
+        // same file uploaded again takes its tabs over.
         const mine = new Set(result.categories || []);
         patch((st) => ({
           step2UploadedFiles: [
@@ -127,6 +119,7 @@ export default function NewOrderStep2() {
           const mem = await readSkippedSheetsWithAi(file, status.skippedSheets, '', { memoryOnly: true });
           if (mem.ok && mem.learnedSheets?.length) {
             const learned = mem.learnedSheets;
+            (mem.categories || []).forEach((k) => mine.add(k));
             patch((st) => ({
               step2UploadedFiles: (st.step2UploadedFiles || []).map((f) => (f.name === file.name ? { ...f, categories: [...new Set([...(f.categories || []), ...(mem.categories || [])])] } : f)),
             }));
@@ -141,22 +134,63 @@ export default function NewOrderStep2() {
             };
           }
         }
+        result = { ...result, categories: [...mine] };
       }
     } catch (err) {
       console.error('Import failed:', err);
       result = { ok: false, message: 'Could not read this file. Please try again.' };
       status = result;
+    }
+    return { result, status };
+  };
+
+  // Several files at once (Sean, 2026-10-22: a kertas kerja in more than one file): read one
+  // after another into the same order — a tab an earlier file filled is kept, the later file's
+  // copy opens as "<tab> (2)" — then shown as one status, a line per file.
+  const handleImportFiles = async (fileList) => {
+    const files = Array.from(fileList || []);
+    if (!files.length || importing || busyRef.current) return;
+    const allowed = pdfAllowed ? /\.(xlsx|docx|pdf)$/i : /\.(xlsx|docx)$/i;
+    const bad = files.filter((f) => !allowed.test(f.name));
+    if (bad.length) {
+      setImportStatus({ ok: false, message: `${bad.map((f) => f.name).join(', ')}: ${pdfAllowed ? 'please upload .xlsx, .docx or .pdf files.' : 'please upload .xlsx or .docx files.'}` });
+      return;
+    }
+    busyRef.current = true;
+    setImporting(true);
+    setImportStatus(null);
+    setChoiceAnswers({});
+    // file name -> the tabs it filled, kept here as the loop goes (state lands a render later)
+    const owned = new Map((state.step2UploadedFiles || []).map((f) => [f.name, f.categories || []]));
+    const done = [];
+    try {
+      for (const file of files) {
+        const keep = new Set([...owned].filter(([name]) => name !== file.name).flatMap(([, cats]) => cats));
+        const one = await importOneFile(file, keep);
+        if (one.result.ok) owned.set(file.name, one.result.categories || []);
+        done.push({ file, ...one });
+      }
     } finally {
       busyRef.current = false;
       setImporting(false);
     }
     setFormExport(null);
-    setImportStatus(status);
+    const ok = done.filter((d) => d.result.ok);
+    // the "Read with AI" offer follows the last file that still has skipped sheets
+    const withSkipped = [...ok].reverse().find((d) => (d.status.skippedSheets || []).length);
+    lastImportFileRef.current = (withSkipped || done[done.length - 1]).file;
+    const seen = new Set();
+    setImportStatus(done.length === 1 ? done[0].status : {
+      ok: ok.length > 0,
+      message: done.map((d) => `${d.file.name}: ${d.status.message}`).join('\n'),
+      skippedSheets: withSkipped ? withSkipped.status.skippedSheets : [],
+      warnings: done.flatMap((d) => d.status.warnings || []).filter((w) => !w.id || (!seen.has(w.id) && seen.add(w.id))),
+    });
     // Said once, up front, right after the upload — those rows came in with
     // a blank Jenis Plak, and a teacher who only reads the order at Add to
     // Cart time wouldn't know which ones the file itself didn't resolve.
-    const unmatched = [...new Set((result.warnings || []).filter((w) => w.type === 'plakMismatch').map((w) => w.raw))];
-    if (result.ok && unmatched.length > 0) {
+    const unmatched = [...new Set(ok.flatMap((d) => d.result.warnings || []).filter((w) => w.type === 'plakMismatch').map((w) => w.raw))];
+    if (unmatched.length > 0) {
       window.alert(`Jenis Plak ini tidak dijumpai dalam katalog. Sila pilih sendiri sebelum tambah ke troli:\n\n${unmatched.map((raw) => `• ${raw}`).join('\n')}\n\nThese Jenis Plak couldn't be matched to the catalog — please choose them manually before adding to cart.`);
     }
   };
@@ -541,8 +575,9 @@ export default function NewOrderStep2() {
             type="file"
             accept={pdfAllowed ? '.xlsx,.docx,.pdf' : '.xlsx,.docx'}
             style={{ display: 'none' }}
+            multiple
             onChange={(e) => {
-              handleImportFile(e.target.files && e.target.files[0]);
+              handleImportFiles(e.target.files);
               e.target.value = ''; // allow re-selecting the same file after a failed import
             }}
           />
@@ -555,7 +590,7 @@ export default function NewOrderStep2() {
             onDrop={(e) => {
               e.preventDefault();
               setDragOver(false);
-              if (!importing) handleImportFile(e.dataTransfer.files && e.dataTransfer.files[0]);
+              if (!importing) handleImportFiles(e.dataTransfer.files);
             }}
           >
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.6 }}>
@@ -563,11 +598,11 @@ export default function NewOrderStep2() {
             </svg>
             <div>
               <div className="image-drop-title">{importing ? 'Reading…' : 'Import Order File'}</div>
-              <div className="image-drop-sub">Drag & drop your filled-in FORM ANUGERAH .xlsx or WORDING .docx{pdfAllowed ? ' (or a PDF order list)' : ''} here, or click to browse</div>
+              <div className="image-drop-sub">Drag & drop your filled-in FORM ANUGERAH .xlsx or WORDING .docx{pdfAllowed ? ' (or a PDF order list)' : ''} here, or click to browse — one file or several at once</div>
             </div>
           </div>
           {importStatus && (
-            <p className="hint-text" style={{ margin: '4px 0 0', color: importStatus.ok ? '#1f8a3b' : '#c0392b', fontWeight: 600 }}>
+            <p className="hint-text" style={{ margin: '4px 0 0', color: importStatus.ok ? '#1f8a3b' : '#c0392b', fontWeight: 600, whiteSpace: 'pre-line' }}>
               {importStatus.message}
             </p>
           )}

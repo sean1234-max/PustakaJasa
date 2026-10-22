@@ -2,7 +2,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import {
   CATEGORIES, ACTIVE_CATEGORIES, formatDate, standardUnitPrice, getCategorySubjects, matrixCellKey, customMatrixLabelKey,
   isReviewed, isAddonInFlight,
-  resolveCategory, categoriesUsedByItems, isDynamicCategoryKey, malaysiaToday, malaysiaDayIso,
+  resolveCategory, categoriesUsedByItems, isDynamicCategoryKey, nextFreeCategoryKey, malaysiaToday, malaysiaDayIso,
 } from '../data/catalog';
 import { buildInitialRowsByBlock, buildInitialColumnsByBlock, buildInitialPlakRows } from '../data/formDefaults';
 import {
@@ -35,7 +35,7 @@ import {
 } from '../lib/catalogAdminApi';
 import { supabase } from '../lib/supabaseClient';
 import { uploadOrderImportFile, getOrderImportUrl } from '../lib/storageApi';
-import { withImportFile, orderImportFields } from '../utils/importFiles';
+import { withImportFile, tagImportFiles, orderImportFields } from '../utils/importFiles';
 import { syncUrgentOrderToSheet, highlightUrgentKitDoc } from '../lib/urgentSheetApi';
 import { isUrgentShipment, urgentSheetAction, SHIPMENT_EDITABLE_STATUSES } from '../utils/urgentOrder';
 import { fetchCustomTypoWords } from '../lib/typoWordsApi';
@@ -771,7 +771,7 @@ export function AppStateProvider({ children }) {
       // after edits supersedes the old version instead of duplicating it.
       return {
         ...st,
-        cart: [...st.cart.filter((ci) => ci.categoryKey !== st.category), ...withImportFile(items, st.importFilePath)],
+        cart: [...st.cart.filter((ci) => ci.categoryKey !== st.category), ...tagImportFiles(items, st)],
         cartToast: `Added ${items.length} item(s) to cart.`,
         ...resetCategoryFields(st.category, st, 'visibleBlocksByCategory'),
       };
@@ -816,7 +816,7 @@ export function AppStateProvider({ children }) {
       const touchedKeys = new Set(allItems.map((it) => it.categoryKey));
       return {
         ...working,
-        cart: [...working.cart.filter((ci) => !touchedKeys.has(ci.categoryKey)), ...withImportFile(allItems, st.importFilePath)],
+        cart: [...working.cart.filter((ci) => !touchedKeys.has(ci.categoryKey)), ...tagImportFiles(allItems, st)],
         cartToast: `Added ${allItems.length} item(s) from ${doneLabels.length} categor${doneLabels.length === 1 ? 'y' : 'ies'} to cart.`,
       };
     });
@@ -903,7 +903,7 @@ export function AppStateProvider({ children }) {
   // `instructions` (optional): how to read the file, in the user's words,
   // sent with a PDF / Word file the AI reader reads. `base` (optional): the
   // state to import into instead of the current one (convertImportToForm).
-  const importFormAnugerahExcelInto = useCallback(async (file, fields, { applyFilter, parsedOverride, instructions = '', base = null } = {}) => {
+  const importFormAnugerahExcelInto = useCallback(async (file, fields, { applyFilter, parsedOverride, instructions = '', base = null, keep = null } = {}) => {
     let parsed = parsedOverride;
     if (!parsed) {
       try {
@@ -951,6 +951,19 @@ export function AppStateProvider({ children }) {
     // no-op, not a double-push.
     const st = base || stateRef.current;
     let next = st;
+
+    // `keep`: tabs another uploaded file of this order already filled (NewOrderStep2.jsx, several
+    // files) — this file's copy of one opens as "<tab> (2)" instead of replacing it.
+    if (keep?.size && parsed.categorized) {
+      const used = new Set([...keep, ...Object.keys(parsed.categorized)]);
+      const categorized = Object.fromEntries(Object.entries(parsed.categorized).map(([k, secs]) => {
+        if (!keep.has(k)) return [k, secs];
+        const free = nextFreeCategoryKey(k, used);
+        used.add(free);
+        return [free, [].concat(secs || []).map((sec) => ({ ...sec, dynamicCategoryKey: free }))];
+      }));
+      parsed = { ...parsed, categorized };
+    }
 
     // A school's own list (excelImport.js parseSchoolListSheet): a row whose code the website
     // doesn't sell (or with no wording) goes to the Remark as "KOD/RM unit/RM total" instead
@@ -1590,7 +1603,7 @@ export function AppStateProvider({ children }) {
   // (NewOrderStep2.jsx) — always imports into the New Order draft namespace,
   // full import, no diff filter.
   const importFormAnugerahExcel = useCallback(
-    (file, { instructions } = {}) => importFormAnugerahExcelInto(file, NEW_ORDER_IMPORT_FIELDS, { instructions }),
+    (file, { instructions, keep } = {}) => importFormAnugerahExcelInto(file, NEW_ORDER_IMPORT_FIELDS, { instructions, keep }),
     [importFormAnugerahExcelInto],
   );
 
@@ -1599,7 +1612,7 @@ export function AppStateProvider({ children }) {
   // form and read back like an uploaded form (formRoundTrip.js), replacing
   // them, so the order shows and is saved the way an Excel order is. When
   // that can't be done whole, the tabs stay as read and a note says why.
-  const convertImportToForm = useCallback(async (file, first) => {
+  const convertImportToForm = useCallback(async (file, first, { keep = null } = {}) => {
     const keys = first.categories || [];
     if (!first.ok || !first.draft || keys.length === 0) return first;
     let conv;
@@ -1617,13 +1630,13 @@ export function AppStateProvider({ children }) {
     // would be overwritten, so those stay as read.
     if (!conv.error) {
       const taken = Object.entries(conv.parsed.categorized || {})
-        .filter(([k, secs]) => secs?.length && !keys.includes(k))
+        .filter(([k, secs]) => secs?.length && !keys.includes(k) && !keep?.has(k))
         .filter(([k]) => { const d = draftPlaques(base, { only: [k] }); return d.plaques.length + d.selempang.length + d.skipped.length > 0; })
         .map(([k]) => resolveCategory(k)?.label || k);
       if (taken.length) conv = { error: `the ${taken.join(', ')} tab already has an order in it` };
     }
     const second = conv.error ? null : await importFormAnugerahExcelInto(file, NEW_ORDER_IMPORT_FIELDS, {
-      parsedOverride: conv.parsed, base,
+      parsedOverride: conv.parsed, base, keep,
     });
     if (!second?.ok) {
       const why = conv.error || second?.message || 'the form could not be read back';

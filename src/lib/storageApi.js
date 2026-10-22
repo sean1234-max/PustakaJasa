@@ -60,6 +60,19 @@ export async function getOrderImportUrl(path) {
 // <a download>, and Storage's own download name percent-encodes "(" ")", so
 // the file is fetched and handed to the browser as a local blob instead.
 // Returns false when it couldn't be downloaded.
+// A stored upload's contents, or null when it can't be fetched.
+export async function fetchOrderImportBlob(path) {
+  const url = await getOrderImportUrl(path);
+  if (!url) return null;
+  try {
+    const res = await fetch(url);
+    return res.ok ? await res.blob() : null;
+  } catch (err) {
+    console.error('order import fetch failed:', err);
+    return null;
+  }
+}
+
 export async function saveOrderImportAs(path, fileName) {
   const url = await getOrderImportUrl(path);
   if (!url) return false;

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { withImportFile, orderImportFields, orderImportFiles } from './importFiles';
+import { withImportFile, tagImportFiles, orderImportFields, orderImportFiles } from './importFiles';
+import { nextFreeCategoryKey, makeDynamicCategoryKey, resolveCategory } from '../data/catalog';
 import { buildOrderImportFilename } from './exportCsv';
 
 describe('order import files', () => {
@@ -31,5 +32,23 @@ describe('order import files', () => {
     const order = { id: 'ORD-0025', sekolah: 'SK NILAI IMPIAN', sales: 'onn' };
     expect(buildOrderImportFilename(order, A, 0)).toBe('ORD-0025-SK NILAI IMPIAN(onn).xlsx');
     expect(buildOrderImportFilename(order, B, 1)).toBe('ORD-0025-SK NILAI IMPIAN(onn)-2.xlsx');
+  });
+
+  it('tags each cart item with the uploaded file its tab came from', () => {
+    const st = {
+      importFiles: [A, B], importFilePath: B.path,
+      step2UploadedFiles: [{ name: A.name, categories: ['PPKI'] }, { name: B.name, categories: ['UMUM'] }],
+    };
+    expect(tagImportFiles([{ categoryKey: 'PPKI' }, { categoryKey: 'UMUM' }, { categoryKey: 'MP1' }], st).map((it) => it.importFile))
+      .toEqual([A.path, B.path, B.path]);
+  });
+
+  it("opens another file's copy of a filled tab as '<tab> (2)', '(3)' …", () => {
+    const ppki2 = makeDynamicCategoryKey('PPKI', 'PPKI (2)');
+    expect(nextFreeCategoryKey('PPKI', new Set(['PPKI']))).toBe(ppki2);
+    expect(nextFreeCategoryKey('PPKI', new Set(['PPKI', ppki2]))).toBe(makeDynamicCategoryKey('PPKI', 'PPKI (3)'));
+    expect(resolveCategory(ppki2)).toMatchObject({ label: 'PPKI (2)', mode: resolveCategory('PPKI').mode });
+    const tab = makeDynamicCategoryKey('UMUM', 'SET ALAS TULIS');
+    expect(nextFreeCategoryKey(tab, new Set([tab]))).toBe(makeDynamicCategoryKey('UMUM', 'SET ALAS TULIS (2)'));
   });
 });
