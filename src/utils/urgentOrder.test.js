@@ -75,9 +75,9 @@ describe('urgentSheetAction', () => {
 });
 
 describe('keepTambahanWithParent', () => {
-  it("puts a Tambahan's cards right after its parent's cards", () => {
+  it("puts a Tambahan's cards right before its parent's cards", () => {
     const cards = [{ id: 'ORD-0091' }, { id: 'ORD-0088', parentOrderId: 'ORD-0069' }, { id: 'ORD-0079' }, { id: 'ORD-0069', part: 'acara' }, { id: 'ORD-0069', part: 'crystal' }, { id: 'ORD-0064' }];
-    expect(keepTambahanWithParent(cards).map((c) => c.id + (c.part ? `-${c.part}` : ''))).toEqual(['ORD-0091', 'ORD-0079', 'ORD-0069-acara', 'ORD-0069-crystal', 'ORD-0088', 'ORD-0064']);
+    expect(keepTambahanWithParent(cards).map((c) => c.id + (c.part ? `-${c.part}` : ''))).toEqual(['ORD-0091', 'ORD-0079', 'ORD-0088', 'ORD-0069-acara', 'ORD-0069-crystal', 'ORD-0064']);
   });
   it('leaves a Tambahan in place when its parent is not in the list', () => {
     const cards = [{ id: 'ORD-0088', parentOrderId: 'ORD-0069' }, { id: 'ORD-0064' }];

@@ -29,22 +29,18 @@ export function prioritizeUrgentOrders(orders) {
   return [...orders].sort((a, b) => Number(!!b.urgent) - Number(!!a.urgent));
 }
 
-// A Tambahan's cards sit right after its parent order's cards when both are in the list (Sean,
-// 2026-10-22: ORD-0088, a Tambahan of ORD-0069, beside 0069's ACARA and CRYSTAL cards); otherwise
-// it keeps its own place.
+// A Tambahan's cards sit right before its parent order's cards when both are in the list (Sean,
+// 2026-10-22: ORD-0088 TAMBAHAN, then ORD-0069's ACARA and CRYSTAL cards); otherwise it keeps its
+// own place.
 export function keepTambahanWithParent(cards) {
   const ids = new Set(cards.map((c) => c.id));
-  const children = new Map();
-  cards.forEach((c) => {
-    if (!c.parentOrderId || !ids.has(c.parentOrderId)) return;
-    children.set(c.parentOrderId, [...(children.get(c.parentOrderId) || []), c]);
-  });
+  const isChild = (c) => c.parentOrderId && ids.has(c.parentOrderId);
   const out = [];
   cards.forEach((c, i) => {
-    if (c.parentOrderId && ids.has(c.parentOrderId)) return;
+    if (isChild(c)) return;
+    const firstOfParent = !cards.slice(0, i).some((p) => p.id === c.id);
+    if (firstOfParent) out.push(...cards.filter((k) => isChild(k) && k.parentOrderId === c.id));
     out.push(c);
-    const lastOfParent = !cards.slice(i + 1).some((n) => n.id === c.id);
-    if (lastOfParent) out.push(...(children.get(c.id) || []));
   });
   return out;
 }
