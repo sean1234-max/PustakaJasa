@@ -20,7 +20,11 @@ export async function fileText(buffer, name) {
     const wb = XLSX.read(buffer, { type: 'array' });
     return wb.SheetNames
       .filter((n, i) => !wb.Workbook?.Sheets?.[i]?.Hidden && !/^FRONT\s*PG$/i.test(n.trim()))
-      .map((n) => XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, defval: '' }).flat().join('\n'))
+      // a row whose numbers are all 0 (KUANTITI 0, TOTAL 0) is an award listed but not ordered
+      // (ORD-0071's TOKOH sheet) — its words aren't expected on any plaque
+      .map((n) => XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, defval: '' })
+        .filter((row) => { const nums = row.filter((c) => typeof c === 'number'); return !nums.length || nums.some((x) => x !== 0); })
+        .flat().join('\n'))
       .join('\n');
   }
   if (/\.docx$/i.test(name)) {
