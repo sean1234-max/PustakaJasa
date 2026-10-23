@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { checkPlaqueWording, checkPlaqueCounts, checkAiReport, plaqueLines } from '../utils/productionCheck';
+import { checkPlaqueWording, checkPlaqueCounts, checkAiReport, plaqueLines, a3Files } from '../utils/productionCheck';
 import { fileText, compareWords } from '../utils/sourceCheck';
 import { isCrystalCode, buildCsvRows } from '../utils/exportCsv';
 import { orderImportFiles } from '../utils/importFiles';
@@ -111,8 +111,14 @@ export function AiFileReportCheck({ report, rows }) {
     return <p className="hint-text" style={{ margin: '4px 0 0' }}>No check of the finished AI file — this computer needs the new AI File helper and the NAS needs the new SEAN.jsx.</p>;
   }
   const issues = checkAiReport(report, rows);
+  const a3 = a3Files(report);
   return (
     <div style={{ margin: 'var(--space-2) 0', padding: 'var(--space-3)', border: `1px solid ${issues.length ? '#e0b252' : '#9ccc9c'}`, borderRadius: 6, background: issues.length ? '#fff8e6' : '#f1faf1' }}>
+      {a3.map((f) => (
+        <p key={f.file} style={{ margin: '0 0 6px', fontWeight: 600 }}>
+          A3: {f.count} plaque(s) ({f.codes}) are on <strong>{f.file}</strong> — in MEDAL/A3 on the NAS, not in this order's folder.
+        </p>
+      ))}
       <div style={{ fontWeight: 700 }}>
         {issues.length ? `⚠ The finished AI file — check these ${issues.length} thing(s)` : '✅ The finished AI file matches the order (every file made, every plaque, no line broken or cut off)'}
       </div>

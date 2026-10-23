@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { plaqueProblems, checkPlaqueWording, checkPlaqueCounts, checkAiReport } from './productionCheck';
+import { plaqueProblems, checkPlaqueWording, checkPlaqueCounts, checkAiReport, a3Files } from './productionCheck';
 import { compareWords } from './sourceCheck';
 import { CSV_COLUMNS } from './exportCsv';
 
@@ -66,5 +66,16 @@ describe('checkAiReport', () => {
       'position broken onto 2 lines: "ANUGERAH KHAS / NILAM"',
       'event_header: "MAJLIS ANUGERAH 2026" came out as "MAJLIS ANUGERAH"',
     ]);
+  });
+
+  it('plaques on the A3 count as made (2026-10-23)', () => {
+    const csvRows = [row({ position: 'JOHAN', jenis_plak: 'YK - 628' }), row({ position: 'NAIB JOHAN', jenis_plak: 'YK - 628' })];
+    const report = {
+      files: [{ codes: 'YK - 628', file: 'A3 - DWI-1 - OUTPUT.ai', state: 'a3', rows: 2, reason: 'new A3' }],
+      counts: { 'YK - 628': 2 },
+      plaques: [],
+    };
+    expect(checkAiReport(report, csvRows)).toEqual([]);
+    expect(a3Files(report)).toEqual([{ file: 'A3 - DWI-1 - OUTPUT.ai', codes: 'YK - 628', count: 2 }]);
   });
 });

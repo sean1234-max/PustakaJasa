@@ -72,7 +72,9 @@ const squashText = (lines) => norm((lines || []).join(' ')); // \s also takes th
 export function checkAiReport(report, csvRows) {
   if (!report) return [];
   const issues = [];
-  (report.files || []).filter((f) => f.state !== 'saved').forEach((f) => issues.push({
+  // 'a3': plaques from a last page under half full, laid on a shared A3 sheet instead (SEAN.jsx, 2026-10-23)
+  const made = (f) => f.state === 'saved' || f.state === 'a3';
+  (report.files || []).filter((f) => !made(f)).forEach((f) => issues.push({
     kind: 'file', count: f.rows, sample: f.codes,
     text: `No AI file made for ${f.codes || '(no code)'} — ${f.reason || f.state} (${f.rows} plaque(s))`,
   }));
@@ -82,7 +84,7 @@ export function checkAiReport(report, csvRows) {
     const code = r[JENIS_PLAK] || '';
     ordered[code] = (ordered[code] || 0) + 1;
   });
-  const skippedCodes = new Set((report.files || []).filter((f) => f.state !== 'saved').flatMap((f) => f.codes.split(', ')));
+  const skippedCodes = new Set((report.files || []).filter((f) => !made(f)).flatMap((f) => f.codes.split(', ')));
   Object.entries(ordered).forEach(([code, n]) => {
     const laid = report.counts?.[code] || 0;
     if (laid !== n && !skippedCodes.has(code)) {
@@ -106,4 +108,9 @@ export function checkAiReport(report, csvRows) {
     grouped.set(key, hit);
   });
   return [...issues, ...[...grouped.values()].sort((a, b) => b.count - a.count)];
+}
+
+// The A3 sheets this run put plaques on: [{ file, codes, count }]
+export function a3Files(report) {
+  return (report?.files || []).filter((f) => f.state === 'a3').map((f) => ({ file: f.file, codes: f.codes, count: f.rows }));
 }
