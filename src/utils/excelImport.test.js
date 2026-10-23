@@ -1526,3 +1526,10 @@ describe('matchJenisPlakPath: a letter O typed for a zero', () => {
     expect(matchJenisPlakPath('P261', [{ code: 'PK 261', children: ['A', 'B', 'C'].map((code) => ({ code, children: [] })) }])).toBe('PK 261 / A');
   });
 });
+
+describe('codes written without their slash (plak-ham 2026.docx)', () => {
+  it('"PK 261A" is PK 261 / A', () => {
+    const tree = [{ code: 'PK 261', children: [{ code: 'A' }, { code: 'B' }, { code: 'C' }] }, { code: 'SHINING STICKER A' }, { code: 'PKF 266' }];
+    expect(['PK 261A', 'SHINING STICKER A', 'PKF 266'].map((c) => matchJenisPlakPath(c, tree))).toEqual(['PK 261 / A', 'SHINING STICKER A', 'PKF 266']);
+  });
+});

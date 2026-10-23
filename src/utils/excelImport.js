@@ -2145,6 +2145,12 @@ export function matchJenisPlakPath(rawText, plakTree) {
   const exact = matchJenisPlakPathAsWritten(rawText, plakTree);
   const alias = CODE_ALIASES[String(rawText || '').toUpperCase().replace(/[\s-]/g, '')];
   if (!exact && alias) return matchJenisPlakPathAsWritten(alias, plakTree);
+  // the variant letter glued to the number: "PK 261A" = PK 261 / A (plak-ham 2026.docx)
+  const unglued = String(rawText || '').replace(/(\d)([A-Z])$/i, '$1 $2');
+  if (!exact && unglued !== rawText) {
+    const split = matchJenisPlakPathAsWritten(unglued, plakTree);
+    if (split) return split;
+  }
   if (exact || !/O/i.test(String(rawText || ''))) return exact;
   const swapped = zeroForO(rawText);
   return swapped === rawText ? '' : matchJenisPlakPathAsWritten(swapped, plakTree);

@@ -185,6 +185,50 @@ export function readPlaqueBoxes(doc) {
   return { items, notes };
 }
 
+// Plaques drawn as boxes with the count and code written under them (Sean, 2026-10-23,
+// plak-ham 2026.docx): each one-cell table box (or text box) is one plaque design, "18 PLAK"
+// under it is how many of each box since the last count (a box with none is 1), and "KOD PKF 266"
+// (or just a code line, "SHINING STICKER A") is the code of every box since the last code.
+// -> { items: [{ lines, qty, kod }], notes } (items empty unless some box got a code).
+const PLAK_COUNT_RE = /^(\d+)\s*(?:PLAK|PLAQUE|PCS|PC|UNIT|KEPING)\.?$/i;
+export function readCodedBoxes(doc) {
+  const body = doc.getElementsByTagNameNS(W_NS, 'body')[0];
+  if (!body) return { items: [], notes: [] };
+  const boxes = [];
+  let countFrom = 0;
+  let codeFrom = 0;
+  const marker = (text) => {
+    const n = PLAK_COUNT_RE.exec(text);
+    if (n) { boxes.slice(countFrom).forEach((b) => { b.qty = Number(n[1]); }); countFrom = boxes.length; return; }
+    if (codeFrom === boxes.length) return; // a title above the boxes, not a code
+    const kod = text.replace(/^KOD\b\s*:?\s*/i, '').trim();
+    boxes.slice(codeFrom).forEach((b) => { b.kod = kod; });
+    codeFrom = boxes.length;
+    countFrom = boxes.length;
+  };
+  const addBox = (lines) => { if (lines.length) boxes.push({ lines, qty: 1, kod: '' }); };
+  // a table cell: its paragraphs make one box; a table inside it is read on its own
+  const walkCell = (cell) => {
+    let run = [];
+    elements(cell).forEach((el) => {
+      if (is(el, W_NS, 'tbl')) { addBox(run); run = []; walkTable(el); }
+      else if (is(el, W_NS, 'p')) { const t = ownText(el); if (t) run.push(t); boxTexts(el).forEach(addBox); }
+    });
+    addBox(run);
+  };
+  const walkTable = (tbl) => elements(tbl).filter((r) => is(r, W_NS, 'tr'))
+    .forEach((tr) => elements(tr).filter((c) => is(c, W_NS, 'tc')).forEach(walkCell));
+  elements(body).forEach((el) => {
+    if (is(el, W_NS, 'tbl')) walkTable(el);
+    else if (is(el, W_NS, 'p')) { boxTexts(el).forEach(addBox); const t = ownText(el); if (t) marker(t); }
+  });
+  const coded = boxes.filter((b) => b.kod);
+  const notes = boxes.length > coded.length && coded.length
+    ? [`${boxes.length - coded.length} plaque(s) at the end have no KOD under them — not imported, please add them by hand.`]
+    : [];
+  return { items: coded, notes };
+}
+
 // Same, from the .docx file itself (for the AI reader's path). Never throws.
 export async function readDocxSelempang(arrayBuffer, { DOMParser: DP = globalThis.DOMParser } = {}) {
   try {

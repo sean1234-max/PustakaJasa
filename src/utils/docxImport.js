@@ -1,6 +1,6 @@
 import JSZip from 'jszip';
 import { makeDynamicCategoryKey, resolveSelempangWarna } from '../data/catalog';
-import { readSelempangFromDocument, readPlaqueBoxes } from './docxSelempang';
+import { readSelempangFromDocument, readPlaqueBoxes, readCodedBoxes } from './docxSelempang';
 import { schoolListSections } from './schoolList';
 
 // A second real-world order shape, completely different from any Excel
@@ -611,7 +611,9 @@ export async function parseWordingDocx(arrayBuffer, { DOMParser: DP = globalThis
     .forEach((sec) => { categorized[sec.isSelempangList ? 'SELEMPANG' : (sec.dynamicCategoryKey || 'UMUM')] = [sec]; });
   // No table at all: plaques drawn as text boxes (docxSelempang.js readPlaqueBoxes), top to bottom
   if (count === 0 && listRows.length === 0) {
-    const boxed = readPlaqueBoxes(doc);
+    // …or boxes with "N PLAK" / "KOD …" written under them (readCodedBoxes)
+    const drawn = readPlaqueBoxes(doc);
+    const boxed = drawn.items.length ? drawn : readCodedBoxes(doc);
     notes.push(...boxed.notes);
     boxed.items.forEach((it) => listRows.push({ ...it, lines: it.lines, unit: 0 }));
     schoolListSections(listRows.map((r) => ({ lines: foldBracketSubjects(r.lines), qty: r.qty, type: '', kod: r.kod, unit: 0, total: 0 })))

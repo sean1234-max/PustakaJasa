@@ -74,3 +74,22 @@ describe('parseWordingDocx with selempang', () => {
     expect(res.categorized.SELEMPANG[0].selempangRows).toEqual([{ acara: 'NILAM', warna: 'MERAH', warnaCode: '0050', qty: 2 }]);
   });
 });
+
+describe('boxes with "N PLAK" / "KOD" under them (plak-ham 2026.docx)', () => {
+  const cell = (...lines) => `<w:tc>${lines.map(para).join('')}</w:tc>`;
+  const table = (...rows) => `<w:tbl>${rows.map((cells) => `<w:tr>${cells.join('')}</w:tr>`).join('')}</w:tbl>`;
+  const head = ['HARI APRESIASI MURID SKJK', '2026'];
+  it('each box takes the count under it (none = 1) and the code under its group', async () => {
+    const body = para('PLAK HAM') // a title before any box isn't a code
+      + table([cell(...head, 'PENGAWAS SEKOLAH TAHUN 6')]) + para('18PLAK')
+      + table([cell(...head, 'ANUGERAH APRESIASI SENI')]) + para('6 PLAK')
+      + para('KOD PK 261A')
+      + table([cell(...head, 'TOKOH', 'PEMBACA BESTARI'), cell(...head, 'TOKOH', 'ADIWIRA')])
+      + para('SHINING STICKER A');
+    const res = await parseWordingDocx(await makeDocx(body), { DOMParser });
+    expect(res.error).toBeUndefined();
+    const rows = res.categorized.UMUM[0].umumRows;
+    expect(rows.map((r) => [r.jenisPlak, r.qty])).toEqual([['PK 261A', 18], ['PK 261A', 6], ['SHINING STICKER A', 1], ['SHINING STICKER A', 1]]);
+    expect(res.categorized.UMUM[0].lines['0']).toBe('HARI APRESIASI MURID SKJK\n2026');
+  });
+});
