@@ -157,6 +157,13 @@ async function runOnWindows(scriptPath) {
 // ignored, any case). null when there's none — that group's AI file would never be made.
 const squash = (s) => String(s || '').replace(/\s+/g, '').toUpperCase();
 const eCutNumber = (s) => /E\s*CUT\s*(\d+)/i.exec(String(s || ''))?.[1] ?? null;
+// SEAN.jsx eCutForBase: a stand medal's BASE decides its .ai whatever the code (Sean, 2026-10-23)
+export function eCutForBase(code) {
+  const c = String(code || '').toUpperCase();
+  if (/\bBASE\s*WITH(OUT)?\s*COVER\b/.test(c)) return '11';
+  const m = /\bBASE\s*([ABC])\b/.exec(c);
+  return m ? { A: '8', B: '9', C: '10' }[m[1]] : null;
+}
 function csvCells(line) {
   const out = [];
   let cur = '';
@@ -180,6 +187,9 @@ export function findTemplates(folder, codes) {
     });
   }
   return Object.fromEntries(codes.map((code) => {
+    const baseCut = eCutForBase(code);
+    const byBase = baseCut !== null && files.find((f) => eCutNumber(f) === baseCut);
+    if (byBase) return [code, byBase];
     const mapped = mapping.get(squash(code));
     if (mapped && files.includes(mapped)) return [code, mapped];
     const n = eCutNumber(code);

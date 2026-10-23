@@ -168,3 +168,21 @@ describe('parseRunReport', () => {
     });
   });
 });
+
+describe('a stand medal goes by its BASE (Sean, 2026-10-23)', async () => {
+  const { mkdtempSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const path = (await import('node:path')).default;
+  it('BASE WITH / WITHOUT COVER -> E CUT 11, BASE A/B/C -> E CUT 8/9/10, whatever the code', () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'base-'));
+    ['E CUT 1 -CIRCLE STIKER (C).ai', 'E CUT 8 - STAND MEDAL BASE A.ai', 'E CUT 9 - STAND MEDAL BASE B.ai', 'E CUT 10 - STAND MEDAL BASE C.ai', 'E CUT 11 - STAND MEDAL(1X3)-45pcs.ai'].forEach((f) => writeFileSync(path.join(dir, f), ''));
+    writeFileSync(path.join(dir, 'product_mapping.csv'), 'code,filename\nSM-13230/GOLD/BASE C,"E CUT 1 -CIRCLE STIKER (C).ai"\n');
+    expect(findTemplates(dir, ['SM-13230 / GOLD / BASE C', 'MP399 / GOLD / BASE WITH COVER', 'SM-13187 / SILVER / BASE WITHOUT COVER', 'OTHER - SM13214/BASE A', 'OTHER - X BASE B'])).toEqual({
+      'SM-13230 / GOLD / BASE C': 'E CUT 10 - STAND MEDAL BASE C.ai',
+      'MP399 / GOLD / BASE WITH COVER': 'E CUT 11 - STAND MEDAL(1X3)-45pcs.ai',
+      'SM-13187 / SILVER / BASE WITHOUT COVER': 'E CUT 11 - STAND MEDAL(1X3)-45pcs.ai',
+      'OTHER - SM13214/BASE A': 'E CUT 8 - STAND MEDAL BASE A.ai',
+      'OTHER - X BASE B': 'E CUT 9 - STAND MEDAL BASE B.ai',
+    });
+  });
+});
