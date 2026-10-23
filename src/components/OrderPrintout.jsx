@@ -4,6 +4,7 @@ import { formatDate, formatDateTime, toMalaysiaDay, invoiceLabel } from '../data
 import { groupItemsByBatch } from '../utils/orderBatches';
 import { splitOrderCategories } from '../utils/exportCsv';
 import { reconstructBlocksForCategory } from '../utils/computeBlocks';
+import RemarkText from './RemarkText';
 
 const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: false, matrix: false, jenisPlak: false };
 
@@ -124,7 +125,7 @@ function PrintHeader({ order, invoiceId, printedAt, urgent, stamp, showSales, sh
         {showRemark && order.remark && (
           <div style={{ marginTop: 'var(--space-4)' }}>
             <div className="dim">Remark</div>
-            <div>{order.remark}</div>
+            <RemarkText text={order.remark} />
           </div>
         )}
     </>

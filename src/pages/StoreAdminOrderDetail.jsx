@@ -13,6 +13,7 @@ import { combineByJenisPlak, getInvoiceItems, partialSplitQty } from '../utils/o
 import ImportFileButtons from '../components/ImportFileButtons';
 import { getOrderChangeStamp } from '../utils/orderStamp';
 import { isUrgentShipment } from '../utils/urgentOrder';
+import RemarkText from '../components/RemarkText';
 
 
 const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: false, matrix: false, jenisPlak: false };
@@ -528,7 +529,7 @@ export default function StoreAdminOrderDetail() {
             {order.remark && (
               <div style={{ marginTop: 'var(--space-4)' }}>
                 <div className="dim">Remark</div>
-                <div>{order.remark}</div>
+                <RemarkText text={order.remark} />
               </div>
             )}
 

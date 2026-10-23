@@ -26,6 +26,7 @@ import ReservedNamesForm from '../components/ReservedNamesForm';
 import { getAiFileHelperStatus, startAiFileHelperJob, getAiFileHelperJob } from '../lib/aiFileHelper';
 import { schoolFolderFor } from '../data/schoolFolders';
 import { getOrderChangeStamp } from '../utils/orderStamp';
+import RemarkText from '../components/RemarkText';
 
 // 3 flashes × 0.5s (index.css .kiv-row-flash), then the rows go back to normal
 const KIV_FLASH_MS = 1700;
@@ -568,7 +569,7 @@ export default function ProductionOrderDetail() {
             {order.remark && (
               <div style={{ marginTop: 'var(--space-4)' }}>
                 <div className="dim">Remark</div>
-                <div>{order.remark}</div>
+                <RemarkText text={order.remark} />
               </div>
             )}
 

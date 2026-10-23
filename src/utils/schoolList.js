@@ -7,10 +7,12 @@ import { resolveSelempangWarna, makeDynamicCategoryKey } from '../data/catalog';
 //     (the award, MERAH), ③ the rest
 //   PLAK (or no type) — ORDER LAIN-LAIN; anything else with wording (SET ALAS TULIS …) its own tab
 //   SELEMPANG — the SELEMPANG list: ACARA the lines after ①, WARNA the code column
-// Every row carries `toRemark` ("KOD/RM unit/RM total"): AppState.jsx moves a row the website
-// doesn't sell (or with no wording) to the Remark instead.
+// Every row carries `toRemark` ("KOD | QTY | RM unit | RM total", under REMARK_ITEMS_HEADER): AppState.jsx
+// moves a row the website doesn't sell (or with no wording) to the Remark instead; the Remark shows
+// such lines as a table (RemarkText.jsx).
 // `items`: [{ lines (bracketed subjects already folded), qty, type, kod, unit, total }].
 const fmt = (n) => `RM${n.toFixed(2)}`;
+export const REMARK_ITEMS_HEADER = 'CODE | QTY | UNIT PRICE | TOTAL PRICE';
 
 // How many leading lines all the worded items share (each keeps at least one line of its own).
 function sharedTopLines(items) {
@@ -41,7 +43,7 @@ export function schoolListSections(items) {
     const name = plak ? (slots[0].replace(/\n/g, ' ') || 'PLAK') : it.type.replace(/\s*\(.*\)\s*$/, '').trim();
     const key = `${plak ? 'P' : 'X'}\u0000${name}`;
     if (!tabs.has(key)) tabs.set(key, { name, plak, rows: [] });
-    tabs.get(key).rows.push({ ...it, slots, toRemark: `${it.kod || it.type}/${fmt(it.unit)}/${fmt(it.total)}`, noWording: !it.lines.length });
+    tabs.get(key).rows.push({ ...it, slots, toRemark: `${it.kod || it.type} | ${it.qty} | ${fmt(it.unit)} | ${fmt(it.total)}`, noWording: !it.lines.length });
   });
   let first = true;
   tabs.forEach(({ name, plak, rows }) => {

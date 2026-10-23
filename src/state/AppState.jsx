@@ -36,6 +36,7 @@ import {
 import { supabase } from '../lib/supabaseClient';
 import { uploadOrderImportFile, getOrderImportUrl } from '../lib/storageApi';
 import { withImportFile, tagImportFiles, orderImportFields } from '../utils/importFiles';
+import { REMARK_ITEMS_HEADER } from '../utils/schoolList';
 import { syncUrgentOrderToSheet, highlightUrgentKitDoc } from '../lib/urgentSheetApi';
 import { isUrgentShipment, urgentSheetAction, SHIPMENT_EDITABLE_STATUSES } from '../utils/urgentOrder';
 import { fetchCustomTypoWords } from '../lib/typoWordsApi';
@@ -970,13 +971,16 @@ export function AppStateProvider({ children }) {
     // (Sean, 2026-10-22); a tab left with no rows isn't opened at all.
     if (parsed.categorized) {
       const toRemark = (ur) => ur.toRemark && (ur.noWording || !matchJenisPlakPath(ur.jenisPlak, st.plakCatalog));
+      const itemRows = [];
       const categorized = Object.fromEntries(Object.entries(parsed.categorized).map(([k, secs]) => [k, [].concat(secs || []).flatMap((sec) => {
         if (!sec.isUmumList) return [sec];
-        sec.umumRows.filter(toRemark).forEach((ur) => remarkNotes.push(ur.toRemark));
+        sec.umumRows.filter(toRemark).forEach((ur) => itemRows.push(ur.toRemark));
         const umumRows = sec.umumRows.filter((ur) => !toRemark(ur));
         return umumRows.length ? [{ ...sec, umumRows }] : [];
       })]).filter(([, secs]) => secs.length));
       parsed = { ...parsed, categorized };
+      // under one header line, so the Remark shows them as a table
+      if (itemRows.length) remarkNotes.push(REMARK_ITEMS_HEADER, ...itemRows);
     }
 
     // Jenis Plak text the catalog can't place is left BLANK (never the raw

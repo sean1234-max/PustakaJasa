@@ -368,9 +368,9 @@ describe("a school's own list in Word (NAMA | CODE | JUMLAH | HARGA)", () => {
     const umum = categorized.UMUM[0];
     expect(umum.lines).toMatchObject({ 0: head, 1: 'ANUGERAH AKADEMIK TERBAIK', 2: '1 BESTARI', umumRed: '1' });
     expect(umum.umumRows.map((r) => [r.l1, r.l2, r.qty, r.jenisPlak, r.toRemark])).toEqual([
-      ['', '', 3, 'PKC 263', 'PKC 263/RM12.00/RM36.00'],
-      ['', '1 BIJAK', 3, 'PKC 263', 'PKC 263/RM12.00/RM36.00'],
-      ['TOKOH MURID', '-', 1, 'OOS DESIGN C', 'OOS DESIGN C/RM39.00/RM39.00'],
+      ['', '', 3, 'PKC 263', 'PKC 263 | 3 | RM12.00 | RM36.00'],
+      ['', '1 BIJAK', 3, 'PKC 263', 'PKC 263 | 3 | RM12.00 | RM36.00'],
+      ['TOKOH MURID', '-', 1, 'OOS DESIGN C', 'OOS DESIGN C | 1 | RM39.00 | RM39.00'],
     ]);
     expect(categorized.SELEMPANG[0].selempangRows).toEqual([expect.objectContaining({ acara: 'TOKOH MURID 2026', warna: 'MERAH', qty: 1 })]);
   });

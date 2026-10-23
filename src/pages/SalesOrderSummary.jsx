@@ -19,6 +19,7 @@ import ShipmentConfirmModal from '../components/ShipmentConfirmModal';
 import { getOrderChangeStamp } from '../utils/orderStamp';
 import { addonRepeatsOrder, addonRepeatMessage } from '../utils/addonCheck';
 import { isUrgentShipment } from '../utils/urgentOrder';
+import RemarkText from '../components/RemarkText';
 
 // Read-only everywhere — this page only ever displays what the teacher
 // already submitted, it never edits the underlying order/category data.
@@ -386,7 +387,7 @@ export default function SalesOrderSummary() {
               ) : order.remark && (
                 <div style={{ marginTop: 'var(--space-4)' }}>
                   <div className="dim">Remark</div>
-                  <div>{order.remark}</div>
+                  <RemarkText text={order.remark} />
                 </div>
               )}
 

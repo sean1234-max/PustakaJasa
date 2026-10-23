@@ -1502,13 +1502,13 @@ describe("a school's own one-row-per-item list (WORDING + BILANGAN)", () => {
     const umum = [].concat(categorized.UMUM)[0];
     expect(umum.lines).toMatchObject({ 0: 'MAJLIS 2026', 1: 'MATA PELAJARAN TERBAIK TAHUN 6\nBAHASA MELAYU', umumRed: '1' });
     expect(umum.umumRows.map((r) => [r.qty, r.l1, r.l2, r.toRemark])).toEqual([
-      [8, '', '', 'PK 261 B/RM9.00/RM72.00'],
-      [4, 'ANUGERAH CAHAYA', 'TAHUN 6', 'PK 261 B/RM9.00/RM36.00'],
+      [8, '', '', 'PK 261 B | 8 | RM9.00 | RM72.00'],
+      [4, 'ANUGERAH CAHAYA', 'TAHUN 6', 'PK 261 B | 4 | RM9.00 | RM36.00'],
     ]);
     const alas = [].concat(categorized[makeDynamicCategoryKey('UMUM', 'SET ALAS TULIS')])[0];
-    expect(alas.umumRows[0]).toMatchObject({ qty: 25, jenisPlak: '26-9F', toRemark: '26-9F/RM9.00/RM225.00' });
+    expect(alas.umumRows[0]).toMatchObject({ qty: 25, jenisPlak: '26-9F', toRemark: '26-9F | 25 | RM9.00 | RM225.00' });
     const bouquet = [].concat(categorized[makeDynamicCategoryKey('UMUM', 'HAND BOUQUET')])[0];
-    expect(bouquet.umumRows[0]).toMatchObject({ noWording: true, toRemark: 'GTS 25 B/RM25.00/RM325.00' });
+    expect(bouquet.umumRows[0]).toMatchObject({ noWording: true, toRemark: 'GTS 25 B | 13 | RM25.00 | RM325.00' });
     const sel = [].concat(categorized.SELEMPANG)[0];
     expect(sel.selempangRows).toEqual([expect.objectContaining({ acara: 'TOKOH KURIKULUM', warna: 'KUNING', qty: 1 })]);
   });

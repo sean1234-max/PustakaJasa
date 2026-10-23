@@ -12,6 +12,7 @@ import { reconstructBlocksForCategory } from '../utils/computeBlocks';
 import { splitOrderCategories } from '../utils/exportCsv';
 import { getInvoiceItems } from '../utils/orderBatches';
 import CrystalPreview from '../components/CrystalPreview';
+import RemarkText from '../components/RemarkText';
 
 const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: false, matrix: false, jenisPlak: false };
 
@@ -195,7 +196,7 @@ export default function OrderDetails() {
               {order.remark && (
                 <div style={{ marginTop: 'var(--space-4)' }}>
                   <div className="dim">Remark</div>
-                  <div>{order.remark}</div>
+                  <RemarkText text={order.remark} />
                 </div>
               )}
 

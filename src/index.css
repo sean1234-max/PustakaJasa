@@ -965,3 +965,8 @@ input.catalog-admin-code { padding: 6px 8px; }
 .big-dialog-why { color: #b45309; font-weight: 700; }
 .big-dialog-actions { display: flex; flex-direction: column; gap: 10px; }
 .big-dialog-actions .btn { font-size: 16px; padding: 14px 16px; width: 100%; }
+
+/* An order Remark's "CODE | QTY | UNIT PRICE | TOTAL PRICE" lines (RemarkText.jsx) */
+.remark-table { border-collapse: collapse; margin: 4px 0; }
+.remark-table th, .remark-table td { padding: 2px 24px 2px 0; text-align: left; white-space: nowrap; }
+.remark-table th { font-weight: 600; color: var(--muted, #666); font-size: 0.85em; letter-spacing: 0.04em; }
