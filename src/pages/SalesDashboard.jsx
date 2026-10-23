@@ -7,7 +7,7 @@ import { statusPillStyle, isAddonInFlight, invoiceLabel, invoiceSource } from '.
 import { matchesOrderSearch } from '../utils/orderSearch';
 import OrderUrgentBadge from '../components/OrderUrgentBadge';
 import AddOnTag from '../components/AddOnTag';
-import { prioritizeUrgentOrders } from '../utils/urgentOrder';
+import { nearestFirst } from '../utils/urgentOrder';
 import ConfirmButton from '../components/ConfirmButton';
 import { countReservedPlaques, isCrystalCode } from '../utils/exportCsv';
 
@@ -66,9 +66,9 @@ export default function SalesDashboard() {
   // Searching (Sean, 2026-10-17 — same as Production's): the matching orders' cards from every
   // stage, each with its own stage's buttons (cardFilterOf).
   const shown = searching ? state.orders.filter((ord) => matchesOrderSearch(ord, search)) : byStage;
-  const filteredOrders = prioritizeUrgentOrders(isManager && salesmanFilter !== 'all'
+  const filteredOrders = nearestFirst(isManager && salesmanFilter !== 'all'
     ? shown.filter((ord) => ord.sales === salesmanFilter)
-    : shown);
+    : shown, state.orders);
   const cardFilterOf = (ord) => {
     if (!searching) return filter;
     return isAddonInFlight(ord) ? ADDON_FILTER : ord.status;

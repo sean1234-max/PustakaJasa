@@ -3,11 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import ConfirmButton from '../components/ConfirmButton';
 import { useAppState } from '../state/useAppState';
-import { statusPillStyle, formatDate, getLowStockAlerts, toMalaysiaDay, isAddonInFlight, invoiceLabel, invoiceSource, invoiceDate } from '../data/catalog';
+import { statusPillStyle, formatDate, getLowStockAlerts, toMalaysiaDay, isAddonInFlight, invoiceLabel, invoiceSource } from '../data/catalog';
 import { getOrderChangeStamp } from '../utils/orderStamp';
 import { getOrderInvoiceSlices } from '../utils/orderBatches';
 import { countReservedPlaques, needsKiv, kivParts, hasMainPart, kivInProduction, kivInTyping, kivManualCrystal } from '../utils/exportCsv';
-import { prioritizeUrgentOrders, byInvoiceDate, keepTambahanWithParent } from '../utils/urgentOrder';
+import { nearestFirst, keepTambahanWithParent } from '../utils/urgentOrder';
 import OrderUrgentBadge from '../components/OrderUrgentBadge';
 import AddOnTag from '../components/AddOnTag';
 import { MANUAL_ARTWORK_NOTE } from '../components/CrystalPreview';
@@ -144,9 +144,9 @@ export default function ProductionDashboard() {
   // a Tambahan's cards next to its parent's (keepTambahanWithParent)
   const filteredOrders = keepTambahanWithParent(searching
     ? orderSlices.filter((o) => matchesOrderSearch(o, search) && (o._part === 'main' ? !!cardTabOf(o) || !kivCardShown(o) : cardTabOf(o)))
-    : prioritizeUrgentOrders(byInvoiceDate(ordersInTab, (o) => invoiceDate(invoiceSource(o, state.orders))?.getTime() ?? null)
+    : nearestFirst(ordersInTab, state.orders)
       .filter((o) => !shipmentDateFilter || shipmentDateKey(o.shipmentDate) === shipmentDateFilter)
-      .filter((o) => !cardTypeFilter || cardTypeOf(o) === cardTypeFilter)));
+      .filter((o) => !cardTypeFilter || cardTypeOf(o) === cardTypeFilter));
 
   // Only shipment dates that actually have an order in this tab are
   // selectable — production shouldn't be able to pick a date with nothing

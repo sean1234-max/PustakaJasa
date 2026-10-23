@@ -6,7 +6,7 @@ import { STATUS_STAGES, statusPillStyle, invoiceLabel, invoiceSetByNote } from '
 import { getOrderChangeStamp } from '../utils/orderStamp';
 import { getOrderInvoiceSlices } from '../utils/orderBatches';
 import { fetchMyAssignedSalesmen, fetchAllSalesmen } from '../lib/ordersApi';
-import { prioritizeUrgentOrders, URGENT_ORDERS_SHEET_URL } from '../utils/urgentOrder';
+import { nearestFirst, URGENT_ORDERS_SHEET_URL } from '../utils/urgentOrder';
 import OrderUrgentBadge from '../components/OrderUrgentBadge';
 
 // Store Admin (formerly "Invoicing Department" — role renamed 0047) can see
@@ -91,7 +91,7 @@ export default function StoreAdminDashboard() {
   const activeTab = TABS.find((t) => t.key === tab);
   const ordersInTab = orderSlices.filter(activeTab.match);
 
-  const filteredOrders = prioritizeUrgentOrders(ordersInTab.filter((o) => {
+  const filteredOrders = nearestFirst(ordersInTab.filter((o) => {
     const q = search.trim().toLowerCase();
     if (q && !o.id.toLowerCase().includes(q) && !(o.invoiceId || '').toLowerCase().includes(q)) return false;
     if (salesmanFilter !== 'all' && o.sales !== salesmanFilter) return false;
@@ -100,7 +100,7 @@ export default function StoreAdminDashboard() {
     if (typeFilter === 'original' && isTambahan) return false;
     if (typeFilter === 'tambahan' && !isTambahan) return false;
     return true;
-  }));
+  }), state.orders);
 
   const clearFilters = () => {
     setSearch(''); setSalesmanFilter('all'); setStatusFilter('all'); setTypeFilter('all');

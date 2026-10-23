@@ -4,7 +4,7 @@ import Nav from '../components/Nav';
 import { useAppState } from '../state/useAppState';
 import { STATUS_STAGES, statusPillStyle, isReviewed, isAddonInFlight, addonStageText, invoiceLabel, invoiceSource } from '../data/catalog';
 import { getOrderInvoiceSlices } from '../utils/orderBatches';
-import { prioritizeUrgentOrders } from '../utils/urgentOrder';
+import { nearestFirst } from '../utils/urgentOrder';
 import OrderUrgentBadge from '../components/OrderUrgentBadge';
 import AddOnTag from '../components/AddOnTag';
 
@@ -41,7 +41,7 @@ export default function Dashboard() {
   )), [state.orders, state.plakCatalog]);
 
   const activeFilter = FILTERS.find((f) => f.key === filter) || FILTERS[0];
-  const filteredOrders = prioritizeUrgentOrders(orderSlices.filter(activeFilter.match));
+  const filteredOrders = nearestFirst(orderSlices.filter(activeFilter.match), state.orders);
 
   return (
     <div className="screen-wrap">

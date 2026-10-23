@@ -1,4 +1,4 @@
-import { parseDisplayDate, toMalaysiaDay } from '../data/catalog';
+import { parseDisplayDate, toMalaysiaDay, invoiceDate, invoiceSource } from '../data/catalog';
 
 // "Urgent" = the Shipment Date falls within 7 calendar days of the day the
 // salesman APPROVES the order, that day counting as day 1 (Sean,
@@ -119,4 +119,10 @@ export const SHIPMENT_EDITABLE_STATUSES = ['Reviewing Order', 'Salesman Approved
 export function urgentSheetAction({ urgent, wasSynced, hasInvoice }) {
   if (!urgent) return wasSynced ? 'remove' : null;
   return wasSynced || hasInvoice ? 'sync' : null;
+}
+
+// Every dashboard's cards (Sean, 2026-10-23): urgent first, then invoice date earliest first,
+// then no invoice yet by Shipment Date soonest. `allOrders`: a Tambahan reads its parent's invoice.
+export function nearestFirst(orders, allOrders) {
+  return prioritizeUrgentOrders(byInvoiceDate(orders, (o) => invoiceDate(invoiceSource(o, allOrders))?.getTime() ?? null));
 }
