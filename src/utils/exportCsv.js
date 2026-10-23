@@ -378,6 +378,10 @@ function buildMatrixRows(item, cat, header, year, positionPart1, schoolLanguage)
   const knownSubjects = [...getCategorySubjects(cat, schoolLanguage), ...customSubjects];
   const classNames = Object.values(breakdown).flat().map((c) => c.desc).filter(Boolean);
   const format = buildSubjectTahunFormatter(contoh, knownSubjects, columns, classNames);
+  // A CONTOH showing only the subject — "(BAHASA MELAYU)", no Tahun anywhere — means the
+  // plaques carry no Tahun line either (Sean, 2026-10-23, ORD-0108).
+  const anyLevel = [...columns, ...['1', '2', '3', '4', '5', '6'].map((n) => `TAHUN ${n}`)].flatMap((l) => [l, bareLevel(l)]);
+  const noTahun = !!findLongestWord(contoh, knownSubjects) && !findLongestWord(contoh, anyLevel);
   // the class line: in the red position line itself ("ANUGERAH IBNU SINA⏎ALIRAN TAHUN 1 PPKI",
   // ORD-0059), else in the CONTOH's subject / Tahun rows
   const posClass = classLineTemplate(positionPart1, classNames, columns);
@@ -410,7 +414,7 @@ function buildMatrixRows(item, cat, header, year, positionPart1, schoolLanguage)
     // Tahun, there is no real class-level axis) is a stand-in, never an
     // engraved line — same filter buildPbdMatrixRows applies to the subject.
     const bareCol = ['KUANTITI', 'KEDUDUKAN'].includes(String(column).trim().toUpperCase()) ? '' : column;
-    const tahunLabel = includeTahunWord ? bareCol : bareCol.replace(/^TAHUN\s*/i, '');
+    const tahunLabel = noTahun ? '' : includeTahunWord ? bareCol : bareCol.replace(/^TAHUN\s*/i, '');
     const listKind = isKelasSubject(subject, kelasWord) ? 'moral' : 'main';
     const classes = (breakdown[`${item.categoryKey}::${item.blockIdx}::${column}::${listKind}`] || [])
       .filter((c) => (c.desc || '').trim());

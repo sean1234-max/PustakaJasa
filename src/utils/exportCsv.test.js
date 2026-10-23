@@ -128,6 +128,8 @@ describe('CSV column remap — reference-sample lines -> CSV columns', () => {
     // No recognisable subject + Tahun in the CONTOH: plain subject / Tahun lines.
     expect(first('TAHUN 5', '')).toEqual(['ACARA', 'SAINS', '5']);
     expect(first('TAHUN 5', 'BM TAHUN 1')).toEqual(['ACARA', 'SAINS', 'TAHUN 5']);
+    // Only the subject, no Tahun anywhere (ORD-0108): no Tahun on the plaques either.
+    expect(first('TAHUN 5', '(BAHASA MELAYU)')).toEqual(['ACARA', 'SAINS', '']);
   });
 
   // Real order (SK TAMAN SERI PAGI): line 2 "CEMERLANG⏎BAHASA MELAYU", line 3
