@@ -1125,6 +1125,20 @@ describe('KIV & ARTWORK parts', () => {
   const reservedTokoh = { jenisPlak: 'PKC 263', detail: { rows: [{ namaMurid: 'RESERVED', qty: '1' }] } };
   const crystal = { jenisPlak: 'CRYSTAL / R-7 / DESIGN C', detail: { rows: [{ namaMurid: 'ABU', qty: '1' }] } };
 
+  it('hand-made OTHERs are never typed; only an OTHER with BASE A/B/C is (2026-10-23, ORD-0093)', async () => {
+    const { hasMainPart, skipsTyping, isManualOtherCode } = await import('./exportCsv');
+    const db2 = { jenisPlak: 'OTHER - DB2', detail: { rows: [] } };
+    const base = { jenisPlak: 'OTHER - SM13214 / GOLD / BASE A', detail: { rows: [] } };
+    expect([isManualOtherCode('OTHER - DB2'), isManualOtherCode('OTHER - SM13214 / GOLD / BASE C'), isManualOtherCode('PKC 263')]).toEqual([true, false, false]);
+    // crystals + DB2: only the KIV & ARTWORK card
+    expect(hasMainPart({ items: [db2, crystal] })).toBe(false);
+    expect(skipsTyping({ items: [db2, crystal] })).toBe(false);
+    // DB2 alone: no Typing, straight to In Production
+    expect(skipsTyping({ items: [db2] })).toBe(true);
+    // a BASE OTHER is typed
+    expect(hasMainPart({ items: [base, db2] })).toBe(true);
+  });
+
   it('names what the KIV & ARTWORK card is for', async () => {
     const { kivParts } = await import('./exportCsv');
     expect(kivParts({ items: [plak] })).toEqual([]);

@@ -161,10 +161,17 @@ export function kivParts(order) {
   return parts;
 }
 
-// Has ordinary plaques for Typing (anything that isn't a crystal or wholly Reserved).
+// An "OTHER - …" Jenis Plak Production orders in from outside and handles by hand (OTHER - DB2,
+// Sean 2026-10-23): never typed. Only an OTHER naming a stand-medal BASE A/B/C is typed (its AI file).
+export const isManualOtherCode = (code) => /^OTHER\b/i.test(String(code || '').trim()) && !/\bBASE\s*[ABC]\b/i.test(String(code));
+
+// Has ordinary plaques for Typing (anything that isn't a crystal, a hand-made OTHER or wholly Reserved).
 export function hasPlakPart(order) {
-  return (order?.items || []).some((it) => !isCrystalCode(it.jenisPlak) && !itemAllReserved(it));
+  return (order?.items || []).some((it) => !isCrystalCode(it.jenisPlak) && !isManualOtherCode(it.jenisPlak) && !itemAllReserved(it));
 }
+
+// Nothing to type and nothing in KIV & ARTWORK (only hand-made OTHERs): straight to In Production.
+export const skipsTyping = (order) => !hasMainPart(order) && kivParts(order).length === 0;
 
 // What the order's main (Typing → In Production) card makes.
 export function hasMainPart(order) {

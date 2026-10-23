@@ -14,7 +14,7 @@ import { useAppState } from '../state/useAppState';
 import { statusPillStyle, formatDate, MANUAL_MAX_QTY, shipmentDatePassed, toMalaysiaDay, malaysiaToday, isReviewed, isAddonInFlight, invoiceLabel, invoiceSetByNote, invoiceSource, resolveCategory } from '../data/catalog';
 import { redLinesProblem, RED_LINES_SUFFIX } from '../utils/redLines';
 import { reconstructOrderDetailGroups, reconstructBlocksForCategory, noopUpdaters } from '../utils/computeBlocks';
-import { getExportableCategories, splitOrderCategories, getOrderJenisPlakGroups, getPlakProductionMode, summarizeRowsForManual, buildCsvRows, rowsToCsv, buildCategoryCsvFilename, combineCsvRows, addInvoiceGaps, buildCombinedCsvFilename, validateExport, getInvoiceIdForJenisPlak, getPartialSplitNotes, needsKiv, kivInProduction, kivParts, isCrystalCode, firstKivCategory, crystalWithPlak, lateNamesOrder, hasLateNames } from '../utils/exportCsv';
+import { getExportableCategories, splitOrderCategories, getOrderJenisPlakGroups, getPlakProductionMode, summarizeRowsForManual, buildCsvRows, rowsToCsv, buildCategoryCsvFilename, combineCsvRows, addInvoiceGaps, buildCombinedCsvFilename, validateExport, getInvoiceIdForJenisPlak, getPartialSplitNotes, needsKiv, kivInProduction, kivParts, isCrystalCode, isManualOtherCode, firstKivCategory, crystalWithPlak, lateNamesOrder, hasLateNames } from '../utils/exportCsv';
 import { downloadTextFile } from '../utils/downloadBlob';
 import { getInvoiceItems, withOrderOwnSettings } from '../utils/orderBatches';
 import ImportFileButtons from '../components/ImportFileButtons';
@@ -344,7 +344,8 @@ export default function ProductionOrderDetail() {
   // both (Sean, 2026-10-15); otherwise they're made from their own card.
   const crystalGroups = jenisPlakExport.filter((g) => isCrystalCode(g.jenisPlak));
   const crystalsHere = crystalGroups.length > 0 && (kivCardView ? !!order.artworkConfirmedAt : crystalWithPlak(order));
-  const plakGroups = jenisPlakExport.filter((g) => !isCrystalCode(g.jenisPlak));
+  // a hand-made OTHER (ordered in from outside) is never typed or put in the AI file
+  const plakGroups = jenisPlakExport.filter((g) => !isCrystalCode(g.jenisPlak) && !isManualOtherCode(g.jenisPlak));
   const reservedGroups = plakGroups.filter((g) => g.csvData.reservedCount > 0);
   const combinedRows = addInvoiceGaps(order, combineCsvRows(plakGroups));
   const combinedOk = plakGroups.length > 0 && plakGroups.every((g) => g.check.ok || isAllReserved(g)) && combinedRows.length > 0;

@@ -6,7 +6,7 @@ import { useAppState } from '../state/useAppState';
 import { statusPillStyle, formatDate, getLowStockAlerts, toMalaysiaDay, isAddonInFlight, invoiceLabel, invoiceSource } from '../data/catalog';
 import { getOrderChangeStamp } from '../utils/orderStamp';
 import { getOrderInvoiceSlices } from '../utils/orderBatches';
-import { countReservedPlaques, needsKiv, kivParts, hasMainPart, kivInProduction, kivInTyping, kivManualCrystal } from '../utils/exportCsv';
+import { countReservedPlaques, needsKiv, kivParts, hasMainPart, kivInProduction, kivInTyping, kivManualCrystal, skipsTyping } from '../utils/exportCsv';
 import { nearestFirst, keepTambahanWithParent } from '../utils/urgentOrder';
 import OrderUrgentBadge from '../components/OrderUrgentBadge';
 import AddOnTag from '../components/AddOnTag';
@@ -56,7 +56,8 @@ const TABS = [
     key: 'active',
     label: 'In Production',
     match: (o) => o.status === 'In Production' && (main(o)
-      ? hasMainPart(o) && !!o.typedAt && !(o._primarySlice && o.plakDoneAt)
+      // an order of hand-made OTHERs only skips Typing (Sean, 2026-10-23)
+      ? (hasMainPart(o) ? !!o.typedAt : skipsTyping(o)) && !(o._primarySlice && o.plakDoneAt)
       : kivInProduction(o)),
   },
   // an order with a KIV card (crystals / Reserved) shows both its cards here too (Sean, 2026-10-17)
