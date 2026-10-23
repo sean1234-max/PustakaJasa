@@ -16,6 +16,15 @@ Illustrator 跑。点的时候网站会先检查这台电脑：
 以前装过 helper 的电脑，要再双击 install-windows.bat 一次，才有 crystal 功能（版本 2）。
 
 
+【2026-10-23 更新（版本 5）】以前装过的电脑也要再装一次（Windows 双击 install-windows.bat，
+Mac 右键 install-mac.command → 打开），装完就有：
+  - Generate 之前的自动检查：每个 Jenis Plak 在 AI FILE 资料夹有没有对应的 .ai 模板
+  - production@ / sean@ / kesin@ 账号按 Generate，Illustrator 不再问名字（SITI / SEAN / KESIN）
+  - Generate 之后的检查：少了 AI file、块数不对、字被分开或被截掉
+  - 奖杯看 BASE 选 .ai：BASE WITH / WITHOUT COVER → E CUT 11，BASE A/B/C → E CUT 8/9/10
+（NAS 的 AI FILE 资料夹也要换上新的 SEAN.jsx。）
+
+
 【Windows】
 1. 电脑要先装 Node.js（https://nodejs.org 下载 LTS，一直按下一步）。装过就跳过。
 2. 把整个 ai-file-helper 资料夹复制到这台电脑（放哪里都可以，装完可以删）。
