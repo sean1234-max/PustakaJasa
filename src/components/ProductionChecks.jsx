@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { checkPlaqueWording, checkPlaqueCounts, checkAiReport, plaqueLines } from '../utils/productionCheck';
 import { fileText, compareWords } from '../utils/sourceCheck';
-import { isCrystalCode } from '../utils/exportCsv';
+import { isCrystalCode, buildCsvRows } from '../utils/exportCsv';
 import { orderImportFiles } from '../utils/importFiles';
 import { FORM_TEMPLATE_URL } from '../utils/formRoundTrip';
 import { fetchOrderImportBlob } from '../lib/storageApi';
@@ -36,10 +36,12 @@ export default function ProductionChecks({ order, groups }) {
     return () => { live = false; };
   }, [plakCodes]);
 
+  // every plaque of the whole order — the page may show one invoice of a split order only, and the
+  // teacher's file holds them all (ORD-0108)
   const plaqueText = useMemo(() => [
-    ...rows.map((r) => plaqueLines(r).join('\n')),
-    ...(order.items || []).flatMap((it) => (it.detail?.rows || []).map((r) => r.acara || '')),
-  ].join('\n'), [rows, order.items]);
+    ...buildCsvRows(order, null, order.items || []).rows.map((r) => plaqueLines(r).join('\n')),
+    ...(order.items || []).flatMap((it) => (Array.isArray(it.detail?.rows) ? it.detail.rows : []).map((r) => r.acara || '')),
+  ].join('\n'), [order]);
 
   useEffect(() => {
     let live = true;
