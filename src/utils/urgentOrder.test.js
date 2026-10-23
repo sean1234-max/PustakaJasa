@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  isUrgentShipment, prioritizeUrgentOrders, keepTambahanWithParent, urgentCommission, summarizeUrgentCommission, urgentSheetAction,
+  isUrgentShipment, prioritizeUrgentOrders, byShipmentDate, keepTambahanWithParent, urgentCommission, summarizeUrgentCommission, urgentSheetAction,
 } from './urgentOrder';
 
 describe('isUrgentShipment — within 7 days of approval, that day counting', () => {
@@ -82,5 +82,15 @@ describe('keepTambahanWithParent', () => {
   it('leaves a Tambahan in place when its parent is not in the list', () => {
     const cards = [{ id: 'ORD-0088', parentOrderId: 'ORD-0069' }, { id: 'ORD-0064' }];
     expect(keepTambahanWithParent(cards)).toEqual(cards);
+  });
+});
+
+describe('byShipmentDate + urgent first', () => {
+  it('urgent on top, then the soonest Shipment Date, none last', () => {
+    const cards = [
+      { id: 'late', shipmentDate: '2026-11-20' }, { id: 'none' }, { id: 'soon', shipmentDate: '2026-10-25' },
+      { id: 'past', shipmentDate: '2026-10-20' }, { id: 'urgent', shipmentDate: '2026-11-30', urgent: true },
+    ];
+    expect(prioritizeUrgentOrders(byShipmentDate(cards)).map((c) => c.id)).toEqual(['urgent', 'past', 'soon', 'late', 'none']);
   });
 });

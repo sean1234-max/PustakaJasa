@@ -29,6 +29,16 @@ export function prioritizeUrgentOrders(orders) {
   return [...orders].sort((a, b) => Number(!!b.urgent) - Number(!!a.urgent));
 }
 
+// Cards by Shipment Date, the soonest (or already past) first, none last — then urgent ones on top
+// (Sean, 2026-10-23). Same-day cards keep their order.
+export function byShipmentDate(orders) {
+  const at = (o) => {
+    const t = o.shipmentDate ? new Date(o.shipmentDate).getTime() : NaN;
+    return Number.isFinite(t) ? t : Infinity;
+  };
+  return [...orders].sort((a, b) => at(a) - at(b));
+}
+
 // A Tambahan's cards sit right before its parent order's cards when both are in the list (Sean,
 // 2026-10-22: ORD-0088 TAMBAHAN, then ORD-0069's ACARA and CRYSTAL cards); otherwise it keeps its
 // own place.

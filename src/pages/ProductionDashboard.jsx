@@ -7,7 +7,7 @@ import { statusPillStyle, formatDate, getLowStockAlerts, toMalaysiaDay, isAddonI
 import { getOrderChangeStamp } from '../utils/orderStamp';
 import { getOrderInvoiceSlices } from '../utils/orderBatches';
 import { countReservedPlaques, needsKiv, kivParts, hasMainPart, kivInProduction, kivInTyping } from '../utils/exportCsv';
-import { prioritizeUrgentOrders, keepTambahanWithParent } from '../utils/urgentOrder';
+import { prioritizeUrgentOrders, byShipmentDate, keepTambahanWithParent } from '../utils/urgentOrder';
 import OrderUrgentBadge from '../components/OrderUrgentBadge';
 import AddOnTag from '../components/AddOnTag';
 import { MANUAL_ARTWORK_NOTE } from '../components/CrystalPreview';
@@ -74,6 +74,18 @@ function shipmentDateKey(shipmentDate) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+// The Type filter (Sean, 2026-10-23): what a card is — its crystals (the KIV & ARTWORK / crystal
+// card), a Tambahan of another order, an order's plaques when its crystals have their own card
+// (ACARA), or an ordinary order.
+const CARD_TYPES = [['crystal', 'CRYSTAL'], ['addon', 'ADD ON'], ['acara', 'ACARA'], ['normal', 'Normal']];
+function cardTypeOf(o) {
+  const crystal = kivParts(o).includes('CRYSTAL');
+  if (o._part === 'kiv' && crystal) return 'crystal';
+  if (o.parentOrderId) return 'addon';
+  if (o._part !== 'kiv' && crystal) return 'acara';
+  return 'normal';
+}
+
 export default function ProductionDashboard() {
   const { state, today, markProductionDone, markTypingDone, markReviewDone, markAddOnReviewed, markKivDone, markKivProductionDone } = useAppState();
   const navigate = useNavigate();
@@ -85,6 +97,7 @@ export default function ProductionDashboard() {
   // date — useful across all three tabs (what's coming up in Pending
   // Invoice, what's ready to ship today, what already went out).
   const [shipmentDateFilter, setShipmentDateFilter] = useState('');
+  const [cardTypeFilter, setCardTypeFilter] = useState('');
   // Search Order (Sean, 2026-10-15): Order ID, Invoice Number, school or salesman, across every
   // tab — the orders this account may see (RLS: the manager all, a team account its salesmen's).
   // ponytail: searches the loaded orders (fetchOrders' newest 500); add a server-side ilike
@@ -131,8 +144,9 @@ export default function ProductionDashboard() {
   // a Tambahan's cards next to its parent's (keepTambahanWithParent)
   const filteredOrders = keepTambahanWithParent(searching
     ? orderSlices.filter((o) => matchesOrderSearch(o, search) && (o._part === 'main' ? !!cardTabOf(o) || !kivCardShown(o) : cardTabOf(o)))
-    : prioritizeUrgentOrders(ordersInTab
-      .filter((o) => !shipmentDateFilter || shipmentDateKey(o.shipmentDate) === shipmentDateFilter)));
+    : prioritizeUrgentOrders(byShipmentDate(ordersInTab)
+      .filter((o) => !shipmentDateFilter || shipmentDateKey(o.shipmentDate) === shipmentDateFilter)
+      .filter((o) => !cardTypeFilter || cardTypeOf(o) === cardTypeFilter)));
 
   // Only shipment dates that actually have an order in this tab are
   // selectable — production shouldn't be able to pick a date with nothing
@@ -237,6 +251,15 @@ export default function ProductionDashboard() {
           <option value="">All dates ({ordersInTab.length})</option>
           {shipmentDateOptions.map(([key, rawDate]) => (
             <option key={key} value={key}>{formatDate(toMalaysiaDay(rawDate))}</option>
+          ))}
+        </select>
+      </div>
+      <div className="field" style={{ maxWidth: 260, margin: '0 0 var(--space-4)' }}>
+        <label htmlFor="cardTypeFilter">Type</label>
+        <select className="input" id="cardTypeFilter" value={cardTypeFilter} onChange={(e) => setCardTypeFilter(e.target.value)}>
+          <option value="">All ({ordersInTab.length})</option>
+          {CARD_TYPES.map(([key, label]) => (
+            <option key={key} value={key}>{label} ({ordersInTab.filter((o) => cardTypeOf(o) === key).length})</option>
           ))}
         </select>
       </div>
