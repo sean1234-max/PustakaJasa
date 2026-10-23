@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  isUrgentShipment, prioritizeUrgentOrders, byShipmentDate, keepTambahanWithParent, urgentCommission, summarizeUrgentCommission, urgentSheetAction,
+  isUrgentShipment, prioritizeUrgentOrders, byInvoiceDate, keepTambahanWithParent, urgentCommission, summarizeUrgentCommission, urgentSheetAction,
 } from './urgentOrder';
 
 describe('isUrgentShipment — within 7 days of approval, that day counting', () => {
@@ -85,12 +85,13 @@ describe('keepTambahanWithParent', () => {
   });
 });
 
-describe('byShipmentDate + urgent first', () => {
-  it('urgent on top, then the soonest Shipment Date, none last', () => {
+describe('byInvoiceDate + urgent first', () => {
+  it('urgent on top, then the earliest invoice, then no invoice by the soonest Shipment Date', () => {
     const cards = [
-      { id: 'late', shipmentDate: '2026-11-20' }, { id: 'none' }, { id: 'soon', shipmentDate: '2026-10-25' },
-      { id: 'past', shipmentDate: '2026-10-20' }, { id: 'urgent', shipmentDate: '2026-11-30', urgent: true },
+      { id: 'inv-late', inv: 300 }, { id: 'no-inv-none' }, { id: 'no-inv-soon', shipmentDate: '2026-10-25' },
+      { id: 'inv-early', inv: 100 }, { id: 'urgent', inv: 500, urgent: true }, { id: 'no-inv-past', shipmentDate: '2026-10-20' },
     ];
-    expect(prioritizeUrgentOrders(byShipmentDate(cards)).map((c) => c.id)).toEqual(['urgent', 'past', 'soon', 'late', 'none']);
+    expect(prioritizeUrgentOrders(byInvoiceDate(cards, (c) => c.inv ?? null)).map((c) => c.id))
+      .toEqual(['urgent', 'inv-early', 'inv-late', 'no-inv-past', 'no-inv-soon', 'no-inv-none']);
   });
 });

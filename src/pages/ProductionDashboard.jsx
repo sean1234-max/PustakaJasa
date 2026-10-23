@@ -3,11 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import ConfirmButton from '../components/ConfirmButton';
 import { useAppState } from '../state/useAppState';
-import { statusPillStyle, formatDate, getLowStockAlerts, toMalaysiaDay, isAddonInFlight, invoiceLabel, invoiceSource } from '../data/catalog';
+import { statusPillStyle, formatDate, getLowStockAlerts, toMalaysiaDay, isAddonInFlight, invoiceLabel, invoiceSource, invoiceDate } from '../data/catalog';
 import { getOrderChangeStamp } from '../utils/orderStamp';
 import { getOrderInvoiceSlices } from '../utils/orderBatches';
 import { countReservedPlaques, needsKiv, kivParts, hasMainPart, kivInProduction, kivInTyping } from '../utils/exportCsv';
-import { prioritizeUrgentOrders, byShipmentDate, keepTambahanWithParent } from '../utils/urgentOrder';
+import { prioritizeUrgentOrders, byInvoiceDate, keepTambahanWithParent } from '../utils/urgentOrder';
 import OrderUrgentBadge from '../components/OrderUrgentBadge';
 import AddOnTag from '../components/AddOnTag';
 import { MANUAL_ARTWORK_NOTE } from '../components/CrystalPreview';
@@ -144,7 +144,7 @@ export default function ProductionDashboard() {
   // a Tambahan's cards next to its parent's (keepTambahanWithParent)
   const filteredOrders = keepTambahanWithParent(searching
     ? orderSlices.filter((o) => matchesOrderSearch(o, search) && (o._part === 'main' ? !!cardTabOf(o) || !kivCardShown(o) : cardTabOf(o)))
-    : prioritizeUrgentOrders(byShipmentDate(ordersInTab)
+    : prioritizeUrgentOrders(byInvoiceDate(ordersInTab, (o) => invoiceDate(invoiceSource(o, state.orders))?.getTime() ?? null)
       .filter((o) => !shipmentDateFilter || shipmentDateKey(o.shipmentDate) === shipmentDateFilter)
       .filter((o) => !cardTypeFilter || cardTypeOf(o) === cardTypeFilter)));
 

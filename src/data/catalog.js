@@ -1081,11 +1081,19 @@ export const ORDER_STATUSES = [...STATUS_STAGES, 'Cancelled'];
 // otherwise. Malaysia time. No date recorded (invoiced before 0086) → just
 // the number. Works on an invoice slice too (it carries the order's fields).
 const INVOICE_DATE_FMT = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kuala_Lumpur', day: 'numeric', month: 'numeric', year: '2-digit' });
-export function invoiceLabel(order, invoiceId = order?.invoiceId) {
-  if (!invoiceId) return invoiceId;
+// When an invoice number was entered: a split invoice's own `invoicedAt`, else the order's
+// `invoiceSetAt` — a Date, or null (no invoice, or invoiced before 0086).
+export function invoiceDate(order, invoiceId = order?.invoiceId) {
+  if (!invoiceId) return null;
   const group = (order?.invoiceGroups || []).find((g) => g.invoiceId === invoiceId);
   const at = group ? group.invoicedAt : order?.invoiceSetAt;
   const d = at ? new Date(at) : null;
+  return d && !Number.isNaN(d.getTime()) ? d : null;
+}
+
+export function invoiceLabel(order, invoiceId = order?.invoiceId) {
+  if (!invoiceId) return invoiceId;
+  const d = invoiceDate(order, invoiceId);
   if (!d || Number.isNaN(d.getTime())) return invoiceId;
   const part = (type) => INVOICE_DATE_FMT.formatToParts(d).find((p) => p.type === type)?.value;
   return `${invoiceId} (${Number(part('day'))}/${Number(part('month'))}/${part('year')})`;

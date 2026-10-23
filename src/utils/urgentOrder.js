@@ -29,14 +29,21 @@ export function prioritizeUrgentOrders(orders) {
   return [...orders].sort((a, b) => Number(!!b.urgent) - Number(!!a.urgent));
 }
 
-// Cards by Shipment Date, the soonest (or already past) first, none last — then urgent ones on top
-// (Sean, 2026-10-23). Same-day cards keep their order.
-export function byShipmentDate(orders) {
-  const at = (o) => {
+// Cards by when their invoice was made, the earliest first (Sean, 2026-10-23: first invoiced, first
+// made); cards with no invoice date after them by Shipment Date, the soonest (or already past)
+// first, none last — then urgent ones on top (prioritizeUrgentOrders). `invoiceAt(card)` → ms or null.
+export function byInvoiceDate(orders, invoiceAt) {
+  const ship = (o) => {
     const t = o.shipmentDate ? new Date(o.shipmentDate).getTime() : NaN;
     return Number.isFinite(t) ? t : Infinity;
   };
-  return [...orders].sort((a, b) => at(a) - at(b));
+  return [...orders].sort((a, b) => {
+    const ia = invoiceAt(a);
+    const ib = invoiceAt(b);
+    if (ia != null && ib != null && ia !== ib) return ia - ib;
+    if ((ia != null) !== (ib != null)) return ia != null ? -1 : 1;
+    return ship(a) - ship(b);
+  });
 }
 
 // A Tambahan's cards sit right before its parent order's cards when both are in the list (Sean,
