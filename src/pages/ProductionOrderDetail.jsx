@@ -16,7 +16,7 @@ import { redLinesProblem, RED_LINES_SUFFIX } from '../utils/redLines';
 import { reconstructOrderDetailGroups, reconstructBlocksForCategory, noopUpdaters } from '../utils/computeBlocks';
 import { getExportableCategories, splitOrderCategories, getOrderJenisPlakGroups, getPlakProductionMode, summarizeRowsForManual, buildCsvRows, rowsToCsv, buildCategoryCsvFilename, combineCsvRows, addInvoiceGaps, buildCombinedCsvFilename, validateExport, getInvoiceIdForJenisPlak, getPartialSplitNotes, needsKiv, kivInProduction, kivParts, isCrystalCode, firstKivCategory, crystalWithPlak, lateNamesOrder, hasLateNames } from '../utils/exportCsv';
 import { downloadTextFile } from '../utils/downloadBlob';
-import { getInvoiceItems } from '../utils/orderBatches';
+import { getInvoiceItems, withOrderOwnSettings } from '../utils/orderBatches';
 import ImportFileButtons from '../components/ImportFileButtons';
 import ProductionChecks, { AiFileReportCheck } from '../components/ProductionChecks';
 import ShipmentUrgencyEditor from '../components/ShipmentUrgencyEditor';
@@ -120,26 +120,7 @@ export default function ProductionOrderDetail() {
       return { ...order, items: [...crystals, ...(lateNamesOrder(order)?.items || [])] };
     }
     if (!correctedItems) return order;
-    const saved = Object.fromEntries((order.items || []).flatMap((it) => (
-      Object.entries(it.detail?.lines || {}).filter(([k]) => k.endsWith('::refOrder') || k.endsWith('::redLines'))
-    )));
-    // Prices adjusted by hand on the order (Adjust Prices) carry over too, by Jenis Plak (ORD-0058, Sean 2026-10-21).
-    const ownPrice = order.priceAdjusted ? new Map((order.items || []).map((it) => [it.jenisPlak, Number(it.unitPrice)])) : new Map();
-    const withOwnPrice = (it) => {
-      const price = ownPrice.get(it.jenisPlak);
-      if (!(price >= 0) || price === Number(it.unitPrice)) return it;
-      const rows = Array.isArray(it.detail?.rows)
-        ? it.detail.rows.map((r) => (r.jenisPlak === it.jenisPlak || (!r.jenisPlak && r.unitPrice != null) ? { ...r, unitPrice: price } : r))
-        : it.detail?.rows;
-      return { ...it, unitPrice: price, harga: (Number(it.qty) || 0) * price, ...(it.detail ? { detail: { ...it.detail, rows } } : {}) };
-    };
-    const items = correctedItems.map((it) => {
-      const prefix = `${it.categoryKey}::${it.blockIdx ?? 0}::`;
-      const own = Object.fromEntries(Object.entries(saved).filter(([k]) => k === `${prefix}refOrder` || k === `${prefix}redLines`));
-      return withOwnPrice(it.detail && Object.keys(own).length
-        ? { ...it, detail: { ...it.detail, lines: { ...(it.detail.lines || {}), ...own } } }
-        : it);
-    });
+    const items = withOrderOwnSettings(order, correctedItems);
     return { ...order, items };
   }, [order, correctedItems, kivCardView, addonView]);
 

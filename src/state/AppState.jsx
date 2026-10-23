@@ -41,7 +41,7 @@ import { syncUrgentOrderToSheet, highlightUrgentKitDoc } from '../lib/urgentShee
 import { isUrgentShipment, urgentSheetAction, SHIPMENT_EDITABLE_STATUSES } from '../utils/urgentOrder';
 import { fetchCustomTypoWords } from '../lib/typoWordsApi';
 import { setCustomTypoWords } from '../utils/typoCheck';
-import { normalizeSplitQty, stockDiff, applyPriceDrafts } from '../utils/orderBatches';
+import { normalizeSplitQty, stockDiff, applyPriceDrafts, withOrderOwnSettings } from '../utils/orderBatches';
 import { needsKiv, kivParts, hasPlakPart, kivInProduction, crystalWithPlak, isCrystalCode } from '../utils/exportCsv';
 
 // Malaysia's "today" (catalog.js's malaysiaToday — the project always runs
@@ -2342,6 +2342,11 @@ export function AppStateProvider({ children }) {
   // import_file_path, the teacher's own original) and immediately re-derives
   // export items from it. Returns the fresh items so the caller can show
   // them without a second round trip.
+  // The corrected file becomes the order itself (Sean, 2026-10-23): its items, QTY and total are
+  // saved over the order (hand-adjusted prices, row order and MERAH kept — withOrderOwnSettings),
+  // and stock follows the difference, like a Production edit — so Summary, every dashboard card,
+  // Store Admin and the urgent sheet show the corrected amounts. `oldTotal` / `totalAmount` come back
+  // for the page to tell Production when the total changed (an issued invoice needs updating).
   const uploadCorrectedExcel = useCallback(async (orderId, file) => {
     const order = stateRef.current.orders.find((o) => o.id === orderId);
     if (!order) return { ok: false, message: 'Order not found.' };
@@ -2351,19 +2356,35 @@ export function AppStateProvider({ children }) {
     const res = await parseCorrectedExcelIntoItems(order, file);
     if (!res.ok) return res;
 
+    const items = withOrderOwnSettings(order, res.items);
+    const totalAmount = items.reduce((sum, it) => sum + (Number(it.harga) || 0), 0);
+    const st = stateRef.current;
+    const { deduct, restore } = stockDiff(order.items, items);
+    const realStock = !isTestOrderId(order.id);
+    try {
+      if (realStock) await deductPlakStock(deduct);
+    } catch (err) {
+      console.error('Failed to take stock for a corrected Excel:', err);
+      return { ok: false, message: describeStockError(err) };
+    }
     const correctedFields = {
       correctedImportFilePath: uploaded.path, correctedImportFileName: uploaded.name,
       correctedImportUploadedAt: new Date().toISOString(),
+      items, totalAmount,
+      priceAdjusted: items.some((it) => it.unitPrice !== standardUnitPrice(it.jenisPlak, st.plakCatalog)),
     };
     try {
       await updateOrder(orderId, correctedFields);
     } catch (err) {
       console.error('Failed to save the corrected Excel on the order:', err);
+      if (realStock) restorePlakStock(deduct).catch((e) => console.error('Failed to give stock back after a failed correction:', e));
       return { ok: false, message: describeOrderWriteError(err, 'save the corrected file for') };
     }
+    if (realStock) restorePlakStock(restore).catch((err) => console.error('Failed to give back stock after a correction:', err));
     patch((latest) => ({ orders: latest.orders.map((o) => (o.id === orderId ? { ...o, ...correctedFields } : o)) }));
-    return res;
-  }, [patch, parseCorrectedExcelIntoItems]);
+    resyncUrgentSheet({ ...order, ...correctedFields });
+    return { ...res, oldTotal: Number(order.totalAmount) || 0, totalAmount };
+  }, [patch, parseCorrectedExcelIntoItems, resyncUrgentSheet]);
 
   // Re-derives export items from whichever corrected Excel is already on
   // record (order.correctedImportFilePath) — called whenever

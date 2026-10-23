@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getOrderInvoiceSlices, getInvoiceItems, normalizeSplitQty, stockDiff, applyPriceDrafts, sortMedalColours } from './orderBatches';
+import { getOrderInvoiceSlices, getInvoiceItems, normalizeSplitQty, stockDiff, applyPriceDrafts, sortMedalColours, withOrderOwnSettings } from './orderBatches';
 
 describe('getOrderInvoiceSlices', () => {
   it('un-split order: one slice, using the order\'s own invoiceId/totalAmount/status unchanged, totalQty summed from items', () => {
@@ -230,5 +230,17 @@ describe('sortMedalColours', () => {
   it('keeps different bases apart and leaves codes without a colour where they were', () => {
     expect(codes(['FD 251 / BRONZE', 'PKC 246', 'FD 251 / GOLD', 'MP399 / SILVER / BASE A', 'MP399 / GOLD / BASE B']))
       .toEqual(['FD 251 / GOLD', 'FD 251 / BRONZE', 'PKC 246', 'MP399 / SILVER / BASE A', 'MP399 / GOLD / BASE B']);
+  });
+});
+
+describe('withOrderOwnSettings (a corrected Excel saved over the order)', () => {
+  it('keeps prices adjusted by hand and the saved row order', () => {
+    const order = {
+      priceAdjusted: true,
+      items: [{ jenisPlak: 'PKF 266', unitPrice: 9, detail: { lines: { 'UMUM::0::refOrder': '1,0' } } }],
+    };
+    const corrected = [{ categoryKey: 'UMUM', blockIdx: 0, jenisPlak: 'PKF 266', qty: '51', unitPrice: 10, harga: 510, detail: { lines: { 'UMUM::0::0': 'MAJLIS' }, rows: [{ jenisPlak: 'PKF 266', unitPrice: 10 }] } }];
+    const [it] = withOrderOwnSettings(order, corrected);
+    expect([it.unitPrice, it.harga, it.detail.rows[0].unitPrice, it.detail.lines['UMUM::0::refOrder']]).toEqual([9, 459, 9, '1,0']);
   });
 });
