@@ -88,10 +88,18 @@ describe('keepTambahanWithParent', () => {
 describe('byInvoiceDate + urgent first', () => {
   it('urgent on top, then the earliest invoice, then no invoice by the soonest Shipment Date', () => {
     const cards = [
-      { id: 'inv-late', inv: 300 }, { id: 'no-inv-none' }, { id: 'no-inv-soon', shipmentDate: '2026-10-25' },
-      { id: 'inv-early', inv: 100 }, { id: 'urgent', inv: 500, urgent: true }, { id: 'no-inv-past', shipmentDate: '2026-10-20' },
+      { id: 'inv-late', inv: Date.parse('2026-10-22T02:00:00Z') }, { id: 'no-inv-none' }, { id: 'no-inv-soon', shipmentDate: '2026-10-25' },
+      { id: 'inv-early', inv: Date.parse('2026-10-21T02:00:00Z') }, { id: 'urgent', inv: Date.parse('2026-10-23T02:00:00Z'), urgent: true }, { id: 'no-inv-past', shipmentDate: '2026-10-20' },
     ];
     expect(prioritizeUrgentOrders(byInvoiceDate(cards, (c) => c.inv ?? null)).map((c) => c.id))
       .toEqual(['urgent', 'inv-early', 'inv-late', 'no-inv-past', 'no-inv-soon', 'no-inv-none']);
+  });
+
+  it('invoices on the same Malaysian day go by the soonest Shipment Date, not the hour (ORD-0085 / ORD-0136)', () => {
+    const cards = [
+      { id: 'ORD-0085', inv: Date.parse('2026-10-23T04:19:00Z'), shipmentDate: '2026-10-30T00:00:00+08:00', urgent: true },
+      { id: 'ORD-0136', inv: Date.parse('2026-10-23T07:19:00Z'), shipmentDate: '2026-10-29T00:00:00+08:00', urgent: true },
+    ];
+    expect(prioritizeUrgentOrders(byInvoiceDate(cards, (c) => c.inv)).map((c) => c.id)).toEqual(['ORD-0136', 'ORD-0085']);
   });
 });

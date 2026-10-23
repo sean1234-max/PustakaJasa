@@ -9,6 +9,7 @@ import { parseDisplayDate, toMalaysiaDay } from '../data/catalog';
 // hand afterwards.
 export const URGENT_WINDOW_DAYS = 7;
 const DAY_MS = 24 * 60 * 60 * 1000;
+const MY_OFFSET_MS = 8 * 60 * 60 * 1000; // Asia/Kuala_Lumpur, UTC+8, no DST
 
 // A calendar day from a picked Date, a "05 Oct 2026" display date, or a
 // stored ISO Shipment Date (its Malaysian day).
@@ -37,9 +38,11 @@ export function byInvoiceDate(orders, invoiceAt) {
     const t = o.shipmentDate ? new Date(o.shipmentDate).getTime() : NaN;
     return Number.isFinite(t) ? t : Infinity;
   };
+  // the invoice's Malaysian day only (Sean, 2026-10-23): the same day → Shipment Date soonest
+  const day = (o) => { const t = invoiceAt(o); return t == null ? null : Math.floor((t + MY_OFFSET_MS) / DAY_MS); };
   return [...orders].sort((a, b) => {
-    const ia = invoiceAt(a);
-    const ib = invoiceAt(b);
+    const ia = day(a);
+    const ib = day(b);
     if (ia != null && ib != null && ia !== ib) return ia - ib;
     if ((ia != null) !== (ib != null)) return ia != null ? -1 : 1;
     return ship(a) - ship(b);
