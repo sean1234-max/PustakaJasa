@@ -1255,9 +1255,11 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
                 >
                   {!blk.hideDescColumn && (
                     <td>
+                      {/* a <textarea>: a TOKOH name keeps its Alt+Enter lines when edited (an <input> drops
+                          them — ORD-0127, Sean 2026-10-23) */}
                       {editable.rowDesc
-                        ? <input className="input" placeholder="e.g. TAHUN 1" value={row.desc} onChange={(e) => row.setDesc(e.target.value)} />
-                        : row.desc}
+                        ? <textarea className="input" rows={Math.max(1, String(row.desc || '').split('\n').length)} style={{ resize: 'vertical' }} placeholder="e.g. TAHUN 1" value={row.desc} onChange={(e) => row.setDesc(e.target.value)} />
+                        : <span style={{ whiteSpace: 'pre-line' }}>{row.desc}</span>}
                       {row.typoHint && <TypoHint hint={row.typoHint} canChoose={editable.rowDesc} />}
                     </td>
                   )}

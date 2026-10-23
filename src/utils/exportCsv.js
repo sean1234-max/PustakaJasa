@@ -467,6 +467,9 @@ function buildMatrixRows(item, cat, header, year, positionPart1, schoolLanguage)
 // "TAHUN 1 GAGI", not the school's internal grouping. A Tahun with no
 // breakdown (typed straight in), or a shortfall the breakdown doesn't
 // cover, falls back to a plain Tahun-only line, that many times.
+// "( 1 VENUS)", "TAHUN 1 ADIL": a Reference Sample line that shows one class (a year and a name)
+const CLASS_SAMPLE_RE = /^\(?\s*(?:TAHUN\s*)?[1-6]\s+[A-Z][A-Z0-9 .&'’-]*\s*\)?$/i;
+
 function buildPbdRows(item, cat, header, year, positionPart1, schoolLanguage) {
   const rows = [];
   const matrix = item.detail?.matrix;
@@ -475,15 +478,25 @@ function buildPbdRows(item, cat, header, year, positionPart1, schoolLanguage) {
   const col = getCategoryColumns(cat, schoolLanguage)[0];
   // Reference-sample mapping for PBD: line 2 (subjek/position, "ANUGERAH
   // KECEMERLANGAN PBD") + the line between 2 and 3 (slot 2b) -> position.
-  const position = [positionPart1, getPositionLine2(item)].filter(Boolean).join('\n');
-  const emit = (eventLine1, qty) => {
-    for (let i = 0; i < qty; i++) rows.push([header, year, position, eventLine1, '']);
+  // A 2b that is itself a class sample ("( 1 VENUS)", ORD-0127 — Sean 2026-10-23) is where the
+  // class goes instead: each plaque's own class there (under the award, same colour), and line 3
+  // is a fixed line every plaque carries ("UNIT HAL EHWAL MURID").
+  const line2b = getPositionLine2(item);
+  const classIn2b = CLASS_SAMPLE_RE.test(line2b.trim());
+  const position = [positionPart1, classIn2b ? '' : line2b].filter(Boolean).join('\n');
+  const fixedLine = classIn2b ? getLine(item, 3).trim() : '';
+  const emit = (className, qty) => {
+    for (let i = 0; i < qty; i++) {
+      rows.push(classIn2b
+        ? [header, year, [position, className].filter(Boolean).join('\n'), fixedLine, '']
+        : [header, year, position, className, '']);
+    }
   };
 
   // The year follows the Reference Sample's class line (Sean, 2026-10-14, ORD-0032): "TAHUN 1
   // ADIL" (or no sample line) → "TAHUN 4 AMANAH"; "1 ASPIRASI" → "4 AMANAH". A class name already
   // starting with its year ("5 ASPIRASI", "TAHUN 5 AZAM") is engraved as written.
-  const sampleLine = getLine(item, 3).trim();
+  const sampleLine = (classIn2b ? line2b : getLine(item, 3)).replace(/[()]/g, '').trim();
   const includeTahunWord = !sampleLine || /\bTAHUN\b/i.test(sampleLine);
   const emitForLevel = (label, rowKey) => {
     if (!label) return;

@@ -1278,3 +1278,22 @@ describe('ALIRAN (Kalau ada kelas) — a class "-" engraves the level alone (Sea
     expect(new Set(rows.map((x) => x[4]))).toEqual(new Set(['PPKI']));
   });
 });
+
+describe('PBD tab whose Reference Sample puts a class under the award (ORD-0127)', () => {
+  it('engraves each plaque\'s own class there, and line 3 as a fixed line — the sample class never repeats', () => {
+    const K = 'DYN::PBD::ANUGERAH%20SAHSIAH%20TERPUJI';
+    const item = {
+      id: 'x', categoryKey: K, blockIdx: 0, jenisPlak: 'MP399', qty: '2',
+      detail: {
+        lines: { [`${K}::0::0`]: 'SEKOLAH KEBANGSAAN METHODIST', [`${K}::0::2`]: 'ANUGERAH SAHSIAH TERPUJI\nTAHUN 2026', [`${K}::0::2b`]: '( 1 VENUS)', [`${K}::0::3`]: 'UNIT HAL EHWAL MURID' },
+        matrix: { [`${K}::custom-1::KUANTITI`]: '2', [`${K}::custom-1::__label__`]: 'TAHUN 2' },
+        namaKelasBreakdown: { [`${K}::0::TAHUN 2::main`]: [{ id: 1, qty: '1', desc: 'VENUS' }, { id: 2, qty: '1', desc: 'URANUS' }] },
+      },
+    };
+    const { rows } = buildCsvRows({ schoolLanguage: 'SK', items: [item] }, K, [item]);
+    expect(rows.map((r) => [r[2], r[3]])).toEqual([
+      ['ANUGERAH SAHSIAH TERPUJI\nTAHUN 2026\n2 VENUS', 'UNIT HAL EHWAL MURID'],
+      ['ANUGERAH SAHSIAH TERPUJI\nTAHUN 2026\n2 URANUS', 'UNIT HAL EHWAL MURID'],
+    ]);
+  });
+});

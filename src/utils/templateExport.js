@@ -107,6 +107,18 @@ const PPKI_RE = /^(ALIRAN\s+TAHUN\s+[1-6])\s*PPKI$/;
 const TAHUN_RE = /^TAHUN ([1-6])$/;
 const SUBJECT_TAHUN_RE = /^(?:TAHUN\s*)?([1-6])$/;
 
+// ②③④ of an ORDER LAIN-LAIN row from a plaque's award / line / line under it. A class engraved
+// under the award ("…\n1 VENUS", a PBD tab whose sample puts the class there — ORD-0127, Sean
+// 2026-10-23) gets ③ of its own, and the fixed line under it ④, as the Reference Sample shows.
+function umumLinesOf(p) {
+  const lines = String(p.award || '').split('\n');
+  const last = lines[lines.length - 1].trim();
+  if (!p.eline2 && lines.length > 1 && YEAR_CLASS_RE.test(last)) {
+    return { l1: lines.slice(0, -1).join('\n'), l2: last, l3: p.line };
+  }
+  return { l1: p.award, l2: p.line, l3: p.eline2 };
+}
+
 // Which of the one-award sheets a plaque belongs on, by its tab's kind
 // (draftForm.js) or, for a tab read from a Word or PDF order, its award.
 function sheetKind(p) {
@@ -1070,7 +1082,7 @@ export async function fillOrderTemplate(templateBuffer, categorized, {
           if (layout.contoh.l0 && heading) setCell(doc, layout.contoh.l0, heading);
           // ② the award, ③ its TAHUN / TAHAP line, ④ the line under that
           // (Sean, 2026-10-17: each on its own line of the plaque).
-          const contoh = { l1: part[0].award, l2: part[0].line, l3: part[0].eline2 };
+          const contoh = umumLinesOf(part[0]);
           ['l1', 'l2', 'l3'].forEach((k) => layout.contoh[k] && setCell(doc, layout.contoh[k], contoh[k]));
           // A place line (PERTAMA …), else an ANUGERAH line, is red unless
           // the form says otherwise.
@@ -1085,7 +1097,7 @@ export async function fillOrderTemplate(templateBuffer, categorized, {
             // "no such line". A form without the ③ / ④ columns keeps the
             // lines together in ②.
             const own = layout.cols.l2 != null && layout.cols.l3 != null
-              ? { l1: p.award, l2: p.line, l3: p.eline2 }
+              ? umumLinesOf(p)
               : { l1: [p.award, p.line, p.eline2].filter(Boolean).join('\n'), l2: '', l3: '' };
             ['l1', 'l2', 'l3'].forEach((k) => {
               if (layout.cols[k] == null) return;
