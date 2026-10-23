@@ -161,20 +161,23 @@ function InvoiceSplitPanel({ order, setJenisPlakInvoiceGroup, updateToast }) {
     <div style={{ marginTop: 'var(--space-4)' }}>
       <div className="card-kicker">Split Across Invoices</div>
       <p className="hint-text" style={{ marginTop: 0 }}>
-        Tick the Jenis Plak that belong on a different invoice (lower the QTY to move only part of it), type that invoice number, then assign. Jenis Plak left unticked stay on {defaultLabel}.
+        Tick the Jenis Plak that belong on a different invoice (lower the QTY to move only part of it), type that invoice number, then assign. Jenis Plak left unticked stay on {defaultLabel}. To share one Jenis Plak over more invoices, assign it again with another QTY and invoice number — each QTY comes out of what's still on the main invoice.
       </p>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)', marginTop: 'var(--space-2)' }}>
         {jenisPlakRows.map((row) => {
-          const group = (order.invoiceGroups || []).find((g) => (g.jenisPlakList || []).includes(row.jenisPlak));
-          const part = partialSplitQty(group, row.jenisPlak);
+          const holding = (order.invoiceGroups || []).filter((g) => (g.jenisPlakList || []).includes(row.jenisPlak));
+          const parts = holding.filter((g) => partialSplitQty(g, row.jenisPlak) != null);
           // getInvoiceIdForJenisPlak falls back to order.invoiceId, then
           // order.id — before approval, order.invoiceId is still null, so an
           // un-split Jenis Plak would otherwise show the ORDER ID here and
           // look like a real invoice number. Only show it once it's a real
           // group override or the order actually has one.
+          // A Jenis Plak shared over several invoices: how many on each (ORD-0108).
           let note = null;
-          if (part != null) note = `currently ${Math.min(part, row.qty)} on ${group.invoiceId}, ${Math.max(row.qty - part, 0)} on ${order.invoiceId || 'the main invoice'}`;
-          else if (order.invoiceId || group) note = `currently ${getInvoiceIdForJenisPlak(order, row.jenisPlak)}`;
+          if (parts.length) {
+            const moved = parts.reduce((sum, g) => sum + partialSplitQty(g, row.jenisPlak), 0);
+            note = `currently ${parts.map((g) => `${partialSplitQty(g, row.jenisPlak)} on ${g.invoiceId}`).join(' · ')} · ${Math.max(row.qty - moved, 0)} on ${order.invoiceId || 'the main invoice'}`;
+          } else if (order.invoiceId || holding.length) note = `currently ${getInvoiceIdForJenisPlak(order, row.jenisPlak)}`;
           return (
             <SplitRow
               key={row.jenisPlak}

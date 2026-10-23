@@ -244,3 +244,28 @@ describe('withOrderOwnSettings (a corrected Excel saved over the order)', () => 
     expect([it.unitPrice, it.harga, it.detail.rows[0].unitPrice, it.detail.lines['UMUM::0::refOrder']]).toEqual([9, 459, 9, '1,0']);
   });
 });
+
+describe('one Jenis Plak shared over 4 invoices (ORD-0108)', () => {
+  const order = {
+    invoiceId: 'DWI-MAIN',
+    items: [{ id: 1, jenisPlak: 'PK 261 / A', qty: '300', harga: 3000 }, { id: 2, jenisPlak: 'PK 261 / A', qty: '198', harga: 1980 }, { id: 3, jenisPlak: 'PKF 265', qty: '6', harga: 60 }],
+    invoiceGroups: [
+      { invoiceId: 'DWI-A', jenisPlakList: ['PK 261 / A'], qtyByJenisPlak: { 'PK 261 / A': 200 } },
+      { invoiceId: 'DWI-B', jenisPlakList: ['PK 261 / A'], qtyByJenisPlak: { 'PK 261 / A': 150 } },
+      { invoiceId: 'DWI-C', jenisPlakList: ['PK 261 / A'], qtyByJenisPlak: { 'PK 261 / A': 100 } },
+    ],
+  };
+  const qtyOn = (id) => getInvoiceItems(order, id).reduce((s, it) => s + Number(it.qty), 0);
+  const hargaOn = (id) => getInvoiceItems(order, id).reduce((s, it) => s + Number(it.harga), 0);
+  it('gives each invoice its share and the rest to the main one', () => {
+    expect(['DWI-A', 'DWI-B', 'DWI-C', 'DWI-MAIN'].map(qtyOn)).toEqual([200, 150, 100, 54]);
+    expect(['DWI-A', 'DWI-B', 'DWI-C', 'DWI-MAIN'].map(hargaOn)).toEqual([2000, 1500, 1000, 540]);
+  });
+  it('only lets a new share come out of what is still on the main invoice', () => {
+    const others = order.invoiceGroups;
+    expect(normalizeSplitQty(order.items, ['PK 261 / A'], { 'PK 261 / A': '48' }, others)).toEqual({ qtyByJenisPlak: { 'PK 261 / A': 48 } });
+    expect(normalizeSplitQty(order.items, ['PK 261 / A'], { 'PK 261 / A': '49' }, others).error).toMatch(/only 48 left/);
+    // retyping DWI-B's share: the other two invoices' shares are what's taken
+    expect(normalizeSplitQty(order.items, ['PK 261 / A'], { 'PK 261 / A': '198' }, others.filter((g) => g.invoiceId !== 'DWI-B'))).toEqual({ qtyByJenisPlak: { 'PK 261 / A': 198 } });
+  });
+});

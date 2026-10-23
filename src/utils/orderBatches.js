@@ -147,26 +147,35 @@ export function partialSplitQty(group, jenisPlak) {
 // The items (with qty/harga cut down to just this invoice's share) billed
 // under `invoiceId` — the order's own invoiceId (or null before it has one)
 // for the default invoice, a group's invoiceId otherwise. A Jenis Plak moved
-// whole sits on exactly one invoice; a partially-moved one shows up on both,
-// the group's `qtyByJenisPlak` count on the group and the rest on the
-// default. When one Jenis Plak spans several items (ordered from two
-// categories), the group's count is taken from the first items first.
+// whole sits on exactly one invoice; a partially-moved one is shared out —
+// each group with a `qtyByJenisPlak` count takes that many, in the order the
+// groups were made, and the rest stays on the default (Sean, 2026-10-23: one
+// Jenis Plak over 3+ invoices, ORD-0108). When one Jenis Plak spans several
+// items (ordered from two categories), the counts are taken from the first
+// items first.
 export function getInvoiceItems(order, invoiceId) {
   const groups = order.invoiceGroups || [];
   const defaultKey = order.invoiceId || null;
-  const leftForGroup = new Map();
+  const left = new Map();
   return (order.items || []).flatMap((it) => {
-    const group = groups.find((g) => (g.jenisPlakList || []).includes(it.jenisPlak));
-    const q = partialSplitQty(group, it.jenisPlak);
-    if (q == null) return (group ? group.invoiceId : defaultKey) === invoiceId ? [it] : [];
+    const holds = (g) => (g.jenisPlakList || []).includes(it.jenisPlak);
+    const whole = groups.find((g) => holds(g) && partialSplitQty(g, it.jenisPlak) == null);
+    if (whole) return whole.invoiceId === invoiceId ? [it] : [];
     const qty = Number(it.qty) || 0;
-    const left = leftForGroup.has(it.jenisPlak) ? leftForGroup.get(it.jenisPlak) : q;
-    const toGroup = Math.min(left, qty);
-    leftForGroup.set(it.jenisPlak, left - toGroup);
+    let rest = qty;
     let share = 0;
-    if (invoiceId === group.invoiceId) share = toGroup;
-    else if (invoiceId === defaultKey) share = qty - toGroup;
+    groups.forEach((g, gi) => {
+      if (!holds(g)) return;
+      const key = `${gi}\u0000${it.jenisPlak}`;
+      const want = left.has(key) ? left.get(key) : partialSplitQty(g, it.jenisPlak);
+      const take = Math.min(want, rest);
+      left.set(key, want - take);
+      rest -= take;
+      if (g.invoiceId === invoiceId) share += take;
+    });
+    if (invoiceId === defaultKey) share += rest;
     if (share <= 0) return [];
+    if (share === qty) return [it];
     return [{ ...it, qty: share, harga: qty > 0 ? ((Number(it.harga) || 0) * share) / qty : 0 }];
   });
 }
@@ -174,15 +183,24 @@ export function getInvoiceItems(order, invoiceId) {
 // Validates the per-Jenis-Plak QTY Store Admin typed for a partial split
 // against the order's `items`. A blank QTY, or one covering the whole Jenis
 // Plak, means "move all of it" and gets no entry (same as before partial
-// splits existed). Returns { qtyByJenisPlak } or { error }.
-export function normalizeSplitQty(items, jenisPlakList, qtyDrafts) {
+// splits existed). `otherGroups`: the order's other invoices — what they
+// already hold of a Jenis Plak isn't left to move (a Jenis Plak can be shared
+// over several invoices). Returns { qtyByJenisPlak } or { error }.
+export function normalizeSplitQty(items, jenisPlakList, qtyDrafts, otherGroups = []) {
   const out = {};
   for (const key of jenisPlakList) {
     const raw = qtyDrafts?.[key];
     if (raw == null || raw === '') continue;
     const total = (items || []).filter((it) => it.jenisPlak === key).reduce((sum, it) => sum + (Number(it.qty) || 0), 0);
+    const elsewhere = otherGroups
+      .filter((g) => (g.jenisPlakList || []).includes(key))
+      .reduce((sum, g) => sum + (partialSplitQty(g, key) ?? total), 0);
+    const available = Math.max(0, total - elsewhere);
     const q = Number(raw);
-    if (!Number.isInteger(q) || q < 1 || q > total) return { error: `${key}: QTY must be a whole number from 1 to ${total}.` };
+    if (!available) return { error: `${key}: none left on the main invoice to move.` };
+    if (!Number.isInteger(q) || q < 1 || q > available) {
+      return { error: available < total ? `${key}: only ${available} left on the main invoice — QTY must be a whole number from 1 to ${available}.` : `${key}: QTY must be a whole number from 1 to ${total}.` };
+    }
     if (q < total) out[key] = q;
   }
   return { qtyByJenisPlak: out };

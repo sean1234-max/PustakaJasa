@@ -1297,3 +1297,20 @@ describe('PBD tab whose Reference Sample puts a class under the award (ORD-0127)
     ]);
   });
 });
+
+describe('addInvoiceGaps with one Jenis Plak over several invoices (ORD-0108)', () => {
+  it('puts a labelled blank between each invoice\'s plaques', async () => {
+    const { addInvoiceGaps } = await import('./exportCsv');
+    const JP = CSV_COLUMNS.indexOf('jenis_plak');
+    const GAP = CSV_COLUMNS.indexOf('invoice_gap');
+    const row = (n) => CSV_COLUMNS.map((c) => ({ position: `P${n}`, jenis_plak: 'PK 261 / A' }[c] || ''));
+    const rows = [1, 2, 3, 4, 5, 6].map(row);
+    const order = { invoiceId: 'MAIN', invoiceGroups: [
+      { invoiceId: 'A', jenisPlakList: ['PK 261 / A'], qtyByJenisPlak: { 'PK 261 / A': 2 } },
+      { invoiceId: 'B', jenisPlakList: ['PK 261 / A'], qtyByJenisPlak: { 'PK 261 / A': 3 } },
+    ] };
+    const out = addInvoiceGaps(order, rows);
+    expect(out.map((r) => r[GAP] || r[CSV_COLUMNS.indexOf('position')])).toEqual(['P1', 'P2', 'A|B', 'P3', 'P4', 'P5', 'B|MAIN', 'P6']);
+    expect(out.every((r) => r[JP] === 'PK 261 / A')).toBe(true);
+  });
+});

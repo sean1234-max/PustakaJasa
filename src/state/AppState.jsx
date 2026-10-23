@@ -2670,21 +2670,29 @@ export function AppStateProvider({ children }) {
       flashToast('updateToast', 'Invoice ID invalid because repeated, please try again.');
       return { ok: false };
     }
-    const { qtyByJenisPlak, error: qtyError } = normalizeSplitQty(order.items, keys, qtyDrafts);
+    const strip = (v) => (v || '').replace(/\s+/g, '');
+    const toMain = normalized === strip(order.invoiceId);
+    // A QTY moves that many out of what's still on the main invoice — a Jenis Plak can be shared
+    // over several invoices (Sean, 2026-10-23, ORD-0108); retyping one invoice's QTY replaces it.
+    const others = (order.invoiceGroups || []).filter((g) => strip(g.invoiceId) !== normalized);
+    const { qtyByJenisPlak, error: qtyError } = normalizeSplitQty(order.items, keys, toMain ? {} : qtyDrafts, others);
     if (qtyError) {
       flashToast('updateToast', qtyError);
       return { ok: false };
     }
+    // Moved whole (no QTY), or back to the main invoice: out of every other invoice first. A
+    // part (QTY) leaves the other invoices' shares as they are.
+    const wholeKeys = keys.filter((k) => qtyByJenisPlak[k] == null);
     const withoutKeys = (order.invoiceGroups || [])
-      .map((g) => withoutJenisPlak(g, keys))
+      .map((g) => withoutJenisPlak(g, toMain || strip(g.invoiceId) === normalized ? keys : wholeKeys))
       .filter((g) => g.jenisPlakList.length > 0);
     // Assigning back to the order's own (default) invoice number just
     // removes the exception entirely — no group needed to say "use the
     // default", that's already what an absent entry means.
-    const newGroups = normalized === (order.invoiceId || '').replace(/\s+/g, '')
+    const newGroups = toMain
       ? withoutKeys
       : (() => {
-        const existing = withoutKeys.find((g) => g.invoiceId.replace(/\s+/g, '') === normalized);
+        const existing = withoutKeys.find((g) => strip(g.invoiceId) === normalized);
         if (existing) {
           return withoutKeys.map((g) => (g === existing
             ? withSplitQty({ ...g, jenisPlakList: [...g.jenisPlakList, ...keys] }, qtyByJenisPlak)
@@ -2693,7 +2701,12 @@ export function AppStateProvider({ children }) {
         // Stamped with the order's current status (same reasoning as
         // approveAndSetInvoiceId above) so this newly-split-off invoice
         // starts tracking its own production/delivery status right away.
-        return [...withoutKeys, withSplitQty({ invoiceId: normalized, jenisPlakList: keys, status: order.status, invoicedAt: new Date().toISOString() }, qtyByJenisPlak)];
+        // (an invoice whose only Jenis Plak are being retyped keeps its own status / dates)
+        const was = (order.invoiceGroups || []).find((g) => strip(g.invoiceId) === normalized);
+        const { jenisPlakList: _jp, qtyByJenisPlak: _q, ...wasRest } = was || {};
+        return [...withoutKeys, withSplitQty(was
+          ? { ...wasRest, jenisPlakList: keys }
+          : { invoiceId: normalized, jenisPlakList: keys, status: order.status, invoicedAt: new Date().toISOString() }, qtyByJenisPlak)];
       })();
     try {
       await updateOrder(orderId, { invoiceGroups: newGroups });
