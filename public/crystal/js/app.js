@@ -1203,26 +1203,19 @@ async function importLogoFiles(all) {
           got = [x];
         }
       } catch (err) { bad.push(`${f.name}: ${err.message}`); }
-      // shown straight away, first in the list (repeats are taken out at the end)
+      // shown straight away, first in the list (no repeat scan — Sean, 2026-10-23: "Remove repeats" if needed)
       const add = got.map((x) => ({ id: newId(), name: x.name || "", data: x.data }));
       fresh.push(...add);
       logoEdit.list.unshift(...add);
       renderLogos();
       done++;
     }
-    // the same logo twice (also one kept already): once, the biggest copy; and no crop marks
     logoBar(files.length, files.length);
-    logoStatus(`Looking for repeated logos among ${logoEdit.list.length}…`);
-    logoEdit.list = logoEdit.list.filter((x) => !fresh.includes(x));
-    const { dropped, junk } = await tidyLogos(fresh);
-    renderLogos();
     // the new ones without a name: their school's name read from the picture, to check
     let read = 0;
     if (fresh.some((x) => !x.name)) { try { read = await readNames(fresh); } catch (e) {} renderLogos(); }
     const unnamed = fresh.filter((x) => !x.name).length;
     logoStatus(`${logoStop ? `Stopped after ${done} of ${files.length} files. ` : ""}Found ${fresh.length} new logo${fresh.length === 1 ? "" : "s"} in ${done} file${done === 1 ? "" : "s"}.` +
-      (dropped ? ` ${dropped} repeated logo${dropped === 1 ? " was" : "s were"} left out (the biggest copy kept).` : "") +
-      (junk ? ` ${junk} shape${junk === 1 ? "" : "s"} that aren't logos (lines, crop marks) left out.` : "") +
       (skipped ? ` ${skipped} .ai file${skipped === 1 ? " wasn't a logo sheet" : "s weren't logo sheets"} (the same logo many times), so skipped.` : "") +
       (read ? ` ${read} name${read === 1 ? " was" : "s were"} read from the logos (outlined in yellow).` : "") +
       (unnamed ? ` ${unnamed} still without a name (kept: type it in when you know it).` : "") + " Check them, then Save." +
