@@ -6,7 +6,7 @@ import { useAppState } from '../state/useAppState';
 import { statusPillStyle, formatDate, getLowStockAlerts, toMalaysiaDay, isAddonInFlight, invoiceLabel, invoiceSource, invoiceDate } from '../data/catalog';
 import { getOrderChangeStamp } from '../utils/orderStamp';
 import { getOrderInvoiceSlices } from '../utils/orderBatches';
-import { countReservedPlaques, needsKiv, kivParts, hasMainPart, kivInProduction, kivInTyping } from '../utils/exportCsv';
+import { countReservedPlaques, needsKiv, kivParts, hasMainPart, kivInProduction, kivInTyping, kivManualCrystal } from '../utils/exportCsv';
 import { prioritizeUrgentOrders, byInvoiceDate, keepTambahanWithParent } from '../utils/urgentOrder';
 import OrderUrgentBadge from '../components/OrderUrgentBadge';
 import AddOnTag from '../components/AddOnTag';
@@ -405,6 +405,13 @@ export default function ProductionDashboard() {
                     <button type="button" className="btn btn-ghost" style={{ flex: 1 }} onClick={() => navigate(`/production/orders/${ord.id}?kiv=1`)}>
                       View Order
                     </button>
+                    {kivManualCrystal(ord) && countReservedPlaques(ord) === 0 && (
+                      <ConfirmButton
+                        label="Done" style={{ flex: 1 }}
+                        question="Designer finished the artwork? It moves to In Production."
+                        onConfirm={() => markKivDone(ord.id)}
+                      />
+                    )}
                   </>
                 )}
                 {cardTab === 'active' && (

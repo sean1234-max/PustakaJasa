@@ -1154,6 +1154,8 @@ describe('KIV & ARTWORK parts', () => {
     // confirmed at submit: still its own card, straight in Typing
     const teacher = { items: [plak, crystal], artworkConfirmedAt: confirmed };
     expect([crystalWithPlak(teacher), kivParts(teacher), kivInTyping(teacher)]).toEqual([false, ['CRYSTAL'], true]);
+    // Manual artwork (designer draws it): stays in KIV & ARTWORK until its Done (2026-10-23)
+    expect(kivInTyping({ ...teacher, artworkManual: true })).toBe(false);
     expect(hasMainPart({ items: [crystal], artworkConfirmedAt: confirmed })).toBe(false);
     // already typed together before this rule: stays together
     expect(crystalWithPlak({ ...teacher, typedAt: confirmed, crystalTypedAt: confirmed })).toBe(true);
