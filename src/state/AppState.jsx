@@ -2614,24 +2614,23 @@ export function AppStateProvider({ children }) {
       flashToast('productionToast', 'Invoice ID invalid because repeated, please try again.');
       return { ok: false };
     }
+    // urgent counts from the invoice day (urgentOrder.js)
+    const urgent = isUrgentShipment(malaysiaToday(), order.shipmentDate);
     try {
-      await updateOrder(orderId, { invoiceId: normalized, status: 'In Production' });
+      await updateOrder(orderId, { invoiceId: normalized, status: 'In Production', urgent });
     } catch (err) {
       console.error('Failed to save invoice ID to Supabase:', err);
       flashToast('productionToast', describeOrderWriteError(err, 'save the invoice number for'));
       return { ok: false };
     }
     patch((latest) => ({
-      orders: latest.orders.map((o) => (o.id === orderId ? { ...o, invoiceId: normalized, status: 'In Production' } : o)),
+      orders: latest.orders.map((o) => (o.id === orderId ? { ...o, invoiceId: normalized, status: 'In Production', urgent } : o)),
     }));
     flashToast('productionToast', 'Invoice ID saved — order is ready for export.');
-    // `urgent` was already snapshotted earlier by approveOrder/
-    // approveAndSetInvoiceId — this is just the OTHER place an Invoice
-    // Number can land, so it's the other trigger point for the one-time
-    // Sheets sync. Fire-and-forget: never blocks/undoes the invoice save
-    // above, which already succeeded.
-    if (order.urgent && !order.urgentSheetSyncedAt) {
-      attemptUrgentSheetSync(order);
+    // The other place an Invoice Number lands, so the other trigger point for the
+    // one-time Sheets sync. Fire-and-forget: never blocks/undoes the invoice save above.
+    if (urgent && !order.urgentSheetSyncedAt) {
+      attemptUrgentSheetSync({ ...order, invoiceId: normalized, urgent });
     }
     return { ok: true };
   }, [patch, flashToast, attemptUrgentSheetSync]);
@@ -2852,14 +2851,12 @@ export function AppStateProvider({ children }) {
     });
     const totalAmount = itemsWithOriginalPrice.reduce((sum, it) => sum + it.harga, 0);
     const priceAdjusted = itemsWithOriginalPrice.some((it) => it.unitPrice !== standardUnitPrice(it.jenisPlak, st.plakCatalog));
-    // Shipment Date is first set right here too (same as approveOrder) —
-    // see urgentOrder.js. overrides.shipmentDate is placed after ...overrides
-    // and urgent placed after that, so urgent stays authoritative.
-    const urgent = overrides.shipmentDate ? isUrgentShipment(malaysiaToday(), overrides.shipmentDate) : order.urgent;
+    // urgent counts from the invoice day — today (urgentOrder.js)
+    const urgent = isUrgentShipment(malaysiaToday(), overrides.shipmentDate || order.shipmentDate);
     // Already approved by Sales: prices / dates are settled — only the
     // Invoice Number (and any split) lands now.
     const fields = salesApproved
-      ? { status: 'In Production', invoiceId: normalized, invoiceGroups: normalizedGroups }
+      ? { status: 'In Production', invoiceId: normalized, invoiceGroups: normalizedGroups, urgent }
       : {
         items: itemsWithOriginalPrice, totalAmount, priceAdjusted, status: 'In Production', invoiceId: normalized, invoiceGroups: normalizedGroups, ...storedDays(overrides), urgent,
       };
@@ -2877,7 +2874,7 @@ export function AppStateProvider({ children }) {
     // Invoice Number and `urgent` both land in this same write — this is
     // the other trigger point for the one-time Sheets sync (setInvoiceId
     // above is the other). Fire-and-forget, same reasoning as there.
-    if ((salesApproved ? order.urgent : urgent) && !order.urgentSheetSyncedAt) {
+    if (urgent && !order.urgentSheetSyncedAt) {
       attemptUrgentSheetSync({ ...order, ...fields });
     }
     return { ok: true };

@@ -1,12 +1,12 @@
 import { parseDisplayDate, toMalaysiaDay, invoiceDate, invoiceSource } from '../data/catalog';
 
 // "Urgent" = the Shipment Date falls within 7 calendar days of the day the
-// salesman APPROVES the order, that day counting as day 1 (Sean,
-// 2026-10-09): approved on the 7th → shipping on the 13th or earlier is
-// urgent, the 14th is not. Weekends and public holidays count like any
-// other day. Snapshotted at approval (Sales approves / Store Admin approves
-// with the invoice — src/state/AppState.jsx); Production can change it by
-// hand afterwards.
+// INVOICE is made (开单), that day counting as day 1 (Sean, 2026-10-23 —
+// it was the approval day): invoiced on the 23rd → shipping on the 29th or
+// earlier is urgent, the 30th is not. Weekends and public holidays count
+// like any other day. The salesman's Approve only guesses it (no invoice
+// yet); it's set for good when the Invoice Number is saved
+// (src/state/AppState.jsx); Production can change it by hand afterwards.
 export const URGENT_WINDOW_DAYS = 7;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MY_OFFSET_MS = 8 * 60 * 60 * 1000; // Asia/Kuala_Lumpur, UTC+8, no DST

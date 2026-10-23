@@ -103,3 +103,11 @@ describe('byInvoiceDate + urgent first', () => {
     expect(prioritizeUrgentOrders(byInvoiceDate(cards, (c) => c.inv)).map((c) => c.id)).toEqual(['ORD-0136', 'ORD-0085']);
   });
 });
+
+describe('urgent counts from the invoice day (2026-10-23)', () => {
+  it('invoiced 23 Oct (stored time) → 29 Oct is urgent, 30 Oct (day 8) is not — ORD-0085', () => {
+    const invoiceSetAt = '2026-10-23T04:19:00.454Z';
+    expect(isUrgentShipment(invoiceSetAt, '2026-10-29T00:00:00+08:00')).toBe(true);
+    expect(isUrgentShipment(invoiceSetAt, '2026-10-30T00:00:00+08:00')).toBe(false);
+  });
+});
