@@ -1130,6 +1130,7 @@ describe('KIV & ARTWORK parts', () => {
     const db2 = { jenisPlak: 'OTHER - DB2', detail: { rows: [] } };
     const base = { jenisPlak: 'OTHER - SM13214 / GOLD / BASE A', detail: { rows: [] } };
     expect([isManualOtherCode('OTHER - DB2'), isManualOtherCode('OTHER - SM13214 / GOLD / BASE C'), isManualOtherCode('PKC 263')]).toEqual([true, false, false]);
+    expect([isManualOtherCode('OTHER - MP393 / GOLD / BASE WITH COVER'), isManualOtherCode('OTHER - MP399 BASE WITHOUT COVER')]).toEqual([false, false]);
     // crystals + DB2: only the KIV & ARTWORK card
     expect(hasMainPart({ items: [db2, crystal] })).toBe(false);
     expect(skipsTyping({ items: [db2, crystal] })).toBe(false);

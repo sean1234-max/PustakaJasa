@@ -162,8 +162,9 @@ export function kivParts(order) {
 }
 
 // An "OTHER - …" Jenis Plak Production orders in from outside and handles by hand (OTHER - DB2,
-// Sean 2026-10-23): never typed. Only an OTHER naming a stand-medal BASE A/B/C is typed (its AI file).
-export const isManualOtherCode = (code) => /^OTHER\b/i.test(String(code || '').trim()) && !/\bBASE\s*[ABC]\b/i.test(String(code));
+// Sean 2026-10-23): never typed. Only an OTHER naming a stand-medal BASE (A/B/C, WITH / WITHOUT COVER) is typed.
+export const isManualOtherCode = (code) => /^OTHER\b/i.test(String(code || '').trim())
+  && !/\bBASE\s*([ABC]|WITH(OUT)?\s+COVER)\b/i.test(String(code));
 
 // Has ordinary plaques for Typing (anything that isn't a crystal, a hand-made OTHER or wholly Reserved).
 export function hasPlakPart(order) {
