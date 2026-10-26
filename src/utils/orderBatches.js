@@ -23,16 +23,19 @@ import { standardUnitPrice } from '../data/catalog';
 // stays two rows — e.g. Production charged RM1 more on the plaques that
 // carry a student's name. Grouped on `priceKey` when the caller sets one
 // (the order's saved price, so a row doesn't jump while a price is being
-// typed), else on unitPrice.
+// typed), else on unitPrice — less the name +RM1, so named and unnamed
+// plaques at the same catalog price share one line (see withNamaLines).
 export function combineByJenisPlak(items, { splitByPrice = false } = {}) {
   const order = [];
   const byPlak = new Map();
   (items || []).forEach((it) => {
-    const groupKey = splitByPrice ? `${it.jenisPlak}::${it.priceKey ?? it.unitPrice}` : it.jenisPlak;
+    const surcharge = Number(it.nameSurcharge) || 0;
+    const groupKey = splitByPrice ? `${it.jenisPlak}::${(it.priceKey ?? it.unitPrice) - surcharge}` : it.jenisPlak;
     if (!byPlak.has(groupKey)) {
       byPlak.set(groupKey, {
         key: groupKey, jenisPlak: it.jenisPlak, ids: [], qty: 0, harga: 0,
         originalHarga: 0, itemCount: 0, itemsWithOriginalPrice: 0, namedCount: 0,
+        namaIds: [], namaQty: 0, namaHarga: 0,
       });
       order.push(groupKey);
     }
@@ -42,7 +45,12 @@ export function combineByJenisPlak(items, { splitByPrice = false } = {}) {
     row.qty += qty;
     row.harga += Number(it.harga) || 0;
     row.itemCount += 1;
-    if (it.nameSurcharge) row.namedCount += 1;
+    if (surcharge) {
+      row.namedCount += 1;
+      row.namaIds.push(it.id);
+      row.namaQty += qty;
+      row.namaHarga += surcharge * qty;
+    }
     // Only combine an Original Price Per Unit across merged rows when
     // EVERY one of them actually has one (see AppState.jsx's approveOrder/
     // approveAddOn) — otherwise leave it undefined so the merged row shows
@@ -64,6 +72,25 @@ export function combineByJenisPlak(items, { splitByPrice = false } = {}) {
       unitPrice: row.qty > 0 ? row.harga / row.qty : 0,
       originalUnitPrice: hasOriginal && row.qty > 0 ? row.originalHarga / row.qty : null,
     };
+  });
+}
+
+// The name +RM1 as its own line right under its Jenis Plak (Sean, 2026-10-26):
+// YK - 628 at the catalog price, then "NAMA +RM1" × the named plaques. Takes
+// combineByJenisPlak rows; the two lines' Harga add up to the combined row's.
+// `namaPerUnit` on the plaque line is the +RM1 an edited price must keep on
+// the named items (PriceTable's setPrice).
+export function withNamaLines(rows) {
+  return rows.flatMap((row) => {
+    if (!row.namaQty) return [row];
+    const harga = row.harga - row.namaHarga;
+    return [
+      { ...row, harga, unitPrice: row.qty > 0 ? harga / row.qty : 0, namaPerUnit: row.namaHarga / row.namaQty },
+      {
+        key: `${row.key}::nama`, jenisPlak: 'NAMA +RM1', nama: true, ids: [],
+        qty: row.namaQty, unitPrice: row.namaHarga / row.namaQty, harga: row.namaHarga,
+      },
+    ];
   });
 }
 
@@ -251,7 +278,7 @@ export function sortMedalColours(rows) {
 // Production's price adjustment while reviewing (Sean, 2026-10-09):
 // `drafts` maps item id → new price per unit. A changed item gets its new
 // unitPrice/harga and remembers the price it had before
-// (originalUnitPrice, shown as "Original Price Per Unit"); setting it back
+// (originalUnitPrice, no longer shown since 2026-10-26); setting it back
 // clears that again. Returns { items } or { error } for a bad price.
 export function applyPriceDrafts(items, drafts) {
   const bad = Object.values(drafts).find((v) => v !== '' && v != null && !(Number(v) >= 0));

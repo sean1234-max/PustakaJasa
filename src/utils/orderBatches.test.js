@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getOrderInvoiceSlices, getInvoiceItems, normalizeSplitQty, stockDiff, applyPriceDrafts, sortMedalColours, withOrderOwnSettings } from './orderBatches';
+import { getOrderInvoiceSlices, getInvoiceItems, normalizeSplitQty, stockDiff, applyPriceDrafts, sortMedalColours, withOrderOwnSettings, combineByJenisPlak, withNamaLines } from './orderBatches';
 
 describe('getOrderInvoiceSlices', () => {
   it('un-split order: one slice, using the order\'s own invoiceId/totalAmount/status unchanged, totalQty summed from items', () => {
@@ -267,5 +267,22 @@ describe('one Jenis Plak shared over 4 invoices (ORD-0108)', () => {
     expect(normalizeSplitQty(order.items, ['PK 261 / A'], { 'PK 261 / A': '49' }, others).error).toMatch(/only 48 left/);
     // retyping DWI-B's share: the other two invoices' shares are what's taken
     expect(normalizeSplitQty(order.items, ['PK 261 / A'], { 'PK 261 / A': '198' }, others.filter((g) => g.invoiceId !== 'DWI-B'))).toEqual({ qtyByJenisPlak: { 'PK 261 / A': 198 } });
+  });
+});
+
+describe('withNamaLines', () => {
+  it('puts the name +RM1 on its own line under the plaque, at the catalog price', () => {
+    const items = [
+      { id: 'a', jenisPlak: 'YK - 628', qty: 4, unitPrice: 26, harga: 104, nameSurcharge: 1 },
+      { id: 'b', jenisPlak: 'YK - 628', qty: 2, unitPrice: 25, harga: 50 },
+      { id: 'c', jenisPlak: 'PKC 246', qty: 3, unitPrice: 12, harga: 36 },
+    ];
+    const lines = withNamaLines(combineByJenisPlak(items, { splitByPrice: true }));
+    expect(lines.map((l) => [l.jenisPlak, l.unitPrice, l.qty, l.harga])).toEqual([
+      ['YK - 628', 25, 6, 150],
+      ['NAMA +RM1', 1, 4, 4],
+      ['PKC 246', 12, 3, 36],
+    ]);
+    expect(lines[0].namaIds).toEqual(['a']);
   });
 });
