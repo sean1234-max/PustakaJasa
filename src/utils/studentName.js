@@ -5,7 +5,7 @@
 // own and a price change on the other line leaves them alone.
 export const NAME_SURCHARGE = 1;
 
-const NAME_WORD_RE = /(?:^|[\s(])(?:BIN|BINTI|BINTE|BT|BTE|A\/L|A\/P|MOHAMAD|MOHAMMAD|MUHAMMAD|MUHAMAD|MOHAMED|MOHAMMED|MOHD|MUHD|NUR|NURUL|NOOR|NOR|SITI|AHMAD|ABDUL|ABD)(?=$|[\s.,)])/i;
+const NAME_WORD_RE = /(?:^|[\s(])(?:BIN|BINTI|BINTE|BT|BTE|A\/L|A\/P|MOHAMAD|MOHAMMAD|MUHAMMAD|MUHAMAD|MOHAMED|MOHAMMED|MOHD|MUHD|NUR|NURUL|NOOR|NOR|SITI|AHMAD|ABDUL|ABD|ADRIEL)(?=$|[\s.,)])/i;
 
 // The school's own name is never a student's (ORD-0094: "SK TUN ABDUL AZIZ
 // MAJID 2026" on every plaque made each one look named).
