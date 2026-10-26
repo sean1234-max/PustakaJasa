@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect } from 'react';
+import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import Nav from '../components/Nav';
 import ConfirmButton from '../components/ConfirmButton';
@@ -14,7 +14,7 @@ import { useAppState } from '../state/useAppState';
 import { statusPillStyle, formatDate, MANUAL_MAX_QTY, shipmentDatePassed, toMalaysiaDay, malaysiaToday, isReviewed, isAddonInFlight, invoiceLabel, invoiceSetByNote, invoiceSource, resolveCategory } from '../data/catalog';
 import { redLinesProblem, RED_LINES_SUFFIX } from '../utils/redLines';
 import { reconstructOrderDetailGroups, reconstructBlocksForCategory, noopUpdaters } from '../utils/computeBlocks';
-import { getExportableCategories, splitOrderCategories, getOrderJenisPlakGroups, getPlakProductionMode, summarizeRowsForManual, buildCsvRows, rowsToCsv, buildCategoryCsvFilename, combineCsvRows, addInvoiceGaps, buildCombinedCsvFilename, validateExport, getInvoiceIdForJenisPlak, getPartialSplitNotes, needsKiv, kivInProduction, kivParts, isCrystalCode, isManualOtherCode, firstKivCategory, crystalWithPlak, lateNamesOrder, hasLateNames } from '../utils/exportCsv';
+import { getExportableCategories, splitOrderCategories, getOrderJenisPlakGroups, getPlakProductionMode, summarizeRowsForManual, buildCsvRows, rowsToCsv, buildCategoryCsvFilename, combineCsvRows, addInvoiceGaps, buildCombinedCsvFilename, rowsForInvoice, validateExport, getInvoiceIdForJenisPlak, getPartialSplitNotes, needsKiv, kivInProduction, kivParts, isCrystalCode, isManualOtherCode, firstKivCategory, crystalWithPlak, lateNamesOrder, hasLateNames } from '../utils/exportCsv';
 import { downloadTextFile } from '../utils/downloadBlob';
 import { getInvoiceItems, withOrderOwnSettings } from '../utils/orderBatches';
 import ImportFileButtons from '../components/ImportFileButtons';
@@ -227,15 +227,22 @@ export default function ProductionOrderDetail() {
   // getPlakProductionMode: a group with a small enough combined qty is
   // faster hand-typed into Illustrator than exported, so Production gets a
   // checklist instead of a button (but "Export CSV anyway" stays available).
-  const jenisPlakExport = useMemo(() => {
+  const exportGroups = useCallback((groups) => {
     if (!effectiveOrder) return [];
     const modes = getPlakProductionMode(effectiveOrder);
-    return jenisPlakGroups.map((group) => {
+    return groups.map((group) => {
       const csvData = buildCsvRows(effectiveOrder, null, group.items);
       const { mode, totalQty } = modes.get(group.groupKey) || { mode: 'csv', totalQty: 0 };
       return { ...group, csvData, mode, totalQty, check: validateExport(effectiveOrder, group.items, state.plakCatalog, csvData) };
     });
-  }, [effectiveOrder, jenisPlakGroups, state.plakCatalog]);
+  }, [effectiveOrder, state.plakCatalog]);
+  const jenisPlakExport = useMemo(() => exportGroups(jenisPlakGroups), [exportGroups, jenisPlakGroups]);
+  // One invoice card's Generate / CSV (Sean, 2026-10-26): every Jenis Plak of the order, cut to this invoice's
+  // plaques (rowsForInvoice) — a partly-split Jenis Plak's share included, the other invoices' left out.
+  const invoiceExport = useMemo(
+    () => (isFiltered && effectiveOrder ? exportGroups(getOrderJenisPlakGroups(effectiveOrder)) : null),
+    [isFiltered, effectiveOrder, exportGroups],
+  );
 
   const manualPlakGroups = useMemo(
     () => jenisPlakExport.filter((g) => g.mode === 'manual'),
@@ -347,12 +354,21 @@ export default function ProductionOrderDetail() {
   // a hand-made OTHER (ordered in from outside) is never typed or put in the AI file
   const plakGroups = jenisPlakExport.filter((g) => !isCrystalCode(g.jenisPlak) && !isManualOtherCode(g.jenisPlak));
   const reservedGroups = plakGroups.filter((g) => g.csvData.reservedCount > 0);
-  const combinedRows = addInvoiceGaps(order, combineCsvRows(plakGroups));
-  const combinedOk = plakGroups.length > 0 && plakGroups.every((g) => g.check.ok || isAllReserved(g)) && combinedRows.length > 0;
+  const isPlak = (g) => !isCrystalCode(g.jenisPlak) && !isManualOtherCode(g.jenisPlak);
+  // a viewed invoice: only its own plaques (each invoice's AI file printed apart); the whole order: every
+  // invoice, a blank slot between two invoices of one Jenis Plak
+  const invoicePlakGroups = invoiceExport
+    ? invoiceExport.filter((g) => isPlak(g) && rowsForInvoice(order, g.csvData.rows, viewInvoiceId).length > 0)
+    : plakGroups;
+  const combinedRows = invoiceExport
+    ? rowsForInvoice(order, combineCsvRows(invoiceExport.filter(isPlak)), viewInvoiceId)
+    : addInvoiceGaps(order, combineCsvRows(plakGroups));
+  const combinedOk = invoicePlakGroups.length > 0 && invoicePlakGroups.every((g) => g.check.ok || isAllReserved(g)) && combinedRows.length > 0;
+  const combinedFilename = buildCombinedCsvFilename(order, invoiceExport ? viewInvoiceId : null);
   const handleExportCombined = () => {
     if (!combinedOk) return;
     const csv = rowsToCsv(combinedRows);
-    const filename = buildCombinedCsvFilename(order);
+    const filename = combinedFilename;
     downloadTextFile(filename, csv);
     setExportNote(`Exported ${combinedRows.length} row(s) to ${filename}.`);
     clearTimeout(exportNoteTimer.current);
@@ -363,7 +379,7 @@ export default function ProductionOrderDetail() {
   // reach the NAS AI FILE folder, and stops with an alert if there's no
   // helper or no folder — instead of queuing a job nobody will pick up.
   const aiFileBusy = aiFileChecking || !!activeAiFileJobId;
-  const generateOk = crystalsHere ? (plakGroups.length === 0 || combinedOk) : combinedOk;
+  const generateOk = crystalsHere ? (invoicePlakGroups.length === 0 || combinedOk) : combinedOk;
   const handleGenerateAiFile = async () => {
     if (!generateOk || aiFileBusy) return;
     setAiFileErr('');
@@ -391,7 +407,7 @@ export default function ProductionOrderDetail() {
         setCrystalPrep(false);
       }
       if (!combinedOk) return;
-      const id = await startAiFileHelperJob(buildCombinedCsvFilename(order), rowsToCsv(combinedRows), schoolFolderFor(order.sekolah));
+      const id = await startAiFileHelperJob(combinedFilename, rowsToCsv(combinedRows), schoolFolderFor(order.sekolah));
       aiFileSentRows.current = combinedRows;
       setAiFileJob({ id, status: 'queued', message: '', files: [] });
     } catch (err) {

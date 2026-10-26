@@ -1071,6 +1071,31 @@ export function addInvoiceGaps(order, rows) {
   });
 }
 
+// Which invoice each CSV row belongs to (Sean, 2026-10-26: each invoice card makes only its own AI file, to print
+// apart). A Jenis Plak moved whole goes with its invoice; a partly-split one is cut in order — each invoice
+// group's QTY in turn, the rest on the order's own invoice (the same cut addInvoiceGaps marks).
+export function rowInvoiceIds(order, rows) {
+  const JP = CSV_COLUMNS.indexOf('jenis_plak');
+  const shares = {};
+  (order?.invoiceGroups || []).forEach((g) => Object.entries(g.qtyByJenisPlak || {}).forEach(([jp, q]) => {
+    if (Number(q) > 0) (shares[jp] = shares[jp] || []).push({ q: Number(q), id: g.invoiceId || '' });
+  }));
+  const seen = {};
+  return rows.map((r) => {
+    const jp = r[JP];
+    if (!shares[jp]) return getInvoiceIdForJenisPlak(order, jp);
+    seen[jp] = (seen[jp] || 0) + 1;
+    let at = 0;
+    const hit = shares[jp].find((sh) => { at += sh.q; return seen[jp] <= at; });
+    return hit ? hit.id : (order.invoiceId || order.id);
+  });
+}
+
+export function rowsForInvoice(order, rows, invoiceId) {
+  const ids = rowInvoiceIds(order, rows);
+  return rows.filter((r, i) => ids[i] === invoiceId);
+}
+
 // The teacher's upload is downloaded as "<order id>-<school>(<salesman>)
 // .xlsx" (Sean, 2026-10-07); an order's second/third file gets "-2"/"-3".
 // The extension follows the stored file (.xlsx or .docx).
@@ -1082,8 +1107,8 @@ export function buildOrderImportFilename(order, file = { path: order.importFileP
   return `${sanitizeFilenamePart(order.id || '')}-${school}${salesman ? `(${salesman})` : ''}${index > 0 ? `-${index + 1}` : ''}${ext}`;
 }
 
-export function buildCombinedCsvFilename(order) {
-  const invoice = sanitizeFilenamePart(order.invoiceId || order.id);
+export function buildCombinedCsvFilename(order, invoiceId = null) {
+  const invoice = sanitizeFilenamePart(invoiceId || order.invoiceId || order.id);
   const school = sanitizeFilenamePart(order.sekolah || 'Combined');
   return `(${invoice}) - ${school}.csv`;
 }

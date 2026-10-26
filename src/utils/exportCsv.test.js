@@ -1260,6 +1260,31 @@ describe('addInvoiceGaps — a blank plaque between two invoices of one Jenis Pl
   });
 });
 
+describe('rowsForInvoice — each invoice card makes only its own plaques (ORD-0108, 2026-10-26)', () => {
+  const row = (name, jp = 'CPH / B') => ['MAJLIS', '', 'ANUGERAH', name, '', jp, 'TOKOH', '', ''];
+  const rows = [row('A'), row('B'), row('C'), row('D'), row('E'), row('F'), row('X', 'PKC 246'), row('Y', 'PKF 266')];
+  const order = {
+    id: 'ORD-1', invoiceId: 'INV1',
+    invoiceGroups: [
+      { invoiceId: 'INV2', jenisPlakList: ['CPH / B'], qtyByJenisPlak: { 'CPH / B': 2 } },
+      { invoiceId: 'INV3', jenisPlakList: ['CPH / B'], qtyByJenisPlak: { 'CPH / B': 1 } },
+      { invoiceId: 'INV4', jenisPlakList: ['PKF 266'] },
+    ],
+  };
+  it('cuts a partly-split Jenis Plak in order and keeps a wholly moved one with its invoice', async () => {
+    const { rowsForInvoice } = await import('./exportCsv');
+    const names = (inv) => rowsForInvoice(order, rows, inv).map((r) => r[3]);
+    expect(names('INV2')).toEqual(['A', 'B']);
+    expect(names('INV3')).toEqual(['C']);
+    expect(names('INV1')).toEqual(['D', 'E', 'F', 'X']);
+    expect(names('INV4')).toEqual(['Y']);
+  });
+  it('names the CSV / AI file folder after the viewed invoice', async () => {
+    const { buildCombinedCsvFilename } = await import('./exportCsv');
+    expect(buildCombinedCsvFilename({ id: 'ORD-1', invoiceId: 'INV1', sekolah: 'SK A' }, 'INV3')).toBe('(INV3) - SK A.csv');
+  });
+});
+
 describe('Reserved names on ORDER LAIN-LAIN (Sean, 2026-10-21)', () => {
   const lines = { 'UMUM::0::0': 'ANUGERAH KHAS', 'UMUM::0::1': 'TOKOH MURID 2026', 'UMUM::0::2': 'NAMA MURID', 'UMUM::0::umumRed': '1' };
   const item = (rows) => ({ id: 'u', categoryKey: 'UMUM', blockIdx: 0, jenisPlak: 'PK 1', qty: rows.length, detail: { lines, rows } });
