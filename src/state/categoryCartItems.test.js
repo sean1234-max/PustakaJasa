@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildCategoryCartItems } from './categoryCartItems';
-import { reconstructBlocksForCategory } from '../utils/computeBlocks';
+import { reconstructBlocksForCategory, buildDraftFromOrder } from '../utils/computeBlocks';
 
 // Minimal draft — buildCategoryCartItems only reads these fields.
 const draft = (selempangRows) => ({
@@ -131,6 +131,22 @@ describe('buildCategoryCartItems — TOKOH_SHEET (plakPerRow)', () => {
       { id: 2, desc: 'TOKOH NILAM', qty: '2', jenisPlak: 'MP399', namaMurid: 'TAHAP 1' },
     ]), 'TOKOH_SHEET');
     expect(items.map((it) => [it.unitPrice, it.harga, it.nameSurcharge])).toEqual([[13, 13, 1], [12, 24, undefined]]);
+  });
+
+  // Edit Order → Save rebuilds the order from its own items: a named plaque's
+  // saved price already has its +RM1, which must not be added again (ORD-0139:
+  // RM25 → 26 → 27 → 28 after two Saves).
+  it('adds the name +RM1 only once however often the order is rebuilt', () => {
+    const st = draftTokoh([
+      { id: 1, desc: 'TOKOH MURID', qty: '2', jenisPlak: 'MP399', namaMurid: 'NUR AINA' },
+      { id: 2, desc: 'TOKOH NILAM', qty: '1', jenisPlak: 'MP399', namaMurid: 'TAHAP 1' },
+    ]);
+    let { items } = buildCategoryCartItems(st, 'TOKOH_SHEET');
+    for (let i = 0; i < 3; i++) {
+      const d = buildDraftFromOrder({ items, schoolLanguage: 'SK' });
+      ({ items } = buildCategoryCartItems({ ...st, ...d }, 'TOKOH_SHEET'));
+    }
+    expect(items.map((it) => [it.unitPrice, it.harga, it.nameSurcharge])).toEqual([[13, 26, 1], [12, 12, undefined]]);
   });
 
   // Regression: two different honourees can share the same TOKOH award name

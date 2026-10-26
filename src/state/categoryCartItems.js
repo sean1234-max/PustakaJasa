@@ -183,10 +183,14 @@ export function buildCategoryCartItems(st, catKey, { lenient = false, allowTypos
       // its own plaques.
       b.rows.forEach((row) => {
         if (row.jenisPlak ? row.qty : lenient && Number(row.qty) > 0) {
+          // A saved named plaque comes back with its +RM1 in the price: start from the
+          // price without it, withNameSurcharge adds it again (once) if the name is still there.
+          const unitPrice = row.nameSurcharge && row.unitPrice != null ? row.unitPrice - row.nameSurcharge : row.unitPrice;
+          const harga = row.nameSurcharge && unitPrice != null ? unitPrice * (Number(row.qty) || 0) : row.rawHarga;
           const tokoh = {};
           (row.tokohFields || []).forEach((f) => { if (f.value) tokoh[f.key] = f.value; });
           newItems.push({
-            id: crypto.randomUUID(), jenisPlak: row.jenisPlak || '', qty: row.qty, harga: row.rawHarga, unitPrice: row.unitPrice,
+            id: crypto.randomUUID(), jenisPlak: row.jenisPlak || '', qty: row.qty, harga, unitPrice,
             // cat.label (not b.qtyLabel) — qtyLabel is blank for every
             // hideQtyLabelSuffix category (ALIRAN/LONJAKAN/KEHADIRAN/
             // TOKOH_SHEET/SELEMPANG, catalog.js) since that flag is meant
@@ -207,7 +211,7 @@ export function buildCategoryCartItems(st, catKey, { lenient = false, allowTypos
             // unitPrice (not just jenisPlak) is snapshotted so a later
             // catalog price change can't make a past order's printout show
             // a different price than what was actually charged.
-            detail: { ...baseDetail, rows: [{ id: row.id, desc: row.desc, qty: row.qty, jenisPlak: row.jenisPlak, unitPrice: row.unitPrice, ...tokoh }] },
+            detail: { ...baseDetail, rows: [{ id: row.id, desc: row.desc, qty: row.qty, jenisPlak: row.jenisPlak, unitPrice, ...tokoh }] },
           });
         }
       });

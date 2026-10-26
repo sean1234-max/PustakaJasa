@@ -567,6 +567,7 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
           plakFields = {
             jenisPlak: row.jenisPlak || '',
             unitPrice: rowUnitPrice,
+            nameSurcharge: Number(row.nameSurcharge) || 0,
             rawHarga: rowHarga,
             hargaLabel: rowUnitPrice != null ? `RM ${rowHarga.toFixed(2)}` : '—',
             setJenisPlak: (v, price) => updaters.onRowPlak(rowsKey, row.id, v, price),
@@ -988,7 +989,12 @@ function mergeItemDetailIntoMaps(it, key, lineValues, matrixValues, rowsByBlock,
       }
     });
   }
-  if (it.detail.rows) {
+  // A named plaque's row price already carries its +RM1 (studentName.js): the row
+  // remembers it, so a rebuild (Edit Order → Save) takes it off before adding it again.
+  const detailRows = it.nameSurcharge && it.detail.rows?.length === 1
+    ? [{ ...it.detail.rows[0], nameSurcharge: it.nameSurcharge }]
+    : it.detail.rows;
+  if (detailRows) {
     // SELEMPANG rows carry no `desc` (they're ACARA/WARNA/KUANTITI), so the
     // sum-by-desc path below would collapse every row onto the first
     // (undefined === undefined). Upsert by id instead, like the matrix case.
@@ -1002,15 +1008,15 @@ function mergeItemDetailIntoMaps(it, key, lineValues, matrixValues, rowsByBlock,
     const cat = resolveCategory(it.categoryKey);
     const mergeById = !!(cat?.selempang || cat?.tokohRowFields || cat?.umumRows);
     if (!rowsByBlock[key]) {
-      rowsByBlock[key] = it.detail.rows.map((r) => ({ ...r }));
+      rowsByBlock[key] = detailRows.map((r) => ({ ...r }));
     } else if (it.detail.matrix || mergeById) {
-      it.detail.rows.forEach((r) => {
+      detailRows.forEach((r) => {
         const existing = rowsByBlock[key].find((er) => er.id === r.id);
         if (existing) Object.assign(existing, r);
         else rowsByBlock[key].push({ ...r });
       });
     } else {
-      it.detail.rows.forEach((r) => {
+      detailRows.forEach((r) => {
         const existing = rowsByBlock[key].find((er) => er.desc === r.desc);
         if (existing) existing.qty = (Number(existing.qty) || 0) + (Number(r.qty) || 0);
         else rowsByBlock[key].push({ ...r });
