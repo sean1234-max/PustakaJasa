@@ -416,7 +416,8 @@ export function createDraftUpdaters(patch, fields) {
     onRowPlak: (rowsKey, id, val, price) => patch((st) => ({
       [rowsByBlock]: {
         ...st[rowsByBlock],
-        [rowsKey]: st[rowsByBlock][rowsKey].map((r) => (r.id === id ? { ...r, jenisPlak: val, unitPrice: price ?? null } : r)),
+        // a freshly picked price has no +RM1 name charge in it yet
+        [rowsKey]: st[rowsByBlock][rowsKey].map((r) => (r.id === id ? { ...r, jenisPlak: val, unitPrice: price ?? null, nameSurcharge: 0 } : r)),
       },
     })),
     // Columns (Tahun + Nama Kelas) — dynamicMatrix categories only (PBD).
