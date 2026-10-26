@@ -1,6 +1,6 @@
 import { Fragment } from 'react';
 import { standardUnitPrice, SELEMPANG_CODE } from '../data/catalog';
-import { groupItemsByBatch, combineByJenisPlak, sortMedalColours } from '../utils/orderBatches';
+import { groupItemsByBatch, combineByJenisPlak, sortMedalColours, withNamaLines } from '../utils/orderBatches';
 
 // Shared by SalesOrderSummary (editable, for the pre-approval price
 // review) and OrderDetails (always read-only, the teacher's own printable
@@ -32,18 +32,21 @@ export default function PriceTable({
   const columnCount = (hideCategory ? 0 : 1) + 1 + 3;
   const groups = groupItemsByBatch(rows);
   const multiGroup = groups.length > 1;
-  // Shown only for rows that actually had a price change captured (see
-  // AppState.jsx's approveOrder/approveAddOn) — pre-existing orders/items
-  // with no originalUnitPrice never trigger this column.
-  const anyOriginalPrice = rows.some((it) => it.originalUnitPrice != null);
+  // Sets a combined line's price on all its items; the named ones keep their +RM1 on top.
+  const setLinePrice = (it, value) => {
+    if (!it.namaPerUnit || value === '') { setPrice(it.ids, value); return; }
+    const plain = it.ids.filter((id) => !it.namaIds.includes(id));
+    if (plain.length) setPrice(plain, value);
+    setPrice(it.namaIds, String(Number(value) + it.namaPerUnit));
+  };
 
   return (
     <>
       {groups.map((group, gi) => {
         const groupHarga = group.items.reduce((sum, it) => sum + it.harga, 0);
-        const displayItems = sortMedalColours(combineJenisPlak
-          ? combineByJenisPlak(group.items, { splitByPrice: true })
-          : group.items.map((it) => ({ ...it, key: it.id, ids: [it.id] })));
+        const displayItems = combineJenisPlak
+          ? withNamaLines(sortMedalColours(combineByJenisPlak(group.items, { splitByPrice: true })))
+          : sortMedalColours(group.items.map((it) => ({ ...it, key: it.id, ids: [it.id] })));
         return (
           <div key={group.batch}>
             {multiGroup && <div className="card-kicker" style={{ marginTop: gi === 0 ? 0 : 'var(--space-6)' }}>{group.label}</div>}
@@ -52,7 +55,6 @@ export default function PriceTable({
                 <tr>
                   {!hideCategory && <th>Category</th>}
                   <th>Jenis Plak</th>
-                  {anyOriginalPrice && <th style={{ width: 130 }}>Original Price Per Unit</th>}
                   <th style={{ width: 130 }}>Price per Unit</th>
                   <th style={{ width: 80 }}>QTY</th>
                   <th style={{ width: 130 }}>Harga</th>
@@ -60,7 +62,12 @@ export default function PriceTable({
               </thead>
               <tbody>
                 {displayItems.map((it) => {
-                  const adjusted = it.unitPrice !== standardUnitPrice(it.jenisPlak, plakCatalog);
+                  const adjusted = !it.nama && it.unitPrice !== standardUnitPrice(it.jenisPlak, plakCatalog);
+                  // a single item's draft includes its +RM1; this line shows the price without it
+                  const draft = it.ids.length === 1 ? priceDrafts[it.ids[0]] : undefined;
+                  const inputValue = it.ids.length !== 1 ? it.unitPrice
+                    : it.namaPerUnit && draft != null && draft !== '' ? Number(draft) - it.namaPerUnit
+                      : (draft ?? it.unitPrice);
                   // The printed order lists each Selempang's ACARA / WARNA under its row (Sean, 2026-10-13).
                   const selempangLines = showSelempangLines && it.jenisPlak === SELEMPANG_CODE
                     ? group.items.filter((x) => it.ids.includes(x.id)).flatMap((x) => x.detail?.rows || [])
@@ -74,12 +81,9 @@ export default function PriceTable({
                       } : {})}
                     >
                       {!hideCategory && <td>{it.categoryLabel}</td>}
-                      <td>{it.jenisPlak}{(it.named ?? it.nameSurcharge) && <span className="hint-text"> (nama +RM1)</span>}</td>
-                      {anyOriginalPrice && (
-                        <td>{it.originalUnitPrice != null ? `RM ${it.originalUnitPrice.toFixed(2)}` : ''}</td>
-                      )}
+                      <td>{it.jenisPlak}{!combineJenisPlak && it.nameSurcharge > 0 && <span className="hint-text"> (nama +RM1)</span>}</td>
                       <td>
-                        {editable ? (
+                        {editable && !it.nama ? (
                           <input
                             className={`input${adjusted ? ' amount-adjusted' : ''}`}
                             type="number"
@@ -94,7 +98,7 @@ export default function PriceTable({
                             // on the native number spinner) must never show
                             // as a blank field while Harga quietly still
                             // computes off the correct price underneath.
-                            value={it.ids.length === 1 ? (priceDrafts[it.ids[0]] ?? it.unitPrice) : it.unitPrice}
+                            value={inputValue}
                             // Selects the existing text on focus so the very
                             // first keystroke replaces it outright — without
                             // this, clicking in and typing "10" over an
@@ -105,7 +109,7 @@ export default function PriceTable({
                             // leading zero through (e.g. a paste): strip a
                             // zero immediately followed by another digit,
                             // leaving a real decimal like "0.5" untouched.
-                            onChange={(e) => setPrice(it.ids, e.target.value.replace(/^0+(?=\d)/, ''))}
+                            onChange={(e) => setLinePrice(it, e.target.value.replace(/^0+(?=\d)/, ''))}
                           />
                         ) : (
                           <span className={adjusted ? 'amount-adjusted' : undefined}>
@@ -123,7 +127,7 @@ export default function PriceTable({
                     {selempangLines.map((r, i) => (
                       // eslint-disable-next-line react/no-array-index-key -- display-only list, rows have no stable id across items
                       <tr key={`${it.key}-sel-${i}`} className="selempang-line">
-                        <td colSpan={columnCount + (anyOriginalPrice ? 1 : 0)} style={{ paddingLeft: 'var(--space-6)', fontSize: '0.9em' }}>
+                        <td colSpan={columnCount} style={{ paddingLeft: 'var(--space-6)', fontSize: '0.9em' }}>
                           ↳ {r.acara || '—'} · {r.warna}{r.warnaCode ? ` (${r.warnaCode})` : ''} · {r.qty}
                         </td>
                       </tr>
@@ -134,7 +138,6 @@ export default function PriceTable({
                 <tr>
                   {!hideCategory && <td />}
                   <td />
-                  {anyOriginalPrice && <td />}
                   <td />
                   <td><strong>{multiGroup ? 'SUBTOTAL' : 'TOTAL'}</strong></td>
                   <td>
