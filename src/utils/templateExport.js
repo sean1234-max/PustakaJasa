@@ -301,7 +301,7 @@ function subjectRows(ws, subjek, firstRow) {
 
 function titleCells(ws) {
   const ins = findCells(ws, 'TOLONG ISI DI SINI')[0];
-  return ins ? { heading: addr(ins.r + 1, ins.c), sample: addr(ins.r + 2, ins.c) } : null;
+  return ins ? { heading: addr(ins.r + 1, ins.c), sample: addr(ins.r + 2, ins.c), line: addr(ins.r + 3, ins.c) } : null;
 }
 
 function plakValueCell(ws) {
@@ -871,7 +871,8 @@ export async function fillOrderTemplate(templateBuffer, categorized, {
       for (const awards of chunk(g.awards, layout.awardRows.length)) {
         const { doc, name } = await sheetCopy(base);
         if (layout.title && g.heading) setCell(doc, layout.title.heading, g.heading);
-        if (layout.title) setCell(doc, layout.title.sample, g.sample.join('\n'));
+        // the award in ② (red), the class in ③ under it, not red (Sean, 2026-10-27: "1 MAHIR 不需要红色")
+        if (layout.title) { setCell(doc, layout.title.sample, g.sample[0]); setCell(doc, layout.title.line, g.sample[1]); }
         if (layout.plak && g.code) setCell(doc, layout.plak, g.code);
         let n = 0;
         const perYear = new Map();

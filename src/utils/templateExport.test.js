@@ -94,7 +94,8 @@ describe('fillOrderTemplate', () => {
     const mp = 'MP THP 1 (Kalau ada kelas)';
     expect(wb.SheetNames).toEqual([mp, `${mp} (2)`, 'PPKI,PRA', 'ORDER LAIN-LAIN']);
     expect(v(wb, mp, 'B2')).toBe('MAJLIS APRESIASI AKADEMIK');
-    expect(v(wb, mp, 'B3')).toBe('ANUGERAH IBNU SINA\n1 UM');
+    // the award in ②, the class in ③ under it, not red (Sean, 2026-10-27)
+    expect([v(wb, mp, 'B3'), v(wb, mp, 'B4')]).toEqual(['ANUGERAH IBNU SINA', '1 UM']);
     expect([v(wb, mp, 'A13'), v(wb, mp, 'A14')]).toEqual(['ANUGERAH IBNU SINA', 'ANUGERAH AL-KINDI']);
     expect([v(wb, mp, 'B13'), v(wb, mp, 'C13'), v(wb, mp, 'D13')]).toEqual([2, 1, undefined]);
     expect([v(wb, mp, 'F13'), v(wb, mp, 'G13'), v(wb, mp, 'F14'), v(wb, mp, 'K13')]).toEqual(['UM', 1, 'UKM', 'UM']);

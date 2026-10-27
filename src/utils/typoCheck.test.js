@@ -70,3 +70,11 @@ describe('KEMAS (Sean, 2026-10-21)', () => {
     expect(findPossibleTypo('BERPENAMPILAN KEMAS TAHAP 1')).toBeFalsy();
   });
 });
+
+describe('SRI (Sean, 2026-10-27)', () => {
+  afterEach(() => setCustomTypoWords([]));
+  it('TAMAN SRI ANDALAS is not a typo of SERI', () => {
+    setCustomTypoWords(['SERI']);
+    expect(findPossibleTypo('SEKOLAH KEBANGSAAN TAMAN SRI ANDALAS')).toBeFalsy();
+  });
+});

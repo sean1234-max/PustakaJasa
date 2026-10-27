@@ -75,3 +75,38 @@ describe('draftToFormParsed, a tab of its own', () => {
     expect(sec.tokohRows.filter((r) => r.qty).map((r) => [r.desc, r.namaMurid, r.qty])).toEqual([['IKON PENGAWAS', 'TAHUN 3', 2]]);
   });
 });
+
+// SK Taman Sri Andalas (Sean, 2026-10-27): a PDF tab of KETUA KELAS 2026 for 1 MAHIR, 1 YAKIN …
+// came back from the form as TAHUN 1 x 9, the class names gone, in two tabs.
+describe('draftToFormParsed, a class per plaque', () => {
+  it('leaves the tab as read: the form cannot keep its class names', async () => {
+    const key = makeDynamicCategoryKey('KLAS_MATRIX', 'KETUA KELAS 2026');
+    const classes = ['1 MAHIR', '1 YAKIN', '2 MAHIR', '4 MAHIR', '4 YAKIN'];
+    const d = {
+      lineValues: { [`${key}::0::0`]: 'SEKOLAH KEBANGSAAN TAMAN SRI ANDALAS\nUNIT HAL EHWAL MURID', [`${key}::0::2`]: 'KETUA KELAS 2026', [`${key}::0::3`]: '1 MAHIR', [`${key}::0::refOrder`]: '0,2,3' },
+      matrixValues: Object.fromEntries(classes.map((_, i) => [`${key}::0::1::${i + 1}`, '1'])),
+      rowsByBlock: { [`${key}::0`]: [{ id: 1, desc: 'KUANTITI', custom: true }] },
+      columnsByBlock: { [`${key}::0`]: classes.map((namaKelas, i) => ({ id: i + 1, tahunFrom: '', tahunTo: '', namaKelas })) },
+      plakRows: { [`${key}::0`]: [{ id: 1, jenisPlak: 'SM-13187 / GOLD / BASE WITHOUT COVER' }] },
+      visibleBlocksByCategory: { [key]: 1 },
+      plakCatalog: [{ code: 'SM-13187', price: 5.5, children: [{ code: 'GOLD', children: [{ code: 'BASE WITHOUT COVER' }] }] }],
+      schoolLanguage: 'SK',
+    };
+    const { error } = await draftToFormParsed(d, [key], template(), opts);
+    expect(error).toMatch(/cannot keep the class names of KETUA KELAS 2026/);
+  });
+});
+
+describe('MP THP (Kalau ada kelas) CONTOH', () => {
+  it('the award in ②, the class in ③ under it — not red (Sean, 2026-10-27)', async () => {
+    const { fillOrderTemplate } = await import('./templateExport');
+    const { parseFormAnugerahExcel } = await import('./excelImport');
+    const plaques = ['MAHIR', 'YAKIN'].flatMap((k) => [1, 2, 3].map((y) => ({
+      heading: 'SK TAMAN SRI ANDALAS', award: 'KETUA KELAS 2026', line: `${y} ${k}`, eline2: '', qty: 1, code: 'SM-13187',
+    })));
+    const out = await fillOrderTemplate(template(), { plaques, selempang: [], front: {}, priceOf: () => null }, opts);
+    const [section] = parseFormAnugerahExcel(out.buffer).categorized.MP1_KELAS;
+    expect([section.lines['2'], section.lines['3']]).toEqual(['KETUA KELAS 2026', '1 MAHIR']);
+    expect(section.levelBreakdown.map((l) => l.mainRows.map((r) => r.name))).toEqual([['MAHIR', 'YAKIN'], ['MAHIR', 'YAKIN'], ['MAHIR', 'YAKIN']]);
+  });
+});
