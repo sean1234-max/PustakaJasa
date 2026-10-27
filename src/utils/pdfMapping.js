@@ -109,6 +109,9 @@ function codeLinesBelow(ir, seg, text) {
   return parts.join(' / ');
 }
 
+// A plaque code on a table row: letters + a number ("SM-13187/GOLD", "PKC 263", "MP399"), never a price.
+const ROW_CODE_RE = /^(?!RM\b)[A-Z]{1,4}\s?-?\s?\d{3,6}\b/i;
+
 function hasNumber(text, value) {
   return new RegExp(`(^|[^\\d])${value}([^\\d]|$)`).test(text);
 }
@@ -327,6 +330,16 @@ export function applyPdfReading(ir, reading) {
       const seg = read(g.code.ref);
       if (seg != null && norm(seg).includes(norm(g.code.text))) kod = cleanDocxPlakCode(codeLinesBelow(ir, segs(g.code.ref), g.code.text));
       else notes.push(`${where}: the plaque code the AI gave isn't in the file — please pick the Jenis Plak by hand.`);
+    }
+    // No code from the AI: the one plaque code printed on the batch's own table row (beside its
+    // total — "KETUA KELAS · 50 · SM-13187/GOLD", Sean 2026-10-27).
+    if (!kod && g.total?.ref) {
+      const at = segs(g.total.ref)?.[0];
+      const found = at ? ir.segments.filter((x) => x.page === at.page && x.y === at.y && ROW_CODE_RE.test(x.text.trim())) : [];
+      if (found.length === 1) {
+        kod = cleanDocxPlakCode(codeLinesBelow(ir, [found[0]], found[0].text));
+        notes.push(`${where}: plaque code "${kod}" taken from the batch's row in the PDF — please check it.`);
+      }
     }
 
     const tajukLines = (g.tajuk || []).map(read);
