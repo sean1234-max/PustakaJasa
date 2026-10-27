@@ -88,7 +88,9 @@ const kodLabel = (t) => t.replace(/\s*\/\s*/g, '/');
 // Finds the header row (whichever row actually carries a WORDING/LABEL
 // cell — not assumed to always be row 0) and the column each label sits
 // in. A table with no such cell isn't an order table and is skipped.
-function findWordingHeader(rows) {
+// `codeAbove`: the line above the table names the plaque code ("(KOD MEDAL 18059)"), so a
+// NAMA ANUGERAH | JUMLAH table with no code column of its own is a school's list too.
+function findWordingHeader(rows, codeAbove = false) {
   for (let ri = 0; ri < rows.length; ri++) {
     const cells = directChildren(rows[ri], W_NS, 'tc');
     let wordingCol = -1;
@@ -109,7 +111,7 @@ function findWordingHeader(rows) {
         if (wordingCol < 0 && LIST_WORDING_LABELS.includes(t)) { wordingCol = ci; list = true; }
         else if (qtyCol < 0 && LIST_QTY_LABELS.includes(t)) { qtyCol = ci; list = true; }
       });
-      if (kodCol < 0) list = false;
+      if (kodCol < 0 && !codeAbove) list = false;
     }
     if (wordingCol >= 0 && qtyCol >= 0 && (list || ![wordingCol, qtyCol].some((c) => LIST_WORDING_LABELS.includes(headerLabel(cells[c])) || LIST_QTY_LABELS.includes(headerLabel(cells[c]))))) {
       return { headerRow: ri, wordingCol, qtyCol, kodCol, hargaCol, list, cols: cells.length };
@@ -156,16 +158,44 @@ function textAbove(tbl) {
   return '';
 }
 
+// The first line under a table, '' when a table comes first ("81", a teacher's own total).
+function textBelow(tbl) {
+  for (let el = tbl.nextSibling; el; el = el.nextSibling) {
+    if (el.nodeType !== 1 || el.namespaceURI !== W_NS) continue;
+    if (el.localName === 'tbl') return '';
+    if (el.localName === 'p') {
+      const text = paragraphText(el).replace(/\s+/g, ' ').trim();
+      if (text) return text;
+    }
+  }
+  return '';
+}
+
+// The plaque codes a heading line names (SK ABDUL SAMAT, 2026-10-27): "DAERAH (KOD MEDAL 18059)"
+// -> ['18059']; "TOKOH MURID (KOD MEDAL : (YK628)+(GTS15))" -> ['YK628', 'GTS15'] (each '+' part
+// goes with every plaque of the table); "(KOD MEDAL (80-B) Design 2)" -> ['80-B Design 2'].
+const KOD_ABOVE_RE = /\bKOD(?:\s+(?:MEDAL|PLAK|HADIAH))?\s*:?\s*(.+)$/i;
+export function kodsAbove(text) {
+  const m = KOD_ABOVE_RE.exec(String(text || ''));
+  if (!m) return [];
+  let rest = m[1].trim();
+  // the ")" closing "(KOD MEDAL …" itself
+  while ((rest.match(/\)/g) || []).length > (rest.match(/\(/g) || []).length) rest = rest.replace(/\)\s*$/, '').trim();
+  return rest.split('+').map((k) => cleanDocxPlakCode(k.replace(/[()]/g, ' '))).filter(Boolean);
+}
+
 // `carry`: the list header of the table before — a school's list goes on in tables with no
 // header row of their own (one table per plaque type), read with the same columns.
 function readTableRows(tbl, tableIdx, notes, carry = null) {
   const rows = directChildren(tbl, W_NS, 'tr');
-  let header = findWordingHeader(rows);
+  const above = textAbove(tbl);
+  const aboveKods = kodsAbove(above);
+  let header = findWordingHeader(rows, aboveKods.length > 0);
   if (!header && carry && rows.length && directChildren(rows[0], W_NS, 'tc').length === carry.cols) header = { ...carry, headerRow: -1 };
   if (!header) return { rows: [], header: null };
   const { headerRow, wordingCol, qtyCol, kodCol, hargaCol = -1 } = header;
   // "DESIGN C" written above the table goes with its code (a crystal's design)
-  const design = /\bDESIGN\s*([A-Z0-9])\b/i.exec(textAbove(tbl));
+  const design = /\bDESIGN\s*([A-Z0-9])\b/i.exec(above);
   const out = [];
   for (let ri = headerRow + 1; ri < rows.length; ri++) {
     const cells = directChildren(rows[ri], W_NS, 'tc');
@@ -194,12 +224,15 @@ function readTableRows(tbl, tableIdx, notes, carry = null) {
       continue;
     }
     if (qty <= 0) continue;
-    let kod = cleanDocxPlakCode(kodRaw);
+    // No code column: the code(s) named above the table; a second one ("+ GTS15") is its own row
+    const [first = '', ...extraKods] = kodCol < 0 ? aboveKods : [];
+    let kod = kodCol >= 0 ? cleanDocxPlakCode(kodRaw) : first;
     if (design && kod && !/\bDESIGN\b/i.test(kod)) kod = `${kod} DESIGN ${design[1].toUpperCase()}`;
     const unit = hargaCol >= 0 && cells[hargaCol] ? Number(cellText(cells[hargaCol]).replace(/[^0-9.]/g, '')) || 0 : 0;
     out.push({ lines, qty, kod, unit, where });
+    extraKods.forEach((extra) => out.push({ lines, qty, kod: extra, unit: 0, where, extraKod: true }));
   }
-  return { rows: out, header };
+  return { rows: out, header, totalBelow: header.list ? parseDocxQty(textBelow(tbl)) : null };
 }
 
 // Splits a WORDING cell's own lines into { title, tahun, namaKelas,
@@ -564,6 +597,9 @@ function selempangTables(doc) {
 
 const BAD_FILE = 'Could not read this file — please make sure it is a valid .docx file.';
 
+// Plaques, not counting a second code's rows ("+ GTS15" goes with plaques already counted)
+const plaqueCount = (rows) => rows.reduce((s, r) => s + (r.extraKod ? 0 : r.qty), 0);
+
 // Top-level entry point — same return shape as excelImport.js's
 // parseFormAnugerahExcel (`{ categorized, notes } | { error }`), so
 // AppState.jsx/addOnDiff.js merge either file type through the same code
@@ -602,7 +638,17 @@ export async function parseWordingDocx(arrayBuffer, { DOMParser: DP = globalThis
       }
     });
     (read.header?.list ? listRows : rows).push(...tableRows);
+    // The teacher's own total typed under a list table ("81")
+    const sum = plaqueCount(tableRows);
+    if (read.totalBelow != null && read.totalBelow !== sum) {
+      notes.push(`Word table ${tableIdx + 1}: the total under it says ${read.totalBelow}, but its rows add up to ${sum} — please check nothing is missing.`);
+    }
   });
+  const penerima = Array.from(doc.getElementsByTagNameNS(W_NS, 'p'))
+    .map((p) => /\bJUMLAH PENERIMA\s*:?\s*(\d+)/i.exec(paragraphText(p))).find(Boolean);
+  if (penerima && listRows.length && Number(penerima[1]) !== plaqueCount(listRows)) {
+    notes.push(`The file's JUMLAH PENERIMA says ${penerima[1]}, but the tables add up to ${plaqueCount(listRows)} — please check nothing is missing.`);
+  }
 
   const { categorized, count, notes: groupNotes } = wordingRowsToCategorized(rows.map((r) => splitRowHeading(r, heading)), heading);
   notes.push(...groupNotes);

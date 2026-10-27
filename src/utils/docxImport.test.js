@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import JSZip from 'jszip';
 import { DOMParser } from '@xmldom/xmldom';
-import { parseWordingDocx, classifyWordingLines, parseDocxQty, cleanDocxPlakCode, wordingRowsToCategorized, splitRowHeading } from './docxImport';
+import { parseWordingDocx, classifyWordingLines, parseDocxQty, cleanDocxPlakCode, wordingRowsToCategorized, splitRowHeading, kodsAbove } from './docxImport';
 import { matchJenisPlakPath } from './excelImport';
 import { makeDynamicCategoryKey } from '../data/catalog';
 
@@ -373,6 +373,56 @@ describe("a school's own list in Word (NAMA | CODE | JUMLAH | HARGA)", () => {
       ['TOKOH MURID', '-', 1, 'OOS DESIGN C', 'OOS DESIGN C | 1 | RM39.00 | RM39.00'],
     ]);
     expect(categorized.SELEMPANG[0].selempangRows).toEqual([expect.objectContaining({ acara: 'TOKOH MURID 2026', warna: 'MERAH', qty: 1 })]);
+  });
+});
+
+describe('KOD MEDAL written above each NO | NAMA ANUGERAH | JUMLAH table (SK ABDUL SAMAT, 2026-10-27)', () => {
+  const head = 'Anugerah Gemilang Ko-Kurikulum 2026\nSK Abdul Samat';
+  const header = ['NO', 'NAMA ANUGERAH', 'JUMLAH'];
+  const doc = (total, penerima) => makeDocx([
+    para('HARI ANUGERAH GEMILANG KO-KURIKULUM'),
+    para('DAERAH (KOD MEDAL 18059)'),
+    table([header,
+      ['1.', `${head}\nKEJOHANAN BOLA JARING DAERAH KLANG\nNAIB JOHAN`, '10'],
+      ['2.', `${head}\nPERTANDINGAN KUIH TRADISIONAL\nPUTERI ISLAM DAERAH KLANG\nJOHAN`, '3'],
+      ['3.', `${head}\nE-PERKHEMAHAN LENCANA KEMAJUAN\nLENCANA KERIS EMAS`, '2']]),
+    para(total),
+    para('KEBANGSAAN (KOD MEDAL 13228-B)'),
+    table([header, ['1.', `${head}\nKAWAD KAKI PERINGKAT KEBANGSAAN\nJOHAN`, '20']]),
+    para('TOKOH MURID (KOD MEDAL : (YK628)+(GTS15))'),
+    table([header, ['1.', `${head}\nTOKOH KOKURIKULUM 2026`, '2']]),
+    para('ANUGERAH GURU (KOD MEDAL (80-B) Design 2)'),
+    table([header, ['1.', `${head}\nANUGERAH GURU GEMILANG KOKURIKULUM 2026`, '6']]),
+    para(`JUMLAH PENERIMA: ${penerima} ORANG`),
+  ].join(''));
+
+  it('reads every table with the code above it, the place line red, a second code as its own row (to the Remark)', async () => {
+    const { categorized, notes } = await parse(await doc('15', 43));
+    const umum = categorized.UMUM[0];
+    expect(umum.lines).toMatchObject({ 0: head, 1: 'KEJOHANAN BOLA JARING DAERAH KLANG', 2: 'NAIB JOHAN', umumRed: '2' });
+    expect(umum.umumRows.map((r) => [r.l1, r.l2, r.qty, r.jenisPlak])).toEqual([
+      ['', '', 10, '18059'],
+      ['PERTANDINGAN KUIH TRADISIONAL\nPUTERI ISLAM DAERAH KLANG', 'JOHAN', 3, '18059'],
+      ['E-PERKHEMAHAN LENCANA KEMAJUAN', 'LENCANA KERIS EMAS', 2, '18059'],
+      ['KAWAD KAKI PERINGKAT KEBANGSAAN', 'JOHAN', 20, '13228-B'],
+      ['-', 'TOKOH KOKURIKULUM 2026', 2, 'YK628'],
+      ['-', 'TOKOH KOKURIKULUM 2026', 2, 'GTS15'],
+      ['-', 'ANUGERAH GURU GEMILANG KOKURIKULUM 2026', 6, '80-B Design 2'],
+    ]);
+    expect(notes).toEqual([]);
+  });
+
+  it('says so when a table or the whole order disagrees with the totals written under it', async () => {
+    const { notes } = await parse(await doc('16', 50));
+    expect(notes.join(' ')).toMatch(/total under it says 16, but its rows add up to 15/);
+    expect(notes.join(' ')).toMatch(/JUMLAH PENERIMA says 50, but the tables add up to 43/);
+  });
+
+  it('reads the codes out of a KOD MEDAL line', () => {
+    expect(kodsAbove('DAERAH (KOD MEDAL 18059)')).toEqual(['18059']);
+    expect(kodsAbove('TOKOH MURID (KOD MEDAL : (YK628)+(GTS15))')).toEqual(['YK628', 'GTS15']);
+    expect(kodsAbove('ANUGERAH GURU (KOD MEDAL (80-B) Design 2)')).toEqual(['80-B Design 2']);
+    expect(kodsAbove('( KRISTAL ) OOS - DESIGN C')).toEqual([]);
   });
 });
 
