@@ -2005,6 +2005,9 @@ function frontPgLabel(text) {
 export function splitCikguPhone(text) {
   const s = String(text || '').trim();
   const m = /\+?\d[\d\s-]{7,}\d/.exec(s);
+  // "NAME / 012…" as the FRONT PG download writes it, even with a short number
+  const slash = !m && /^(.*?)\s*\/\s*(\+?\d[\d\s-]*)$/.exec(s);
+  if (slash) return { name: slash[1].trim(), phone: slash[2].replace(/[^0-9-]/g, '') };
   const phone = m ? m[0].replace(/[^0-9-]/g, '') : '';
   const name = (m ? s.replace(m[0], ' ') : s).replace(/[/|,()]+/g, ' ').replace(/\s+/g, ' ').replace(/[\s-]+$/, '').trim();
   return { name, phone };

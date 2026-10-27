@@ -37,5 +37,13 @@ export async function draftToFormParsed(draft, keys, templateBuffer, opts) {
   const categorized = Object.fromEntries(Object.entries(parsed.categorized || {})
     .map(([k, secs]) => [k, (secs || []).filter((sec) => !sec.sourceSheet || shown.has(String(sec.sourceSheet).trim().toUpperCase()))])
     .filter(([, secs]) => secs.length));
+  // A sheet named after the tab comes back as the generic subject matrix,
+  // which has no place for its Nama Kelas lists: KETUA KELAS 2026 for
+  // 1 MAHIR, 1 YAKIN … would come back as TAHUN 1 x 9 (SK Taman Sri
+  // Andalas, Sean 2026-10-27). Those tabs stay as read, a class per plaque.
+  const lostClasses = Object.values(categorized).flat()
+    .filter((sec) => String(sec.dynamicCategoryKey || '').startsWith('DYN::KLAS_MATRIX::') && sec.levelBreakdown?.length);
+  const names = [...new Set(lostClasses.map((s) => String(s.sourceSheet).replace(/\s*\(\d+\)$/, '')))];
+  if (names.length) return { error: `the form cannot keep the class names of ${names.join(', ')}` };
   return { parsed: { ...parsed, categorized } };
 }

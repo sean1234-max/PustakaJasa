@@ -1289,6 +1289,9 @@ describe('FRONT PG header → Function Details (Sean, 2026-10-03)', () => {
     expect(splitCikguPhone('PN AMINAH / 012-345 6789')).toEqual({ name: 'PN AMINAH', phone: '012-3456789' });
     expect(splitCikguPhone('CIKGU LIM 0123456789')).toEqual({ name: 'CIKGU LIM', phone: '0123456789' });
     expect(splitCikguPhone('PN AMINAH')).toEqual({ name: 'PN AMINAH', phone: '' });
+    // the download's own "name / phone", read back as it was written
+    expect(splitCikguPhone('1 / 1')).toEqual({ name: '1', phone: '1' });
+    expect(splitCikguPhone('PN AMINAH / 0123')).toEqual({ name: 'PN AMINAH', phone: '0123' });
   });
 
   it('reads each answer right of its label, and a REMARK that runs on below', () => {
