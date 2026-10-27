@@ -113,13 +113,14 @@ describe('fillOrderTemplate', () => {
     expect(Object.values(res.placed).reduce((a, n) => a + n, 0)).toBe(res.plaqueCount);
   });
 
-  it('adds another ORDER LAIN-LAIN when the rows run out', async () => {
+  // Sean, 2026-10-27: one tab, rows added, never a "(2)" copy.
+  it('adds rows to ORDER LAIN-LAIN when its rows run out', async () => {
     const many = Object.fromEntries(Array.from({ length: 5 }, (_, i) => [i, tab(`ANUGERAH ${i}`, 'PKC 263', ['TAHUN 1'])]));
     const res = await fillOrderTemplate(makeTemplate(), many, { DOMParser, XMLSerializer });
     const wb = read(res.buffer);
-    expect(wb.SheetNames).toContain('ORDER LAIN-LAIN (2)');
-    expect([v(wb, 'ORDER LAIN-LAIN (2)', 'C13'), v(wb, 'ORDER LAIN-LAIN (2)', 'D13')]).toEqual(['ANUGERAH 4', 'TAHUN 1']);
-    expect(res.placed).toEqual({ 'ORDER LAIN-LAIN': 3, 'ORDER LAIN-LAIN (2)': 2 });
+    expect(wb.SheetNames).not.toContain('ORDER LAIN-LAIN (2)');
+    expect([v(wb, 'ORDER LAIN-LAIN', 'C16'), v(wb, 'ORDER LAIN-LAIN', 'D16'), v(wb, 'ORDER LAIN-LAIN', 'A16')]).toEqual(['ANUGERAH 4', 'TAHUN 1', 5]);
+    expect(res.placed).toEqual({ 'ORDER LAIN-LAIN': 5 });
   });
 });
 

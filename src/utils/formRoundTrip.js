@@ -26,24 +26,33 @@ export async function draftToFormParsed(draft, keys, templateBuffer, opts) {
   if (skipped.length) return { error: `some tabs have no quantity yet (${skipped.join('; ')})` };
   if (!plaques.length && !selempang.length) return { error: 'there is nothing to put in the form' };
   const { fillOrderTemplate } = await import('./templateExport');
-  const out = await fillOrderTemplate(templateBuffer, { plaques, selempang, front, priceOf }, opts);
-  const placed = Object.values(out.placed).reduce((a, n) => a + n, 0);
-  if (placed < out.plaqueCount) return { error: `only ${placed} of ${out.plaqueCount} plaques fit the form` };
-  const parsed = parseFormAnugerahExcel(out.buffer);
-  if (parsed.error) return { error: parsed.error };
-  // Only what the order wrote: a sheet it left hidden still has the
-  // template's own sample rows (TOKOH MURID, TOKOH NILAM …).
-  const shown = new Set(out.sheets || []);
-  const categorized = Object.fromEntries(Object.entries(parsed.categorized || {})
-    .map(([k, secs]) => [k, (secs || []).filter((sec) => !sec.sourceSheet || shown.has(String(sec.sourceSheet).trim().toUpperCase()))])
-    .filter(([, secs]) => secs.length));
-  // A sheet named after the tab comes back as the generic subject matrix,
-  // which has no place for its Nama Kelas lists: KETUA KELAS 2026 for
-  // 1 MAHIR, 1 YAKIN … would come back as TAHUN 1 x 9 (SK Taman Sri
-  // Andalas, Sean 2026-10-27). Those tabs stay as read, a class per plaque.
-  const lostClasses = Object.values(categorized).flat()
-    .filter((sec) => String(sec.dynamicCategoryKey || '').startsWith('DYN::KLAS_MATRIX::') && sec.levelBreakdown?.length);
-  const names = [...new Set(lostClasses.map((s) => String(s.sourceSheet).replace(/\s*\(\d+\)$/, '')))];
-  if (names.length) return { error: `the form cannot keep the class names of ${names.join(', ')}` };
-  return { parsed: { ...parsed, categorized } };
+  const fill = async (list) => {
+    const out = await fillOrderTemplate(templateBuffer, { plaques: list, selempang, front, priceOf }, opts);
+    const placed = Object.values(out.placed).reduce((a, n) => a + n, 0);
+    if (placed < out.plaqueCount) return { error: `only ${placed} of ${out.plaqueCount} plaques fit the form`, retry: true };
+    const parsed = parseFormAnugerahExcel(out.buffer);
+    if (parsed.error) return { error: parsed.error };
+    // Only what the order wrote: a sheet it left hidden still has the
+    // template's own sample rows (TOKOH MURID, TOKOH NILAM …).
+    const shown = new Set(out.sheets || []);
+    const categorized = Object.fromEntries(Object.entries(parsed.categorized || {})
+      .map(([k, secs]) => [k, (secs || []).filter((sec) => !sec.sourceSheet || shown.has(String(sec.sourceSheet).trim().toUpperCase()))])
+      .filter(([, secs]) => secs.length));
+    // A sheet named after the tab comes back as the generic subject matrix,
+    // which has no place for its Nama Kelas lists: KETUA KELAS 2026 for
+    // 1 MAHIR, 1 YAKIN … would come back as TAHUN 1 x 9 (SK Taman Sri
+    // Andalas, Sean 2026-10-27).
+    const lostClasses = Object.values(categorized).flat()
+      .filter((sec) => String(sec.dynamicCategoryKey || '').startsWith('DYN::KLAS_MATRIX::') && sec.levelBreakdown?.length);
+    const names = [...new Set(lostClasses.map((s) => String(s.sourceSheet).replace(/\s*\(\d+\)$/, '')))];
+    if (names.length) return { error: `the form cannot keep the class names of ${names.join(', ')}`, retry: true };
+    return { parsed: { ...parsed, categorized } };
+  };
+  const first = await fill(plaques);
+  if (!first.retry) return first;
+  // What the form's own sheets can't hold goes on ORDER LAIN-LAIN, a row per
+  // plaque, never across the page (Sean, 2026-10-27: "永远打直 show 资料，
+  // 如果找不到 form template 的话就用 order lain-lain template").
+  const second = await fill(plaques.map((p) => (p.tab ? { ...p, oneSheet: true, awardRed: p.kind === 'KLAS_MATRIX' } : p)));
+  return second.error ? { error: first.error } : second;
 }

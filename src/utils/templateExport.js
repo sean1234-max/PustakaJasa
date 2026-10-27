@@ -408,7 +408,7 @@ function layoutUmum(ws) {
     if (p) contoh[`l${i}`] = addr(p.r, p.c + 1);
     if (p && merahHead) merah[`${i}`] = addr(p.r, merahHead.c);
   });
-  return { rows, cols, contoh, merah };
+  return { rows, cols, contoh, merah, noCol: no.c };
 }
 
 // ---------------------------------------------------------------------------
@@ -1078,8 +1078,21 @@ export async function fillOrderTemplate(templateBuffer, categorized, {
         notes.push(`${rows.length} plaque wording(s) need the ORDER LAIN-LAIN sheet, which this template doesn't have — please add them by hand.`);
       } else {
         const heading = rows.find((r) => r.heading)?.heading || '';
-        for (const part of chunk(rows, layout.rows.length)) {
+        // More rows than the sheet has: rows are added above its JUMLAH, one
+        // tab instead of "(2)" copies (Sean, 2026-10-27).
+        for (const part of [rows]) {
           const { doc, name } = await sheetCopy(base);
+          const slots = [...layout.rows];
+          const extra = part.length - slots.length;
+          if (extra > 0) {
+            // rows are 0-based: the JUMLAH row is the Excel row after the last one
+            const lastRow = slots[slots.length - 1];
+            insertListRows(doc, lastRow + 2, extra);
+            for (let i = 1; i <= extra; i++) {
+              slots.push(lastRow + i);
+              setCell(doc, addr(lastRow + i, layout.noCol), slots.length);
+            }
+          }
           if (layout.contoh.l0 && heading) setCell(doc, layout.contoh.l0, heading);
           // ② the award, ③ its TAHUN / TAHAP line, ④ the line under that
           // (Sean, 2026-10-17: each on its own line of the plaque).
@@ -1087,10 +1100,11 @@ export async function fillOrderTemplate(templateBuffer, categorized, {
           ['l1', 'l2', 'l3'].forEach((k) => layout.contoh[k] && setCell(doc, layout.contoh[k], contoh[k]));
           // A place line (PERTAMA …), else an ANUGERAH line, is red unless
           // the form says otherwise.
-          const red = umumDefaultRedSlot({ 1: contoh.l1, 2: contoh.l2, 3: contoh.l3 });
+          // A tab the form had no sheet for keeps its award red, as on the page (`awardRed`).
+          const red = umumDefaultRedSlot({ 1: contoh.l1, 2: contoh.l2, 3: contoh.l3 }) || (part[0].awardRed ? '1' : '');
           if (red && layout.merah[red]) setCell(doc, layout.merah[red], 'MERAH');
           part.forEach((p, i) => {
-            const r = layout.rows[i];
+            const r = slots[i];
             // ① blank = the CONTOH heading; a plaque with another heading
             // carries its own.
             if (layout.cols.l0 != null && p.heading && p.heading !== heading) setCell(doc, addr(r, layout.cols.l0), p.heading);
