@@ -34,6 +34,16 @@ describe('matchJenisPlakPath', () => {
     expect(matchJenisPlakPath('SM - 13187 (GOLD)', tree)).toBe('SM-13187 / GOLD / NORMAL');
   });
 
+  it('a stand medal with no base written gets BASE WITHOUT COVER (Sean, 2026-10-27)', () => {
+    const bases = () => ['BASE A', 'BASE B', 'BASE C', 'BASE WITH COVER', 'BASE WITHOUT COVER', 'NORMAL'].map((code) => ({ code }));
+    const tree = [{ code: 'SM-13187', children: [{ code: 'GOLD', children: bases() }, { code: 'SILVER', children: bases() }] }];
+    expect(matchJenisPlakPath('SM-13187/GOLD', tree)).toBe('SM-13187 / GOLD / BASE WITHOUT COVER');
+    expect(matchJenisPlakPath('SM-13187/GOLD/BASE B', tree)).toBe('SM-13187 / GOLD / BASE B');
+    expect(matchJenisPlakPath('SM-13187 SILVER NORMAL', tree)).toBe('SM-13187 / SILVER / NORMAL');
+    // the colour is still never guessed
+    expect(matchJenisPlakPath('SM-13187', tree)).toBe('');
+  });
+
   it('falls back one level when the real product code sits under an umbrella group node the teacher never types', () => {
     // Mirrors the live catalog: "CRYSTAL" groups "00S" / "R-100", each with
     // its own DESIGN A/B/C children — a teacher only ever writes "00S" or
@@ -73,6 +83,9 @@ describe('matchJenisPlakPath', () => {
     expect(matchJenisPlakPath('MP 393 (GOLD)', tree)).toBe('');
     expect(matchJenisPlakPath('MP 393 (BASE A)', tree)).toBe('');
     expect(matchJenisPlakPath('FD 251', tree)).toBe('');
+    // …except a stand medal's base: none written = BASE WITHOUT COVER (Sean, 2026-10-27).
+    expect(matchJenisPlakPath('MP 399 (GOLD)', tree)).toBe('MP399 / GOLD / BASE WITHOUT COVER');
+    expect(matchJenisPlakPath('MP399/GOLD/BASE WITH COVER', tree)).toBe('MP399 / GOLD / BASE WITH COVER');
   });
 
   it('returns empty when even the fallback level has no matching code', () => {
