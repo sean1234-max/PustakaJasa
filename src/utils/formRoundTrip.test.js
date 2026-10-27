@@ -96,3 +96,17 @@ describe('draftToFormParsed, a class per plaque', () => {
     expect(error).toMatch(/cannot keep the class names of KETUA KELAS 2026/);
   });
 });
+
+describe('MP THP (Kalau ada kelas) CONTOH', () => {
+  it('the award in ②, the class in ③ under it — not red (Sean, 2026-10-27)', async () => {
+    const { fillOrderTemplate } = await import('./templateExport');
+    const { parseFormAnugerahExcel } = await import('./excelImport');
+    const plaques = ['MAHIR', 'YAKIN'].flatMap((k) => [1, 2, 3].map((y) => ({
+      heading: 'SK TAMAN SRI ANDALAS', award: 'KETUA KELAS 2026', line: `${y} ${k}`, eline2: '', qty: 1, code: 'SM-13187',
+    })));
+    const out = await fillOrderTemplate(template(), { plaques, selempang: [], front: {}, priceOf: () => null }, opts);
+    const [section] = parseFormAnugerahExcel(out.buffer).categorized.MP1_KELAS;
+    expect([section.lines['2'], section.lines['3']]).toEqual(['KETUA KELAS 2026', '1 MAHIR']);
+    expect(section.levelBreakdown.map((l) => l.mainRows.map((r) => r.name))).toEqual([['MAHIR', 'YAKIN'], ['MAHIR', 'YAKIN'], ['MAHIR', 'YAKIN']]);
+  });
+});
