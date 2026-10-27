@@ -401,3 +401,54 @@ describe('applyPdfReading — a plaque code over several lines of its cell (Sean
     expect(codes({ groups: [group('P', 'PENGAWAS SEKOLAH', 'CPH B')], questions: [] })).toEqual(['CPH B']);
   });
 });
+
+// SK Taman Sri Andalas, KETUA / PENOLONG KETUA KELAS 2026 (Sean, 2026-10-27): items with a
+// class column per year group, each Tahun's range beside it ("3 MAHIR - 3 ARIF" stops before
+// HARMONI), and a CONTOH per item. One label per Tahun: the year as a piece + its classes.
+describe('applyPdfReading — a class list by year with a CONTOH per item', () => {
+  const classes13 = ['MAHIR', 'YAKIN', 'SUKSES', 'ETIKA', 'KREATIF', 'OPTIMIS', 'LESTARI', 'ARIF', 'HARMONI'];
+  const ranges = ['1 MAHIR - 1 HARMONI', '2 MAHIR - 2 HARMONI', '3 MAHIR - 3 ARIF', '4 MAHIR - 4 ARIF', '5 MAHIR - 5 ARIF', '6 MAHIR - 6 ARIF'];
+  const block = (award, top) => [
+    item(award, 106, top), item('50', 353, top), item('SM-13187/GOLD', 497, top),
+    item('MAJLIS APRESIASI KECEMERLANGAN MURID 2025', 106, top + 12),
+    item('TAHUN 1-3', 387, top + 22), item('TAHUN 4-6', 438, top + 22),
+    ...classes13.map((c, i) => item(c, 395, top + 33 + i * 11, 6)),
+    ...classes13.slice(0, 8).map((c, i) => item(c, 446, top + 33 + i * 11, 6)),
+    ...ranges.map((r, i) => item(r, 106, top + 33 + (i < 3 ? i : i + 1) * 11, 6)),
+  ];
+  const ir = buildPdfIr([{
+    page: 1, width: 700, height: 600, items: [
+      ...block('KETUA KELAS', 128), ...block('PENOLONG KETUA KELAS', 272),
+      item('SEKOLAH KEBANGSAAN TAMAN SRI ANDALAS', 135, 492, 6), item('SEKOLAH KEBANGSAAN TAMAN SRI ANDALAS', 410, 492, 6),
+      item('UNIT HAL EHWAL MURID', 178, 503, 6), item('UNIT HAL EHWAL MURID', 449, 503, 6),
+      item('KETUA KELAS 2026', 188, 526, 6), item('PENOLONG KETUA KELAS 2026', 438, 526, 6),
+    ],
+  }]);
+  // the n-th segment (from `after`) with this text
+  const id = (text, after = 0, x = null) => ir.segments.filter((s) => s.text === text && (x == null || Math.abs(s.x - x) < 5))[after].id;
+  const group = (award, n, contohX) => {
+    const col = (x) => classes13.map((c) => ir.segments.find((s) => s.text === c && Math.abs(s.x - x) < 5 && s.y > (n ? 272 : 128) && s.y < (n ? 420 : 272))?.id).filter(Boolean);
+    return {
+      name: award, code: { ref: id('SM-13187/GOLD', n), text: 'SM-13187/GOLD' }, total: { ref: id('50', n), value: 50 }, each: null,
+      tajuk: [id('SEKOLAH KEBANGSAAN TAMAN SRI ANDALAS', 0, contohX), id('UNIT HAL EHWAL MURID', 0, contohX + 43)],
+      labels: ranges.map((r, t) => [[id(`${award} 2026`)], [`${id(r, n)}|${t + 1}`], ['&', ...(t < 3 ? col(395) : col(446)).slice(0, t < 2 ? 9 : 8)]]),
+      names: false, confidence: 'high', note: null,
+    };
+  };
+  const res = applyPdfReading(ir, { groups: [group('KETUA KELAS', 0, 135), group('PENOLONG KETUA KELAS', 1, 410)], questions: [] });
+  const tabs = Object.values(res.categorized).map(([s]) => s);
+
+  it('makes 50 plaques per item, Tahun 1–2 with 9 classes and 3–6 with 8, worded as the CONTOH', () => {
+    expect(res.notes).toEqual([]);
+    expect(tabs.map((s) => s.lines['2'])).toEqual(['KETUA KELAS 2026', 'PENOLONG KETUA KELAS 2026']);
+    tabs.forEach((s) => {
+      expect(s.lines['0']).toBe('SEKOLAH KEBANGSAAN TAMAN SRI ANDALAS\nUNIT HAL EHWAL MURID');
+      expect(s.jenisPlak).toBe('SM-13187/GOLD');
+      const names = s.classes.map((c) => c.namaKelas);
+      expect(names).toHaveLength(50);
+      expect(names.slice(0, 9)).toEqual(classes13.map((c) => `1 ${c}`));
+      expect(names.filter((c) => c.startsWith('3 '))).toEqual(classes13.slice(0, 8).map((c) => `3 ${c}`));
+      expect(names).not.toContain('6 HARMONI');
+    });
+  });
+});

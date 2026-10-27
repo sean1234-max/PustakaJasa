@@ -2196,11 +2196,13 @@ function matchJenisPlakPathAsWritten(rawText, plakTree) {
   while (current.children && current.children.length > 0) {
     // A level the text doesn't mention (no BASE written, say) is never
     // guessed — the first child is just whatever sorts first, not what the
-    // teacher meant. Only an explicit "NORMAL" (= no special option) counts
-    // as a default; otherwise no match, so the import alerts and the
-    // teacher picks it.
+    // teacher meant. Only two defaults: a stand medal with no base written
+    // is BASE WITHOUT COVER (Sean, 2026-10-27), and an explicit "NORMAL"
+    // (= no special option). Otherwise no match, so the import alerts and
+    // the teacher picks it.
     const mentioned = findBestCodeMatch(current.children, normalized, 1);
-    const next = mentioned || current.children.find((child) => normalizeForPlakMatch(child.code) === 'NORMAL');
+    const byCode = (code) => current.children.find((child) => normalizeForPlakMatch(child.code) === normalizeForPlakMatch(code));
+    const next = mentioned || byCode('BASE WITHOUT COVER') || byCode('NORMAL');
     if (!next) return '';
     pathParts.push(next.code);
     current = next;
