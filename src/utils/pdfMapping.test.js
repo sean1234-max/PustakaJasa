@@ -452,6 +452,12 @@ describe('applyPdfReading — a class list by year with a CONTOH per item', () =
     });
   });
 
+  it('keeps the finish written on to the code: "SM-13187" of "SM-13187/GOLD"', () => {
+    const g = group('KETUA KELAS', 0, 135);
+    const out = applyPdfReading(ir, { groups: [{ ...g, code: { ...g.code, text: 'SM-13187' } }], questions: [] });
+    expect(Object.values(out.categorized)[0][0].jenisPlak).toBe('SM-13187/GOLD');
+  });
+
   it('takes the plaque code from the item\'s row when the AI gave none', () => {
     const g = { ...group('KETUA KELAS', 0, 135), code: null };
     const out = applyPdfReading(ir, { groups: [g], questions: [] });

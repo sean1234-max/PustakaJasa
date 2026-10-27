@@ -109,6 +109,15 @@ function codeLinesBelow(ir, seg, text) {
   return parts.join(' / ');
 }
 
+// The quoted code plus a finish that follows it in the same segment ("/GOLD", " (SILVER)"), as
+// long as the segment is nothing but the code: "SM-13187" of "SM-13187/GOLD" is SM-13187/GOLD.
+function withFinish(seg, text) {
+  const s = String(seg).trim();
+  if (!norm(s).startsWith(norm(text))) return text;
+  const rest = s.slice(String(text).trim().length);
+  return /^\s*[/(]\s*[A-Z][A-Z ]{1,20}\)?$/i.test(rest) ? s : text;
+}
+
 // A plaque code on a table row: letters + a number ("SM-13187/GOLD", "PKC 263", "MP399"), never a price.
 const ROW_CODE_RE = /^(?!RM\b)[A-Z]{1,4}\s?-?\s?\d{3,6}\b/i;
 
@@ -328,7 +337,10 @@ export function applyPdfReading(ir, reading) {
     let kod = '';
     if (g.code) {
       const seg = read(g.code.ref);
-      if (seg != null && norm(seg).includes(norm(g.code.text))) kod = cleanDocxPlakCode(codeLinesBelow(ir, segs(g.code.ref), g.code.text));
+      // The finish written on to the code in the same cell ("SM-13187" of "SM-13187/GOLD") is
+      // part of it: without GOLD the catalog can't place it (Sean, 2026-10-27).
+      const text = seg != null && withFinish(seg, g.code.text);
+      if (seg != null && norm(seg).includes(norm(g.code.text))) kod = cleanDocxPlakCode(codeLinesBelow(ir, segs(g.code.ref), text));
       else notes.push(`${where}: the plaque code the AI gave isn't in the file — please pick the Jenis Plak by hand.`);
     }
     // No code from the AI: the one plaque code printed on the batch's own table row (beside its
