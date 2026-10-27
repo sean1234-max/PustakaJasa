@@ -451,4 +451,11 @@ describe('applyPdfReading — a class list by year with a CONTOH per item', () =
       expect(names).not.toContain('6 HARMONI');
     });
   });
+
+  it('takes the plaque code from the item\'s row when the AI gave none', () => {
+    const g = { ...group('KETUA KELAS', 0, 135), code: null };
+    const out = applyPdfReading(ir, { groups: [g], questions: [] });
+    expect(Object.values(out.categorized)[0][0].jenisPlak).toBe('SM-13187/GOLD');
+    expect(out.notes.join(' ')).toMatch(/plaque code "SM-13187\/GOLD" taken from the batch's row/);
+  });
 });
