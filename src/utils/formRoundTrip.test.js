@@ -79,7 +79,7 @@ describe('draftToFormParsed, a tab of its own', () => {
 // SK Taman Sri Andalas (Sean, 2026-10-27): a PDF tab of KETUA KELAS 2026 for 1 MAHIR, 1 YAKIN …
 // came back from the form as TAHUN 1 x 9, the class names gone, in two tabs.
 describe('draftToFormParsed, a class per plaque', () => {
-  it('leaves the tab as read: the form cannot keep its class names', async () => {
+  it('puts the tab on ORDER LAIN-LAIN: the form\'s class sheets cannot keep its class names', async () => {
     const key = makeDynamicCategoryKey('KLAS_MATRIX', 'KETUA KELAS 2026');
     const classes = ['1 MAHIR', '1 YAKIN', '2 MAHIR', '4 MAHIR', '4 YAKIN'];
     const d = {
@@ -92,8 +92,12 @@ describe('draftToFormParsed, a class per plaque', () => {
       plakCatalog: [{ code: 'SM-13187', price: 5.5, children: [{ code: 'GOLD', children: [{ code: 'BASE WITHOUT COVER' }] }] }],
       schoolLanguage: 'SK',
     };
-    const { error } = await draftToFormParsed(d, [key], template(), opts);
-    expect(error).toMatch(/cannot keep the class names of KETUA KELAS 2026/);
+    const { error, parsed } = await draftToFormParsed(d, [key], template(), opts);
+    expect(error).toBeUndefined();
+    // on ORDER LAIN-LAIN, a row per class, the award red (Sean: 永远打直)
+    const [section] = parsed.categorized[makeDynamicCategoryKey('UMUM', 'KETUA KELAS 2026')];
+    expect(section.lines.umumRed).toBe('1');
+    expect(section.umumRows.map((r) => [r.l1, r.l2, r.qty])).toEqual(classes.map((c) => ['KETUA KELAS 2026', c, 1]));
   });
 });
 
