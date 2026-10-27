@@ -1,5 +1,5 @@
 import { resolveSelempangWarna, makeDynamicCategoryKey } from '../data/catalog';
-import { PLACE_LINE_RE } from './positionWords';
+import { PLACE_LINE_RE, RED_WORD_RES, TITLE_LINE_RE } from './positionWords';
 
 // A school's own "one row per item" order list (Sean, 2026-10-22) — an Excel sheet
 // (excelImport.js parseSchoolListSheet) or Word tables (docxImport.js) — as tabs, top to bottom
@@ -40,6 +40,15 @@ function slotsOf(it, top, placeTab) {
   return placed ? [heading, rest.slice(0, -1).join('\n'), rest[rest.length - 1], ''] : [heading, '', rest.join('\n'), ''];
 }
 
+// Which line is red when the plaques don't end in a place: the first ANUGERAH line that isn't the
+// event's title — no MAJLIS / HARI and no year ("Anugerah Tunas Permata", not "Anugerah Prasekolah
+// 2026"; SK DENAI ALAM, 2026-10-27) — else ②.
+const YEAR_RE = /\b(?:19|20)\d{2}\b/;
+function redSlot(contoh) {
+  const at = contoh.findIndex((t) => t && RED_WORD_RES[0].test(t) && !TITLE_LINE_RE.test(t) && !YEAR_RE.test(t));
+  return at >= 0 && at < 3 ? String(at) : '1';
+}
+
 export function schoolListSections(items) {
   const isSelempang = (it) => /SELEMPANG/.test(it.type);
   const top = sharedTopLines(items.filter((it) => !isSelempang(it)));
@@ -63,7 +72,7 @@ export function schoolListSections(items) {
     const placeTab = tabRows.some((r) => r.lines.length > 1 && isPlaceLine(r.lines[r.lines.length - 1]));
     const rows = tabRows.map((r) => ({ ...r, slots: slotsOf(r, top, placeTab) }));
     const contoh = rows.find((r) => !r.noWording)?.slots || ['', '', '', ''];
-    const lines = { umumRed: placeTab ? '2' : '1' };
+    const lines = { umumRed: placeTab ? '2' : redSlot(contoh) };
     contoh.forEach((t, i) => { if (t) lines[`${i}`] = t; });
     const umumRows = rows.map((r, i) => ({
       no: String(i + 1),

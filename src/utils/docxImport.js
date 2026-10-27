@@ -75,7 +75,10 @@ function headerLabel(tc) {
 
 const WORDING_LABELS = ['WORDING', 'LABEL'];
 const QTY_LABELS = ['KUANTITI', 'BILANGAN', 'QTY', 'KUANTITI (UNIT)', 'UNIT'];
-const KOD_LABELS = ['KOD HADIAH', 'KOD', 'KOD PLAK', 'JENIS PLAK', 'CODE', 'JENIS', 'JENIS/KOD', 'KOD/JENIS'];
+const KOD_LABELS = ['KOD HADIAH', 'KOD', 'KOD PLAK', 'JENIS PLAK', 'CODE', 'JENIS', 'JENIS/KOD', 'KOD/JENIS', 'KOD/JENIS/WARNA'];
+// A table headed "KOD / JENIS / WARNA" (SK DENAI ALAM, 2026-10-27) is the school's own list:
+// read top to bottom, every wording line kept, not grouped by award.
+const LIST_KOD_LABELS = ['KOD/JENIS/WARNA'];
 // A school's own list table (Sean, 2026-10-22, SKTG: "NAMA | CODE | JUMLAH | HARGA") — these
 // labels count only beside a code column, and such a table reads top to bottom as the teacher
 // wrote it (schoolList.js) instead of being grouped by award.
@@ -113,6 +116,7 @@ function findWordingHeader(rows, codeAbove = false) {
       });
       if (kodCol < 0 && !codeAbove) list = false;
     }
+    if (kodCol >= 0 && LIST_KOD_LABELS.includes(kodLabel(headerLabel(cells[kodCol])))) list = true;
     if (wordingCol >= 0 && qtyCol >= 0 && (list || ![wordingCol, qtyCol].some((c) => LIST_WORDING_LABELS.includes(headerLabel(cells[c])) || LIST_QTY_LABELS.includes(headerLabel(cells[c]))))) {
       return { headerRow: ri, wordingCol, qtyCol, kodCol, hargaCol, list, cols: cells.length };
     }
@@ -139,6 +143,9 @@ export function cleanDocxPlakCode(raw) {
     // spelled out, so the catalog's RED / BLUE option is found.
     .replace(/\(\s*(?:R|RED|MERAH)\s*\)/gi, ' RED')
     .replace(/\(\s*(?:BL|BLUE|BIRU)\s*\)/gi, ' BLUE')
+    // "Base w/cover" / "w/o cover" (a stand medal's base) spelled out
+    .replace(/\bw\/o\s*cover\b/gi, 'WITHOUT COVER')
+    .replace(/\bw\/\s*cover\b/gi, 'WITH COVER')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -184,6 +191,13 @@ export function kodsAbove(text) {
   return rest.split('+').map((k) => cleanDocxPlakCode(k.replace(/[()]/g, ' '))).filter(Boolean);
 }
 
+// A cell that is the lower part of a vertically merged cell (w:vMerge without val="restart").
+function continuesMergeAbove(tc) {
+  const pr = directChildren(tc, W_NS, 'tcPr')[0];
+  const vm = pr && directChildren(pr, W_NS, 'vMerge')[0];
+  return !!vm && (vm.getAttribute('w:val') || 'continue') !== 'restart';
+}
+
 // `carry`: the list header of the table before — a school's list goes on in tables with no
 // header row of their own (one table per plaque type), read with the same columns.
 function readTableRows(tbl, tableIdx, notes, carry = null) {
@@ -197,11 +211,15 @@ function readTableRows(tbl, tableIdx, notes, carry = null) {
   // "DESIGN C" written above the table goes with its code (a crystal's design)
   const design = /\bDESIGN\s*([A-Z0-9])\b/i.exec(above);
   const out = [];
+  let mergedKod = '';
   for (let ri = headerRow + 1; ri < rows.length; ri++) {
     const cells = directChildren(rows[ri], W_NS, 'tc');
     const lines = cells[wordingCol] ? cellLines(cells[wordingCol]) : [];
     const qtyRaw = cells[qtyCol] ? cellText(cells[qtyCol]).replace(/\s+/g, ' ').trim() : '';
-    const kodRaw = kodCol >= 0 && cells[kodCol] ? cellText(cells[kodCol]) : '';
+    let kodRaw = kodCol >= 0 && cells[kodCol] ? cellText(cells[kodCol]) : '';
+    // A code cell merged down over the rows of its group is empty on every row but the first
+    if (kodRaw.trim()) mergedKod = kodRaw;
+    else if (kodCol >= 0 && cells[kodCol] && continuesMergeAbove(cells[kodCol])) kodRaw = mergedKod;
     const where = `Word table ${tableIdx + 1}, row ${ri - headerRow}`;
     if (lines.length === 0 && !qtyRaw) continue;
     const qty = parseDocxQty(qtyRaw);

@@ -426,6 +426,52 @@ describe('KOD MEDAL written above each NO | NAMA ANUGERAH | JUMLAH table (SK ABD
   });
 });
 
+describe('BIL | KOD / JENIS / WARNA | WORDING | KUANTITI, the code merged down (SK DENAI ALAM, 2026-10-27)', () => {
+  // vm: 'restart' starts a merged cell, 'cont' continues the one above (empty in the file)
+  const mcell = (text, vm) => `<w:tc>${vm ? `<w:tcPr><w:vMerge${vm === 'restart' ? ' w:val="restart"' : ''}/></w:tcPr>` : ''}${String(text).split('\n').map((l) => `<w:p><w:r><w:t xml:space="preserve">${esc(l)}</w:t></w:r></w:p>`).join('')}</w:tc>`;
+  const mrow = (bil, kod, wording, qty, vm) => `<w:tr>${mcell(bil, vm)}${mcell(kod, vm)}${cell(wording)}${cell(qty)}</w:tr>`;
+  const buf = () => makeDocx([
+    para('TROFI HARI ANUGERAH'),
+    para('PRA SK DENAI ALAM 2026'),
+    `<w:tbl>${row(['BIL.', 'KOD / JENIS / WARNA', 'WORDING', 'KUANTITI'])}${[
+      mrow('1.', 'MP-393\nBase w/cover\nGold', 'Anugerah Tamat Prasekolah\nSK Denai Alam\nTahun 2026', '50'),
+      mrow('2.', 'SM-13187\nGold\nBase (B)', 'Anugerah Prasekolah 2026\nBahasa Melayu\nPra Delima', '1', 'restart'),
+      mrow('', '', 'Anugerah Prasekolah 2026\nPeningkatan Prestasi\nPra Delima (L)', '1', 'cont'),
+      mrow('', '', 'Anugerah Prasekolah 2026\nPeningkatan Prestasi\nPra Delima (P)', '1', 'cont'),
+      mrow('3.', 'JZ 19821\nGold', 'Anugerah Tunas Permata\nPrasekolah 2026\nPra Delima', '1', 'restart'),
+      mrow('', '', 'Anugerah Tunas Permata\nPrasekolah 2026\nPra Nilam', '1', 'cont'),
+    ].join('')}</w:tbl>`,
+  ].join(''));
+
+  it('reads it top to bottom, every line kept, the merged code on every row, red on the ANUGERAH line without a year', async () => {
+    const { categorized, notes } = await parse(await buf());
+    expect(notes).toEqual([]);
+    const rowsOf = (sec) => sec.umumRows.map((r) => [r.l1, r.l2, r.qty, r.jenisPlak]);
+    const tamat = categorized.UMUM[0];
+    expect(tamat.lines).toMatchObject({ 0: 'Anugerah Tamat Prasekolah', 1: 'SK Denai Alam', 2: 'Tahun 2026', umumRed: '0' });
+    expect(rowsOf(tamat)).toEqual([['', '', 50, 'MP-393 Base WITH COVER Gold']]);
+    const pra = categorized[makeDynamicCategoryKey('UMUM', 'Anugerah Prasekolah 2026')][0];
+    expect(pra.lines).toMatchObject({ 0: 'Anugerah Prasekolah 2026', 1: 'Bahasa Melayu', 2: 'Pra Delima', umumRed: '1' });
+    expect(rowsOf(pra)).toEqual([
+      ['', '', 1, 'SM-13187 Gold Base (B)'],
+      ['Peningkatan Prestasi', 'Pra Delima (L)', 1, 'SM-13187 Gold Base (B)'],
+      ['Peningkatan Prestasi', 'Pra Delima (P)', 1, 'SM-13187 Gold Base (B)'],
+    ]);
+    const tunas = categorized[makeDynamicCategoryKey('UMUM', 'Anugerah Tunas Permata')][0];
+    expect(tunas.lines).toMatchObject({ 0: 'Anugerah Tunas Permata', 1: 'Prasekolah 2026', 2: 'Pra Delima', umumRed: '0' });
+    expect(rowsOf(tunas)).toEqual([['', '', 1, 'JZ 19821 Gold'], ['', 'Pra Nilam', 1, 'JZ 19821 Gold']]);
+  });
+
+  it('finds the catalog plaque from the bullets', () => {
+    const kids = ['GOLD', 'SILVER'].map((c) => ({ code: c, children: ['BASE B', 'BASE WITH COVER', 'BASE WITHOUT COVER'].map((b) => ({ code: b })) }));
+    const tree = [{ code: 'MP393', children: kids }, { code: 'SM-13187', children: kids }, { code: 'JZ 19821' }];
+    expect(matchJenisPlakPath(cleanDocxPlakCode('MP-393\nBase w/cover\nGold'), tree)).toBe('MP393 / GOLD / BASE WITH COVER');
+    expect(matchJenisPlakPath(cleanDocxPlakCode('MP-393 Base w/o cover Gold'), tree)).toBe('MP393 / GOLD / BASE WITHOUT COVER');
+    expect(matchJenisPlakPath(cleanDocxPlakCode('SM-13187\nGold\nBase (B)'), tree)).toBe('SM-13187 / GOLD / BASE B');
+    expect(matchJenisPlakPath(cleanDocxPlakCode('JZ 19821\nGold'), tree)).toBe('JZ 19821');
+  });
+});
+
 describe('plaques drawn as text boxes (no table)', () => {
   it('reads each box as a plaque, the heading\'s code and PCS shared evenly, "2 PCS" boxes skipped', async () => {
     const box = (text) => `<w:p><w:r><w:txbxContent>${text.split('\n').map((l) => `<w:p><w:r><w:t>${esc(l)}</w:t></w:r></w:p>`).join('')}</w:txbxContent></w:r></w:p>`;
