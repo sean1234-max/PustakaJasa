@@ -42,7 +42,7 @@ import { isUrgentShipment, urgentSheetAction, SHIPMENT_EDITABLE_STATUSES } from 
 import { fetchCustomTypoWords } from '../lib/typoWordsApi';
 import { setCustomTypoWords } from '../utils/typoCheck';
 import { normalizeSplitQty, stockDiff, applyPriceDrafts, withOrderOwnSettings } from '../utils/orderBatches';
-import { needsKiv, kivParts, hasPlakPart, kivInProduction, crystalWithPlak, isCrystalCode } from '../utils/exportCsv';
+import { needsKiv, kivParts, hasPlakPart, kivInProduction, crystalWithPlak, isCrystalCode, countReservedPlaques } from '../utils/exportCsv';
 import { kivOnlyGroupsDone } from '../utils/productionCards';
 
 // Malaysia's "today" (catalog.js's malaysiaToday — the project always runs
@@ -2988,21 +2988,24 @@ export function AppStateProvider({ children }) {
       flashProductionToast('This order has nothing waiting in KIV & ARTWORK.');
       return;
     }
-    // crystals are made only from confirmed artwork (Sean, 2026-10-14)
-    if (kivParts(order).includes('CRYSTAL') && !order.artworkConfirmedAt) {
-      flashProductionToast('The crystal artwork is not confirmed yet — the teacher or salesman has to confirm it first.');
+    // every KIV & ARTWORK card has DONE (Sean, 2026-10-28): the Reserved names must be filled first;
+    // crystal artwork not confirmed yet is confirmed by this DONE (the database stamps who and when)
+    const reserved = countReservedPlaques(order);
+    if (reserved > 0) {
+      flashProductionToast(`Fill in the ${reserved} Reserved name(s) first — then DONE.`);
       return;
     }
+    const confirmsArtwork = kivParts(order).includes('CRYSTAL') && !order.artworkConfirmedAt;
     const kivDoneAt = new Date().toISOString();
     try {
-      await updateOrder(orderId, { kivDoneAt });
+      await updateOrder(orderId, confirmsArtwork ? { kivDoneAt, artworkConfirmedAt: kivDoneAt } : { kivDoneAt });
     } catch (err) {
       console.error('Failed to mark KIV & ARTWORK done in Supabase:', err);
       flashProductionToast(describeOrderWriteError(err, 'update'));
       return;
     }
-    patch((st) => ({ orders: st.orders.map((o) => (o.id === orderId ? { ...o, kivDoneAt } : o)) }));
-    flashProductionToast(`${kivParts(order).join(' + ')} done — now in In Production.`);
+    patch((st) => ({ orders: st.orders.map((o) => (o.id === orderId ? { ...o, kivDoneAt, ...(confirmsArtwork ? { artworkConfirmedAt: kivDoneAt } : {}) } : o)) }));
+    flashProductionToast(`${kivParts(order).join(' + ')} done${confirmsArtwork ? ' (artwork confirmed)' : ''} — now in In Production.`);
   }, [patch, flashProductionToast]);
 
   // The crystal artwork is right (Sean, 2026-10-14): a salesman's Confirm Artwork. The database
