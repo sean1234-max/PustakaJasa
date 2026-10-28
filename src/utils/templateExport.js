@@ -1,6 +1,6 @@
 import JSZip from 'jszip';
 import * as XLSX from 'xlsx';
-import { umumDefaultRedSlot, UMUM_SLOTS, UMUM_NO_RED } from './umumLines';
+import { umumDefaultRedSlot, umumRedList, UMUM_SLOTS, UMUM_NO_RED } from './umumLines';
 
 // AI reader -> the shop's own Excel order form (owner, 2026-10-16: "做").
 // A teacher's PDF or Word order, once read (pdfMapping.js), is written into
@@ -1055,7 +1055,7 @@ export async function fillOrderTemplate(templateBuffer, categorized, {
           const contoh = part[0].contoh || part[0].slots;
           UMUM_SLOTS.forEach((sl, i) => layout.contoh[`l${i}`] && contoh[i] && setCell(doc, layout.contoh[`l${i}`], contoh[i]));
           const red = part[0].red === UMUM_NO_RED ? '' : (part[0].red || umumDefaultRedSlot({ 1: contoh[1], 2: contoh[2], 3: contoh[3] }));
-          if (red && layout.merah[red]) setCell(doc, layout.merah[red], 'MERAH');
+          umumRedList(red).forEach((s) => { if (layout.merah[s]) setCell(doc, layout.merah[s], 'MERAH'); });
           part.forEach((p, i) => {
             const r = layout.rows[i];
             UMUM_SLOTS.forEach((sl, k) => {

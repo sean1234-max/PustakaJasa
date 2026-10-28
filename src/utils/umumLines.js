@@ -67,7 +67,24 @@ export function umumDefaultRedSlot(contoh) {
     || RED_WORD_RES.map((re) => below.find((s) => re.test(String(contoh[s] || '')) && !TITLE_LINE_RE.test(String(contoh[s])))).find(Boolean) || '';
 }
 
-// `contoh` = { '0': text, ... } (the CONTOH lines), `redSetting` = the slot
+// The stored umumRed value as slots: '2', or touching lines '1,2' (two MERAH lines — one two-line
+// red position, ORD-0076, Sean 2026-10-28); '' / UMUM_NO_RED -> [].
+export function umumRedList(redSetting) {
+  if (!redSetting || redSetting === UMUM_NO_RED) return [];
+  return String(redSetting).split(',').filter((s) => UMUM_SLOTS.includes(s));
+}
+
+// The MERAH box beside a line clicked, `red` = the slots red now: unticking leaves the others
+// (none left = UMUM_NO_RED); ticking a line touching the red ones adds it, any other replaces them.
+export function umumRedToggle(red, slot) {
+  const n = Number(slot);
+  if (red.includes(slot)) return red.filter((s) => s !== slot).join(',') || UMUM_NO_RED;
+  const nums = red.map(Number);
+  const touches = nums.length && (n === Math.min(...nums) - 1 || n === Math.max(...nums) + 1);
+  return touches ? [...nums, n].sort((a, b) => a - b).join(',') : slot;
+}
+
+// `contoh` = { '0': text, ... } (the CONTOH lines), `redSetting` = the slot(s)
 // marked MERAH ('' / undefined = none: an ANUGERAH line counts as marked). Returns { slot: field } for every
 // filled slot.
 export function umumSlotFields(contoh, redSetting) {
@@ -81,14 +98,14 @@ export function umumSlotFields(contoh, redSetting) {
   // would pick another.
   const auto = redSetting ? '' : umumDefaultRedSlot(contoh);
   const ticked = auto && (PLACE_LINE_RE.test(String(contoh[auto]).trim()) || !firstRun(slots, kinds, 'position', taken).includes(auto));
-  const redSlot = redSetting || (ticked ? auto : '');
-  if (redSlot && slots.includes(redSlot)) {
-    assign([redSlot], 'position');
+  const redSlots = (redSetting ? umumRedList(redSetting) : (ticked ? [auto] : [])).filter((s) => slots.includes(s));
+  if (redSlots.length) {
+    assign(redSlots, 'position');
     // A MAJLIS / school / year line is the TAJUK BESAR wherever it sits
     // (Sean, 2026-10-07); with none, ① is (unless ① is the red line).
     const headerRun = firstRun(slots, kinds, 'header', taken);
     if (headerRun.length) assign(headerRun, 'event_header');
-    else if (redSlot !== slots[0]) assign([slots[0]], 'event_header');
+    else if (!redSlots.includes(slots[0])) assign([slots[0]], 'event_header');
   } else {
     if (!slots.some((s) => kinds[s] || HAS_YEAR_RE.test(contoh[s]))) {
       slots.forEach((s, i) => { out[s] = ['event_header', 'position', 'event_line_1', 'event_line_2'][i]; });
@@ -116,11 +133,12 @@ export function umumSlotFields(contoh, redSetting) {
 }
 
 // The slot(s) printed red — see the header note. `redSetting` is the stored
-// umumRed value: a slot, UMUM_NO_RED, or '' (not touched: keywords decide).
+// umumRed value: a slot (or touching slots '1,2'), UMUM_NO_RED, or '' (not touched: keywords decide).
 export function umumRedSlots(contoh, redSetting) {
   if (redSetting === UMUM_NO_RED) return [];
   const fields = umumSlotFields(contoh, redSetting);
-  if (redSetting && fields[redSetting] === 'position') return [redSetting];
+  const set = umumRedList(redSetting).filter((s) => fields[s] === 'position');
+  if (set.length) return set;
   const auto = redSetting ? '' : umumDefaultRedSlot(contoh);
   if (auto && PLACE_LINE_RE.test(String(contoh[auto]).trim())) return [auto];
   return UMUM_SLOTS.filter((s) => fields[s] === 'position' && (s === auto || kindOf(String(contoh[s] || '')) === 'position'));

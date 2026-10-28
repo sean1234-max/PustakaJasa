@@ -1708,7 +1708,7 @@ function parseUmumSheet(ws) {
     }
   }
   const lines = {};
-  let umumRed = '';
+  const merah = [];
   UMUM_MARKS.forEach((mark, i) => {
     const m = findLabelCells(ws, above, [mark])[0];
     if (!m) return;
@@ -1716,8 +1716,12 @@ function parseUmumSheet(ws) {
     const parts = [];
     for (let c = m.col + 1; c <= lastCol; c++) { const v = cellText(ws, m.row, c); if (v) parts.push(v); }
     if (parts.length) lines[`${i}`] = parts.join(' ');
-    if (merahCol != null && /MERAH|RED|红/i.test(cellStr(ws, m.row, merahCol))) umumRed = `${i}`;
+    if (merahCol != null && /MERAH|RED|红/i.test(cellStr(ws, m.row, merahCol))) merah.push(i);
   });
+  // Touching MERAH lines are one two-line red position ("1,2", ORD-0076, Sean 2026-10-28); ones that
+  // don't touch can't all be the position, so the last one is, as before.
+  const touching = merah.every((s, k) => k === 0 || s === merah[k - 1] + 1);
+  const umumRed = merah.length ? (touching ? merah.join(',') : `${merah[merah.length - 1]}`) : '';
 
   // A lone dash is this sheet's "leave this line off" — read raw, since
   // cellText would blank it (= "same as CONTOH").

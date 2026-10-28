@@ -7,7 +7,7 @@ import {
   resolveCategory, categoriesUsedByItems, kelasListLabel, isCustomPlakCode,
 } from '../data/catalog';
 import { findPossibleTypo, replaceWord } from './typoCheck';
-import { umumSlotFields, umumRedSlots, UMUM_NO_RED } from './umumLines';
+import { umumSlotFields, umumRedSlots, umumRedToggle } from './umumLines';
 import { storedRedSlots, redPickFor, redLinesProblem, RED_LINES_SUFFIX } from './redLines';
 
 // Assigns each Reference Sample line its displayed number, 1..N — except
@@ -223,7 +223,7 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
         // ticked = red; unticking the red line makes it black.
         umumRed: umumFields ? {
           checked: umumRed.includes(`${i}`),
-          toggle: () => updaters.onLine(umumRedKey, umumRed.includes(`${i}`) ? UMUM_NO_RED : `${i}`),
+          toggle: () => updaters.onLine(umumRedKey, umumRedToggle(umumRed, `${i}`)),
         } : null,
         onChange: (val) => updaters.onLine(key, val),
         // Flags a likely typo (e.g. "ANIGERAH" for "ANUGERAH") against a

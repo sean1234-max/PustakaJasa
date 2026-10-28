@@ -505,9 +505,10 @@ describe('UMUM (万能) — import → cart → CSV', () => {
     const r = [];
     r[0] = ['TOLONG ISI DI SINI  ·  BORANG PLAK UMUM'];
     r[3] = ['LANGKAH 1 · CONTOH PLAK', null, null, null, null, 'WARNA MERAH?', 'PANDUAN'];
-    r[4] = ['①', 'SK TAMAN SEGAR\nKARNIVAL KOKURIKULUM 2026', null, null, null, red === '0' ? 'MERAH' : null];
-    r[5] = ['②', 'PENGAKAP', null, null, null, red === '1' ? 'MERAH' : null];
-    r[6] = ['③', 'JOHAN TAHUN 4', null, null, null, red === '2' ? 'MERAH' : null];
+    const merah = (slot) => (String(red ?? '').split(',').includes(slot) ? 'MERAH' : null);
+    r[4] = ['①', 'SK TAMAN SEGAR\nKARNIVAL KOKURIKULUM 2026', null, null, null, merah('0')];
+    r[5] = ['②', 'PENGAKAP', null, null, null, merah('1')];
+    r[6] = ['③', 'JOHAN TAHUN 4', null, null, null, merah('2')];
     r[7] = ['④'];
     r[10] = ['No.', '①', '②', '③', '④', 'KUANTITI', 'JENIS PLAK', 'HARGA PER UNIT', 'TOTAL HARGA', 'PLAK AKAN JADI'];
     r[11] = ['CONTOH', null, null, null, null, 5, 'PKC 263'];
@@ -574,6 +575,33 @@ describe('UMUM (万能) — import → cart → CSV', () => {
       ...Array(3).fill([H, '', 'JOHAN TAHUN 4', 'PENGAKAP', '', 'PKC 263', 'ORDER LAIN-LAIN', order, '']),
       ...Array(2).fill([H, '', 'NAIB JOHAN', 'KADET POLIS', '', 'PKC 263', 'ORDER LAIN-LAIN', order, '']),
     ]);
+  });
+
+  it('two touching MERAH lines are both red — one two-line position (ORD-0076, 2026-10-28)', () => {
+    const section = parse({ 'UMUM (万能)': umum({ red: '1,2', rows: [[null, null, null, null, 1, 'PKC 263']] }) }).categorized.UMUM[0];
+    expect(section.lines.umumRed).toBe('1,2');
+    const st = toDraft('UMUM', section);
+    let saved = null;
+    const updaters = { ...noopUpdaters, onLine: (key, value) => { saved = [key, value]; } };
+    const blk = computeBlocks('UMUM', st.lineValues, {}, st.rowsByBlock, st.plakRows, {}, updaters, catalog, 'SK').blocks[0];
+    expect(blk.lines.map((ln) => [ln.redText, ln.umumRed.checked])).toEqual([[false, false], [true, true], [true, true], [false, false]]);
+    // unticking one keeps the other; ticking a line next to them adds it, one further away replaces them
+    blk.lines[2].umumRed.toggle();
+    expect(saved).toEqual(['UMUM::0::umumRed', '1']);
+    blk.lines[3].umumRed.toggle();
+    expect(saved).toEqual(['UMUM::0::umumRed', '1,2,3']);
+    blk.lines[0].umumRed.toggle();
+    expect(saved).toEqual(['UMUM::0::umumRed', '0,1,2']);
+
+    const res = buildCategoryCartItems(st, 'UMUM');
+    const { rows } = buildCsvRows({ schoolLanguage: 'SK', items: res.items }, 'UMUM', res.items);
+    expect(rows[0].slice(0, 5)).toEqual(['SK TAMAN SEGAR\nKARNIVAL KOKURIKULUM 2026', '', 'PENGAKAP\nJOHAN TAHUN 4', '', '']);
+    expect(rows[0][CSV_COLUMNS.indexOf('position_black')]).toBe('');
+  });
+
+  it('MERAH lines that don\'t touch: the last one is the red line, as before', () => {
+    const section = parse({ 'UMUM (万能)': umum({ red: '0,2', rows: [[null, null, null, null, 1, 'PKC 263']] }) }).categorized.UMUM[0];
+    expect(section.lines.umumRed).toBe('2');
   });
 
   it('no MERAH: keywords decide — and "-" leaves a line off one plaque', () => {

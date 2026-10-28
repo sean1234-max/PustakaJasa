@@ -54,6 +54,14 @@ describe('umumSlotFields — which CONTOH line goes on which plaque field', () =
   });
 });
 
+describe('two touching MERAH lines (ORD-0076, 2026-10-28)', () => {
+  const c = lines('MAJLIS APRESIASI & GRADUASI PPKI 2026', 'ANUGERAH MATA PELAJARAN ELEKTIF TERBAIK', 'PENGURUSAN DIRI', '1 PKB ALBIRUNI');
+  it('both are the position, both red', () => {
+    expect(umumSlotFields(c, '1,2')).toEqual({ 0: 'event_header', 1: 'position', 2: 'position', 3: 'event_line_1' });
+    expect(umumRedSlots(c, '1,2')).toEqual(['1', '2']);
+  });
+});
+
 describe('umumRedSlots — which CONTOH line prints red', () => {
   it('the MERAH line', () => {
     expect(umumRedSlots(lines('SK X', 'TAHUN 1', 'ALI'), '2')).toEqual(['2']);
