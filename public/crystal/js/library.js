@@ -1159,8 +1159,46 @@ function splitGrid(b, data, W, depth = 0) {
   // a piece about as wide as tall, found by splitting, is one logo: not cut further
   const ar = (b.r - b.l) / Math.max(1, b.b - b.t);
   if (depth && ar > 0.6 && ar < 1.7) return [b];
-  const cells = depth > 3 ? null : gapCells(b, data, W, min) || repeatCells(b, data, W, min);
+  const cells = depth > 3 ? null : gapCells(b, data, W, min) || repeatCells(b, data, W, min) || blobCells(b, data, W, min);
   return cells ? cells.flatMap((c) => splitGrid(c, data, W, depth + 1)) : [b];
+}
+// stickers in staggered rows (each row shifted half a logo, circles almost touching — Sean, 2026-10-28,
+// SK ABDUL SAMAT): no straight gap and no even repeat across the box, so each logo is found as its own
+// drawing: ink joined only where it touches, a piece mostly inside another one (a letter inside its
+// ring) part of it -> cells, or null
+function blobCells(b, data, W, min = 4) {
+  const l = Math.round(b.l), t = Math.round(b.t), r = Math.round(b.r), bt = Math.round(b.b);
+  const g = Math.max(1, Math.round(Math.max(r - l, bt - t) / 1200));
+  const gw = Math.ceil((r - l) / g), gh = Math.ceil((bt - t) / g);
+  const ink = new Uint8Array(gw * gh), seen = new Uint8Array(gw * gh);
+  for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) if (isInk(data, ((t + y * g) * W + l + x * g) * 4, null)) ink[y * gw + x] = 1;
+  const pieces = [];
+  for (let i = 0; i < gw * gh; i++) {
+    if (!ink[i] || seen[i]) continue;
+    const st = [i];
+    seen[i] = 1;
+    let pl = gw, pt = gh, pr = -1, pb = -1;
+    while (st.length) {
+      const j = st.pop(), x = j % gw, y = (j / gw) | 0;
+      if (x < pl) pl = x; if (x > pr) pr = x; if (y < pt) pt = y; if (y > pb) pb = y;
+      if (x > 0 && ink[j - 1] && !seen[j - 1]) { seen[j - 1] = 1; st.push(j - 1); }
+      if (x < gw - 1 && ink[j + 1] && !seen[j + 1]) { seen[j + 1] = 1; st.push(j + 1); }
+      if (y > 0 && ink[j - gw] && !seen[j - gw]) { seen[j - gw] = 1; st.push(j - gw); }
+      if (y < gh - 1 && ink[j + gw] && !seen[j + gw]) { seen[j + gw] = 1; st.push(j + gw); }
+    }
+    pieces.push({ l: l + pl * g, t: t + pt * g, r: l + (pr + 1) * g, b: t + (pb + 1) * g });
+  }
+  // biggest first: each piece joins the first kept one it lies mostly inside, else is kept itself
+  const area = (c) => (c.r - c.l) * (c.b - c.t);
+  const kept = [];
+  for (const p of pieces.sort((a, c) => area(c) - area(a))) {
+    const home = kept.find((k) => Math.max(0, Math.min(k.r, p.r) - Math.max(k.l, p.l)) * Math.max(0, Math.min(k.b, p.b) - Math.max(k.t, p.t)) >= area(p) * 0.5);
+    if (!home) { kept.push({ ...p }); continue; }
+    home.l = Math.min(home.l, p.l); home.t = Math.min(home.t, p.t); home.r = Math.max(home.r, p.r); home.b = Math.max(home.b, p.b);
+  }
+  // specks left between the logos don't count
+  const big = Math.max(0, ...kept.map(area));
+  return copiesOf(kept.filter((c) => area(c) >= big * 0.25), data, W, min);
 }
 function gapCells(b, data, W, min = 4) {
   const l = Math.round(b.l), t = Math.round(b.t), r = Math.round(b.r), bt = Math.round(b.b);

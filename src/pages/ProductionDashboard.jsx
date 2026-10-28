@@ -395,7 +395,9 @@ export default function ProductionDashboard() {
                 )}
                 {cardTab === 'kiv' && (
                   <>
-                    <button type="button" className="btn btn-ghost" style={{ flex: 1 }} onClick={() => navigate(`/production/orders/${ord.id}?kiv=1`)}>
+                    {/* a Manual crystal opens as its crystal card (?part=kiv): Generate AI File for it while it
+                        waits here for its DONE (Sean, 2026-10-28, ORD-0124) */}
+                    <button type="button" className="btn btn-ghost" style={{ flex: 1 }} onClick={() => navigate(`/production/orders/${ord.id}${kivManualCrystal(ord) ? '?part=kiv' : '?kiv=1'}`)}>
                       View Order
                     </button>
                     {kivManualCrystal(ord) && countReservedPlaques(ord) === 0 && (
