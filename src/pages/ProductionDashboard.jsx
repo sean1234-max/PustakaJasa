@@ -5,7 +5,7 @@ import ConfirmButton from '../components/ConfirmButton';
 import { useAppState } from '../state/useAppState';
 import { statusPillStyle, formatDate, getLowStockAlerts, toMalaysiaDay, isAddonInFlight, invoiceLabel, invoiceSource } from '../data/catalog';
 import { getOrderChangeStamp } from '../utils/orderStamp';
-import { getOrderInvoiceSlices } from '../utils/orderBatches';
+import { productionCards } from '../utils/productionCards';
 import { countReservedPlaques, needsKiv, kivParts, hasMainPart, kivInProduction, kivInTyping, kivManualCrystal, skipsTyping } from '../utils/exportCsv';
 import { nearestFirst, keepTambahanWithParent } from '../utils/urgentOrder';
 import OrderUrgentBadge from '../components/OrderUrgentBadge';
@@ -119,19 +119,9 @@ export default function ProductionDashboard() {
   // card lands in the right tab on its own. An un-split order still comes
   // back as exactly one slice unchanged, so this is a no-op for the vast
   // majority of orders.
-  // ponytail: the KIV & ARTWORK card follows the order's first (default)
-  // invoice slice; a split order's other invoices only carry plaques.
-  const orderSlices = useMemo(() => state.orders.flatMap((ord) => {
-    const slices = getOrderInvoiceSlices(ord, state.plakCatalog).map((slice, i) => ({
-      ...ord, invoiceId: slice.invoiceId, totalAmount: slice.totalAmount, totalQty: slice.totalQty,
-      priceAdjusted: slice.priceAdjusted, status: slice.status, typedAt: slice.typedAt,
-      _sliceKey: `${ord.id}::${slice.invoiceId || 'default'}`, _primarySlice: i === 0, _part: 'main',
-    }));
-    const kivCard = kivParts(ord).length > 0 && slices[0]
-      ? [{ ...slices[0], _sliceKey: `${slices[0]._sliceKey}::kiv`, _part: 'kiv' }]
-      : [];
-    return [...slices, ...kivCard];
-  }), [state.orders, state.plakCatalog]);
+  // Each invoice card is judged by its own items; the one KIV & ARTWORK card holds the whole
+  // order's crystals / Reserved rows (productionCards.js, Sean 2026-10-28).
+  const orderSlices = useMemo(() => state.orders.flatMap((ord) => productionCards(ord, state.plakCatalog)), [state.orders, state.plakCatalog]);
 
   const activeTab = TABS.find((t) => t.key === tab);
   const ordersInTab = orderSlices.filter((o) => activeTab.match(o, today));
@@ -282,7 +272,7 @@ export default function ProductionDashboard() {
           const reserved = countReservedPlaques(ord);
           // The main card says what its order's KIV & ARTWORK card is still waiting on.
           const kivPending = !isKivCard && ord._primarySlice && ord.status === 'In Production'
-            && (needsKiv(ord) || kivInProduction(ord));
+            && (needsKiv(ord._order) || kivInProduction(ord._order));
 
           return (
             <div key={ord._sliceKey} className="card order-card">
@@ -334,7 +324,7 @@ export default function ProductionDashboard() {
               ))}
               {/* The order's plaques card, when its crystals have their own card: ACARA (Sean, 2026-10-21) */}
               {!isKivCard && !addonCard && parts.includes('CRYSTAL') && <div className="order-stamp-inline" style={{ marginTop: 'var(--space-1)' }}>ACARA</div>}
-              {kivPending && !addonCard && parts.includes('SHORT SUPPLY') && <div className="hint-text" style={{ margin: '4px 0 0', fontWeight: 600, color: '#8a6d00' }}>Waiting: SHORT SUPPLY</div>}
+              {kivPending && !addonCard && kivParts(ord._order).includes('SHORT SUPPLY') && <div className="hint-text" style={{ margin: '4px 0 0', fontWeight: 600, color: '#8a6d00' }}>Waiting: SHORT SUPPLY</div>}
               {isKivCard && parts.includes('CRYSTAL') && !ord.artworkConfirmedAt && (
                 <div className="hint-text" style={{ margin: '4px 0 0', fontWeight: 600, color: '#b45309' }}>Artwork not confirmed yet</div>
               )}
@@ -355,7 +345,9 @@ export default function ProductionDashboard() {
                 </div>
               </div>
 
-              <div className="order-card-invoice"><span className="dim">Invoice ID:</span> {invoiceLabel(invoiceSource(ord, state.orders)) || '—'}</div>
+              <div className="order-card-invoice"><span className="dim">Invoice ID:</span> {(isKivCard && ord._kivInvoices?.length
+                ? ord._kivInvoices.map((inv) => invoiceLabel(ord, inv)).join(' + ')
+                : invoiceLabel(invoiceSource(ord, state.orders))) || '—'}</div>
               {cardTab === 'approved' && <ProductionInvoiceEntry order={ord} />}
               <div className="dim" style={{ fontSize: 11 }}>{addonCard ? 'Tambahan Amount' : 'Total Amount'}</div>
               <div className={`order-card-total${!addonCard && ord.priceAdjusted ? ' amount-adjusted' : ''}`}>RM {shownAmount.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
@@ -432,7 +424,7 @@ export default function ProductionDashboard() {
                       question={isKivCard
                         ? `${parts.join(' + ')} done?`
                         : kivPending
-                          ? `Plaques done? The order moves on once its ${parts.join(' + ')} is done too.`
+                          ? `Plaques done? The order moves on once its ${kivParts(ord._order).join(' + ')} is done too.`
                           : 'Mark as done? Status → "Completed".'}
                       onConfirm={() => (isKivCard ? markKivProductionDone(ord.id) : markProductionDone(ord.id, ord.invoiceId))}
                     />

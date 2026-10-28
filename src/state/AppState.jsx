@@ -43,6 +43,7 @@ import { fetchCustomTypoWords } from '../lib/typoWordsApi';
 import { setCustomTypoWords } from '../utils/typoCheck';
 import { normalizeSplitQty, stockDiff, applyPriceDrafts, withOrderOwnSettings } from '../utils/orderBatches';
 import { needsKiv, kivParts, hasPlakPart, kivInProduction, crystalWithPlak, isCrystalCode } from '../utils/exportCsv';
+import { kivOnlyGroupsDone } from '../utils/productionCards';
 
 // Malaysia's "today" (catalog.js's malaysiaToday — the project always runs
 // on Malaysian dates), normalized to midnight so it compares cleanly against
@@ -3068,13 +3069,15 @@ export function AppStateProvider({ children }) {
       return;
     }
     const kivProductionDoneAt = new Date().toISOString();
+    // an invoice of only crystals / Reserved rows has no Typing card: it's done with this card (ORD-0108)
+    const doneFields = { kivProductionDoneAt, ...((order.invoiceGroups || []).length ? { invoiceGroups: kivOnlyGroupsDone(order) } : {}) };
     try {
       if (hasPlakPart(order) && !order.plakDoneAt) {
-        await updateOrder(orderId, { kivProductionDoneAt });
-        patch((st) => ({ orders: st.orders.map((o) => (o.id === orderId ? { ...o, kivProductionDoneAt } : o)) }));
+        await updateOrder(orderId, doneFields);
+        patch((st) => ({ orders: st.orders.map((o) => (o.id === orderId ? { ...o, ...doneFields } : o)) }));
         flashProductionToast(`${kivParts(order).join(' + ')} done — the order moves on once its plaques are done too.`);
       } else {
-        await completeOrder(order, { kivProductionDoneAt });
+        await completeOrder(order, doneFields);
       }
     } catch (err) {
       console.error('Failed to mark KIV & ARTWORK production done in Supabase:', err);
