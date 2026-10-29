@@ -85,6 +85,8 @@ function ArtworkStatus({ order, onConfirmArtwork, onManualArtwork }) {
 // File), saved in makeAiFolder (the plaques' OUTPUT folder) when given; makeAiSchool: the school's NAS
 // folder for the helper's copy (src/data/schoolFolders.js).
 // onMakeAiSent: called once the crystals of a makeAi are handed to the helper (or couldn't be).
+// makeUnconfirmed: Production may open them in Illustrator before the artwork is confirmed (from
+// KIV & ARTWORK, Sean 2026-10-29).
 // Manual: send the crystal to Production without confirming the preview — a
 // designer draws it (Sean, 2026-10-19).
 export function ManualArtworkButton({ onManual, style }) {
@@ -98,7 +100,7 @@ export function ManualArtworkButton({ onManual, style }) {
   );
 }
 
-export default function CrystalPreview({ order, role = 'view', selected = null, onConfirmArtwork = null, onManualArtwork = null, showArtwork = true, canMake = true, makeAi = 0, makeAiFolder = '', makeAiSchool = '', onMakeAiSent = null }) {
+export default function CrystalPreview({ order, role = 'view', selected = null, onConfirmArtwork = null, onManualArtwork = null, showArtwork = true, canMake = true, makeAi = 0, makeAiFolder = '', makeAiSchool = '', onMakeAiSent = null, makeUnconfirmed = false }) {
   const frame = useRef(null);
   const sentRef = useRef(onMakeAiSent);
   sentRef.current = onMakeAiSent;
@@ -109,8 +111,9 @@ export default function CrystalPreview({ order, role = 'view', selected = null, 
   const rows = useMemo(() => crystalRowsOf(order), [order]);
   const reserved = useMemo(() => reservedCrystalsOf(order), [order]);
   // Production makes the crystals only once the artwork is confirmed (it can still ✎ Edit them),
-  // and never from a Tambahan still in review (`canMake` false)
-  const locked = role === 'production' && (!canMake || (showArtwork && !order?.artworkConfirmedAt));
+  // unless opened from KIV & ARTWORK (`makeUnconfirmed`), and never from a Tambahan still in review
+  // (`canMake` false)
+  const locked = role === 'production' && (!canMake || (showArtwork && !order?.artworkConfirmedAt && !makeUnconfirmed));
   const src = `${STUDIO_PATH}/preview.html?theme=light&role=${encodeURIComponent(role)}${locked ? '&locked=1' : ''}`;
 
   useEffect(() => {

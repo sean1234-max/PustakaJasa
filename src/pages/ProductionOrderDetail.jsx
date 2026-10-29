@@ -626,7 +626,7 @@ export default function ProductionOrderDetail() {
             {/* Reviewing a Tambahan: only its own crystals, nothing to confirm or make yet (as SalesOrderSummary). */}
             {addonView
               ? <CrystalPreview order={effectiveOrder} role="production" selected={pickedCrystal} showArtwork={false} canMake={false} />
-              : <CrystalPreview order={order} role="production" selected={pickedCrystal} canMake={kivCardView || !kivParts(order).includes('CRYSTAL')} makeAi={crystalMakeAi} makeAiFolder={buildCombinedCsvFilename(order).replace(/\.csv$/i, '')} makeAiSchool={schoolFolderFor(order.sekolah)} onMakeAiSent={() => crystalSent.current?.()} />}
+              : <CrystalPreview order={order} role="production" selected={pickedCrystal} canMake={kivCardView || fromKiv || !kivParts(order).includes('CRYSTAL')} makeUnconfirmed={kivCardView || fromKiv} makeAi={crystalMakeAi} makeAiFolder={buildCombinedCsvFilename(order).replace(/\.csv$/i, '')} makeAiSchool={schoolFolderFor(order.sekolah)} onMakeAiSent={() => crystalSent.current?.()} />}
 
             {selempangBlocks.length > 0 && (
               <div style={{ marginTop: 'var(--space-6)' }}>
