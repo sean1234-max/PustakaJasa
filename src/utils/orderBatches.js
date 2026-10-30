@@ -107,6 +107,11 @@ export function combineByJenisPlak(items, { splitByPrice = false } = {}) {
 // `typedAt` likewise: Production's Done Typing (0078) for that invoice — the
 // order's own typedAt for the default slice, the group's own for a split one
 // (a new split invoice starts untyped).
+// A split invoice made before the order had its invoice (Reviewing Order / Salesman Approved)
+// follows the order — it moves on with it (Sean, 2026-10-30, ORD-0143).
+const PRE_INVOICE_STATUSES = ['Reviewing Order', 'Salesman Approved'];
+export const invoiceGroupStatus = (order, group) => (group.status && !PRE_INVOICE_STATUSES.includes(group.status) ? group.status : order.status);
+
 export function getOrderInvoiceSlices(order, plakCatalog) {
   const groups = order.invoiceGroups || [];
   const priceAdjustedOf = (rows) => (plakCatalog
@@ -128,7 +133,7 @@ export function getOrderInvoiceSlices(order, plakCatalog) {
       totalAmount: items.reduce((sum, it) => sum + (Number(it.harga) || 0), 0),
       totalQty: items.reduce((sum, it) => sum + (Number(it.qty) || 0), 0),
       priceAdjusted: priceAdjustedOf(combineByJenisPlak(items)),
-      status: i === 0 ? order.status : groups[i - 1].status || order.status,
+      status: i === 0 ? order.status : invoiceGroupStatus(order, groups[i - 1]),
       typedAt: i === 0 ? order.typedAt : groups[i - 1].typedAt,
     }];
   });

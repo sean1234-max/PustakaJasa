@@ -41,7 +41,7 @@ import { syncUrgentOrderToSheet, highlightUrgentKitDoc } from '../lib/urgentShee
 import { isUrgentShipment, urgentSheetAction, SHIPMENT_EDITABLE_STATUSES } from '../utils/urgentOrder';
 import { fetchCustomTypoWords } from '../lib/typoWordsApi';
 import { setCustomTypoWords } from '../utils/typoCheck';
-import { normalizeSplitQty, stockDiff, applyPriceDrafts, withOrderOwnSettings } from '../utils/orderBatches';
+import { normalizeSplitQty, stockDiff, applyPriceDrafts, withOrderOwnSettings, invoiceGroupStatus } from '../utils/orderBatches';
 import { needsKiv, kivParts, hasPlakPart, kivInProduction, crystalWithPlak, isCrystalCode, countReservedPlaques } from '../utils/exportCsv';
 import { kivOnlyGroupsDone } from '../utils/productionCards';
 
@@ -132,7 +132,7 @@ function findInvoiceSlice(order, sliceInvoiceId) {
     return { isDefault: true, groups, group: null, status: order.status, typedAt: order.typedAt };
   }
   const group = groups.find((g) => g.invoiceId === sliceInvoiceId);
-  return group ? { isDefault: false, groups, group, status: group.status || order.status, typedAt: group.typedAt } : null;
+  return group ? { isDefault: false, groups, group, status: invoiceGroupStatus(order, group), typedAt: group.typedAt } : null;
 }
 
 // Invoice numbers are compared with every space stripped. Taken = already

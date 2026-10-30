@@ -269,3 +269,20 @@ describe('one Jenis Plak shared over 4 invoices (ORD-0108)', () => {
     expect(normalizeSplitQty(order.items, ['PK 261 / A'], { 'PK 261 / A': '198' }, others.filter((g) => g.invoiceId !== 'DWI-B'))).toEqual({ qtyByJenisPlak: { 'PK 261 / A': 198 } });
   });
 });
+
+describe('getOrderInvoiceSlices — a split made before the invoice follows the order (ORD-0143)', () => {
+  const it2 = (id, jenisPlak, qty) => ({ id, jenisPlak, qty: String(qty), harga: qty * 10 });
+  const order = {
+    status: 'In Production', invoiceId: 'DWI-26100898',
+    items: [it2(1, 'FD 251 / GOLD', 4), it2(2, 'MP399', 10)],
+    invoiceGroups: [
+      { invoiceId: 'DWI-26100897', status: 'Salesman Approved', jenisPlakList: ['FD 251 / GOLD', 'MP399'], qtyByJenisPlak: { 'FD 251 / GOLD': 2, MP399: 5 } },
+      { invoiceId: 'DWI-26100896', status: 'Completed', jenisPlakList: ['MP399'], qtyByJenisPlak: { MP399: 1 } },
+    ],
+  };
+  it('a group stamped Salesman Approved moves with the order; one marked Completed keeps its own', () => {
+    expect(getOrderInvoiceSlices(order, null).map((s) => [s.invoiceId, s.status])).toEqual([
+      ['DWI-26100898', 'In Production'], ['DWI-26100897', 'In Production'], ['DWI-26100896', 'Completed'],
+    ]);
+  });
+});
