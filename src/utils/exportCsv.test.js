@@ -1165,12 +1165,12 @@ describe('KIV & ARTWORK parts', () => {
     expect([needsKiv(allDone), kivInProduction(allDone)]).toEqual([false, false]);
   });
 
-  it('crystals are always their own card: KIV until confirmed, then Typing (2026-10-17)', async () => {
+  it('crystals are always their own card, in KIV & ARTWORK confirmed or not (2026-10-30)', async () => {
     const { kivParts, crystalWithPlak, hasMainPart, kivInTyping } = await import('./exportCsv');
     const confirmed = '2026-10-15T01:00:00Z';
-    // confirmed at submit: still its own card, straight in Typing
+    // confirmed at submit: still its own card, stays in KIV & ARTWORK
     const teacher = { items: [plak, crystal], artworkConfirmedAt: confirmed };
-    expect([crystalWithPlak(teacher), kivParts(teacher), kivInTyping(teacher)]).toEqual([false, ['CRYSTAL'], true]);
+    expect([crystalWithPlak(teacher), kivParts(teacher), kivInTyping(teacher)]).toEqual([false, ['CRYSTAL'], false]);
     // Manual artwork (designer draws it): stays in KIV & ARTWORK until its Done (2026-10-23)
     expect(kivInTyping({ ...teacher, artworkManual: true })).toBe(false);
     expect(hasMainPart({ items: [crystal], artworkConfirmedAt: confirmed })).toBe(false);
@@ -1239,7 +1239,7 @@ describe('KIV: Reserved names filled in after typing (0097)', () => {
   it('keeps unconfirmed crystals waiting in KIV & ARTWORK', () => {
     const order = { ...base, items: [{ id: 'c', jenisPlak: 'CRYSTAL / SA4 / DESIGN A', qty: 1 }] };
     expect(kivInTyping(order)).toBe(false);
-    expect(kivInTyping({ ...order, artworkConfirmedAt: '2026-10-17T01:00:00Z' })).toBe(true);
+    expect(kivInTyping({ ...order, artworkConfirmedAt: '2026-10-17T01:00:00Z' })).toBe(false);
   });
 });
 

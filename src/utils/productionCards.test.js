@@ -25,6 +25,10 @@ describe('productionCards — each invoice card judged by its own items', () => 
     expect(kiv.items).toBe(order.items);
     expect(kiv._kivInvoices).toEqual(['DWI-524', 'DWI-527']);
     expect(kiv.invoiceId).toBe('DWI-518');
+    // the crystal card counts only its crystals, each plaques card only its plaques (2026-10-30)
+    expect([kiv.totalQty, kiv.totalAmount]).toEqual([5, 50]);
+    expect([cards['ORD-0108::DWI-527'].totalQty, cards['ORD-0108::DWI-527'].totalAmount]).toEqual([2, 20]);
+    expect([cards['ORD-0108::DWI-530'].totalQty, cards['ORD-0108::DWI-530'].totalAmount]).toEqual([3, 30]);
   });
 
   it('an order on one invoice is one card with all its items, as before', () => {
@@ -33,6 +37,11 @@ describe('productionCards — each invoice card judged by its own items', () => 
     expect(cards.map((c) => c._part)).toEqual(['main', 'kiv']);
     expect(cards[0].items).toBe(one.items);
     expect(cards[1]._kivInvoices).toEqual([]);
+    // ORD-0158: 70 / RM599.50 with 4 crystals at RM76 → ACARA 66 / RM523.50, CRYSTAL 4 / RM76
+    const o158 = { id: 'ORD-0158', status: 'In Production', totalAmount: 599.5, items: [item(1, 'PK 261 / A', 66), { ...item(2, 'CRYSTAL / 80-B / DESIGN 1', 4), harga: 76 }], invoiceGroups: [] };
+    o158.items[0].harga = 523.5;
+    const [acara, crystalCard] = productionCards(o158, null);
+    expect([acara.totalQty, acara.totalAmount, crystalCard.totalQty, crystalCard.totalAmount]).toEqual([66, 523.5, 4, 76]);
   });
 });
 

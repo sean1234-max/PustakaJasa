@@ -185,14 +185,12 @@ export function needsKiv(order) {
   return !order?.kivDoneAt && kivParts(order).length > 0;
 }
 
-// KIV & ARTWORK only waits (look-only, Sean 2026-10-17): for Reserved names and for
-// the crystals' artwork. Neither left: the card is in Typing. A Manual artwork (the designer
-// draws it) stays in KIV & ARTWORK; its DONE sends it straight to In Production (Sean, 2026-10-23).
+// KIV & ARTWORK waits for Reserved names; once filled, the late-named plaques go to Typing.
+// A crystal card stays in KIV & ARTWORK, artwork confirmed or not, until its DONE sends it
+// straight to In Production (Sean, 2026-10-30; a Manual artwork already did, 2026-10-23).
 export const kivManualCrystal = (order) => kivParts(order).includes('CRYSTAL') && !!order.artworkConfirmedAt && !!order.artworkManual;
 export function kivInTyping(order) {
-  return needsKiv(order) && countReservedPlaques(order) === 0
-    && (!kivParts(order).includes('CRYSTAL') || !!order.artworkConfirmedAt)
-    && !kivManualCrystal(order);
+  return needsKiv(order) && countReservedPlaques(order) === 0 && !kivParts(order).includes('CRYSTAL');
 }
 
 // Its KIV & ARTWORK card is in In Production, not Done yet.

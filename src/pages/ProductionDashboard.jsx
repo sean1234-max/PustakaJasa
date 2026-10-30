@@ -44,8 +44,8 @@ const TABS = [
   // after Done Review until the salesman approves it.
   { key: 'addon', label: 'Add-On Review', match: (o) => main(o) && o._primarySlice && isAddonInFlight(o) },
   { key: 'approved', label: 'Salesman Approved', match: (o) => main(o) && o.status === 'Salesman Approved' },
-  // Confirmed crystals ride on the plaques' card (hasMainPart); a crystal card of
-  // its own waits here once confirmed (kivInTyping) — Sean, 2026-10-15.
+  // A KIV card is here only for plaques named after typing (kivInTyping); a crystal card
+  // stays in KIV & ARTWORK even once confirmed (Sean, 2026-10-30).
   {
     key: 'typing',
     label: 'Typing',
@@ -395,9 +395,9 @@ export default function ProductionDashboard() {
                 )}
                 {cardTab === 'kiv' && (
                   <>
-                    {/* a Manual crystal opens as its crystal card (?part=kiv): Generate AI File for it while it
-                        waits here for its DONE (Sean, 2026-10-28, ORD-0124) */}
-                    <button type="button" className="btn btn-ghost" style={{ flex: 1 }} onClick={() => navigate(`/production/orders/${ord.id}${kivManualCrystal(ord) ? '?part=kiv' : '?kiv=1'}`)}>
+                    {/* a confirmed crystal opens as its crystal card (?part=kiv): Generate AI File for it while it
+                        waits here for its DONE (Sean, 2026-10-28 ORD-0124; every confirmed crystal 2026-10-30) */}
+                    <button type="button" className="btn btn-ghost" style={{ flex: 1 }} onClick={() => navigate(`/production/orders/${ord.id}${parts.includes('CRYSTAL') && ord.artworkConfirmedAt && reserved === 0 ? '?part=kiv' : '?kiv=1'}`)}>
                       View Order
                     </button>
                     {/* DONE on every KIV & ARTWORK card (Sean, 2026-10-28): not until the Reserved names are
