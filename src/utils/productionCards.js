@@ -7,8 +7,10 @@ import { kivParts, hasMainPart, isCrystalCode } from './exportCsv';
 // KIV & ARTWORK card still holds the whole order's crystals / Reserved rows (artwork confirmed and
 // Done for the whole order), naming the invoices they're billed on (`_kivInvoices`).
 // A crystal card shows only its crystals' QTY / amount, the plaques' (ACARA) card the rest (Sean, 2026-10-30).
+// Before In Production the crystals have no card of their own, so the one card keeps them (ORD-0193, 2026-10-31).
+export const crystalsHaveOwnCard = (status) => status === 'In Production' || status === 'Completed';
 function crystalTotals(card) {
-  const crystals = kivParts(card).includes('CRYSTAL') ? (card.items || []).filter((it) => isCrystalCode(it.jenisPlak)) : [];
+  const crystals = kivParts(card).includes('CRYSTAL') && crystalsHaveOwnCard(card.status) ? (card.items || []).filter((it) => isCrystalCode(it.jenisPlak)) : [];
   return {
     qty: crystals.reduce((n, it) => n + (Number(it.qty) || 0), 0),
     amount: crystals.reduce((n, it) => n + (Number(it.harga) || 0), 0),
@@ -20,7 +22,7 @@ export function productionCards(ord, plakCatalog) {
   const split = (ord.invoiceGroups || []).length > 0;
   const slices = getOrderInvoiceSlices(ord, plakCatalog).map((slice, i) => {
     const card = { ...ord, items: split ? getInvoiceItems(ord, slice.invoiceId) : ord.items };
-    const crystals = crystalTotals(card);
+    const crystals = crystalTotals({ ...card, status: slice.status });
     return {
       ...card, invoiceId: slice.invoiceId, totalAmount: slice.totalAmount - crystals.amount, totalQty: slice.totalQty - crystals.qty,
       priceAdjusted: slice.priceAdjusted, status: slice.status, typedAt: slice.typedAt,

@@ -43,6 +43,13 @@ describe('productionCards — each invoice card judged by its own items', () => 
     const [acara, crystalCard] = productionCards(o158, null);
     expect([acara.totalQty, acara.totalAmount, crystalCard.totalQty, crystalCard.totalAmount]).toEqual([66, 523.5, 4, 76]);
   });
+
+  it('before In Production the crystals have no card of their own, so the one card keeps the whole order (ORD-0193)', () => {
+    const o193 = { id: 'ORD-0193', status: 'Reviewing Order', totalAmount: 385, invoiceGroups: [],
+      items: [{ ...item(1, 'CRYSTAL / 80-B / DESIGN 3', 15), harga: 285 }, { ...item(2, 'CRYSTAL / R-100 / DESIGN B', 4), harga: 100 }] };
+    const [card] = productionCards(o193, null);
+    expect([card.totalQty, card.totalAmount]).toEqual([19, 385]);
+  });
 });
 
 describe('kivOnlyGroupsDone — the KIV & ARTWORK card done completes the invoices that are only crystals', () => {
