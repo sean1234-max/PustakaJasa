@@ -146,8 +146,9 @@ function exportPng(item, file, asOutline) {
             }
         }
         if (asOutline) {
-            var grey = new RGBColor(); grey.red = 150; grey.green = 150; grey.blue = 150;
-            dup.filled = false; dup.stroked = true; dup.strokeColor = grey; dup.strokeWidth = 1;
+            // black like the cut line it stands for (Sean, 2026-11-02: H25-1 / JZ 19821 have no background)
+            var black = new RGBColor(); black.red = 0; black.green = 0; black.blue = 0;
+            dup.filled = false; dup.stroked = true; dup.strokeColor = black; dup.strokeWidth = 1.5;
         }
         var vb = dup.visibleBounds;
         var w = vb[2] - vb[0], h = vb[1] - vb[3];
