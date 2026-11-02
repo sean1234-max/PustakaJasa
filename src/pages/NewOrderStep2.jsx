@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import CrystalPreview from '../components/CrystalPreview';
+import PlakPreview from '../components/PlakPreview';
 import { isCrystalCode } from '../utils/exportCsv';
 import { useAppState } from '../state/useAppState';
 import { buildCategoryCartItems } from '../state/categoryCartItems';
@@ -380,22 +381,28 @@ export default function NewOrderStep2() {
   // before the block's Reference Sample — instead of it when every plaque is a crystal. Read from
   // the same items Add to Cart makes, so a block that can't be added yet (a typo, a missing Jenis
   // Plak) shows its Reference Sample as before until it's fixed.
-  const crystalsByBlock = useMemo(() => {
+  // The plaques (not crystals) get the Plak Preview the same way (Sean, 2026-11-02).
+  const cartItemsByBlock = useMemo(() => {
     const res = state.category ? buildCategoryCartItems(draftForCheck, state.category) : {};
     const byBlock = {};
     (res.items || []).forEach((it) => {
       const b = it.blockIdx ?? 0;
-      byBlock[b] = byBlock[b] || { all: [], crystal: [] };
+      byBlock[b] = byBlock[b] || { all: [], crystal: [], plak: [] };
       byBlock[b].all.push(it);
-      if (isCrystalCode(it.jenisPlak)) byBlock[b].crystal.push(it);
+      byBlock[b][isCrystalCode(it.jenisPlak) ? 'crystal' : 'plak'].push(it);
     });
-    return Object.fromEntries(Object.entries(byBlock)
-      .filter(([, g]) => g.crystal.length > 0)
-      .map(([b, g]) => [b, {
-        order: { id: '', items: g.crystal, sekolah: state.sekolah, schoolLanguage: state.schoolLanguage, logoDataUrl: state.logoDataUrl },
-        only: g.crystal.length === g.all.length,
-      }]));
-  }, [state.category, draftForCheck, state.sekolah, state.schoolLanguage, state.logoDataUrl]);
+    return byBlock;
+  }, [state.category, draftForCheck]);
+  const blockOrder = useCallback(
+    (items) => ({ id: '', items, sekolah: state.sekolah, schoolLanguage: state.schoolLanguage, logoDataUrl: state.logoDataUrl }),
+    [state.sekolah, state.schoolLanguage, state.logoDataUrl],
+  );
+  const crystalsByBlock = useMemo(() => Object.fromEntries(Object.entries(cartItemsByBlock)
+    .filter(([, g]) => g.crystal.length > 0)
+    .map(([b, g]) => [b, { order: blockOrder(g.crystal), only: g.crystal.length === g.all.length }])), [cartItemsByBlock, blockOrder]);
+  const plaksByBlock = useMemo(() => Object.fromEntries(Object.entries(cartItemsByBlock)
+    .filter(([, g]) => g.plak.length > 0)
+    .map(([b, g]) => [b, blockOrder(g.plak)])), [cartItemsByBlock, blockOrder]);
 
   const incompleteCategories = useMemo(() => (
     allCategories
@@ -727,7 +734,12 @@ export default function NewOrderStep2() {
               plakOptions={visiblePlakCatalog}
               isLastBlock={i === blocks.length - 1}
               flashJenisPlak={flashBlockIdx === blk.idx}
-              crystalSample={crystalsByBlock[blk.idx] && <CrystalPreview order={crystalsByBlock[blk.idx].order} role="teacher" showArtwork={false} />}
+              crystalSample={(
+                <>
+                  {plaksByBlock[blk.idx] && <PlakPreview order={plaksByBlock[blk.idx]} />}
+                  {crystalsByBlock[blk.idx] && <CrystalPreview order={crystalsByBlock[blk.idx].order} role="teacher" showArtwork={false} />}
+                </>
+              )}
               hideReferenceSample={!!crystalsByBlock[blk.idx]?.only}
             />
           </div>
