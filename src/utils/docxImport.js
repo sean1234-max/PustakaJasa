@@ -550,13 +550,15 @@ export function wordingRowsToCategorized(inputRows, heading = '', { keepOrder = 
 // award (Sean, 2026-10-20: the PENGHARGAAN sheet). null when the rows
 // aren't that shape (one award only, the lines under it differ, a name
 // list), so they're grouped as before.
-export function wordingRowsToUmum(inputRows, heading = '') {
+// `oneLine`: rows that are each just one line (a PDF of one plaque per page, the name on it — Sean,
+// 2026-11-02) are a list too, though they share no line below the award.
+export function wordingRowsToUmum(inputRows, heading = '', { oneLine = false } = {}) {
   const rows = inputRows.map((r) => ({ ...r, lines: foldBracketSubjects(r.lines || []).flatMap(wordingLine).filter(Boolean) }));
   if (rows.length < 2) return null;
   const fields = wordingFieldsForRows(rows);
   if (fields.some((f) => f.nameFirst || !f.position)) return null;
   const tail = (f) => `${f.eventLine1}\u0000${f.eventLine2}`;
-  if (!fields[0].eventLine1 || fields.some((f) => tail(f) !== tail(fields[0]))) return null;
+  if ((!fields[0].eventLine1 && !oneLine) || fields.some((f) => tail(f) !== tail(fields[0]))) return null;
   if (new Set(fields.map((f) => f.position)).size < 2) return null;
   const lines = { 0: heading, 1: fields[0].position, 2: fields[0].eventLine1, 3: fields[0].eventLine2 };
   Object.keys(lines).forEach((k) => { if (!lines[k]) delete lines[k]; });

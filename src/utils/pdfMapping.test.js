@@ -465,3 +465,21 @@ describe('applyPdfReading — a class list by year with a CONTOH per item', () =
     expect(out.notes.join(' ')).toMatch(/plaque code "SM-13187\/GOLD" taken from the batch's row/);
   });
 });
+
+// ANUGERAH 2026 USJ 12 (Sean, 2026-11-02): one plaque per page, the AI listed each page's name as a
+// line of its own label — that is one name line with an option per page, a plaque each.
+describe('applyPdfReading — one plaque per page', () => {
+  const names = ['LATIFAH BT HAMZAH', 'MUHAMAD IZZAT B. ZULKEFLI', 'NUR ALYA ANIS BINTI MANSOR', 'RAMLI B. MOHAMED'];
+  const ir = buildPdfIr(names.map((name, i) => ({
+    page: i + 1, width: 600, height: 800, items: [item('Inspirasi Guru 2026', 200, 180), item(name, 200, 460)],
+  })));
+  it('a label of one-name lines from different pages is one plaque per page', () => {
+    const res = applyPdfReading(ir, { groups: [{
+      name: 'Inspirasi Guru', code: null, total: null, each: null, names: true, tajuk: ['p1s1'],
+      labels: [[['p1s2'], ['p2s2'], ['p3s2'], ['p4s2']]], confidence: 'medium', note: null,
+    }], questions: [] });
+    expect(res.count).toBe(4);
+    // one tab with the names as its rows, not a tab per name
+    expect(Object.values(res.categorized).flat()).toHaveLength(1);
+  });
+});

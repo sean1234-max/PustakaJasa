@@ -372,8 +372,16 @@ export function applyPdfReading(ir, reading) {
     // A name list (the AI's `names`): each label starts with the person's
     // name and the award is below it — engraved name first, one tab per
     // award.
-    const nameFirst = g.names === true;
-    (g.labels || []).forEach((label) => {
+    // One plaque per page (ANUGERAH 2026 USJ 12, Sean 2026-11-02): the AI wrote each page's name as a
+    // line of its own label. One plaque is never spread over pages, so a label of single-option lines
+    // each from another page is one line with an option per page — one tab, the names its rows.
+    const pageOf = (opt) => segs(baseRef(String(opt).split('|')[0]))?.[0]?.page;
+    const onePerPage = (label) => Array.isArray(label) && label.length >= 3
+      && label.every((ln) => Array.isArray(ln) && ln.length === 1 && ln[0] !== '&' && pageOf(ln[0]) != null)
+      && new Set(label.map((ln) => pageOf(ln[0]))).size === label.length;
+    const pagesMerged = (g.labels || []).some(onePerPage);
+    const nameFirst = g.names === true && !pagesMerged;
+    (g.labels || []).map((label) => (onePerPage(label) ? [label.map((ln) => ln[0])] : label)).forEach((label) => {
       const lines = (Array.isArray(label) ? label : []).map(lineOf);
       if (lines.length === 0) return;
       if (lines.some((l) => l == null)) {
@@ -404,7 +412,7 @@ export function applyPdfReading(ir, reading) {
         const withTahun = text.map(tahunDigits);
         const engraved = tempat ? withTahun.map(withTempat) : withTahun;
         if (engraved.some((l, i) => l !== withTahun[i])) tempatAdded += qty;
-        rows.push({ lines: engraved, qty, kod, nameFirst });
+        rows.push({ lines: engraved, qty, kod, nameFirst, onePage: pagesMerged });
         if (!varies) fixedLines.push(engraved);
       });
     });
@@ -450,7 +458,8 @@ export function applyPdfReading(ir, reading) {
     // over the same HARI KECEMERLANGAN … lines): one ORDER LAIN-LAIN-style tab,
     // a row per award, instead of a tab per award (Sean, 2026-10-21) — like
     // the Excel AI reader (aiMapping.js). Fewer awards keep their own tabs.
-    const umum = new Set(rows.map((r) => r.lines[0])).size >= MIN_AWARDS_FOR_ONE_TAB && wordingRowsToUmum(rows, heading);
+    const umum = new Set(rows.map((r) => r.lines[0])).size >= MIN_AWARDS_FOR_ONE_TAB
+      && wordingRowsToUmum(rows, heading, { oneLine: rows.every((r) => r.onePage) });
     if (umum) {
       const base = name || 'ORDER LAIN-LAIN';
       let label = base;
