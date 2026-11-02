@@ -5,6 +5,7 @@ import { useAppState } from '../state/useAppState';
 import { formatDate, getStockStatus, resolveCategory, otherPlakIncomplete } from '../data/catalog';
 import CrystalPreview, { crystalRowsOf } from '../components/CrystalPreview';
 import CrystalConfirmModal from '../components/CrystalConfirmModal';
+import StockViolationMessage from '../components/StockViolationMessage';
 import DuplicateOrderModal from '../components/DuplicateOrderModal';
 import { isCrystalCode } from '../utils/exportCsv';
 
@@ -88,7 +89,7 @@ export default function Cart() {
       .map((row) => {
         const status = getStockStatus(row.jenisPlak, state.plakCatalog);
         return status && Number(row.qty) > status.maxOrderable
-          ? { ...row, maxOrderable: status.maxOrderable, categoryLabel: row.categoryKey ? resolveCategory(row.categoryKey)?.label : null }
+          ? { ...row, maxOrderable: status.maxOrderable, hidden: !!status.hidden, categoryLabel: row.categoryKey ? resolveCategory(row.categoryKey)?.label : null }
           : null;
       })
       .find(Boolean);
@@ -262,11 +263,7 @@ export default function Cart() {
           <textarea className="input" id="cartRemark" rows={3} placeholder="Any additional notes" value={state.remark} onChange={(e) => patch({ remark: e.target.value })} />
         </div>
 
-        {stockViolation && (
-          <p className="hint-text" style={{ color: '#c0392b', fontWeight: 600 }}>
-            Stock tidak cukup untuk &quot;{stockViolation.jenisPlak}&quot;{stockViolation.categoryLabel ? ` (${stockViolation.categoryLabel})` : ''} — baki {stockViolation.maxOrderable} sahaja boleh ditempah. Sila kurangkan kuantiti atau hubungi Salesman sebelum submit.
-          </p>
-        )}
+        {stockViolation && <StockViolationMessage violation={stockViolation} />}
         {otherViolation && (
           <p className="hint-text" style={{ color: '#c0392b', fontWeight: 600 }}>
             &quot;{otherViolation.jenisPlak}&quot;{otherViolation.categoryLabel ? ` (${otherViolation.categoryLabel})` : ''} perlu nama dan harga — sila Edit kategori ini, pilih OTHER semula dan isi nama serta harga sebelum submit.

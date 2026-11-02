@@ -4,6 +4,7 @@ import Nav from '../components/Nav';
 import { useAppState } from '../state/useAppState';
 import { addonRepeatsOrder, addonRepeatMessage } from '../utils/addonCheck';
 import { getStockStatus, formatDate, toMalaysiaDay, resolveCategory, malaysiaToday, malaysiaDayIso } from '../data/catalog';
+import StockViolationMessage from '../components/StockViolationMessage';
 
 // The add-on's cart (Sean, 2026-10-09): the same Order Summary as New
 // Order's Cart for the original order, then TAMBAHAN below in the same form.
@@ -61,7 +62,7 @@ export default function AddOnSummary() {
   const stockViolation = useMemo(() => addOnSummaryItems
     .map((it) => {
       const status = getStockStatus(it.jenisPlak, state.plakCatalog);
-      return status && Number(it.qty) > status.maxOrderable ? { ...it, maxOrderable: status.maxOrderable } : null;
+      return status && Number(it.qty) > status.maxOrderable ? { ...it, maxOrderable: status.maxOrderable, hidden: !!status.hidden } : null;
     })
     .find(Boolean), [addOnSummaryItems, state.plakCatalog]);
 
@@ -123,11 +124,7 @@ export default function AddOnSummary() {
           </tbody>
         </table>
 
-        {stockViolation && (
-          <p className="hint-text" style={{ color: '#c0392b', fontWeight: 600 }}>
-            Stock tidak cukup untuk &quot;{stockViolation.jenisPlak}&quot; — baki {stockViolation.maxOrderable} sahaja boleh ditempah. Sila kurangkan kuantiti atau hubungi Salesman sebelum submit.
-          </p>
-        )}
+        {stockViolation && <StockViolationMessage violation={stockViolation} />}
         {isSalesman && (
           <div className="field" style={{ maxWidth: 320, marginBottom: 'var(--space-4)' }}>
             <label htmlFor="addonShipDate">Shipment Date (Tambahan)</label>

@@ -163,11 +163,10 @@ describe('stock thresholds', () => {
     expect(stockZoneFor(10, 1000)).toBe('red');
   });
 
-  it('getStockStatus: in the red zone a fixed reserve is protected', () => {
-    // baseline 1000 -> 15% threshold 150 -> reserve ceil(150*0.10)=15
+  it('getStockStatus: a code hidden at the low-stock ratio (red zone included) can\'t be ordered at all (2026-11-02)', () => {
+    // 100 / 1000 = 10%, at/below the 20% hide ratio: an uploaded file may still name it
     const red = getStockStatus('REDSTOCK', CATALOG);
-    expect(red.zone).toBe('red');
-    expect(red.maxOrderable).toBe(85); // 100 - 15
+    expect(red).toMatchObject({ hidden: true, maxOrderable: 0 });
   });
 
   it('getStockStatus: outside the red zone the only cap is stock on hand', () => {

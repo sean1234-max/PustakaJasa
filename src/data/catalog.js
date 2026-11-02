@@ -923,9 +923,17 @@ export function stockZoneFor(stockQty, stockBaseline) {
 // Returns null when no level along this code's path tracks stock at all
 // (e.g. Production hasn't entered a count anywhere on this path) or the
 // code isn't found, in which case no stock UI/limit applies at all.
+//
+// A code hidden from the picker (Production's hide, or stock at/below LOW_STOCK_HIDE_RATIO) can still
+// come in from an uploaded Excel / kertas kerja: it can't be ordered at all (Sean, 2026-11-02) —
+// `hidden: true`, maxOrderable 0, so the Cart / Add On submit stays blocked.
 export function getStockStatus(code, plakCatalogTree) {
   const entry = flattenPlakCatalog(plakCatalogTree).find((p) => p.code === code);
-  if (!entry || entry.stockChain.length === 0) return null;
+  if (!entry) return null;
+  if (!flattenPlakCatalog(filterHiddenPlakCatalog(plakCatalogTree)).some((p) => p.code === code)) {
+    return { hidden: true, zone: 'red', maxOrderable: 0, stockQty: null, stockBaseline: null };
+  }
+  if (entry.stockChain.length === 0) return null;
   let tightest = null;
   entry.stockChain.forEach(({ stockQty, stockBaseline }) => {
     const zone = stockZoneFor(stockQty, stockBaseline);
