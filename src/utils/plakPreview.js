@@ -13,9 +13,14 @@ const eCutNumber = (s) => /E\s*CUT\s*(\d+)/i.exec(String(s || ''))?.[1] ?? null;
 const TROFI_CODES = ['13228 (B)', 'H25-1', 'JZ19821', 'YK-628', 'YK-1370', 'W038 A', 'W038 B', 'W038 C', 'W038',
   'SR-116A', 'SL245#3', 'SL243#3', 'TSL232#3', '4942', '4943', '19540B'];
 const trofiKey = (code) => String(code || '').toUpperCase().replace(/[\s\-()/]+/g, '');
-function isTrofiCode(code) {
+// the trophy code a Jenis Plak starts with, without its colour ("SR-116 A / BLUE" → "SR116A"; the colour
+// is the trophy's, not the .ai's — Sean, 2026-11-02), the longest one ("W038 A" before "W038"); null if none
+function trofiBase(code) {
   const k = trofiKey(code);
-  return !!k && TROFI_CODES.map(trofiKey).some((t) => k === t || (k.startsWith(t) && !/[0-9]/.test(k.charAt(t.length))));
+  if (!k) return null;
+  return TROFI_CODES.map(trofiKey)
+    .filter((t) => k === t || (k.startsWith(t) && !/[0-9]/.test(k.charAt(t.length))))
+    .sort((a, b) => b.length - a.length)[0] || null;
 }
 function eCutForBase(code) {
   const c = String(code || '').toUpperCase();
@@ -24,19 +29,28 @@ function eCutForBase(code) {
   return m ? { A: '8', B: '9', C: '10' }[m[1]] : null;
 }
 
+// A colour is the plaque's / trophy's own, never part of which .ai it uses (Sean, 2026-11-02): the code
+// without its colour parts, everything else kept — "MP 399 / GOLD / BASE WITHOUT COVER" → "MP 399 / BASE
+// WITHOUT COVER", "SR-116 A / BLUE" → "SR-116 A". Each step tries the code as written first.
+const COLOURS = ['GOLD', 'SILVER', 'BRONZE', 'RED', 'BLUE'];
+export const withoutColour = (code) => String(code || '').split('/').map((p) => p.trim())
+  .filter((p) => p && !COLOURS.includes(p.toUpperCase())).join(' / ');
+
 export function fileForCode(code, manifest) {
   const files = (manifest?.files || []).map((f) => f.file);
+  const codes = [...new Set([code, withoutColour(code)])];
   const base = eCutForBase(code);
   const byBase = base !== null && files.find((f) => eCutNumber(f) === base);
   if (byBase) return byBase;
-  const mapped = (manifest?.mapping || []).find(([c]) => squash(c) === squash(code))?.[1];
-  if (mapped && files.includes(mapped)) return mapped;
-  if (isTrofiCode(code)) return files.find((f) => /TROFI/i.test(f) && trofiKey(f).includes(trofiKey(code))) || null;
+  const mapping = manifest?.mapping || [];
+  const mapped = codes.map((c) => mapping.find(([m]) => squash(m) === squash(c))?.[1]).find((f) => f && files.includes(f));
+  if (mapped) return mapped;
+  const trofi = trofiBase(withoutColour(code));
+  if (trofi) return files.find((f) => /TROFI/i.test(f) && trofiKey(f).includes(trofi)) || null;
   const n = eCutNumber(code);
   const byNumber = n !== null && files.find((f) => eCutNumber(f) === n);
   if (byNumber) return byNumber;
-  const key = squash(code);
-  return (key && files.find((f) => squash(f).includes(key))) || null;
+  return codes.map((c) => squash(c)).filter(Boolean).map((key) => files.find((f) => squash(f).includes(key))).find(Boolean) || null;
 }
 
 // ------------------------------------------------------------------ which layout group

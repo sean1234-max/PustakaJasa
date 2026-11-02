@@ -15,6 +15,7 @@ import { reconstructBlocksForCategory } from '../utils/computeBlocks';
 import { splitOrderCategories, isCrystalCode, firstKivCategory } from '../utils/exportCsv';
 import ReservedNamesForm from '../components/ReservedNamesForm';
 import CrystalPreview from '../components/CrystalPreview';
+import PlakPreview from '../components/PlakPreview';
 import ShipmentConfirmModal from '../components/ShipmentConfirmModal';
 import { getOrderChangeStamp } from '../utils/orderStamp';
 import { addonRepeatsOrder, addonRepeatMessage } from '../utils/addonCheck';
@@ -392,7 +393,10 @@ export default function SalesOrderSummary() {
               )}
 
               {addonView ? (
-                <CrystalPreview order={effectiveOrder} role="view" showArtwork={false} />
+                <>
+                  <CrystalPreview order={effectiveOrder} role="view" showArtwork={false} />
+                  <PlakPreview order={effectiveOrder} />
+                </>
               ) : (
               <>
               <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Jenis Plak / Price per Unit / QTY / Harga</div>
@@ -404,6 +408,7 @@ export default function SalesOrderSummary() {
               />
               {/* the salesman can ✎ Edit the crystals' look and place for this order too (Sean, 2026-10-22) */}
               <CrystalPreview order={order} role={isOwn ? 'teacher' : 'view'} selected={pickedCrystal} onConfirmArtwork={() => confirmArtwork(order.id)} onManualArtwork={() => manualArtwork(order.id)} />
+              <PlakPreview order={order} />
               </>
               )}
               {/* SELEMPANG's rows (ACARA / WARNA / QTY) also show right here on the

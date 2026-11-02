@@ -12,6 +12,7 @@ import { reconstructBlocksForCategory } from '../utils/computeBlocks';
 import { splitOrderCategories } from '../utils/exportCsv';
 import { getInvoiceItems } from '../utils/orderBatches';
 import CrystalPreview from '../components/CrystalPreview';
+import PlakPreview from '../components/PlakPreview';
 import RemarkText from '../components/RemarkText';
 
 const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: false, matrix: false, jenisPlak: false };
@@ -167,6 +168,7 @@ export default function OrderDetails() {
               </div>
 
               <CrystalPreview order={order} role="teacher" />
+              <PlakPreview order={order} />
 
               <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Function Details</div>
               <div className="form-grid-2" style={{ marginTop: 'var(--space-3)' }}>

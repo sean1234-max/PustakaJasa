@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import AdminLayout from '../components/AdminLayout';
 import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
+import PlakPreview from '../components/PlakPreview';
 import { useAppState } from '../state/useAppState';
 import { statusPillStyle, formatDate, toMalaysiaDay, invoiceLabel, invoiceSetByNote } from '../data/catalog';
 import CancelOrderControl from '../components/CancelOrderControl';
@@ -209,6 +210,7 @@ export default function AdminOrderDetail() {
               </div>
             )}
             {state.productionToast && <p className="text-body-sm text-on-surface-variant mt-2">{state.productionToast}</p>}
+            <PlakPreview order={order} />
 
             {/* SELEMPANG's rows (ACARA / WARNA / QTY) also show right here on the
                 Summary — the only category that does (Sean); every category's full

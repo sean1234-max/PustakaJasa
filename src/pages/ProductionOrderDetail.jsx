@@ -7,6 +7,7 @@ import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import CorrectedExcelControl from '../components/CorrectedExcelControl';
 import PriceTable from '../components/PriceTable';
 import CrystalPreview from '../components/CrystalPreview';
+import PlakPreview from '../components/PlakPreview';
 import OrderPrintout from '../components/OrderPrintout';
 import AddOnTag from '../components/AddOnTag';
 import { duplicateReasons } from '../utils/duplicateOrders';
@@ -627,6 +628,7 @@ export default function ProductionOrderDetail() {
             {addonView
               ? <CrystalPreview order={effectiveOrder} role="production" selected={pickedCrystal} showArtwork={false} canMake={false} />
               : <CrystalPreview order={order} role="production" selected={pickedCrystal} canMake={kivCardView || fromKiv || !kivParts(order).includes('CRYSTAL')} makeUnconfirmed={kivCardView || fromKiv} makeAi={crystalMakeAi} makeAiFolder={buildCombinedCsvFilename(order).replace(/\.csv$/i, '')} makeAiSchool={schoolFolderFor(order.sekolah)} onMakeAiSent={() => crystalSent.current?.()} />}
+            <PlakPreview order={addonView ? effectiveOrder : order} />
 
             {selempangBlocks.length > 0 && (
               <div style={{ marginTop: 'var(--space-6)' }}>

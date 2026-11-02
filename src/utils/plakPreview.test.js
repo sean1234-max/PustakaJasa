@@ -1,10 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { fileForCode, templateNameFor, pickTemplate, rankColor, lineOrderFor, layoutPlaque } from './plakPreview';
+import { withoutColour, fileForCode, templateNameFor, pickTemplate, rankColor, lineOrderFor, layoutPlaque } from './plakPreview';
 
 const manifest = {
   mapping: [['PK 261/C', 'E CUT 6 - PLAK C (020C, stand lamp FD 251).ai'], ['YK - 628', 'E TROFI H25-1, YK 628, YK 610.ai']],
   files: [{ file: 'E CUT 6 - PLAK C (020C, stand lamp FD 251).ai' }, { file: 'E CUT 9 - STAND MEDAL BASE B.ai' },
-    { file: 'E TROFI H25-1, YK 628, YK 610.ai' }, { file: 'E TROFI 13228 B.ai' }],
+    { file: 'E TROFI H25-1, YK 628, YK 610.ai' }, { file: 'E TROFI 13228 B.ai' }, { file: 'E TROFI SR-116 A.ai' },
+    { file: 'E TROFI W038 A.ai' }],
 };
 const box = (t, b) => ({ box: [-70, t, 70, b], justify: 'center', color: '#000000' });
 const tpl = { anchor: [167, 71], fields: { event_header: box(20, 12), position: box(10, -8), RANK_YELLOW: { ...box(10, -8), color: '#d4a017' }, event_line_1: box(-10, -18) } };
@@ -16,6 +17,11 @@ describe('plakPreview — the same .ai and layout group as SEAN.jsx', () => {
     expect(fileForCode('MP393 / GOLD / BASE B', manifest)).toBe('E CUT 9 - STAND MEDAL BASE B.ai');
     expect(fileForCode('13228 (B)', manifest)).toBe('E TROFI 13228 B.ai');
     expect(fileForCode('VB / C / RED', manifest)).toBeNull();
+    // a trophy's colour isn't part of its .ai (2026-11-02)
+    expect(fileForCode('SR-116 A / BLUE', manifest)).toBe('E TROFI SR-116 A.ai');
+    expect(fileForCode('W038 / A / GOLD', manifest)).toBe('E TROFI W038 A.ai');
+    expect(withoutColour('MP 399 / GOLD / BASE WITHOUT COVER')).toBe('MP 399 / BASE WITHOUT COVER');
+    expect(withoutColour('SR-116 A / BLUE')).toBe('SR-116 A');
   });
 
   it('names the layout group by the filled lines and falls back to the closest one', () => {

@@ -4,6 +4,7 @@ import Nav from '../components/Nav';
 import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import PriceTable from '../components/PriceTable';
+import PlakPreview from '../components/PlakPreview';
 import DatePicker from '../components/DatePicker';
 import { useAppState } from '../state/useAppState';
 import { statusPillStyle, formatDate, standardUnitPrice, toMalaysiaDay, malaysiaToday, isReviewed, invoiceLabel, invoiceSetByNote } from '../data/catalog';
@@ -554,6 +555,7 @@ export default function StoreAdminOrderDetail() {
                   plakCatalog={state.plakCatalog} totalQty={totalQty} totalHarga={totalHarga} priceAdjusted={priceAdjusted}
                   hideCategory combineJenisPlak
                 />
+                <PlakPreview order={order} />
                 {/* SELEMPANG's rows (ACARA / WARNA / QTY) also show right here on the
                     Summary — the only category that does (Sean); every category's full
                     details stay on the Order Details tab. */}
@@ -653,6 +655,7 @@ export default function StoreAdminOrderDetail() {
                   plakCatalog={state.plakCatalog} totalQty={totalQty} totalHarga={totalHarga} priceAdjusted={priceAdjusted}
                   hideCategory combineJenisPlak
                 />
+                <PlakPreview order={order} />
                 {/* SELEMPANG's rows (ACARA / WARNA / QTY) also show right here on the
                     Summary — the only category that does (Sean); every category's full
                     details stay on the Order Details tab. */}
