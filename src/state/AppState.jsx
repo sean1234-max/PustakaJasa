@@ -42,7 +42,7 @@ import { isUrgentShipment, urgentSheetAction, SHIPMENT_EDITABLE_STATUSES } from 
 import { fetchCustomTypoWords } from '../lib/typoWordsApi';
 import { setCustomTypoWords } from '../utils/typoCheck';
 import { normalizeSplitQty, stockDiff, applyPriceDrafts, withOrderOwnSettings, invoiceGroupStatus } from '../utils/orderBatches';
-import { needsKiv, kivParts, hasPlakPart, kivInProduction, crystalWithPlak, isCrystalCode, countReservedPlaques } from '../utils/exportCsv';
+import { needsKiv, kivParts, hasPlakPart, kivInProduction, crystalWithPlak, isCrystalCode } from '../utils/exportCsv';
 import { kivOnlyGroupsDone } from '../utils/productionCards';
 
 // Malaysia's "today" (catalog.js's malaysiaToday — the project always runs
@@ -2988,13 +2988,9 @@ export function AppStateProvider({ children }) {
       flashProductionToast('This order has nothing waiting in KIV & ARTWORK.');
       return;
     }
-    // every KIV & ARTWORK card has DONE (Sean, 2026-10-28): the Reserved names must be filled first;
-    // crystal artwork not confirmed yet is confirmed by this DONE (the database stamps who and when)
-    const reserved = countReservedPlaques(order);
-    if (reserved > 0) {
-      flashProductionToast(`Fill in the ${reserved} Reserved name(s) first — then DONE.`);
-      return;
-    }
+    // every KIV & ARTWORK card has DONE (Sean, 2026-10-28), SHORT SUPPLY too with Reserved names
+    // still unfilled (Sean, 2026-11-02); crystal artwork not confirmed yet is confirmed by this DONE
+    // (the database stamps who and when)
     const confirmsArtwork = kivParts(order).includes('CRYSTAL') && !order.artworkConfirmedAt;
     const kivDoneAt = new Date().toISOString();
     try {

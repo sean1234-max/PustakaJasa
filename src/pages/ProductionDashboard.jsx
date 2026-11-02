@@ -401,13 +401,13 @@ export default function ProductionDashboard() {
                     <button type="button" className="btn btn-ghost" style={{ flex: 1 }} onClick={() => navigate(`/production/orders/${ord.id}${parts.includes('CRYSTAL') && ord.artworkConfirmedAt && reserved === 0 ? '?part=kiv' : '?kiv=1'}`)}>
                       View Order
                     </button>
-                    {/* DONE on every KIV & ARTWORK card (Sean, 2026-10-28): not until the Reserved names are
-                        filled; an artwork not confirmed yet is confirmed by it */}
+                    {/* DONE on every KIV & ARTWORK card (Sean, 2026-10-28), SHORT SUPPLY too even before the
+                        Reserved names are filled (Sean, 2026-11-02); an artwork not confirmed yet is confirmed by it */}
                     <ConfirmButton
                       label="Done" style={{ flex: 1 }}
-                      disabled={countReservedPlaques(ord._order || ord) > 0}
-                      title={countReservedPlaques(ord._order || ord) > 0 ? 'Fill in the Reserved names first' : undefined}
-                      question={parts.includes('CRYSTAL') && !ord.artworkConfirmedAt
+                      question={countReservedPlaques(ord._order || ord) > 0
+                        ? `${countReservedPlaques(ord._order || ord)} Reserved name(s) not filled yet — DONE anyway? It moves to In Production.`
+                        : parts.includes('CRYSTAL') && !ord.artworkConfirmedAt
                         ? 'The crystal artwork is not confirmed yet — DONE marks it Artwork Confirmed and moves it to In Production.'
                         : kivManualCrystal(ord) ? 'Designer finished the artwork? It moves to In Production.' : 'Done? It moves to In Production.'}
                       onConfirm={() => markKivDone(ord.id)}
