@@ -202,9 +202,32 @@ function unionFind(n) {
   return { find, join: (i, j) => { p[find(i)] = find(j); } };
 }
 
+// a row of a repeating background pattern, not letters: the same shapes again and again in the same
+// order (a flower of one shape, or of several — petals, a dot — repeated), at least 3 times.
+// Letters differ in width (I, M, O) and don't come back in a cycle like that.
+function repeating(items) {
+  const n = items.length;
+  if (n < 6) return false; // a pattern runs on (a short word's letters can be nearly alike)
+  const W = (it) => it.x1 - it.x0, H = (it) => it.y1 - it.y0;
+  for (let p = 1; p <= 8 && n >= 3 * p; p++) {
+    // one shape over and over: closer alike than letters of one width (N, U, H …) ever are
+    const tol = p === 1 ? 0.04 : 0.1;
+    const same = (a, b) => Math.abs(W(a) - W(b)) <= Math.max(W(a), W(b)) * tol + 0.05 && Math.abs(H(a) - H(b)) <= Math.max(H(a), H(b)) * tol + 0.05;
+    let ok = 0;
+    for (let k = 0; k + p < n; k++) if (same(items[k], items[k + p])) ok++;
+    if (ok < (n - p) * 0.9) continue;
+    // and the same distance from one repeat to the next
+    const steps = [];
+    for (let k = 0; k + p < n; k += p) steps.push(items[k + p].x0 - items[k].x0);
+    if (steps.every((d) => d > 0) && Math.max(...steps) <= Math.min(...steps) * 1.12 + 0.05) return true;
+  }
+  return false;
+}
+
 // Elements of the design inside region R ({ x, y, w, h } in pt, page top-left), bottom to top:
 // [{ kind, x0, y0, x1, y1, ops, blend }]
-export function findElements(all, R) {
+// tiles: false — the old way, a row of a repeating pattern taken for letters (see library.js autoClean)
+export function findElements(all, R, { tiles = true } = {}) {
   const A = R.w * R.h;
   const its = [];
   for (const it of all) {
@@ -236,7 +259,8 @@ export function findElements(all, R) {
     const med = r.items.map((it) => it.y1 - it.y0).sort((a, b) => a - b)[n >> 1];
     let fwd = 0;
     for (let k = 1; k < n; k++) if (r.items[k].x0 >= r.items[k - 1].x0 - 0.3 * med) fwd++;
-    const text = n >= 3 && r.items.every((it) => it.path) && w >= 1.8 * h && med >= 0.3 * h && fwd >= 0.7 * (n - 1) && area(r) < A * 0.25;
+    const text = n >= 3 && r.items.every((it) => it.path) && w >= 1.8 * h && med >= 0.3 * h && fwd >= 0.7 * (n - 1) && area(r) < A * 0.25 &&
+      !(tiles && repeating(r.items));
     r.cls = text ? "text" : "art";
     r.small = !text && area(r) < A * 0.004;
   }

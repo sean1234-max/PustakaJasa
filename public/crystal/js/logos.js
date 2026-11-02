@@ -23,22 +23,45 @@ export function schoolKey(name) {
 }
 const WORDS = { TMN: "TAMAN", SRI: "SERI", KG: "KAMPUNG", KPG: "KAMPUNG", BDR: "BANDAR", JLN: "JALAN", BKT: "BUKIT", SG: "SUNGAI", SGI: "SUNGAI", PDG: "PADANG", LDG: "LADANG", BT: "BATU" };
 
-// the kept logo for a school, or null: the same name, else nearly (most of the words the same)
-export function logoFor(school, list) {
+// the kept logo for a school, or null: the same name, else a similar one — at least 3 words the
+// same, and every word of the shorter name that says which school it is (not SK, SEKOLAH …) in the
+// longer one: a logo named with more words after it ("SK GOMBAK UTARA SELANGOR 2024" for
+// "SK GOMBAK UTARA") is found, another school with some of the same words ("SK TAMAN SERI GOMBAK"
+// for "SK TAMAN SERI PAGI", "SMK GOMBAK UTARA" for "SK GOMBAK UTARA") isn't.
+// school: only logos named like a school (a school word in it) when not the same name
+// Several fit (an old logo and a new one added for the same school, named a little differently):
+// the newest one, so a school's logo can be changed just by adding its new one.
+export function logoFor(school, list, { school: needSchool = false } = {}) {
   const key = schoolKey(school);
   if (!key || !Array.isArray(list) || !list.length) return null;
-  const exact = list.find((x) => schoolKey(x.name) === key);
-  if (exact) return exact;
-  const words = new Set(key.split(" "));
+  const mine = key.split(" ");
   let best = null;
   for (const x of list) {
-    const other = new Set(schoolKey(x.name).split(" ").filter(Boolean));
-    if (!other.size) continue;
-    const same = [...other].filter((w) => words.has(w)).length;
-    const score = same / Math.max(words.size, other.size);
-    if (score >= 0.75 && (!best || score > best.score)) best = { x, score };
+    const k = schoolKey(x.name), theirs = k.split(" ").filter(Boolean);
+    if (!theirs.length) continue;
+    if (k !== key && (needSchool && !theirs.some(isSchoolWord) || !similarSchool(mine, theirs))) continue;
+    if (!best || addedAt(x) > addedAt(best)) best = x;
   }
-  return best ? best.x : null;
+  return best;
+}
+// when a logo was added (its id starts with the time: see libitem.js newId), 0 when unknown
+const addedAt = (x) => { const t = parseInt(String((x && x.id) || "").split("-")[0], 36); return t > 1e12 && t < 1e13 ? t : 0; };
+// what says only the kind of school, not which one
+const KIND = new Set(["SK", "SJK", "SJKC", "SJKT", "SMK", "SMJK", "SMKA", "SM", "SR", "SRA", "SBP", "MRSM", "SMA", "SABK", "SAM", "KV",
+  "SEKOLAH", "KEBANGSAAN", "MENENGAH", "RENDAH", "JENIS", "AGAMA", "CINA", "TAMIL", "SEK", "KEB"]);
+const isSchoolWord = (w) => KIND.has(w) || SCHOOL_WORD.test(w) || /^(MSSD|MSS|MSSN)$/.test(w);
+// two schools' names (as words) -> { same, extra } when they're the same school, else null
+function similarSchool(a, b) {
+  const A = new Set(a), B = new Set(b);
+  const same = [...A].filter((w) => B.has(w)).length;
+  if (same < 3) return null;
+  // a different kind of school (SK / SMK …) isn't the same school
+  const ka = a.filter((w) => KIND.has(w) && w.length <= 5), kb = b.filter((w) => KIND.has(w) && w.length <= 5);
+  if (ka.length && kb.length && !ka.some((w) => kb.includes(w))) return null;
+  const [short, long] = A.size <= B.size ? [A, B] : [B, A];
+  const core = [...short].filter((w) => !KIND.has(w));
+  if (!core.length || !core.every((w) => long.has(w))) return null;
+  return { same, extra: long.size - same };
 }
 
 // a picture (a web address or a data URL) as a data URL, so it can go into downloads and
@@ -65,6 +88,9 @@ export function logoInText(text, list) {
   for (const x of Array.isArray(list) ? list : []) {
     const k = schoolKey(x.name), ws = k.split(" ");
     if (k.length < 5) continue;
+    // only a school's logo (its name has a school word: SK, SMK, SJKC, SEKOLAH …): a logo named after
+    // some event or words ("HARI ANUGERAH KECEMERLANG MURID") mustn't be taken for the crystal's words
+    if (!ws.some((w) => SCHOOL_WORD.test(w) || /^(MSSD|MSS|MSSN)$/.test(w))) continue;
     if (!t.includes(" " + k + " ") && !(ws.length >= 3 && ws.every((w) => have.has(w)))) continue;
     if (!best || k.length > best.k.length) best = { x, k };
   }
@@ -84,7 +110,11 @@ const keptPicture = (x) => {
 export function logoPicker({ logo, school }, list) {
   const own = toDataUrl(logo);
   const bySchool = logoFor(school, list);
-  const inWords = (r) => logoInText(r.event_header || "", list) ||
+  // no school with the order: the logo named exactly like the crystal's header's first line (what
+  // the preview's "Add the school's logo" names it then)
+  // (or a similar name, for a logo named like a school: see logoFor)
+  const byHeader = (r) => logoFor(String(r.event_header || "").split("\n")[0], list, { school: true });
+  const inWords = (r) => byHeader(r) || logoInText(r.event_header || "", list) ||
     logoInText(Object.values(r).filter((v) => typeof v === "string").join(" \n "), list);
   const pick = async (row) => {
     const o = await own;
@@ -105,10 +135,14 @@ export function logoPicker({ logo, school }, list) {
 // different names only when nearly the same picture pixel for pixel (crests can look alike that small).
 // Shapes that aren't logos (crop marks, thin lines and frames: almost no ink in their box) are left out.
 // list: [{ data | src, name, ...anything }] -> the same, without the doubles; how many went; how many weren't logos
-export async function withoutDoubles(list) {
+// progress(n, total) as it goes; stop(): true to stop looking (the rest are kept as they are)
+export async function withoutDoubles(list, { progress, stop } = {}) {
   // one picture at a time: hundreds decoded at once would run out of memory
   const prints = [];
-  for (const x of list) prints.push(await fingerprint(x.data || x.src).catch(() => null));
+  for (const [i, x] of list.entries()) {
+    prints.push(stop && stop() ? null : await printOf(x.data || x.src).catch(() => null));
+    if (progress && (i % 10 === 9 || i === list.length - 1)) progress(i + 1, list.length);
+  }
   const keep = [];
   let junk = 0;
   list.forEach((x, i) => {
@@ -129,6 +163,13 @@ export async function withoutDoubles(list) {
 }
 // a name to compare logos by: the school's, without "LOGO", "COPY", "FINAL" …
 const nameKey = (name) => schoolKey(name).split(" ").filter((w) => w && !/^(LOGO|LOGOS|COPY|FINAL|NEW|PNG|JPG|AI)$/.test(w)).join(" ");
+// a kept logo's fingerprint, worked out once (its picture fetched once) while this page is open
+const prints = new Map();
+const printOf = (src) => {
+  if (typeof src !== "string" || src.startsWith("data:")) return fingerprint(src);
+  if (!prints.has(src)) prints.set(src, fingerprint(src).catch((e) => { prints.delete(src); throw e; }));
+  return prints.get(src);
+};
 async function fingerprint(src) {
   const img = await new Promise((res, rej) => { const i = new Image(); i.crossOrigin = "anonymous"; i.onload = () => res(i); i.onerror = rej; i.src = src; });
   const c = document.createElement("canvas");

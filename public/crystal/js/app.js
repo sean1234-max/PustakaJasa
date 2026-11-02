@@ -15,7 +15,7 @@ import * as editor from "./editor.js";
 import { store, fileUrl, whoAmI, isStaff } from "./store.js";
 import { illustratorWindow } from "./to-illustrator.js";
 import { vectorJob } from "./vector-job.js";
-import { templateFor, sources as jenisSources, contentKey, orderDesignId } from "./jenis.js";
+import { templateFor, sources as jenisSources, contentKey, orderDesignId, excelStamp } from "./jenis.js";
 import { draftCustom, saveDraftCustom } from "./draft.js";
 
 const PRINT_DPI = 300;
@@ -33,7 +33,7 @@ const sampleRows = () => [
 ];
 
 // shown at the bottom of the page: which Crystal Studio this browser has (after a change goes online)
-const VERSION = "2026-10-16c";
+const VERSION = "2026-10-28j";
 document.getElementById("ver").textContent = "Crystal Studio " + VERSION;
 
 const S = {
@@ -165,7 +165,7 @@ function renderElements() {
   const it0 = itemOf(S.key);
   if (it0 && it0.source === "pdf" && pickLogo.which && !pickLogo.which(rw)) {
     const sch = String((S.logoFrom && S.logoFrom.school) || "").trim() || String(rw.event_header || "").split("\n")[0].trim();
-    noLogo = `<span class="warn">⚠ Can't show the school logo${sch ? ` for “${esc(sch)}”` : ""}: no logo with that school's name in School logos (add it, named exactly like this).</span>`;
+    noLogo = `<span class="warn">⚠ Can't show the school logo${sch ? ` for “${esc(sch)}”` : ""}: no logo with that school's name in School logos (add it with this name, or one with the same words and more after them).</span>`;
   }
   $("meta").innerHTML = [row().qty ? `Qty <b>${esc(row().qty)}</b>` : "", noLogo].filter(Boolean).join(" · ");
     const texts = editor.objects().filter((o) => editor.isText(o));
@@ -701,9 +701,11 @@ $("eraseBtn").onclick = () => {
 $("restoreBg").onclick = async () => {
   const it = itemOf(S.key);
   if (!it || !it.original) return toast("Pick a crystal design (.ai) first.", "bad");
-  if (!(it.hide || []).length) return toast("Nothing has been taken out of this design.");
+  // (the designs next to it reaching into its box stay out: they're not this design's — see library.js othersIn)
+  const others = it.others || [];
+  if ((it.hide || []).length <= others.length) return toast("Nothing has been taken out of this design.");
   if (!await ask(`Put back everything taken out of “${it.name}” (the logo too)?`)) return;
-  await saveBackground(it, [], "Everything is back. Use Remove from background to take things out again.");
+  await saveBackground(it, others, "Everything is back. Use Remove from background to take things out again.");
 };
 
 // ------------------------------------------------------------------ Excel
@@ -1026,9 +1028,19 @@ $("saveBtn").onclick = saveDesign;
 // opened from an order on the website: the crystals changed here can be kept for that order only
 // (the website's preview then shows them; every other order keeps the default template). They're
 // kept by what each crystal says (jenis plak + words) as it came from the website.
+// a short code for an Excel stamp (to tell two apart at a glance)
+const excelCode = (t) => { let h = 0; for (const c of String(t)) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h.toString(36).slice(-4).toUpperCase(); };
 async function orderCustom() {
   if (S.draft) return draftCustom(); // an order not submitted yet (draft.js)
-  try { const d = await store.loadDesign(orderDesignId(S.order)); return (d && d.data && d.data.custom) || {}; } catch (e) { return {}; }
+  // the order website's preview showed none changed for this order (e.g. reset by a new Excel):
+  // the saved ones aren't this order's any more, whatever is still in the database
+  if (S.noOwn) return {};
+  // (saved with another Excel than the order's now: not this order's any more)
+  try {
+    const d = await store.loadDesign(orderDesignId(S.order)), data = (d && d.data) || {};
+    // (ours: one saved before Excels were kept with them counts as this Excel's — see preview.js)
+    return S.excel && data.excel !== undefined && data.excel !== S.excel ? {} : data.custom || {};
+  } catch (e) { return {}; }
 }
 $("saveOrder").onclick = async () => {
   if (!S.order && !S.draft) return;
@@ -1058,12 +1070,13 @@ $("saveOrder").onclick = async () => {
     return;
   }
   try {
-    await store.saveDesign({ id: orderDesignId(S.order), name: `Order ${S.order} — its own crystals`, data: { order: S.order, custom } });
+    await store.saveDesign({ id: orderDesignId(S.order), name: `Order ${S.order} — its own crystals`, data: { order: S.order, custom, ...(S.excel ? { excel: S.excel } : {}) } });
     S.dirty = false;
     // the teacher checked and saved this order's crystals: that confirms its artwork (Production's
     // own saves don't, nor the salesman's — he still presses Confirm Artwork, Sean 2026-10-22).
     // Not allowed once the order is past In Production — the design still counts.
     if (myRole === "teacher") await store.confirmArtwork(S.order).catch((e) => console.warn("Artwork not marked confirmed:", e.message));
+    S.noOwn = false; // saved now: these are the order's own
     toast(n ? `Saved ${n} crystal${n === 1 ? "" : "s"} for order ${S.order} only. Back to the website…`
       : `Order ${S.order} uses the default template again. Back to the website…`);
     // back to the order on the website (this tab was opened by its ✎ Edit; its preview already shows it)
@@ -1210,7 +1223,10 @@ async function importLogoFiles(all) {
       renderLogos();
       done++;
     }
+    // not looked through for repeats (asked for: old ones are found with the search and deleted by
+    // hand; Remove repeats does it on request)
     logoBar(files.length, files.length);
+    const dropped = 0, junk = 0;
     // the new ones without a name: their school's name read from the picture, to check
     let read = 0;
     if (fresh.some((x) => !x.name)) { try { read = await readNames(fresh); } catch (e) {} renderLogos(); }
@@ -1224,12 +1240,17 @@ async function importLogoFiles(all) {
 }
 // the logos being changed plus new ones: repeats (also under another name) once, the biggest copy,
 // and shapes that aren't logos out; new ones first, to check them. -> { dropped, junk }
-async function tidyLogos(fresh = []) {
-  const all = [...fresh, ...logoEdit.list].map((x) => ({ ...x, src: x.data ? undefined : fileUrl(x.file) }));
-  const { list, dropped, junk } = await withoutDoubles(all);
-  for (const x of logoEdit.list) if (x.file && !list.some((k) => k.file === x.file)) logoEdit.drop.push(x.file);
+// New ones (fresh): checked among themselves and against the kept logos of the same school only —
+// not all of them (a thousand pictures fetched one by one took many minutes); Remove repeats checks all.
+async function tidyLogos(fresh = [], opts = {}) {
+  const keys = new Set(fresh.map((x) => schoolKey(x.name)).filter(Boolean));
+  const near = fresh.length ? logoEdit.list.filter((x) => keys.has(schoolKey(x.name))) : logoEdit.list;
+  const rest = fresh.length ? logoEdit.list.filter((x) => !near.includes(x)) : [];
+  const all = [...fresh, ...near].map((x) => ({ ...x, src: x.data ? undefined : fileUrl(x.file) }));
+  const { list, dropped, junk } = await withoutDoubles(all, opts);
+  for (const x of near) if (x.file && !list.some((k) => k.file === x.file)) logoEdit.drop.push(x.file);
   const back = list.map(({ src, gone: g, junk: j, ...x }) => x);
-  logoEdit.list = back;
+  logoEdit.list = [...back, ...rest];
   // the new ones as they are in the list (same objects), for the caller to count
   fresh.splice(0, fresh.length, ...back.filter((x) => x.data && !x.file));
   return { dropped, junk };
@@ -1339,7 +1360,11 @@ $("logosSplit").onclick = async () => {
 };
 $("logosTidy").onclick = async () => {
   logoStatus(`Looking for repeated logos among ${logoEdit.list.length}…`);
-  const { dropped, junk } = await tidyLogos();
+  $("logosTidy").disabled = true;
+  let r;
+  try { r = await tidyLogos([], { progress: (n, all) => { logoStatus(`Looking for repeated logos… ${n} of ${all}`); logoBar(n, all); } }); }
+  finally { $("logosTidy").disabled = false; logoBar(0, 0); }
+  const { dropped, junk } = r;
   renderLogos();
   logoStatus(dropped || junk ? `${dropped} repeat${dropped === 1 ? "" : "s"} and ${junk} shape${junk === 1 ? "" : "s"} that aren't logos removed (the biggest copy kept). Check, then Save.` : "No repeated logos found.");
 };
@@ -1447,6 +1472,8 @@ window.addEventListener("beforeunload", (e) => { if (S.dirty) { e.preventDefault
     S.order = opened.order != null && opened.order !== "" ? String(opened.order) : null;
     S.draft = !S.order && opened.draft === true; // from the Cart, before the order is submitted
     S.logoFrom = { logo: opened.logo, school: opened.school };
+    S.excel = excelStamp(opened.excel);
+    S.noOwn = opened.own === false;
     // not Production / Admin (a teacher from their order page): this order's crystals only — their
     // look and place, not their words (Sean, 2026-10-14: words change through Edit Order, so the
     // order and its crystals never differ) — no Illustrator, no Admin
@@ -1456,7 +1483,11 @@ window.addEventListener("beforeunload", (e) => { if (S.dirty) { e.preventDefault
       $("backToOrder").before($("saveOrder")); // the Excel panel is hidden: Save goes up top
     }
     S.origKeys = S.rows.map(contentKey);
-    $("srcHint").textContent = `${S.sourceName} · ${S.rows.length} row${S.rows.length === 1 ? "" : "s"} from the order website`;
+    $("srcHint").textContent = `${S.sourceName} · ${S.rows.length} row${S.rows.length === 1 ? "" : "s"} from the order website` +
+      // which Excel the website said the rows come from (a short code that changes with each new Excel), so a
+      // new upload can be seen to have arrived; none: the website is an older copy and can't reset the edits
+      (S.excel ? ` · Excel #${excelCode(S.excel)}` : " · ⚠ the order website didn't say which Excel (update it)") +
+      (S.noOwn ? " · default templates (nothing changed for this order)" : "");
   }
   if (!unlocked && !S.order && !S.draft) {
     editor.showEmpty("Open the crystals from your order's page on the order website (Crystal Preview → ✎ Edit).");

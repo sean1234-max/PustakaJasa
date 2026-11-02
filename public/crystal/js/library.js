@@ -50,8 +50,22 @@ const filled = (v) => v != null && String(v).trim() !== "";
 // what a text linked to this column shows for this row
 export function fieldValue(row, field) {
   if (!row || !field) return "";
+  // the position: each word with a capital first ("PENGAWAS PUSAT SUMBER" -> "Pengawas Pusat Sumber"),
+  // on the crystal and in Illustrator; the Excel stays as it is
+  if (field === "position") return filled(row[field]) ? titleWords(String(row[field])) : "";
   if (field !== "event_line_1") return filled(row[field]) ? String(row[field]) : "";
   return ["event_line_1", ...MORE_LINES].filter((f) => filled(row[f])).map((f) => String(row[f])).join("\n");
+}
+
+// Each word with a capital first, the rest small — except short forms kept in capitals: a word with
+// no vowel (PRS, SPM), with a figure (5A, PT3, 2026), a Roman numeral (II, IV), in brackets ((ASPA))
+// or a usual school short form (UPSR, PPKI, PIBG …); parts joined by - or / each on their own
+const KEEP_CAPS = new Set(["UPSR", "PPKI", "PIBG", "UASA", "PAFA", "SEGAK", "MSSD", "MSSM", "MSSN", "SK", "SMK", "SJK", "SJKC", "SJKT",
+  "KAFA", "PASTI", "KRS", "PBD", "PAJSK", "STEM", "TVET", "JQAF", "NILAM", "LINUS", "PDPC", "ICT", "PERKESO", "UPKK", "PSV", "PJK"]);
+export function titleWords(text) {
+  const one = (p) => (!p || /\d/.test(p) || KEEP_CAPS.has(p.toUpperCase()) || /^[IVXLC]+$/.test(p) && p.length <= 4 ||
+    !/[AEIOUaeiou]/.test(p) ? p : p.charAt(0).toUpperCase() + p.slice(1).toLowerCase());
+  return String(text).replace(/[^\s]+/g, (w) => (/^\(.*\)?$/.test(w) ? w : w.split(/(-|\/)/).map(one).join("")));
 }
 
 // a text linked to this column was typed in: put its words back in the row's cells
@@ -152,13 +166,15 @@ export function guessLayout(item) {
 
 // how much bigger than its saved size a short text may get: not at all
 const GROW = 1; // never bigger than saved (asked for: no auto zoom); long words still shrink
+// …except a text with fewer lines than saved: it may fill the room its missing lines leave, this much
+const FEWER_GROW = 1.3;
 
 // the 3 master texts for one Excel row on this design. Each shrinks to fit: as wide as the design
 // allows, and no taller than the room down to the next text (the last one: to near the bottom).
 async function masterTexts(item, row) {
   const guess = guessLayout(item), saved = item.layout || {};
   const tops = MASTER_FIELDS.map((f) => (saved[f] ? saved[f].top : guess[f].top));
-  const texts = [];
+  const texts = [], stack = [];
   for (const [i, f] of MASTER_FIELDS.entries()) {
     let text = fieldValue(row, f);
     if (!text.trim()) continue;
@@ -191,15 +207,18 @@ async function masterTexts(item, row) {
     const sw = savedWidth > 0 ? savedWidth : s && s.w > 0 ? s.w : 0;
     const sizeOf = (t) => {
       const lines = t.split("\n").length;
+      // fewer lines than saved (TOKOH MURID where PENGAWAS / PUSAT SUMBER / SEKOLAH was): the room
+      // those lines took is free, so it may grow a little to fill the saved width (FEWER_GROW at most)
+      const up = sw && lines < (s.lines || 1) ? base * FEWER_GROW : grow;
       // more lines than saved (a long text on two lines, the name with event_line_2): each as big as
       // the room down to the next text allows, never bigger than saved
-      const tall = Math.min(grow, room > 0 ? room / (lines * lh) : grow);
+      const tall = Math.min(up, room > 0 ? (room + (up > grow ? (s.lines - lines) * base * lh : 0)) / (lines * lh) : up);
       const fit = (from, w) => fitSize(t, css, from, look.charSpacing || 0, look.scaleX || 1, w, 4);
       let size;
       if (!sw) size = fit(grow, maxW);
       else {
         const atBase = fit(base, maxW);
-        size = atBase < base ? atBase : Math.max(base, fit(grow, Math.min(maxW, sw + 0.5)));
+        size = atBase < base ? atBase : Math.max(base, fit(up, Math.min(maxW, sw + 0.5)));
       }
       // never smaller than saved for lack of room: the saved place was chosen by hand
       return Math.max(4, Math.min(size, sw && lines <= (s.lines || 1) ? Math.max(tall, base) : tall));
@@ -225,6 +244,8 @@ async function masterTexts(item, row) {
     const extra = f === "event_line_1" ? text.split("\n").length - String(row.event_line_1 || "").split("\n").length : 0;
     if (extra > 0) top -= (extra * size * (look.lineHeight || 1) * 1.13) / 2;
     const real = css.startsWith("ps_");
+    // for laying the texts out together (restack): where and how tall it was on the template, how tall now
+    stack.push({ i: texts.length, tplTop: s ? s.top : g.top, tplH: (s ? s.lines || 1 : 1) * base * lh, h: text.split("\n").length * size * lh });
     texts.push({
       ...look, text, css, field: f, src: "m:" + f, tplText: null, top, fontSize: size, maxW,
       left: s ? s.left : g.cx, originX: s ? s.originX : "center", textAlign: s ? s.textAlign : "center",
@@ -232,10 +253,31 @@ async function masterTexts(item, row) {
       fontWeight: !real && look.bold ? "bold" : "normal", fontStyle: !real && look.italic ? "italic" : "normal",
     });
   }
+  restack(texts, stack, item.height);
   return texts;
 }
 
-// ------------------------------------------------------------------ scene for one Excel row
+// The texts laid out together: when this row's words take more or fewer lines than the template's
+// (TOKOH MURID on one line where PENGAWAS / PUSAT SUMBER / SEKOLAH took three), the gaps between the
+// texts stay as on the template and the whole group stays centred where the template's was — no big
+// hole under a short text, no long one running into the next. Rows the same height as the template
+// keep their saved places exactly.
+function restack(texts, stack, H) {
+  if (stack.length < 2) return;
+  stack.sort((a, b) => a.tplTop - b.tplTop);
+  if (stack.every((x) => Math.abs(x.h - x.tplH) < H * 0.01)) return;
+  const gaps = stack.slice(1).map((x, k) => Math.max(0, x.tplTop - (stack[k].tplTop + stack[k].tplH)));
+  const last = stack[stack.length - 1];
+  const centre = (stack[0].tplTop + last.tplTop + last.tplH) / 2;
+  const total = stack.reduce((n, x) => n + x.h, 0) + gaps.reduce((n, g) => n + g, 0);
+  // centred, but kept on the crystal (a little in from its top and bottom)
+  // (and not up into what's above the first text, the school's logo: a taller group goes down instead)
+  let y = Math.max(H * 0.03, stack[0].tplTop - H * 0.03, Math.min(centre - total / 2, H * 0.95 - total));
+  stack.forEach((x, k) => {
+    texts[x.i].top = y;
+    y += x.h + (gaps[k] || 0);
+  });
+}
 
 export async function libraryScene(item, row, columns) {
   // SVG Data handling (Inkscape converted artwork)
@@ -302,8 +344,19 @@ class CanvasFactory {
 // and corners sit at the sides, the background behind it is far bigger. Small pieces right under
 // it (the school's name) go with it.
 // r: the design's box on the page (pt) -> { hide: [step], outlined: [{ l, t, r, b }] (pt, design) }
-function logoAndWords(plan, r) {
-  const els = findElements(plan.items, { x: r.x, y: r.y, w: r.w, h: r.h });
+// the page's live words (not outlined), as boxes (pt, page top-left): their white glows go too
+async function liveWords(page) {
+  try {
+    const vp = page.getViewport({ scale: 1 }), tc = await page.getTextContent();
+    return tc.items.filter((t) => t.str && t.str.trim() && t.width > 0).map((t) => {
+      const m = pdfjsLib.Util.transform(vp.transform, t.transform), size = Math.hypot(m[2], m[3]) || t.height || 1;
+      return { x0: m[4], x1: m[4] + t.width, y0: m[5] - size, y1: m[5] + size * 0.2 };
+    });
+  } catch (e) { return []; }
+}
+
+function logoAndWords(plan, r, opts) {
+  const els = findElements(plan.items, { x: r.x, y: r.y, w: r.w, h: r.h }, opts);
   const cx = (e) => (e.x0 + e.x1) / 2 - r.x, cy = (e) => (e.y0 + e.y1) / 2 - r.y;
   const w = (e) => e.x1 - e.x0, h = (e) => e.y1 - e.y0;
   const pieces = els.filter((e) => e.kind === "graphic" || e.kind === "art" || e.kind === "text");
@@ -343,6 +396,44 @@ function logoAndWords(plan, r) {
     return (ink || all[0] || [null])[0];
   };
   for (const e of words) drop.add(e);
+  // the white glow behind each old word (a soft white shape or picture, so the words stand out from a
+  // pattern): taken out with its word — left alone it's a white blank where the word was
+  const glow = [];
+  const taken = new Set([...drop].flatMap((e) => e.ops));
+  const whiteish = (c) => { const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(c || ""); return !!m && m.slice(1).every((v) => parseInt(v, 16) >= 0xe6); };
+  const live = ((opts && opts.live) || []).filter((b) => b.x0 >= r.x - 1 && b.x1 <= r.x + r.w + 1 && b.y0 >= r.y - 1 && b.y1 <= r.y + r.h + 1);
+  for (const e of [...words, ...live]) {
+    const ew = w(e), eh = h(e), pad = Math.max(eh, ew * 0.15);
+    for (const it of plan.items) {
+      if (taken.has(it.op) || it.stroke || (it.path && !whiteish(it.color))) continue;
+      // around the word: covers (nearly) all of it, and not much more than a margin round it
+      const ow = Math.min(it.x1, e.x1) - Math.max(it.x0, e.x0), oh = Math.min(it.y1, e.y1) - Math.max(it.y0, e.y0);
+      if (ow <= 0 || oh <= 0 || ow * oh < 0.8 * ew * eh) continue;
+      // a soft glow (a picture) may reach a bit further; a white shape only as a close outline round the
+      // letters — a white box or panel with room round the words (a name's frame) is the design's own
+      const m = it.path ? eh * 0.35 : pad;
+      if (it.x0 < e.x0 - m || it.x1 > e.x1 + m || it.y0 < e.y0 - m || it.y1 > e.y1 + m) continue;
+      glow.push(it.op);
+      taken.add(it.op);
+    }
+  }
+  // one soft glow picture behind all the old words together (not one per word): a picture with at
+  // least one old word on it, within the old words' box (and a margin), not the whole design
+  const all = [...words, ...live];
+  if (all.length) {
+    const pad = Math.max(...all.map((e) => h(e)));
+    const box = { x0: Math.min(...all.map((e) => e.x0)) - pad, y0: Math.min(...all.map((e) => e.y0)) - pad,
+      x1: Math.max(...all.map((e) => e.x1)) + pad, y1: Math.max(...all.map((e) => e.y1)) + pad };
+    for (const it of plan.items) {
+      if (taken.has(it.op) || it.path || it.stroke) continue;
+      if (it.x0 < box.x0 || it.x1 > box.x1 || it.y0 < box.y0 || it.y1 > box.y1) continue;
+      if ((it.x1 - it.x0) * (it.y1 - it.y0) > r.w * r.h * 0.7) continue;
+      const onIt = all.some((e) => e.x0 >= it.x0 - 1 && e.x1 <= it.x1 + 1 && e.y0 >= it.y0 - 1 && e.y1 <= it.y1 + 1);
+      if (!onIt) continue;
+      glow.push(it.op);
+      taken.add(it.op);
+    }
+  }
   // where the logo was (pt, design): the school's own logo goes there (see logoPlace)
   const marks = [logo, pic].filter(Boolean);
   const logoBox = marks.length ? {
@@ -350,7 +441,8 @@ function logoAndWords(plan, r) {
     r: Math.max(...marks.map((e) => e.x1)) - r.x, b: Math.max(...marks.map((e) => e.y1)) - r.y,
   } : null;
   return {
-    hide: [...[...drop].flatMap((e) => e.ops), ...extraOps],
+    hide: [...[...drop].flatMap((e) => e.ops), ...extraOps, ...glow],
+    glow,
     outlined: words.map((e) => ({ l: e.x0 - r.x, t: e.y0 - r.y, r: e.x1 - r.x, b: e.y1 - r.y, fill: colourOf(e) })),
     logoBox,
   };
@@ -397,10 +489,15 @@ async function drawBare(page, textItems, c, vp, hide = []) {
       return w > 0 && h > 0 && w * h >= 0.6 * a;
     });
   };
-  const ghosts = plan.items.filter(inText);
+  // a background pattern's pieces inside a text's box aren't its outline copies: the same shape (size
+  // and colour) is drawn outside the texts too — those stay (else each text's box is a hole in it)
+  const sig = (it) => `${it.color}|${it.path ? 1 : 0}|${Math.round((it.x1 - it.x0) * 10)}|${Math.round((it.y1 - it.y0) * 10)}`;
+  const outside = new Set(plan.items.filter((it) => !inText(it)).map(sig));
+  const ghostly = (it) => inText(it) && !outside.has(sig(it));
+  const ghosts = plan.items.filter(ghostly);
   if (!ghosts.length && !hide.length) return asIs;
   const hidden = new Set(hide);
-  const keep = plan.items.filter((it) => !inText(it) && !hidden.has(it.op)).map((it) => it.op);
+  const keep = plan.items.filter((it) => !ghostly(it) && !hidden.has(it.op)).map((it) => it.op);
   const without = (fn) => serial(() => drawOnly(plan, keep, fn));
   await without(draw);
   return { without, ghosts };
@@ -524,8 +621,12 @@ async function importPdf(file, progress) {
     const parts = regions.length ? regions : [{ x: 0, y: 0, w: pageW, h: pageH }];
     // master template: each design keeps only its artwork; its logo and old outlined words go
     const plan = pagePlan(page);
-    const cleared = parts.map((r) => (plan ? logoAndWords(plan, r) : { hide: [], outlined: [] }));
+    const live = plan ? await liveWords(page) : [];
+    const cleared = parts.map((r) => (plan ? logoAndWords(plan, r, { live }) : { hide: [], outlined: [] }));
     const hideAll = cleared.flatMap((c) => c.hide);
+    // designs whose boxes overlap: the neighbours' artwork in each one's box (not left out of the page
+    // picture here: it's theirs — each is cut from it without the others, see cropOwn)
+    const others = parts.map((r, i) => (regions.length ? othersIn(plan, regions, i, S) : []));
     if (hideAll.length) await drawBare(page, tc.items, bare, vp, hideAll);
     const inside = (b, r) => b.cx >= r.x && b.cx <= r.x + r.w && b.cy >= r.y && b.cy <= r.y + r.h;
     const outside = regions.length ? blocks.filter((b) => !regions.some((r) => inside(b, r))) : [];
@@ -546,9 +647,10 @@ async function importPdf(file, progress) {
       out.push({
         name: regions.length ? `${base} — ${label || "Design " + (i + 1)}` : doc.numPages > 1 ? `${base} — artboard ${n}` : base,
         file: file.name, page: n, order: out.length, source: "pdf", width: r.w, height: r.h, region: [r.x, r.y, r.w, r.h], original,
-        background: regions.length ? crop(bare.canvas, r, S) : bare.canvas.toDataURL("image/png"),
+        background: regions.length ? (r.tight ? cropOwn(bare.canvas, regions, i, S) : crop(bare.canvas, r, S)) : bare.canvas.toDataURL("image/png"),
         texts: blocks.filter((b) => !regions.length || inside(b, r)).map((b) => finishText(b, r)),
-        hide: cleared[i].hide, outlined: cleared[i].outlined, logoBox: cleared[i].logoBox || null, cleaned: CLEAN_VERSION,
+        hide: [...cleared[i].hide, ...others[i]], others: others[i].length ? others[i] : undefined,
+        outlined: cleared[i].outlined, logoBox: cleared[i].logoBox || null, cleaned: CLEAN_VERSION,
       });
     });
     bare.canvas.width = bare.canvas.height = 0;
@@ -563,7 +665,12 @@ function findDesigns(data, W, H, S, pageW, pageH) {
   const ink = new Uint8Array(gw * gh);
   for (let y = 0; y < H; y++) {
     const row = ((y / g) | 0) * gw, base = y * W * 4;
-    for (let x = 0; x < W; x++) if (data[base + x * 4 + 3] > 24) ink[row + ((x / g) | 0)] = 1;
+    // plain white isn't ink here: a white box behind the whole sheet would make all its designs one
+    // (they're told apart by their outlines and artwork)
+    for (let x = 0; x < W; x++) {
+      const i = base + x * 4;
+      if (data[i + 3] > 24 && !(data[i] > 245 && data[i + 1] > 245 && data[i + 2] > 245 && data[i + 3] > 200)) ink[row + ((x / g) | 0)] = 1;
+    }
   }
   const found = designsIn(ink, g, gw, gh, S, pageW, pageH);
   if (found.length) return found;
@@ -615,14 +722,19 @@ function designsIn(ink, g, gw, gh, S, pageW, pageH) {
     for (let y = gh - 1; y >= 0; y--) if (tmp[y * gw + x]) last = y; else if (last - y <= rad) grown[y * gw + x] = 1;
   }
   const seen = new Uint8Array(gw * gh);
+  // which drawing each cell belongs to (1, 2 …; 0: none), to tell designs apart where their boxes overlap
+  const lab = new Int32Array(gw * gh);
   const boxes = [];
+  let comps = 0;
   for (let i = 0; i < gw * gh; i++) {
     if (!grown[i] || seen[i]) continue;
     let x0 = gw, y0 = gh, x1 = -1, y1 = -1;
+    const id = ++comps;
     const stack = [i];
     seen[i] = 1;
     while (stack.length) {
       const j = stack.pop();
+      lab[j] = id;
       const x = j % gw, y = (j / gw) | 0;
       if (ink[j]) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
       if (x > 0 && grown[j - 1] && !seen[j - 1]) { seen[j - 1] = 1; stack.push(j - 1); }
@@ -630,7 +742,7 @@ function designsIn(ink, g, gw, gh, S, pageW, pageH) {
       if (y > 0 && grown[j - gw] && !seen[j - gw]) { seen[j - gw] = 1; stack.push(j - gw); }
       if (y < gh - 1 && grown[j + gw] && !seen[j + gw]) { seen[j + gw] = 1; stack.push(j + gw); }
     }
-    if (x1 >= 0) boxes.push({ x: (x0 * g) / S, y: (y0 * g) / S, w: ((x1 - x0 + 1) * g) / S, h: ((y1 - y0 + 1) * g) / S });
+    if (x1 >= 0) boxes.push({ x: (x0 * g) / S, y: (y0 * g) / S, w: ((x1 - x0 + 1) * g) / S, h: ((y1 - y0 + 1) * g) / S, comps: [id] });
   }
   const area = pageW * pageH;
   const big = boxes.filter((b) => b.w * b.h >= area * 0.012 && b.w >= pageW * 0.05 && b.h >= pageH * 0.05);
@@ -648,14 +760,20 @@ function designsIn(ink, g, gw, gh, S, pageW, pageH) {
       const gap = Math.max(0, s.y - (b.y + b.h), b.y - (s.y + s.h));
       if (gap < b.h * 0.2 && gap < bestGap) { bestGap = gap; best = b; }
     }
-    if (best) union(best, s);
+    if (best) { union(best, s); best.comps.push(...s.comps); }
   }
   for (let merged = true; merged;) {
     merged = false;
     for (let i = 0; i < big.length && !merged; i++) {
       for (let j = i + 1; j < big.length; j++) {
         const a = big[i], b = big[j];
-        if (a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h) { union(a, b); big.splice(j, 1); merged = true; break; }
+        const ow = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x), oh = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+        if (ow <= 0 || oh <= 0) continue;
+        // boxes that overlap are one design — unless they're two designs of about the same size whose
+        // shapes (wavy, slanted) only reach a little into each other's box: those stay apart ("tight")
+        const sa = a.w * a.h, sb = b.w * b.h;
+        if (ow * oh < 0.3 * Math.min(sa, sb) && Math.min(sa, sb) > 0.25 * Math.max(sa, sb)) { a.tight = b.tight = true; continue; }
+        union(a, b); a.comps.push(...b.comps); a.tight = a.tight || b.tight; big.splice(j, 1); merged = true; break;
       }
     }
   }
@@ -671,7 +789,59 @@ function designsIn(ink, g, gw, gh, S, pageW, pageH) {
     const r = rows.find((r) => b.y + b.h / 2 > r.top && b.y + b.h / 2 < r.bottom);
     if (r) { r.items.push(b); r.bottom = Math.max(r.bottom, b.y + b.h); } else rows.push({ top: b.y, bottom: b.y + b.h, items: [b] });
   }
-  return rows.flatMap((r) => r.items.sort((a, b) => a.x - b.x));
+  const out = rows.flatMap((r) => r.items.sort((a, b) => a.x - b.x));
+  out.cells = { lab, g, gw, gh };
+  return out;
+}
+
+// For designs whose boxes overlap (see designsIn "tight"): which design a cell of the page (px)
+// belongs to, by its drawing -> the design's index, or -1
+function ownerAt(regions, px, py) {
+  const c = regions.cells;
+  if (!c) return -1;
+  const x = Math.floor(px / c.g), y = Math.floor(py / c.g);
+  if (x < 0 || y < 0 || x >= c.gw || y >= c.gh) return -1;
+  const id = c.lab[y * c.gw + x];
+  return id ? regions.findIndex((r) => r.comps && r.comps.includes(id)) : -1;
+}
+// a design's box cut from the page picture, without what belongs to the designs next to it
+// (their shapes reach into its box): see-through there
+function cropOwn(src, regions, i, S) {
+  const r = regions[i];
+  const c = document.createElement("canvas");
+  c.width = Math.max(1, Math.round(r.w * S));
+  c.height = Math.max(1, Math.round(r.h * S));
+  const x = c.getContext("2d");
+  x.drawImage(src, r.x * S, r.y * S, r.w * S, r.h * S, 0, 0, c.width, c.height);
+  const img = x.getImageData(0, 0, c.width, c.height), d = img.data;
+  for (let py = 0; py < c.height; py++) for (let px = 0; px < c.width; px++) {
+    const k = (py * c.width + px) * 4;
+    if (!d[k + 3]) continue;
+    const o = ownerAt(regions, r.x * S + px, r.y * S + py);
+    if (o >= 0 && o !== i) d[k + 3] = 0;
+  }
+  x.putImageData(img, 0, 0);
+  return c.toDataURL("image/png");
+}
+// the artwork of the designs next to this one that reaches into its box (drawing steps): left out
+// of it for good (in its hide list, so redrawn pictures and Illustrator leave it out too)
+function othersIn(plan, regions, i, S) {
+  const r = regions[i], ops = [];
+  if (!plan || !r.tight) return ops;
+  for (const it of plan.items) {
+    if (it.x1 <= r.x || it.x0 >= r.x + r.w || it.y1 <= r.y || it.y0 >= r.y + r.h) continue;
+    // something behind them all (a white box over the whole sheet) isn't a neighbour's: it stays
+    const ow = Math.min(it.x1, r.x + r.w) - Math.max(it.x0, r.x), oh = Math.min(it.y1, r.y + r.h) - Math.max(it.y0, r.y);
+    if (ow * oh >= 0.6 * r.w * r.h) continue;
+    const pts = [[0.5, 0.5], [0.25, 0.25], [0.75, 0.25], [0.25, 0.75], [0.75, 0.75]];
+    let o = -1;
+    for (const [fx, fy] of pts) {
+      o = ownerAt(regions, (it.x0 + (it.x1 - it.x0) * fx) * S, (it.y0 + (it.y1 - it.y0) * fy) * S);
+      if (o >= 0) break;
+    }
+    if (o >= 0 && o !== i) ops.push(it.op);
+  }
+  return ops;
 }
 
 function toHex(r, g, b) {
@@ -882,6 +1052,11 @@ export async function pieceAt(item, x, y) {
   const hidden = new Set(item.hide || []);
   const area = (e) => (e.x1 - e.x0) * (e.y1 - e.y0), A = rw * rh;
   const at = (e) => px >= e.x0 && px <= e.x1 && py >= e.y0 && py <= e.y1;
+  // a white glow or white box on top where it was clicked (a big one, behind all the old words): just
+  // that — what's under it (the pattern) stays
+  const white = (c) => { const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(c || ""); return !!m && m.slice(1).every((v) => parseInt(v, 16) >= 0xe6); };
+  const top = plan.items.filter((it) => at(it) && !hidden.has(it.op) && !it.stroke && area(it) <= A * 0.85).sort((a, b) => b.op - a.op)[0];
+  if (top && area(top) > A * 0.1 && (!top.path || white(top.color))) return [top.op];
   // a piece the size of a logo, not the artwork spread over the whole design (traced flowers and
   // corners are often one piece covering it all)
   const hits = findElements(plan.items, { x: rx, y: ry, w: rw, h: rh })
@@ -924,17 +1099,38 @@ export async function piecesIn(item, box) {
 // removed by hand stays removed; "Put back" afterwards isn't undone (cleaned marks it as done).
 // -> the changes to save ({ id, cleaned, hide, outlined, background? }), or null when already done
 // 2: also where the logo was (logoBox) · 3: the colour of its old words drawn as shapes
-export const CLEAN_VERSION = 3;
+// 4: a row of a repeating background pattern isn't words (what 3 took out as words comes back)
+// 5: also a pattern of several shapes repeated (a flower of petals): what was taken out as words comes back
+// 6: the white glow behind the old words goes with them (it was left as a white blank)
+// 7: also one glow picture behind all the old words together
+// 8: drawn again — a pattern's pieces inside a live text's box were left out as its outline (holes)
+export const CLEAN_VERSION = 8;
 export async function autoClean(item) {
   if (!item || item.source !== "pdf" || !item.original || (item.cleaned || 0) >= CLEAN_VERSION) return null;
   const { page } = await designPage(item);
   const plan = pagePlan(page);
   const [x, y, w, h] = item.region || [0, 0, item.width, item.height];
-  const found = plan ? logoAndWords(plan, { x, y, w, h }) : { hide: [], outlined: [] };
+  const found = plan ? logoAndWords(plan, { x, y, w, h }, { live: await liveWords(page) }) : { hide: [], outlined: [] };
   // cleaned before: only where its logo was is new (what's left out stays as it is — a logo put
   // back by hand stays back)
-  if (item.cleaned) return { id: item.id, cleaned: CLEAN_VERSION, logoBox: item.logoBox || found.logoBox || null,
-    outlined: found.outlined.length ? found.outlined : item.outlined || [] };
+  if (item.cleaned) {
+    const out = { id: item.id, cleaned: CLEAN_VERSION, logoBox: item.logoBox || found.logoBox || null,
+      outlined: found.outlined.length ? found.outlined : item.outlined || [] };
+    // cleaned before 5: the pattern taken out as if it were words comes back (what was taken out by
+    // hand, or is still found, stays out)
+    let hide = item.hide || [];
+    if (item.cleaned < 5 && plan && hide.length) {
+      const before = new Set(logoAndWords(plan, { x, y, w, h }, { tiles: false }).hide), now = new Set(found.hide);
+      hide = hide.filter((o) => !before.has(o) || now.has(o));
+    }
+    // cleaned before 6: the white glows behind its old words go too
+    if (item.cleaned < 7 && found.glow && found.glow.length) hide = [...new Set([...hide, ...found.glow])];
+    if (item.cleaned < 8 || hide.length !== (item.hide || []).length || hide.some((o, k) => o !== item.hide[k])) {
+      out.hide = hide;
+      out.background = await redrawBackground(item, hide);
+    }
+    return out;
+  }
   const had = item.hide || [], hide = [...new Set([...had, ...found.hide])];
   const out = { id: item.id, cleaned: CLEAN_VERSION, hide, outlined: found.outlined.length ? found.outlined : item.outlined || [], logoBox: found.logoBox || null };
   if (hide.length !== had.length) out.background = await redrawBackground(item, hide);

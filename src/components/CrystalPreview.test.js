@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { crystalRowsOf, reservedCrystalsOf } from './CrystalPreview';
+import { crystalRowsOf, reservedCrystalsOf, excelStampOf } from './CrystalPreview';
 
 describe('crystalRowsOf — the Crystal Preview gets only the order\'s crystal rows', () => {
   const tokoh = (id, jenisPlak, desc) => ({
@@ -33,5 +33,15 @@ describe('crystalRowsOf — the Crystal Preview gets only the order\'s crystal r
     const withReserved = { ...order, items: [...order.items, reservedItem] };
     expect(reservedCrystalsOf(withReserved)).toEqual(['SA4 / DESIGN C (1)']);
     expect(crystalRowsOf(withReserved)).toHaveLength(1);
+  });
+});
+
+describe('excelStampOf — which Excel an order\'s crystals come from (crystalloli 2026-10-16)', () => {
+  it('names the uploaded files and a corrected one with its time; a new Excel changes it', () => {
+    const order = { importFiles: [{ path: 'a/1.xlsx' }, { path: 'a/2.xlsx' }], importFilePath: 'a/1.xlsx' };
+    expect(excelStampOf(order)).toBe('a/1.xlsx|a/2.xlsx');
+    expect(excelStampOf({ ...order, correctedImportFilePath: 'c/3.xlsx', correctedImportUploadedAt: '2026-11-02T10:00:00Z' }))
+      .toBe('a/1.xlsx|a/2.xlsx|c/3.xlsx|2026-11-02T10:00:00Z');
+    expect(excelStampOf({})).toBe('');
   });
 });

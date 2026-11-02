@@ -36,6 +36,14 @@ export function reservedCrystalsOf(order) {
     .map((g) => `${g.jenisPlak.replace(/^CRYSTAL \/\s*/i, '')} (${g.count})`);
 }
 
+// Which Excel the order's rows come from, for Crystal Studio (crystalloli, 2026-10-16): its uploaded
+// files and a corrected one with when it came in. A new Excel changes it, and the crystals changed for
+// this order only go back to their default designs.
+export const excelStampOf = (order) => [...new Set([
+  ...(order?.importFiles || []).map((f) => f.path), order?.importFilePath,
+  order?.correctedImportFilePath, order?.correctedImportUploadedAt,
+].filter(Boolean))].join('|');
+
 // Manual (0102): sent on without a confirmed preview, a designer draws it.
 export const MANUAL_ARTWORK_NOTE = 'MANUAL — Need designer design';
 
@@ -131,7 +139,7 @@ export default function CrystalPreview({ order, role = 'view', selected = null, 
   // (re)send the rows whenever the preview is ready or the order changes
   useEffect(() => {
     if (status !== 'ready' || !order) return;
-    frame.current?.contentWindow?.postMessage({ type: 'crystal-rows', rows, order: order.id, school: order.sekolah || '', logo: order.logoDataUrl || null }, window.location.origin);
+    frame.current?.contentWindow?.postMessage({ type: 'crystal-rows', rows, order: order.id, school: order.sekolah || '', logo: order.logoDataUrl || null, excel: excelStampOf(order) }, window.location.origin);
   }, [status, readyTick, rows, order]);
 
   useEffect(() => {
