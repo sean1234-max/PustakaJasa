@@ -302,7 +302,9 @@ var OUTLINE_TEXT = JOB.outline !== false;
 
   function outside(vb, b) { return vb[2] < b[0] || vb[0] > b[2] || vb[1] < b[3] || vb[3] > b[1]; }
   function partly(vb, b) { return vb[0] < b[0] || vb[2] > b[2] || vb[1] > b[1] || vb[3] < b[3]; }
-  // everything off the design's box goes; a group partly on it is looked into
+  // everything off the design's box goes; a group partly on it is looked into — a clipping group
+  // too, keeping its clipping path (Sean, 2026-11-02: 80-B's other designs sat in one, hidden by the
+  // clip but still in every crystal: 4385 paths, now 215, looking the same)
   function cropIn(container, b) {
     try { container.locked = false; } catch (e) {}
     var items = container.pageItems, k;
@@ -310,9 +312,10 @@ var OUTLINE_TEXT = JOB.outline !== false;
       try {
         var it = items[k];
         if (it.parent !== container) continue; // only its own items; groups are looked into below
+        if (it.clipping) continue;
         var vb = it.visibleBounds;
         if (outside(vb, b)) { it.locked = false; it.remove(); continue; }
-        if (it.typename === "GroupItem" && !it.clipped && partly(vb, b)) cropIn(it, b);
+        if (it.typename === "GroupItem" && partly(vb, b)) cropIn(it, b);
       } catch (e) {} // an item that can't be measured or removed stays
     }
     try { if (container.layers) for (k = 0; k < container.layers.length; k++) cropIn(container.layers[k], b); } catch (e) {}

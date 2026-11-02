@@ -34,7 +34,7 @@ export const PORT = 47821;
 // 4: POST /templates (Production's check before Generate AI File) + the operator's name sent with
 //    /generate, so Illustrator doesn't ask for it (Sean 2026-10-22)
 // 5: a finished job carries SEAN.jsx's run report (`report`) for the check after Generate
-const VERSION = 5;
+const VERSION = 6;
 const HELPER_DIR = path.dirname(fileURLToPath(import.meta.url));
 const TEMP_DIR = path.join(tmpdir(), 'pustakajasa-ai-helper');
 // crystals can carry pictures and .svg artwork (Crystal Studio), so more room than a CSV needs

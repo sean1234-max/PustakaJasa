@@ -25,6 +25,11 @@ Mac 右键 install-mac.command → 打开），装完就有：
 （NAS 的 AI FILE 资料夹也要换上新的 SEAN.jsx。）
 
 
+【2026-11-02 更新（版本 6）】做 crystal 的电脑要再装一次（Windows 双击 install-windows.bat，
+Mac 右键 install-mac.command → 打开），装完：
+  - crystal 的 AI file 不再夹带原档里旁边其他款的设计（以前被剪裁遮住，按 Ctrl+Y 才看到，
+    文件很重；80-B 一个 crystal 从 4385 条线变 215 条，看起来一模一样）
+
 【Windows】
 1. 电脑要先装 Node.js（https://nodejs.org 下载 LTS，一直按下一步）。装过就跳过。
 2. 把整个 ai-file-helper 资料夹复制到这台电脑（放哪里都可以，装完可以删）。
