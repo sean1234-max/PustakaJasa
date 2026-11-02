@@ -22,6 +22,11 @@ import { groupItemsByBatch, combineByJenisPlak, sortMedalColours } from '../util
 // Sales' approve/print view (SalesOrderSummary) turns them on, since a
 // school buying the same Jenis Plak for two categories only cares about
 // one combined line and one price.
+// A named plaque priced back down by its RM1 (Sean, 2026-11-02, ORD-0205): the user knows it needs no
+// name charge, so it shows as a plain price — no "(nama +RM1)", no Original Price Per Unit.
+const nameChargeRemoved = (it) => !!(it.named ?? it.nameSurcharge) && it.originalUnitPrice != null && it.unitPrice === it.originalUnitPrice - 1;
+const shownOriginalPrice = (it) => (nameChargeRemoved(it) ? null : it.originalUnitPrice ?? null);
+
 export default function PriceTable({
   rows, editable, priceDrafts, setPrice, plakCatalog, totalQty, totalHarga, priceAdjusted,
   hideCategory = false, combineJenisPlak = false, showSelempangLines = false,
@@ -35,7 +40,7 @@ export default function PriceTable({
   // Shown only for rows that actually had a price change captured (see
   // AppState.jsx's approveOrder/approveAddOn) — pre-existing orders/items
   // with no originalUnitPrice never trigger this column.
-  const anyOriginalPrice = rows.some((it) => it.originalUnitPrice != null);
+  const anyOriginalPrice = rows.some((it) => shownOriginalPrice(it) != null);
 
   return (
     <>
@@ -74,9 +79,9 @@ export default function PriceTable({
                       } : {})}
                     >
                       {!hideCategory && <td>{it.categoryLabel}</td>}
-                      <td>{it.jenisPlak}{(it.named ?? it.nameSurcharge) && <span className="hint-text"> (nama +RM1)</span>}</td>
+                      <td>{it.jenisPlak}{(it.named ?? it.nameSurcharge) && !nameChargeRemoved(it) && <span className="hint-text"> (nama +RM1)</span>}</td>
                       {anyOriginalPrice && (
-                        <td>{it.originalUnitPrice != null ? `RM ${it.originalUnitPrice.toFixed(2)}` : ''}</td>
+                        <td>{shownOriginalPrice(it) != null ? `RM ${shownOriginalPrice(it).toFixed(2)}` : ''}</td>
                       )}
                       <td>
                         {editable ? (
