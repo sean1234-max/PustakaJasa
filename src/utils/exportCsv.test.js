@@ -1358,3 +1358,36 @@ describe('addInvoiceGaps with one Jenis Plak over several invoices (ORD-0108)', 
     expect(out.every((r) => r[JP] === 'PK 261 / A')).toBe(true);
   });
 });
+
+// ORD-0169 (Sean, 2026-11-02): the Nama Kelas list said 11 for every class (the subjects that class wins),
+// so each class plaque came out 11 times — 4241 plaques for an order of 391, too many for Illustrator.
+describe('buildCsvRows — MP THP 2 kelas: never more plaques than the subject\'s KUANTITI', () => {
+  const lines = { 'MP2_KELAS::0::0': 'MAJLIS APRESIASI KURIKULUM 2026', 'MP2_KELAS::0::2': 'TERBAIK' };
+  const classes = (names, qty) => names.map((desc, i) => ({ id: i + 1, desc, qty: String(qty) }));
+  const item = (perClass) => ({
+    id: 'm1', jenisPlak: 'PKC 263', qty: 6, categoryKey: 'MP2_KELAS', blockIdx: 0,
+    detail: {
+      lines,
+      matrix: {
+        [customMatrixLabelKey('MP2_KELAS', 1030)]: 'BAHASA MELAYU',
+        [matrixCellKey('MP2_KELAS', 'custom-1030', 'TAHUN 4')]: '3',
+        [customMatrixLabelKey('MP2_KELAS', 1031)]: 'SAINS',
+        [matrixCellKey('MP2_KELAS', 'custom-1031', 'TAHUN 4')]: '3',
+      },
+      namaKelasBreakdown: { 'MP2_KELAS::0::TAHUN 4::main': classes(['SEJATI', 'KASIH', 'BUDIMAN'], perClass) },
+    },
+  });
+
+  it('a class list adding up to more than the KUANTITI counts one plaque a class', () => {
+    const it = item(11);
+    const { rows } = buildCsvRows({ schoolLanguage: 'SK', items: [it] }, 'MP2_KELAS', [it]);
+    expect(rows).toHaveLength(6);
+    expect(new Set(rows.map((r) => `${r[3]}|${r[4]}`)).size).toBe(6);
+  });
+
+  it('a class list matching the KUANTITI is kept as it is', () => {
+    const it = item(1);
+    const { rows } = buildCsvRows({ schoolLanguage: 'SK', items: [it] }, 'MP2_KELAS', [it]);
+    expect(rows).toHaveLength(6);
+  });
+});

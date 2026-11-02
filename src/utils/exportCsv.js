@@ -424,9 +424,13 @@ function buildMatrixRows(item, cat, header, year, positionPart1, schoolLanguage)
     const listKind = isKelasSubject(subject, kelasWord) ? 'moral' : 'main';
     const classes = (breakdown[`${item.categoryKey}::${item.blockIdx}::${column}::${listKind}`] || [])
       .filter((c) => (c.desc || '').trim());
+    const classQty = (c) => Math.max(0, Number(c.qty) || 0);
+    // A list adding up to more than the KUANTITI (ORD-0169: every class "11", the subjects it wins)
+    // counts one plaque a class — never more plaques than the order's QTY (Sean, 2026-11-02)
+    const oneEach = classes.reduce((n, c) => n + classQty(c), 0) > qty;
     let covered = 0;
     classes.forEach((c) => {
-      const q = Math.max(0, Number(c.qty) || 0);
+      const q = Math.min(oneEach ? 1 : classQty(c), qty - covered);
       const eventLine2 = classLine ? classLine.make(bareCol, c.desc.trim()) : [tahunLabel, c.desc.trim()].filter(Boolean).join(' ');
       if (posClass) {
         for (let i = 0; i < q; i++) rows.push([header, year, positionFor(subject, eventLine2), '', '']);
