@@ -8,7 +8,7 @@ const HELPER_URL = 'http://127.0.0.1:47821';
 
 // The name SEAN.jsx stamps on the AI file, per Production account (Sean, 2026-10-22) — sent with
 // Generate AI File so Illustrator doesn't ask; any other account is still asked.
-const OPERATOR_BY_EMAIL = { 'production@pjsb.com': 'SITI', 'sean@pjsb.com': 'SEAN', 'kesin@pjsb.com': 'KESIN' };
+const OPERATOR_BY_EMAIL = { 'production@pjsb.com': 'SITI', 'sean@pjsb.com': 'SEAN', 'kesin@pjsb.com': 'KESIN', 'lun@pjsb.com': 'LUN' };
 export async function operatorName() {
   try {
     const { data: { user } } = await supabase.auth.getUser();
