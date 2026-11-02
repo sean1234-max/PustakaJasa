@@ -164,6 +164,46 @@ function exportPng(item, file, asOutline) {
     }
 }
 
+// A layout group's own artwork, drawn with every plaque (Sean, 2026-11-02: E TROFI 13228 B's black frame
+// pattern): what's in it besides the text frames and the ANCHOR_CIRCLE, shown, and not a group of text frames
+function hasFieldText(item) {
+    if (item.typename === "TextFrame") return FIELDS.hasOwnProperty(item.name);
+    if (item.typename !== "GroupItem") return false;
+    for (var i = 0; i < item.pageItems.length; i++) if (hasFieldText(item.pageItems[i])) return true;
+    return false;
+}
+function artOf(group) {
+    var art = [];
+    for (var i = 0; i < group.pageItems.length; i++) {
+        var it = group.pageItems[i];
+        if (it.parent !== group || it.hidden || it.name === ANCHOR || it.typename === "TextFrame" || hasFieldText(it)) continue;
+        art.push(it);
+    }
+    return art;
+}
+// those items as one PNG -> their box (pt) around the anchor centre (cx, cy), y up
+function exportArt(items, file, cx, cy) {
+    var tmp = app.documents.add(DocumentColorSpace.RGB, 500, 500);
+    try {
+        // measured where they are in the .ai (the anchor's coordinates); the copy only makes the picture
+        var join = function (u, vb) { return u ? [Math.min(u[0], vb[0]), Math.max(u[1], vb[1]), Math.max(u[2], vb[2]), Math.min(u[3], vb[3])] : vb; };
+        var u = null, d = null;
+        for (var i = 0; i < items.length; i++) {
+            u = join(u, items[i].visibleBounds);
+            d = join(d, items[i].duplicate(tmp.layers[0], ElementPlacement.PLACEATEND).visibleBounds);
+        }
+        tmp.artboards[0].artboardRect = d;
+        var opts = new ExportOptionsPNG24();
+        var scale = Math.min(300, MAX_PNG_PX * 100 / Math.max(d[2] - d[0], 1));
+        opts.horizontalScale = scale; opts.verticalScale = scale;
+        opts.transparency = true; opts.artBoardClipping = true; opts.antiAliasing = true;
+        tmp.exportFile(file, ExportType.PNG24, opts);
+        return [u[0] - cx, u[1] - cy, u[2] - cx, u[3] - cy];
+    } finally {
+        tmp.close(SaveOptions.DONOTSAVECHANGES);
+    }
+}
+
 function slug(name) { return String(name).replace(/\.ai$/i, "").replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, ""); }
 
 function exportFile(f, outFolder, log) {
@@ -189,8 +229,18 @@ function exportFile(f, outFolder, log) {
         var png = slug(name) + ".png";
         var size = exportPng(bg || firstAnchor, new File(outFolder.fsName + "/" + png), !bg);
         entry.picture = { png: png, outline: !bg, box: [-size[0] / 2, size[1] / 2, size[0] / 2, -size[1] / 2] };
-        for (var k in templates) if (templates.hasOwnProperty(k)) delete templates[k].centre;
-        log.push(name + ": " + count + " layout group(s), picture " + (bg ? bg.name : "outline"));
+        var arts = 0;
+        for (var k in templates) {
+            if (!templates.hasOwnProperty(k)) continue;
+            var art = artOf(groups[k]);
+            if (art.length) {
+                var artPng = slug(name) + "-" + k + ".png";
+                templates[k].art = { png: artPng, box: exportArt(art, new File(outFolder.fsName + "/" + artPng), templates[k].centre[0], templates[k].centre[1]) };
+                arts++;
+            }
+            delete templates[k].centre;
+        }
+        log.push(name + ": " + count + " layout group(s), picture " + (bg ? bg.name : "outline") + (arts ? ", artwork in " + arts : ""));
         return entry;
     } finally {
         doc.close(SaveOptions.DONOTSAVECHANGES);

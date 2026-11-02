@@ -6,6 +6,7 @@
 // per .ai. Run it again after a template .ai changes or one is added, then push.
 // Illustrator must be open and not generating (the run opens and closes each copy, ~10 s per file).
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -62,6 +63,17 @@ const mapping = existsSync(mappingPath)
 rmSync(out, { recursive: true, force: true });
 mkdirSync(out, { recursive: true });
 exported.files.forEach((f) => copyFileSync(path.join(pngs, f.picture.png), path.join(out, f.picture.png)));
+// each layout group's own artwork: the same picture (most groups of a file share one frame) kept once
+const byHash = new Map();
+exported.files.forEach((f) => Object.values(f.templates).forEach((t) => {
+  if (!t.art) return;
+  const hash = createHash('sha1').update(readFileSync(path.join(pngs, t.art.png))).digest('hex');
+  if (!byHash.has(hash)) {
+    byHash.set(hash, t.art.png);
+    copyFileSync(path.join(pngs, t.art.png), path.join(out, t.art.png));
+  }
+  t.art.png = byHash.get(hash);
+}));
 writeFileSync(path.join(out, 'templates.json'), `${JSON.stringify({ exportedAt: new Date().toISOString(), mapping, files: exported.files })}\n`);
 rmSync(work, { recursive: true, force: true });
-console.log(`Wrote ${exported.files.length} file(s) to ${out}`);
+console.log(`Wrote ${exported.files.length} file(s) and ${byHash.size} artwork picture(s) to ${out}`);

@@ -62,10 +62,13 @@ function sceneOf({ entry, template, row }) {
   const { fields } = layoutPlaque(row, template, { trofi: /TROFI/i.test(entry.file), measure });
   const [aw, ah] = template.anchor;
   const pic = entry.picture.box; // [l, t, r, b], y up
-  const l = Math.min(pic[0], -aw / 2);
-  const t = Math.max(pic[1], ah / 2);
+  // the layout group's own artwork (a trophy's frame pattern — Sean, 2026-11-02), over the picture
+  const art = template.art ? { box: template.art.box, src: `${BASE}${encodeURIComponent(template.art.png)}` } : null;
+  const boxes = [pic, [-aw / 2, ah / 2, aw / 2, -ah / 2], ...(art ? [art.box] : [])];
+  const l = Math.min(...boxes.map((b) => b[0]));
+  const t = Math.max(...boxes.map((b) => b[1]));
   return {
-    fields, pic, l, t, w: Math.max(pic[2], aw / 2) - l, h: t - Math.min(pic[3], -ah / 2),
+    fields, pic, art, l, t, w: Math.max(...boxes.map((b) => b[2])) - l, h: t - Math.min(...boxes.map((b) => b[3])),
     src: `${BASE}${encodeURIComponent(entry.picture.png)}`,
   };
 }
@@ -73,10 +76,11 @@ function sceneOf({ entry, template, row }) {
 const anchorOf = (align) => (align === 'left' ? 'start' : align === 'right' ? 'end' : 'middle');
 
 function PlakSvg({ sample }) {
-  const { fields, pic, l, t, w, h, src } = sceneOf(sample);
+  const { fields, pic, art, l, t, w, h, src } = sceneOf(sample);
   return (
     <svg viewBox={`${l} ${-t} ${w} ${h}`} style={{ width: '100%', display: 'block' }} role="img" aria-label={`${sample.jenisPlak} preview`}>
       <image href={src} x={pic[0]} y={-pic[1]} width={pic[2] - pic[0]} height={pic[1] - pic[3]} preserveAspectRatio="none" />
+      {art && <image href={art.src} x={art.box[0]} y={-art.box[1]} width={art.box[2] - art.box[0]} height={art.box[1] - art.box[3]} preserveAspectRatio="none" />}
       {fields.map((f) => f.lines.map((line, i) => (
         <text
           key={`${f.field}-${i}`} x={f.x} y={f.baselines[i]} textAnchor={anchorOf(f.align)}
@@ -106,8 +110,8 @@ const loadImage = (src) => new Promise((ok, fail) => {
 });
 
 // the sample drawn on the page canvas at (x, y) pt, `width` pt wide; returns its height in pt
-function drawSample(ctx, sample, img, x, y, width) {
-  const { fields, pic, l, t, w, h } = sceneOf(sample);
+function drawSample(ctx, sample, img, artImg, x, y, width) {
+  const { fields, pic, art, l, t, w, h } = sceneOf(sample);
   const s = width / w;
   ctx.fillStyle = '#333';
   ctx.font = `600 9px ${FONTS.line.family}`;
@@ -115,6 +119,7 @@ function drawSample(ctx, sample, img, x, y, width) {
   ctx.fillText(sample.jenisPlak, x, y + 9);
   const top = y + CAPTION;
   ctx.drawImage(img, x + (pic[0] - l) * s, top + (t - pic[1]) * s, (pic[2] - pic[0]) * s, (pic[1] - pic[3]) * s);
+  if (art && artImg) ctx.drawImage(artImg, x + (art.box[0] - l) * s, top + (t - art.box[1]) * s, (art.box[2] - art.box[0]) * s, (art.box[1] - art.box[3]) * s);
   fields.forEach((f) => f.lines.forEach((line, i) => {
     ctx.font = `${f.font.weight} ${f.size * s}px ${f.font.family}`;
     ctx.textAlign = f.align === 'left' ? 'left' : f.align === 'right' ? 'right' : 'center';
@@ -132,6 +137,7 @@ function drawSample(ctx, sample, img, x, y, width) {
 // A4 pages, two plaques a row, the order named at the top of each page
 async function plakPdf(samples, title) {
   const images = await Promise.all(samples.map((smp) => loadImage(sceneOf(smp).src)));
+  const arts = await Promise.all(samples.map((smp) => (sceneOf(smp).art ? loadImage(sceneOf(smp).art.src) : null)));
   const colW = (A4.width - 2 * MARGIN - (COLUMNS - 1) * GAP) / COLUMNS;
   const pages = [];
   let ctx = null;
@@ -161,7 +167,7 @@ async function plakPdf(samples, title) {
     const row = samples.slice(i, i + COLUMNS);
     const rowH = Math.max(...row.map((smp) => CAPTION + sceneOf(smp).h * (colW / sceneOf(smp).w)));
     if (y + rowH > A4.height - MARGIN && y > MARGIN + GAP) await newPage();
-    row.forEach((smp, k) => drawSample(ctx, smp, images[i + k], MARGIN + k * (colW + GAP), y, colW));
+    row.forEach((smp, k) => drawSample(ctx, smp, images[i + k], arts[i + k], MARGIN + k * (colW + GAP), y, colW));
     y += rowH + GAP;
   }
   await finishPage();
