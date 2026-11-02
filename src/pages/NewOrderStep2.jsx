@@ -9,7 +9,7 @@ import { isCrystalCode } from '../utils/exportCsv';
 import { useAppState } from '../state/useAppState';
 import { buildCategoryCartItems } from '../state/categoryCartItems';
 import {
-  ACTIVE_CATEGORIES, filterHiddenPlakCatalog, isDynamicCategoryKey, resolveCategory,
+  ACTIVE_CATEGORIES, filterHiddenPlakCatalog, getStockStatus, isDynamicCategoryKey, resolveCategory,
 } from '../data/catalog';
 import { computeBlocks, noopUpdaters } from '../utils/computeBlocks';
 import { createDraftUpdaters } from '../utils/draftUpdaters';
@@ -404,12 +404,18 @@ export default function NewOrderStep2() {
     .filter(([, g]) => g.plak.length > 0)
     .map(([b, g]) => [b, blockOrder(g.plak)])), [cartItemsByBlock, blockOrder]);
 
-  const incompleteCategories = useMemo(() => (
-    allCategories
-      .map((cat) => ({ cat, res: buildCategoryCartItems(draftForCheck, cat.key) }))
-      .filter(({ res }) => res.engaged && res.error)
-      .map(({ cat, res }) => ({ key: cat.key, label: cat.label, error: res.error }))
+  const categoryResults = useMemo(() => (
+    allCategories.map((cat) => ({ cat, res: buildCategoryCartItems(draftForCheck, cat.key) }))
   ), [allCategories, draftForCheck]);
+  const incompleteCategories = useMemo(() => categoryResults
+    .filter(({ res }) => res.engaged && res.error)
+    .map(({ cat, res }) => ({ key: cat.key, label: cat.label, error: res.error })), [categoryResults]);
+  // A Jenis Plak hidden from the picker (out of stock) that came in from the uploaded file: shown
+  // here straight away, the Cart won't submit it (Sean, 2026-11-02).
+  const hiddenPlakIssues = useMemo(() => categoryResults.flatMap(({ cat, res }) => [...new Set((res.items || [])
+    .map((it) => it.jenisPlak)
+    .filter((code) => code && getStockStatus(code, state.plakCatalog)?.hidden))]
+    .map((code) => ({ key: `${cat.key}::${code}`, catKey: cat.key, label: cat.label, code }))), [categoryResults, state.plakCatalog]);
 
   // Codes Production has hidden (e.g. out of stock) never appear in the
   // teacher's picker — see filterHiddenPlakCatalog.
@@ -674,6 +680,27 @@ export default function NewOrderStep2() {
                 </li>
               ))}
             </ul>
+          </div>
+        )}
+
+        {hiddenPlakIssues.length > 0 && (
+          <div className="login-error" role="alert" style={{ margin: '0 0 var(--space-4)', textAlign: 'left' }}>
+            <strong>Jenis Plak tidak cukup stok — sila hubungi Salesman. Order ini tidak boleh dihantar:</strong>
+            <ul style={{ margin: 'var(--space-2) 0 0', paddingLeft: 18 }}>
+              {hiddenPlakIssues.map((h) => (
+                <li key={h.key} style={{ marginBottom: 2 }}>
+                  <button
+                    type="button"
+                    onClick={() => patch({ category: h.catKey })}
+                    style={{ background: 'none', border: 'none', padding: 0, font: 'inherit', color: 'inherit', textAlign: 'left', textDecoration: 'underline', cursor: 'pointer' }}
+                  >
+                    {h.label}
+                  </button>
+                  {' — '}{h.code}
+                </li>
+              ))}
+            </ul>
+            <div style={{ fontWeight: 400, marginTop: 4 }}>(Out of stock — please contact your Salesman. This order can&apos;t be submitted.)</div>
           </div>
         )}
 
