@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { checkPlaqueWording, checkPlaqueCounts, checkAiReport, plaqueLines, a3Files } from '../utils/productionCheck';
 import { fileText, compareWords } from '../utils/sourceCheck';
 import { reviewOrder, merahChoices, checkExcel, rowWithout, aiPlaquesOf, aiIssuesToReview } from '../utils/reviewChecks';
 import { reviewOrderAi } from '../lib/reviewAiApi';
+import { saveAiFlags } from '../lib/reviewLogApi';
 import { PlakRowPreview } from './PlakPreview';
 import { isCrystalCode, buildCsvRows, CSV_COLUMNS } from '../utils/exportCsv';
 import { orderImportFiles } from '../utils/importFiles';
@@ -244,6 +245,16 @@ export function AiReviewCheck({ order, onPickMerah, onShow }) {
   const merah = issues.filter((i) => i.itemId);
   const others = issues.filter((i) => !i.itemId);
   const reading = excel.loading || ai.loading;
+  // Review Log: what was flagged while the order was being reviewed, saved once it's all read
+  // (and again only when it changes), so Done Review can be compared with it later
+  const savedFlags = useRef('');
+  useEffect(() => {
+    if (reading || order.status !== 'Reviewing Order' || order.reviewedAt) return;
+    const flags = JSON.stringify(issues.map((i) => [i.rule, i.text]));
+    if (flags === savedFlags.current) return;
+    savedFlags.current = flags;
+    saveAiFlags(order.id, issues);
+  }, [reading, issues, order.id, order.status, order.reviewedAt]);
   const title = issues.length ? `AI Review — ${issues.length} thing(s) to check${reading ? ' (still reading…)' : ''}`
     : reading ? '⏳ AI Review: reading the order…' : '🟢 AI Review: nothing found';
   return (

@@ -48,6 +48,9 @@ export default function Nav() {
         {state.isProductionManager && (
           <Link to="/production/team" aria-current={pathname === '/production/team' ? 'page' : undefined}>Team</Link>
         )}
+        {state.isProductionManager && (
+          <Link to="/production/review-log" aria-current={pathname === '/production/review-log' ? 'page' : undefined}>Review Log</Link>
+        )}
         <button type="button" className="nav-logout" onClick={handleLogout}>Log Out</button>
       </nav>
     );
