@@ -208,3 +208,27 @@ describe('the AI half', () => {
     expect(aiIssuesToReview([{ rule: 'X9', plaqueIds: ['P1'], message: 'x' }, { rule: 'F2', plaqueIds: ['P7'], message: 'y' }], plaques)).toEqual([]);
   });
 });
+
+describe('I5 name charge', () => {
+  const rowOf = (jenisPlak) => ['ANUGERAH INSPIRASI GURU 2026', '', 'KEHADIRAN TERBAIK', 'NORAZAM B. AHMAD', '', jenisPlak, 'X', '', ''];
+  const plaques = [
+    { id: 'P1', sheet: 'X', header: '', red: 'A', black: [], count: 1, categoryKey: 'X', row: rowOf('CRYSTAL / 80-B / DESIGN 1') },
+    { id: 'P2', sheet: 'X', header: '', red: 'B', black: [], count: 1, categoryKey: 'X', row: rowOf('SONGKET / A / RED') },
+    { id: 'P3', sheet: 'X', header: '', red: 'C', black: [], count: 2, categoryKey: 'X', row: rowOf('PKF 265') },
+  ];
+  const nameIssue = (ids) => [{ rule: 'I5', plaqueIds: ids, message: 'Has a name', suggestion: '' }];
+
+  it('leaves out crystals and songkets — their price includes the name', () => {
+    expect(aiIssuesToReview(nameIssue(['P1', 'P2']), plaques)).toEqual([]);
+  });
+
+  it('leaves out VB, 57166 A, SHINING STICKER A, ALUMINIUM PLATE A, WOOD ENGRAVED A too', () => {
+    const more = ['VB 12', '57166 / A', 'SHINING STICKER A', 'ALUMINIUM PLATE A', 'WOOD ENGRAVED A']
+      .map((code, i) => ({ id: `Q${i}`, sheet: 'X', header: '', red: 'A', black: [], count: 1, categoryKey: 'X', row: rowOf(code) }));
+    expect(aiIssuesToReview(nameIssue(more.map((p) => p.id)), more)).toEqual([]);
+  });
+
+  it('still asks for the RM1 on a plaque', () => {
+    expect(aiIssuesToReview(nameIssue(['P1', 'P3']), plaques)).toMatchObject([{ rule: 'I5', count: 2, find: 'C' }]);
+  });
+});

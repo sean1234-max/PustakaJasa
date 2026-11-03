@@ -135,10 +135,18 @@ export function aiPlaquesOf(order, rowsOf = itemRows) {
 
 // The model's answer as AI Review issues, placed on the first plaque it names
 const AI_LEVEL = { C1: 'fix', F2: 'fix', J2: 'fix', J3: 'fix', J6: 'ask', J7: 'fix', I5: 'fix' };
+// I5 (+RM1 for a name): these Jenis Plak's price already includes the name (Sean, 2026-11-03).
+// Compared letters and digits only, so "57166 / A", "57166A" and "57166 A" are all the same.
+const NAME_INCLUDED = ['CRYSTAL', 'VB', 'SONGKET', '57166 A', 'SHINING STICKER A', 'ALUMINIUM PLATE A', 'WOOD ENGRAVED A'];
+const squash = (code) => String(code || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+const chargesForName = (p) => {
+  const code = squash(p.row?.[col('jenis_plak')]);
+  return !NAME_INCLUDED.some((c) => code.startsWith(squash(c)));
+};
 export function aiIssuesToReview(issues, plaques) {
   const byId = new Map(plaques.map((p) => [p.id, p]));
   return (issues || []).filter((i) => AI_LEVEL[i.rule] && Array.isArray(i.plaqueIds)).map((i) => {
-    const hits = i.plaqueIds.map((id) => byId.get(id)).filter(Boolean);
+    const hits = i.plaqueIds.map((id) => byId.get(id)).filter((p) => p && (i.rule !== 'I5' || chargesForName(p)));
     const first = hits[0];
     return first && {
       rule: i.rule,

@@ -40,6 +40,7 @@
 - I3 💬 Front Page 有某 Jenis Plak（如 PK 261 / A）但 Order Details 没有 → 问 salesman
 - I4 💬 Front Page 某 Jenis Plak 总数 ≠ Order Details 总数（如 50 vs 45）→ 问 salesman 哪边错
 - I5 ✏️ 有学生名字的行价钱 +RM1，没名字的保持原价（Production 标记，AI 从标记学习）
+  - 这些 Jenis Plak 的价钱已经包含名字，不用 +RM1：所有 CRYSTAL、VB、SONGKET、57166 A、SHINING STICKER A、ALUMINIUM PLATE A、WOOD ENGRAVED A（2026-11-03）
 
 ## J. 从历史订单学到的（2026-11-02 确认）
 - J1 ✏️ 模板提示字没换掉：(IKUT SUBJEK) / (IKUT TAHUN) / (IKUT JANTINA) / (… SEPERTI DI BAWAH) → 换成实际的值

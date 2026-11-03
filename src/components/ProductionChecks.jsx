@@ -189,7 +189,7 @@ function useExcelIssues(order) {
 // Where the issue is: the sheet (the Excel tab of the same name), and a button straight to it
 function Where({ issue, onShow }) {
   if (!issue.sheet) return null;
-  const fromExcel = issue.rule.startsWith('I') || issue.rule === 'A1';
+  const fromExcel = ['A1', 'I3', 'I4'].includes(issue.rule);
   return (
     <div style={{ margin: '2px 0', fontSize: 14 }}>
       📍 {issue.rule === 'I4' ? 'Excel FRONT PG ↔ sheet' : fromExcel ? 'Excel sheet' : 'Sheet'} <strong>{issue.sheet}</strong>
