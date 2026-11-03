@@ -197,11 +197,12 @@ export function checkExcel(order, buffer, fileName) {
   front.forEach((qty, key) => {
     const name = frontNames.get(key) || items.get(key)?.jenisPlak || key;
     if (!ordered.has(key)) {
-      issues.push({ rule: 'I3', level: 'ask', count: qty, sample: fileName, sheet: 'FRONT PG', text: `FRONT PG has ${name} × ${qty} but the order has none — ask the salesman` });
+      issues.push({ rule: 'I3', level: 'ask', count: qty, sample: fileName, sheet: 'FRONT PG', find: name, frontQty: qty, text: `FRONT PG has ${name} × ${qty} but the order has none — ask the salesman` });
     } else if (ordered.get(key) !== qty) {
       const it = items.get(key);
       issues.push({ rule: 'I4', level: 'ask', count: Math.abs(ordered.get(key) - qty), sample: fileName,
-        categoryKey: it.categoryKey, sheet: it.categoryLabel || resolveCategory(it.categoryKey)?.label || it.categoryKey, find: it.jenisPlak, text: `${name}: FRONT PG says ${qty}, the order has ${ordered.get(key)} — ask the salesman which is right` });
+        categoryKey: it.categoryKey, sheet: it.categoryLabel || resolveCategory(it.categoryKey)?.label || it.categoryKey, find: it.jenisPlak,
+        frontQty: qty, orderQty: ordered.get(key), text: `${name}: FRONT PG says ${qty}, the order has ${ordered.get(key)} — ask the salesman which is right` });
     }
   });
   return issues;

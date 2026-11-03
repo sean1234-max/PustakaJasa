@@ -154,6 +154,65 @@ function drawSample(ctx, sample, img, artImg, x, y, width) {
   return CAPTION + h * s;
 }
 
+// A few plaques side by side as one PNG, each captioned — AI Review's red / black picture for the
+// salesman's WhatsApp. `pictures`: [{ label, jenisPlak, row }] (row = a CSV row array). A code with
+// no picture is drawn as a text card.
+const PNG_PLAQUE_PT = 260;
+const TEXT_CARD_LINE = 15;
+const TEXT_CARD_PAD = 10;
+export async function plakPicturesPng(pictures, title) {
+  const manifest = await loadManifest();
+  if (!manifest) return null;
+  await Promise.all(Object.values(FONTS).map((f) => document.fonts.load(`${f.weight} 12px ${f.family}`).catch(() => null)));
+  const samples = pictures.map(({ label, jenisPlak, row }) => {
+    const rowObj = Object.fromEntries(CSV_COLUMNS.map((c, i) => [c, row[i] ?? '']));
+    const entry = manifest.files.find((f) => f.file === fileForCode(jenisPlak, manifest));
+    const name = entry && pickTemplate(entry.templates, templateNameFor(rowObj));
+    return name ? { entry, template: entry.templates[name], row: rowObj, jenisPlak: label } : null;
+  });
+  // no picture for the code (a crystal …): its lines as text on a white card, the red line in red
+  const textCard = (i) => {
+    const rowObj = Object.fromEntries(CSV_COLUMNS.map((c, k) => [c, pictures[i].row[k] ?? '']));
+    return ['event_header', 'position', 'event_line_1', 'event_line_2'].flatMap((f) => String(rowObj[f] || '').split('\n')
+      .filter(Boolean).map((text) => ({ text, red: f === 'position' && rowObj.position_black !== '1' })));
+  };
+  const cards = samples.map((smp, i) => (smp ? null : textCard(i)));
+  const images = await Promise.all(samples.map((smp) => (smp ? loadImage(sceneOf(smp).src) : null)));
+  const arts = await Promise.all(samples.map((smp) => (smp && sceneOf(smp).art ? loadImage(sceneOf(smp).art.src) : null)));
+  const heights = samples.map((smp, i) => CAPTION + (smp ? sceneOf(smp).h * (PNG_PLAQUE_PT / sceneOf(smp).w) : TEXT_CARD_PAD * 2 + cards[i].length * TEXT_CARD_LINE));
+  const width = MARGIN * 2 + samples.length * PNG_PLAQUE_PT + (samples.length - 1) * GAP;
+  const height = MARGIN * 2 + CAPTION + Math.max(...heights);
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(width * PX_PER_PT);
+  canvas.height = Math.round(height * PX_PER_PT);
+  const ctx = canvas.getContext('2d');
+  ctx.scale(PX_PER_PT, PX_PER_PT);
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, width, height);
+  ctx.fillStyle = '#000';
+  ctx.font = `700 11px ${FONTS.line.family}`;
+  ctx.textAlign = 'left';
+  ctx.fillText(title, MARGIN, MARGIN);
+  samples.forEach((smp, i) => {
+    const x = MARGIN + i * (PNG_PLAQUE_PT + GAP);
+    const y = MARGIN + CAPTION;
+    if (smp) { drawSample(ctx, smp, images[i], arts[i], x, y, PNG_PLAQUE_PT); return; }
+    ctx.fillStyle = '#333';
+    ctx.font = `600 9px ${FONTS.line.family}`;
+    ctx.textAlign = 'left';
+    ctx.fillText(pictures[i].label, x, y + 9);
+    ctx.strokeStyle = '#999';
+    ctx.strokeRect(x, y + CAPTION, PNG_PLAQUE_PT, heights[i] - CAPTION);
+    ctx.textAlign = 'center';
+    cards[i].forEach((l, k) => {
+      ctx.fillStyle = l.red ? '#c0392b' : '#000';
+      ctx.font = `700 11px ${FONTS.line.family}`;
+      ctx.fillText(l.text, x + PNG_PLAQUE_PT / 2, y + CAPTION + TEXT_CARD_PAD + (k + 0.8) * TEXT_CARD_LINE, PNG_PLAQUE_PT - 8);
+    });
+  });
+  return new Promise((ok) => canvas.toBlob(ok, 'image/png'));
+}
+
 // A4 pages, two plaques a row, the order named at the top of each page
 async function plakPdf(samples, title) {
   const images = await Promise.all(samples.map((smp) => loadImage(sceneOf(smp).src)));

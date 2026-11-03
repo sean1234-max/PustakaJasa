@@ -4,7 +4,8 @@ import { fileText, compareWords } from '../utils/sourceCheck';
 import { reviewOrder, merahChoices, checkExcel, rowWithout, aiPlaquesOf, aiIssuesToReview } from '../utils/reviewChecks';
 import { reviewOrderAi } from '../lib/reviewAiApi';
 import { saveAiFlags } from '../lib/reviewLogApi';
-import { PlakRowPreview } from './PlakPreview';
+import { PlakRowPreview, plakPicturesPng } from './PlakPreview';
+import { salesmanMessage } from '../utils/salesmanMessage';
 import { isCrystalCode, buildCsvRows, CSV_COLUMNS } from '../utils/exportCsv';
 import { orderImportFiles } from '../utils/importFiles';
 import { FORM_TEMPLATE_URL } from '../utils/formRoundTrip';
@@ -111,6 +112,43 @@ export default function ProductionChecks({ order, groups }) {
 // While reviewing (Reviewing Order): the program half of the review rule book
 // (reviewChecks.js, docs/ai-review-rules.md). Only flags — Production still fixes and clicks Done Review.
 const LEVEL_LABEL = { fix: '🔴 Fix', ask: '🟡 Ask salesman' };
+// Copy to the clipboard for the salesman's WhatsApp; `make()` gives a string or a PNG Blob. A browser
+// that won't put a picture on the clipboard gets it as a download instead.
+const COPIED_MS = 2500;
+function CopyButton({ label, make, style }) {
+  const [note, setNote] = useState('');
+  const copy = async () => {
+    try {
+      const value = await make();
+      if (!value) { setNote('Nothing to copy'); return; }
+      if (typeof value === 'string') {
+        await navigator.clipboard.writeText(value);
+      } else {
+        try {
+          await navigator.clipboard.write([new ClipboardItem({ 'image/png': value })]);
+        } catch {
+          const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(value), download: 'plak.png' });
+          a.click();
+          setNote('Saved as plak.png');
+          return;
+        }
+      }
+      setNote('Copied ✓');
+    } catch (err) {
+      console.error('Copy for the salesman failed:', err);
+      setNote('Could not copy');
+    } finally {
+      setTimeout(() => setNote(''), COPIED_MS);
+    }
+  };
+  return (
+    <>
+      <button type="button" className="btn btn-secondary" style={{ padding: '2px 10px', ...style }} onClick={copy}>{label}</button>
+      {note && <span className="hint-text" style={{ marginLeft: 6 }}>{note}</span>}
+    </>
+  );
+}
+
 // B1: the same plaque red and black side by side — screenshot it to the salesman, then click the
 // teacher's pick (saved as the sheet's MERAH). `onPick(key, value)`: null when MERAH can't be changed.
 function MerahChoice({ order, issue, onPick }) {
@@ -126,7 +164,17 @@ function MerahChoice({ order, issue, onPick }) {
     { label: 'MERAH (red)', choice: choices.red, button: 'Use red' },
     { label: 'Black', choice: choices.black, button: 'Keep black' },
   ];
+  const picture = () => plakPicturesPng(
+    [{ label: 'A — RED', choice: choices.red }, { label: 'B — BLACK', choice: choices.black }]
+      .filter((p) => p.choice).map((p) => ({ label: p.label, jenisPlak, row: p.choice.row })),
+    `${order.id} ${order.sekolah || ''} — ${issue.sheet}`,
+  );
   return (
+    <>
+    <div style={{ margin: '6px 0 0', display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+      <CopyButton label="📋 Copy picture" make={picture} />
+      <CopyButton label="📋 Copy question" make={() => salesmanMessage(order, [issue])} />
+    </div>
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 'var(--space-3)', margin: '6px 0 var(--space-2)' }}>
       {options.map(({ label, choice, button }) => (
         <div key={label} style={{ background: '#fff', border: '1px solid #e5e5e5', borderRadius: 6, padding: 'var(--space-2)' }}>
@@ -138,6 +186,7 @@ function MerahChoice({ order, issue, onPick }) {
         </div>
       ))}
     </div>
+    </>
   );
 }
 
@@ -156,7 +205,7 @@ function MerahIssue({ order, issue, onPick, onShow }) {
     <div style={{ marginBottom: 'var(--space-3)' }}>
       <div style={{ fontWeight: 700 }}>🟡 {issue.sheet}: red or black?</div>
       <Where issue={{ ...issue, find: issue.word }} onShow={onShow} />
-      <div className="hint-text" style={{ margin: '2px 0 0' }}>Screenshot this to the salesman, then click what the teacher picks.</div>
+      <div className="hint-text" style={{ margin: '2px 0 0' }}>Copy the picture and the question to the salesman, then click what the teacher picks.</div>
       <MerahChoice order={order} issue={issue} onPick={onPick} />
       <Details summary={`Lines on this sheet (${issue.wordList.length}) · ${issue.count} plaque(s)`}>{issue.wordList.join(' · ')}</Details>
     </div>
@@ -243,6 +292,7 @@ export function AiReviewCheck({ order, onPickMerah, onShow }) {
   const ai = useAiIssues(order);
   const issues = useMemo(() => [...reviewOrder(order), ...excel.issues, ...ai.issues], [order, excel.issues, ai.issues]);
   const merah = issues.filter((i) => i.itemId);
+  const asks = issues.filter((i) => i.level === 'ask');
   const others = issues.filter((i) => !i.itemId);
   const reading = excel.loading || ai.loading;
   // Review Log: what was flagged while the order was being reviewed, saved once it's all read
@@ -260,11 +310,17 @@ export function AiReviewCheck({ order, onPickMerah, onShow }) {
   return (
     <div style={{ margin: '0 0 var(--space-3)', padding: 'var(--space-3)', border: `1px solid ${issues.length ? '#e0b252' : '#9ccc9c'}`, borderRadius: 6, background: issues.length ? '#fff8e6' : '#f1faf1' }}>
       <div style={{ fontWeight: 700, marginBottom: issues.length ? 'var(--space-2)' : 0 }}>{title}</div>
+      {asks.length > 1 && (
+        <div style={{ marginBottom: 'var(--space-3)' }}>
+          <CopyButton label={`📋 Copy all ${asks.length} questions for the salesman`} make={() => salesmanMessage(order, asks)} />
+        </div>
+      )}
       {merah.map((i) => <MerahIssue key={i.itemId} order={order} issue={i} onPick={onPickMerah} onShow={onShow} />)}
       {others.map((i) => (
         <div key={`${i.rule}-${i.text}-${i.categoryKey || ''}`} style={{ marginBottom: 'var(--space-3)' }}>
           <strong>{LEVEL_LABEL[i.level]}</strong>{i.ai && ' 🤖'} {i.text}
           <Where issue={i} onShow={onShow} />
+          {i.level === 'ask' && <CopyButton label="📋 Copy question" make={() => salesmanMessage(order, [i])} />}
           <IssuePictures issue={i} />
           <Details summary={`rule ${i.rule}`}>{i.sample}</Details>
         </div>
