@@ -12,7 +12,7 @@ const ROLE_LABELS = { teacher: 'School', salesman: 'Salesman', production: 'Prod
 const ROLE_OPTIONS = Object.keys(ROLE_LABELS);
 const STATUS_OPTIONS = ['active', 'inactive', 'suspended'];
 
-const EMPTY_FORM = { role: 'teacher', sekolah: '', displayName: '', email: '', password: '', assignedSalesmanIds: [] };
+const EMPTY_FORM = { role: 'teacher', sekolah: '', displayName: '', email: '', password: '', assignedSalesmanIds: [], productionManager: false };
 const inputClass = 'w-full px-3 py-2 border border-outline-variant rounded-lg bg-surface-bright focus:ring-2 focus:ring-primary focus:border-primary text-body-md text-on-surface outline-none transition-all';
 
 // School Name -> login email, matching the convention already used for the
@@ -123,11 +123,13 @@ export default function AdminUsers() {
       if (form.role === 'store_admin' && form.assignedSalesmanIds.length > 0) {
         await Promise.all(form.assignedSalesmanIds.map((salesmanId) => assignInvoicingSalesman(result.id, salesmanId)));
       }
+      // a Production Manager from the start (Sean, 2026-11-03): every order, the Catalog and the Team
+      if (form.role === 'production' && form.productionManager) await updateProfile(result.id, { is_production_manager: true });
       await logAdminAction({
         action: 'Admin created a user account',
         targetTable: 'profiles',
         targetId: result.id,
-        after: { role: form.role, displayName: form.displayName, email: form.email },
+        after: { role: form.role, displayName: form.displayName, email: form.email, ...(form.role === 'production' && form.productionManager ? { is_production_manager: true } : {}) },
       });
       setToast(`${ROLE_LABELS[form.role]} account created successfully.`);
       setForm(EMPTY_FORM);
@@ -257,6 +259,25 @@ export default function AdminUsers() {
         after: { is_store_admin_manager: checked },
       });
       setToast(checked ? 'Now a Store Admin Manager.' : 'No longer a Store Admin Manager.');
+      load();
+    } catch (err) {
+      setFormError(err.message);
+    }
+  };
+
+  // Same again for Production (0080_production_team.sql, Sean 2026-11-03): a Production Manager sees
+  // every order, edits the Catalog and runs the Team page, like production@pjsb.com.
+  const handleToggleProductionManager = async (p, checked) => {
+    try {
+      await updateProfile(p.id, { is_production_manager: checked });
+      await logAdminAction({
+        action: checked ? 'Admin made a production account a manager' : 'Admin removed manager from a production account',
+        targetTable: 'profiles',
+        targetId: p.id,
+        before: { is_production_manager: p.is_production_manager },
+        after: { is_production_manager: checked },
+      });
+      setToast(checked ? 'Now a Production Manager.' : 'No longer a Production Manager.');
       load();
     } catch (err) {
       setFormError(err.message);
@@ -396,6 +417,15 @@ export default function AdminUsers() {
             <input className={inputClass} id="new-password" type="password" placeholder="At least 6 characters" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
           </Field>
 
+          {form.role === 'production' && (
+            <Field label="Production Manager" htmlFor="new-production-manager">
+              <label className="inline-flex items-center gap-3 text-body-md text-on-surface cursor-pointer">
+                <input id="new-production-manager" type="checkbox" className="w-4 h-4" checked={form.productionManager} onChange={(e) => setForm({ ...form, productionManager: e.target.checked })} />
+                Manager — sees every order, edits the Catalog and the Team
+              </label>
+            </Field>
+          )}
+
           {form.role === 'store_admin' && (
             <Field label="Assigned Salesmen" htmlFor="new-salesmen">
               <div id="new-salesmen" className="flex flex-col gap-2 max-h-48 overflow-y-auto border border-outline-variant rounded-lg p-3">
@@ -484,6 +514,7 @@ export default function AdminUsers() {
                         {ROLE_LABELS[p.role] || p.role}
                         {p.role === 'salesman' && p.is_sales_manager && <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-md bg-primary-container/20 text-primary text-[10px] font-semibold uppercase">Manager</span>}
                         {p.role === 'store_admin' && p.is_store_admin_manager && <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-md bg-primary-container/20 text-primary text-[10px] font-semibold uppercase">Manager</span>}
+                        {p.role === 'production' && p.is_production_manager && <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-md bg-primary-container/20 text-primary text-[10px] font-semibold uppercase">Manager</span>}
                       </td>
                       <td className="py-4 px-6 text-on-surface-variant">{p.email || '—'}</td>
                       <td className="py-4 px-6 text-on-surface-variant">{p.sekolah || '—'}</td>
@@ -526,6 +557,17 @@ export default function AdminUsers() {
                                 <label className="inline-flex items-center gap-3 text-body-md text-on-surface cursor-pointer">
                                   <input type="checkbox" className="w-4 h-4" checked={!!p.is_sales_manager} onChange={(e) => handleToggleSalesManager(p, e.target.checked)} />
                                   {p.is_sales_manager ? 'Is a Sales Manager' : 'Make Sales Manager'}
+                                </label>
+                              </div>
+                            )}
+
+                            {p.role === 'production' && (
+                              <div className="max-w-xl border-t border-outline-variant pt-6 mb-8">
+                                <h4 className="text-label-bold text-on-surface-variant uppercase tracking-wider mb-2">Production Manager</h4>
+                                <p className="text-body-sm text-on-surface-variant mb-3">A Production Manager sees every order (not just their salesmen’s), edits the Catalog and runs the Team page — like production@pjsb.com. Log out and in again to see it.</p>
+                                <label className="inline-flex items-center gap-3 text-body-md text-on-surface cursor-pointer">
+                                  <input type="checkbox" className="w-4 h-4" checked={!!p.is_production_manager} onChange={(e) => handleToggleProductionManager(p, e.target.checked)} />
+                                  {p.is_production_manager ? 'Is a Production Manager' : 'Make Production Manager'}
                                 </label>
                               </div>
                             )}
