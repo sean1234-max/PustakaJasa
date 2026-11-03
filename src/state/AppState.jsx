@@ -3291,8 +3291,10 @@ export function AppStateProvider({ children }) {
   const updateReferenceOrder = useCallback(async (orderId, refOrderKey, value) => {
     const order = stateRef.current.orders.find((o) => o.id === orderId);
     // the row order (refOrder), or Production's MERAH ticks while reviewing (redLines)
+    const reviewing = order?.status === 'Reviewing Order';
     const field = refOrderKey.endsWith('::refOrder') ? 'refOrder'
-      : refOrderKey.endsWith('::redLines') && order?.status === 'Reviewing Order' ? 'redLines' : null;
+      : refOrderKey.endsWith('::redLines') && reviewing ? 'redLines'
+        : refOrderKey.endsWith('::umumRed') && reviewing ? 'umumRed' : null;
     if (!order || !field) return false;
     const blockPrefix = refOrderKey.slice(0, -field.length);
     const items = (order.items || []).map((it) => (

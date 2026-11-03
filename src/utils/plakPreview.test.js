@@ -49,6 +49,12 @@ describe('plakPreview — the same .ai and layout group as SEAN.jsx', () => {
     expect(Math.abs(top + bottom)).toBeLessThan(0.01);
   });
 
+  it('keeps JOHAN red on a plaque with a background (no rank colours)', () => {
+    const row = { event_header: 'MAJLIS', position: 'JOHAN' };
+    const { fields } = layoutPlaque(row, tpl, { measure, rankColors: false });
+    expect(fields.find((f) => f.field === 'position').color).toBe(tpl.fields.position.color);
+  });
+
   it('breaks ANUGERAH titles and a long TAJUK BESAR like SEAN.jsx', () => {
     const row = { event_header: 'MAJLIS ANUGERAH KECEMERLANGAN SK TAMAN SEROJA 2026', position: 'ANUGERAH MURID CEMERLANG' };
     const { fields } = layoutPlaque(row, tpl, { measure });

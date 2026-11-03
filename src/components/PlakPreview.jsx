@@ -59,7 +59,7 @@ export function plakSamplesOf(order, manifest) {
 
 // one sample laid out: its words (pt, y down) and the box around the anchor and picture
 function sceneOf({ entry, template, row }) {
-  const { fields } = layoutPlaque(row, template, { trofi: /TROFI/i.test(entry.file), measure });
+  const { fields } = layoutPlaque(row, template, { trofi: /TROFI/i.test(entry.file), measure, rankColors: !!entry.picture.outline });
   const [aw, ah] = template.anchor;
   const pic = entry.picture.box; // [l, t, r, b], y up
   // the layout group's own artwork (a trophy's frame pattern — Sean, 2026-11-02), over the picture
@@ -92,6 +92,26 @@ function PlakSvg({ sample }) {
         </text>
       )))}
     </svg>
+  );
+}
+
+// One given CSV row (array) on its Jenis Plak's picture — AI Review's red / black choice. No picture for
+// the code: the lines as text, red where they print red.
+export function PlakRowPreview({ jenisPlak, row }) {
+  const [manifest, setManifest] = useState(null);
+  const fontsReady = useFontsReady();
+  useEffect(() => { let live = true; loadManifest().then((m) => { if (live) setManifest(m); }); return () => { live = false; }; }, []);
+  const rowObj = useMemo(() => Object.fromEntries(CSV_COLUMNS.map((c, i) => [c, row[i] ?? ''])), [row]);
+  const entry = manifest?.files.find((f) => f.file === fileForCode(jenisPlak, manifest));
+  const name = entry && pickTemplate(entry.templates, templateNameFor(rowObj));
+  if (entry && name && fontsReady) return <PlakSvg sample={{ entry, template: entry.templates[name], row: rowObj, jenisPlak }} />;
+  const redPosition = rowObj.position_black !== '1';
+  return (
+    <div style={{ textAlign: 'center', padding: 'var(--space-2)', border: '1px solid #ddd', borderRadius: 4, background: '#fff' }}>
+      {['event_header', 'position', 'event_line_1', 'event_line_2'].filter((c) => rowObj[c]).map((c) => (
+        <div key={c} style={{ whiteSpace: 'pre-line', fontWeight: 700, color: c === 'position' && redPosition ? '#c0392b' : '#000' }}>{rowObj[c]}</div>
+      ))}
+    </div>
   );
 }
 

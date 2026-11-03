@@ -174,9 +174,9 @@ function positionLines(text, maxW, measureAt, trofi) {
 
 // one field's lines, font and size; null when the template has no frame for it
 function fieldLayout(field, value, tpl, opts) {
-  const { trofi, cjk, measure } = opts;
+  const { trofi, cjk, measure, rankColors } = opts;
   const posFrame = () => {
-    const c = rankColor(value);
+    const c = rankColors && rankColor(value);
     const rank = c && tpl.fields[`RANK_${c.toUpperCase()}`];
     return rank ? `RANK_${c.toUpperCase()}` : tpl.fields.position ? 'position' : null;
   };
@@ -212,12 +212,13 @@ function fieldLayout(field, value, tpl, opts) {
 
 // -> { fields: [{ field, lines, size, leading, font, color, align, x, baselines: [y…] }] } in pt around
 // the anchor centre, y DOWN (ready for SVG). `measure(text, size, font, tracking)` = width in pt.
-export function layoutPlaque(row, tpl, { trofi = false, measure }) {
+// rankColors: false on a plaque with a background — JOHAN stays red there (SEAN.jsx, Sean 2026-11-02)
+export function layoutPlaque(row, tpl, { trofi = false, measure, rankColors = true }) {
   const cjk = templateNameFor(row).startsWith('TC');
   const laid = lineOrderFor(row)
     .map((f) => [f, clean(row[f])])
     .filter(([, v]) => v)
-    .map(([f, v]) => fieldLayout(f, v, tpl, { trofi, cjk, measure }))
+    .map(([f, v]) => fieldLayout(f, v, tpl, { trofi, cjk, measure, rankColors }))
     .filter(Boolean);
   // stacked top to bottom with SEAN.jsx's gaps, each field a box of one leading per line with its capitals
   // in the middle of each, then the ink of the whole stack centred on the anchor

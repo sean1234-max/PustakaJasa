@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { checkPlaqueWording, checkPlaqueCounts, checkAiReport, plaqueLines, a3Files } from '../utils/productionCheck';
 import { fileText, compareWords } from '../utils/sourceCheck';
-import { isCrystalCode, buildCsvRows } from '../utils/exportCsv';
+import { reviewOrder, merahChoices, checkExcel, rowWithout, aiPlaquesOf, aiIssuesToReview } from '../utils/reviewChecks';
+import { reviewOrderAi } from '../lib/reviewAiApi';
+import { PlakRowPreview } from './PlakPreview';
+import { isCrystalCode, buildCsvRows, CSV_COLUMNS } from '../utils/exportCsv';
 import { orderImportFiles } from '../utils/importFiles';
 import { FORM_TEMPLATE_URL } from '../utils/formRoundTrip';
 import { fetchOrderImportBlob } from '../lib/storageApi';
@@ -99,6 +102,161 @@ export default function ProductionChecks({ order, groups }) {
       </ul>
       {[templates.note, words.note, words.skipped?.length ? `Not compared: ${words.skipped.join(', ')}.` : ''].filter(Boolean).map((n) => (
         <p key={n} className="hint-text" style={{ margin: '4px 0 0' }}>{n}</p>
+      ))}
+    </div>
+  );
+}
+
+// While reviewing (Reviewing Order): the program half of the review rule book
+// (reviewChecks.js, docs/ai-review-rules.md). Only flags — Production still fixes and clicks Done Review.
+const LEVEL_LABEL = { fix: '🔴 Fix', ask: '🟡 Ask salesman' };
+// B1: the same plaque red and black side by side — screenshot it to the salesman, then click the
+// teacher's pick (saved as the sheet's MERAH). `onPick(key, value)`: null when MERAH can't be changed.
+function MerahChoice({ order, issue, onPick }) {
+  const choices = useMemo(() => merahChoices(order, issue.itemId, issue.word), [order, issue.itemId, issue.word]);
+  const [busy, setBusy] = useState(false);
+  if (!choices) return <p style={{ margin: '4px 0' }}>{issue.text}</p>;
+  const pick = async (value) => {
+    setBusy(true);
+    try { await onPick(choices.key, value); } finally { setBusy(false); }
+  };
+  const jenisPlak = choices.black.row[CSV_COLUMNS.indexOf('jenis_plak')];
+  const options = [
+    { label: 'MERAH (red)', choice: choices.red, button: 'Use red' },
+    { label: 'Black', choice: choices.black, button: 'Keep black' },
+  ];
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 'var(--space-3)', margin: '6px 0 var(--space-2)' }}>
+      {options.map(({ label, choice, button }) => (
+        <div key={label} style={{ background: '#fff', border: '1px solid #e5e5e5', borderRadius: 6, padding: 'var(--space-2)' }}>
+          <div style={{ fontWeight: 700, marginBottom: 4 }}>{label}</div>
+          {choice ? <PlakRowPreview jenisPlak={jenisPlak} row={choice.row} /> : <p className="hint-text">This line can’t be made red on this sheet.</p>}
+          {choice && onPick && (
+            <button type="button" className="btn btn-secondary" style={{ marginTop: 6 }} disabled={busy} onClick={() => pick(choice.value)}>{button}</button>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// The long word list / sample plaque, folded away — the pictures and one short line come first.
+function Details({ summary, children }) {
+  return (
+    <details style={{ marginTop: 2 }}>
+      <summary className="dim" style={{ cursor: 'pointer', fontSize: 13 }}>{summary}</summary>
+      <div className="dim" style={{ fontSize: 13 }}>{children}</div>
+    </details>
+  );
+}
+
+function MerahIssue({ order, issue, onPick, onShow }) {
+  return (
+    <div style={{ marginBottom: 'var(--space-3)' }}>
+      <div style={{ fontWeight: 700 }}>🟡 {issue.sheet}: red or black?</div>
+      <Where issue={{ ...issue, find: issue.word }} onShow={onShow} />
+      <div className="hint-text" style={{ margin: '2px 0 0' }}>Screenshot this to the salesman, then click what the teacher picks.</div>
+      <MerahChoice order={order} issue={issue} onPick={onPick} />
+      <Details summary={`Lines on this sheet (${issue.wordList.length}) · ${issue.count} plaque(s)`}>{issue.wordList.join(' · ')}</Details>
+    </div>
+  );
+}
+
+// The order's Excel(s) — the Corrected Excel when there is one — read once for checkExcel.
+function useExcelIssues(order) {
+  const [excel, setExcel] = useState({ loading: true, issues: [] });
+  const files = useMemo(() => (order.correctedImportFilePath
+    ? [{ path: order.correctedImportFilePath, name: order.correctedImportFileName || 'corrected.xlsx' }]
+    : orderImportFiles(order)), [order]);
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      const found = [];
+      for (const f of files) {
+        const blob = await fetchOrderImportBlob(f.path);
+        if (blob) found.push(...checkExcel(order, await blob.arrayBuffer(), f.path));
+      }
+      return found;
+    })().catch((err) => {
+      console.error('AI Review could not read the order’s Excel:', err);
+      return [];
+    }).then((found) => { if (live) setExcel({ loading: false, issues: found }); });
+    return () => { live = false; };
+  }, [order, files]);
+  return excel;
+}
+
+// Where the issue is: the sheet (the Excel tab of the same name), and a button straight to it
+function Where({ issue, onShow }) {
+  if (!issue.sheet) return null;
+  const fromExcel = issue.rule.startsWith('I') || issue.rule === 'A1';
+  return (
+    <div style={{ margin: '2px 0', fontSize: 14 }}>
+      📍 {issue.rule === 'I4' ? 'Excel FRONT PG ↔ sheet' : fromExcel ? 'Excel sheet' : 'Sheet'} <strong>{issue.sheet}</strong>
+      {!fromExcel && ` · ${issue.count} plaque(s)`}
+      {issue.categoryKey && onShow && (
+        <>
+          {' '}
+          <button type="button" className="btn btn-secondary" style={{ padding: '2px 10px', marginLeft: 6 }} onClick={() => onShow(issue.categoryKey, issue.find)}>Show me</button>
+        </>
+      )}
+    </div>
+  );
+}
+
+// The plaque it's on — and for D1 the same plaque with that line taken off
+function IssuePictures({ issue }) {
+  if (!issue.row) return null;
+  const jenisPlak = issue.row[CSV_COLUMNS.indexOf('jenis_plak')];
+  const pictures = issue.rule === 'D1'
+    ? [{ label: 'Now', row: issue.row }, { label: `With "-" (no ${issue.find})`, row: rowWithout(issue.row, issue.find) }]
+    : [{ label: 'The plaque', row: issue.row }];
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 260px))', gap: 'var(--space-2)', margin: '4px 0' }}>
+      {pictures.map((p) => (
+        <div key={p.label} style={{ background: '#fff', border: '1px solid #e5e5e5', borderRadius: 6, padding: 6 }}>
+          <div className="dim" style={{ fontSize: 12, marginBottom: 2 }}>{p.label}</div>
+          <PlakRowPreview jenisPlak={jenisPlak} row={p.row} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// The model's judgment (review-order-ai): asked once per order + wording, cached in this browser
+function useAiIssues(order) {
+  const plaques = useMemo(() => aiPlaquesOf(order), [order]);
+  const [ai, setAi] = useState({ loading: true, issues: [] });
+  useEffect(() => {
+    let live = true;
+    setAi({ loading: true, issues: [] });
+    reviewOrderAi(order.id, plaques).then((r) => { if (live) setAi({ loading: false, issues: aiIssuesToReview(r.issues, plaques) }); });
+    return () => { live = false; };
+  }, [order.id, plaques]);
+  return ai;
+}
+
+// `onShow(categoryKey, words)`: open that sheet in Order Details and flash the row with those words
+export function AiReviewCheck({ order, onPickMerah, onShow }) {
+  const excel = useExcelIssues(order);
+  const ai = useAiIssues(order);
+  const issues = useMemo(() => [...reviewOrder(order), ...excel.issues, ...ai.issues], [order, excel.issues, ai.issues]);
+  const merah = issues.filter((i) => i.itemId);
+  const others = issues.filter((i) => !i.itemId);
+  const reading = excel.loading || ai.loading;
+  const title = issues.length ? `AI Review — ${issues.length} thing(s) to check${reading ? ' (still reading…)' : ''}`
+    : reading ? '⏳ AI Review: reading the order…' : '🟢 AI Review: nothing found';
+  return (
+    <div style={{ margin: '0 0 var(--space-3)', padding: 'var(--space-3)', border: `1px solid ${issues.length ? '#e0b252' : '#9ccc9c'}`, borderRadius: 6, background: issues.length ? '#fff8e6' : '#f1faf1' }}>
+      <div style={{ fontWeight: 700, marginBottom: issues.length ? 'var(--space-2)' : 0 }}>{title}</div>
+      {merah.map((i) => <MerahIssue key={i.itemId} order={order} issue={i} onPick={onPickMerah} onShow={onShow} />)}
+      {others.map((i) => (
+        <div key={`${i.rule}-${i.text}-${i.categoryKey || ''}`} style={{ marginBottom: 'var(--space-3)' }}>
+          <strong>{LEVEL_LABEL[i.level]}</strong>{i.ai && ' 🤖'} {i.text}
+          <Where issue={i} onShow={onShow} />
+          <IssuePictures issue={i} />
+          <Details summary={`rule ${i.rule}`}>{i.sample}</Details>
+        </div>
       ))}
     </div>
   );

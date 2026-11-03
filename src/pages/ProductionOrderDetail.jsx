@@ -19,7 +19,7 @@ import { getExportableCategories, splitOrderCategories, getOrderJenisPlakGroups,
 import { downloadTextFile } from '../utils/downloadBlob';
 import { getInvoiceItems, withOrderOwnSettings } from '../utils/orderBatches';
 import ImportFileButtons from '../components/ImportFileButtons';
-import ProductionChecks, { AiFileReportCheck } from '../components/ProductionChecks';
+import ProductionChecks, { AiFileReportCheck, AiReviewCheck } from '../components/ProductionChecks';
 import ShipmentUrgencyEditor from '../components/ShipmentUrgencyEditor';
 import ProductionPriceEditor from '../components/ProductionPriceEditor';
 import ProductionInvoiceEntry from '../components/ProductionInvoiceEntry';
@@ -31,6 +31,8 @@ import RemarkText from '../components/RemarkText';
 
 // 3 flashes × 0.5s (index.css .kiv-row-flash), then the rows go back to normal
 const KIV_FLASH_MS = 1700;
+// AI Review's "Show me": time for the sheet's tab to render before looking for the row
+const JUMP_RENDER_MS = 250;
 const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: false, matrix: false, jenisPlak: false };
 // Production may still drag the Reference Sample rows into a new order — nothing else.
 const REORDER_ONLY = { ...READONLY, lineOrder: true };
@@ -136,8 +138,9 @@ export default function ProductionOrderDetail() {
   const reorderUpdaters = useMemo(() => (canReorder ? {
     ...noopUpdaters,
     onLine: async (key, value) => {
-      const isRed = key.endsWith(`::${RED_LINES_SUFFIX}`);
-      if (isRed) {
+      // umumRed: ORDER LAIN-LAIN's MERAH, picked from AI Review's red / black choice
+      const isRed = key.endsWith(`::${RED_LINES_SUFFIX}`) || key.endsWith('::umumRed');
+      if (key.endsWith(`::${RED_LINES_SUFFIX}`)) {
         // more black rows than the plaque has lines for: not saved
         const item = (order.items || []).find((it) => key.startsWith(`${it.categoryKey}::${it.blockIdx ?? 0}::`));
         const problem = item && redLinesProblem({ ...item.detail?.lines, [key]: value }, key.slice(0, -RED_LINES_SUFFIX.length), resolveCategory(item.categoryKey));
@@ -293,6 +296,30 @@ export default function ProductionOrderDetail() {
     setActiveCat(key);
     setKivFlash(true);
   }, [fromKiv, effectiveOrder, categories]);
+  // AI Review's "Show me": open that sheet in Order Details, then scroll to and flash the first row
+  // (table row or Reference Sample line) holding the words — else just the sheet's tabs.
+  const [jump, setJump] = useState(null);
+  const showInOrder = (categoryKey, words) => {
+    setPage('details');
+    setActiveCat(categoryKey);
+    setJump({ words: String(words || '').toUpperCase(), at: Date.now() });
+  };
+  useEffect(() => {
+    if (!jump) return undefined;
+    const t = setTimeout(() => {
+      const holds = (el) => [el.textContent, ...[...el.querySelectorAll('input, textarea')].map((i) => i.value)]
+        .some((v) => String(v || '').toUpperCase().includes(jump.words));
+      const find = (sel) => (jump.words ? [...document.querySelectorAll(`.order-details-area ${sel}`)].find(holds) : null);
+      const target = find('tbody tr') || find('.ref-sample-line') || document.querySelector('.order-details-area');
+      if (!target) return;
+      const flash = target.tagName === 'TR' ? 'kiv-row-flash' : 'catalog-row-flash';
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      target.classList.add(flash);
+      setTimeout(() => target.classList.remove(flash), KIV_FLASH_MS);
+    }, JUMP_RENDER_MS);
+    return () => clearTimeout(t);
+  }, [jump]);
+
   useEffect(() => {
     if (!kivFlash) return undefined;
     document.querySelector('.kiv-row-flash')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -488,6 +515,8 @@ export default function ProductionOrderDetail() {
                 ? 'Review done — waiting for the salesman to approve. You can still edit the order until then.'
                 : 'Check this order — wording, line order, quantities, Jenis Plak. Fix anything with Edit Order, then click Done Review so Sales can approve it.'}
             </p>
+            <AiReviewCheck order={effectiveOrder} onPickMerah={canPickRed ? reorderUpdaters.onLine : null} onShow={showInOrder} />
+            {refOrderNote && <p className="hint-text" style={{ margin: '0 0 var(--space-3)', fontWeight: 600 }}>{refOrderNote}</p>}
             <div style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
               <button type="button" className="btn btn-secondary" onClick={() => navigate(`/production/orders/${order.id}/edit`)}>Edit Order</button>
               <button type="button" className="btn btn-secondary" onClick={() => togglePrices('order')}>{priceEditor === 'order' ? 'Close Prices' : 'Adjust Prices'}</button>
@@ -776,7 +805,7 @@ export default function ProductionOrderDetail() {
                 {categories.length === 0 ? (
                   <p className="hint-text">No exportable categories found for this order.</p>
                 ) : (
-                  <>
+                  <div className="order-details-area">
                     <div style={{ margin: 'var(--space-3) 0' }}>
                       <CategoryTabs categories={categories} active={currentCat?.key} onSelect={setActiveCat} />
                     </div>
@@ -816,7 +845,7 @@ export default function ProductionOrderDetail() {
                       );
                     })}
                     {exportNote && <p className="hint-text">{exportNote}</p>}
-                  </>
+                  </div>
                 )}
               </>
 

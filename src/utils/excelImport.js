@@ -1965,7 +1965,7 @@ function findSheetAny(wb, names) {
 export function frontPgMatchKey(text) {
   return String(text || '').toUpperCase().replace(/[()]/g, '').replace(/\s+/g, '').replace(/-+/g, '-');
 }
-function readFrontPgTotals(wb) {
+export function readFrontPgTotals(wb) {
   const ws = findSheet(wb, 'FRONT PG');
   if (!ws) return null;
   const range = sheetRange(ws);
