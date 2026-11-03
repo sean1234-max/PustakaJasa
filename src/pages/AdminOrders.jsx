@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import AdminLayout from '../components/AdminLayout';
 import { useAppState } from '../state/useAppState';
 import { ORDER_STATUSES, statusPillStyle, malaysiaToday, invoiceLabel } from '../data/catalog';
+import { matchesOrderSearch } from '../utils/orderSearch';
 
 const DATE_OPTIONS = ['All Time', 'Today', 'This Week', 'This Month', 'Custom Range'];
 // Stable empty fallback so the useMemos below don't see a fresh [] every
@@ -76,6 +77,8 @@ function Select({ label, value, onChange, children }) {
 export default function AdminOrders() {
   const { state } = useAppState();
   const navigate = useNavigate();
+  // Search Order (Sean, 2026-11-03): school, Order ID, Invoice Number or salesman, with the filters below
+  const [search, setSearch] = useState('');
   const [schoolFilter, setSchoolFilter] = useState('all');
   const [salesmanFilter, setSalesmanFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -114,6 +117,7 @@ export default function AdminOrders() {
   };
 
   const filtered = orders.filter((o) => {
+    if (search.trim() && !matchesOrderSearch(o, search)) return false;
     if (schoolFilter !== 'all' && o.sekolah !== schoolFilter) return false;
     if (salesmanFilter !== 'all' && o.sales !== salesmanFilter) return false;
     if (statusFilter !== 'all' && o.status !== statusFilter) return false;
@@ -122,7 +126,7 @@ export default function AdminOrders() {
   });
 
   const clearFilters = () => {
-    setSchoolFilter('all'); setSalesmanFilter('all'); setStatusFilter('all');
+    setSearch(''); setSchoolFilter('all'); setSalesmanFilter('all'); setStatusFilter('all');
     setDateFilter('All Time'); setCustomFrom(''); setCustomTo('');
   };
 
@@ -130,6 +134,14 @@ export default function AdminOrders() {
     <AdminLayout title="Orders" subtitle="Every order across every school.">
       <OrdersSummary orders={orders} />
       <section className="bg-surface-container-lowest border border-outline-variant rounded-xl p-5 shadow-sm mb-10">
+        <div className="flex flex-col gap-2 mb-6">
+          <label className="text-label-bold text-on-surface-variant" htmlFor="admin-order-search">Search Order</label>
+          <input
+            className="border border-outline-variant text-on-surface text-body-md rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+            id="admin-order-search" type="search" value={search} onChange={(e) => setSearch(e.target.value)}
+            placeholder="School, Order ID, Invoice Number or salesman — e.g. SK Sungai, 0187, DWI-26101082, Rex"
+          />
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 items-end">
           <Select label="School" value={schoolFilter} onChange={(e) => setSchoolFilter(e.target.value)}>
             <option value="all">All Schools</option>
@@ -170,7 +182,7 @@ export default function AdminOrders() {
       </section>
 
       {filtered.length === 0 ? (
-        <p className="text-body-md text-on-surface-variant">No orders found. Try changing the school, salesman, status, or date filter.</p>
+        <p className="text-body-md text-on-surface-variant">No orders found. Try changing the search, school, salesman, status, or date filter.</p>
       ) : (
         <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filtered.map((ord) => {
