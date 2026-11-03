@@ -20,7 +20,8 @@ export interface Issue {
 }
 
 // docs/ai-review-rules.md — the half of Production's review that needs judgment
-export const RULES = ['C1', 'F2', 'J2', 'J3', 'J6', 'J7', 'I5'] as const;
+// J7 ("missing HARI") dropped 2026-11-05: a title may start with ANUGERAH, MAJLIS, HARI … (Sean)
+export const RULES = ['C1', 'F2', 'J2', 'J3', 'J6', 'I5'] as const;
 
 export const ISSUES_TOOL_SCHEMA = {
   type: 'object',

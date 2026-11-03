@@ -49,7 +49,7 @@
 - J4 ✏️ SELEMPANG 颜色带编号「MERAH 0050」→「MERAH」
 - J5 ✏️ Jenis Plak 写法跟网站价钱表一致（YK628 → YK - 628）
 - J6 💬 漏了学校名或年份（行里只有 "-" 或少了 2026）→ 补上，不确定就问
-- J7 ✏️ TAJUK BESAR 漏 HARI：ANUGERAH KECEMERLANGAN 2026 → HARI ANUGERAH KECEMERLANGAN 2026
+- ~~J7 TAJUK BESAR 漏 HARI~~ 取消（2026-11-05）：TAJUK BESAR 可以是 ANUGERAH…、MAJLIS…、HARI… 开头，都是对的
 - J8 💬 Jenis Plak 缺货 → 换同类替代款（PK 261 / A → PK 262 / A），先问 salesman
 - 代 key in 的订单（例：Kent 的订单由 Production 输入）一样要完整 review
 
@@ -67,7 +67,7 @@
 | C3 非 ORDER LAIN-LAIN 的 ① 出现 ANUGERAH | J2 标题要不要分两行 |
 | D1 TAJUK BESAR 的字在下面的行又出现、没放 "-" | J3 名称里的性别 |
 | E1 OTHER 没 code / 价钱 | J6 漏了学校名或年份 |
-| I1–I4 Front Page / Excel / 网站的 QTY 和价钱 | J7 TAJUK BESAR 漏 HARI |
+| I1–I4 Front Page / Excel / 网站的 QTY 和价钱 | |
 | J1 括号提示字 (IKUT …) | I5 哪些行有学生名字（+RM1） |
 | J4 颜色带编号、J5 Jenis Plak 写法 | |
 | J8 库存不够 | |

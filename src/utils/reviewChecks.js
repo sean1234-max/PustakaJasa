@@ -134,7 +134,7 @@ export function aiPlaquesOf(order, rowsOf = itemRows) {
 }
 
 // The model's answer as AI Review issues, placed on the first plaque it names
-const AI_LEVEL = { C1: 'fix', F2: 'fix', J2: 'fix', J3: 'fix', J6: 'ask', J7: 'fix', I5: 'fix' };
+const AI_LEVEL = { C1: 'fix', F2: 'fix', J2: 'fix', J3: 'fix', J6: 'ask', I5: 'fix' };
 // I5 (+RM1 for a name): these Jenis Plak's price already includes the name (Sean, 2026-11-03).
 // Compared letters and digits only, so "57166 / A", "57166A" and "57166 A" are all the same.
 const NAME_INCLUDED = ['CRYSTAL', 'VB', 'SONGKET', '57166 A', 'SHINING STICKER A', 'ALUMINIUM PLATE A', 'WOOD ENGRAVED A'];

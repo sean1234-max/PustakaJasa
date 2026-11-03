@@ -7,7 +7,8 @@ import { supabase } from './supabaseClient';
 // `plaques` is reviewChecks.js's aiPlaquesOf: only id / sheet / header / red / black are sent. The
 // answer is kept in this browser per order + wording, so opening the same order again costs nothing;
 // changed wording asks again.
-const CACHE_PREFIX = 'reviewAi:';
+// v2 (2026-11-05): J7 dropped and C1 narrowed — answers kept under the old rules are not reused
+const CACHE_PREFIX = 'reviewAi:v2:';
 
 const hashOf = (text) => {
   let h = 0;
