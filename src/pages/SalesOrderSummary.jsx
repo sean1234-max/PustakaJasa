@@ -185,6 +185,18 @@ export default function SalesOrderSummary() {
     }));
   }, [effectiveOrder, categories, selempangCats, state.plakCatalog]);
 
+  // The original order's Print Order once it has a Tambahan (Sean, 2026-11-03, ORD-0163): its latest
+  // Tambahan's print — the original's price table, then TAMBAHAN and the GRAND TOTAL — as the
+  // Tambahan's own card prints it.
+  const latestTambahan = useMemo(() => (!order || order.parentOrderId || addonView ? null
+    : state.orders.filter((o) => o.parentOrderId === order.id && o.status !== 'Cancelled')
+      .sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || ''))).pop() || null), [order, addonView, state.orders]);
+  const tambahanBlockGroups = useMemo(() => {
+    if (!latestTambahan) return [];
+    const { anugerah, selempang } = splitOrderCategories(latestTambahan);
+    return [...anugerah, ...selempang].map((cat) => ({ cat, blocks: reconstructBlocksForCategory(latestTambahan, cat.key, state.plakCatalog).blocks }));
+  }, [latestTambahan, state.plakCatalog]);
+
   if (!order) return null;
 
   // Only shown once Sales has approved (matches the same `editable` gate
@@ -273,7 +285,7 @@ export default function SalesOrderSummary() {
   // Deferred a tick so the just-updated printedAt (recordPrint) has
   // actually re-rendered into the print-only DOM before window.print()
   // reads it — see the identical note in OrderDetails.jsx.
-  const handlePrint = () => { recordPrint(order.id); setTimeout(() => window.print(), 0); };
+  const handlePrint = () => { recordPrint(latestTambahan ? latestTambahan.id : order.id); setTimeout(() => window.print(), 0); };
 
   return (
     <div className="screen-wrap">
@@ -575,6 +587,20 @@ export default function SalesOrderSummary() {
         </div>
 
         {/* Print-only — see the "Print Order" button, only shown once approved. */}
+        {latestTambahan ? (
+          <OrderPrintout
+            original={order} order={latestTambahan}
+            invoiceId={invoiceSource(latestTambahan, state.orders).invoiceId} printedAt={latestTambahan.printedAt}
+            urgent={latestTambahan.urgent} stamp={getOrderChangeStamp(latestTambahan)} showSales showRemark
+            priceTable={{
+              rows: latestTambahan.items || [], priceDrafts: {}, setPrice: () => {}, plakCatalog: state.plakCatalog,
+              totalQty: (latestTambahan.items || []).reduce((sum, it) => sum + (Number(it.qty) || 0), 0),
+              totalHarga: (latestTambahan.items || []).reduce((sum, it) => sum + (Number(it.harga) || 0), 0),
+              priceAdjusted: false, hideCategory: true, combineJenisPlak: true,
+            }}
+            catBlockGroups={tambahanBlockGroups}
+          />
+        ) : (
         <OrderPrintout
           original={addonView ? order : originalOrder}
           order={addonView ? effectiveOrder : order} invoiceId={invoiceSource(order, state.orders).invoiceId} printedAt={order.printedAt}
@@ -588,6 +614,7 @@ export default function SalesOrderSummary() {
           }}
           catBlockGroups={catBlockGroups}
         />
+        )}
       </div>
     </div>
   );
