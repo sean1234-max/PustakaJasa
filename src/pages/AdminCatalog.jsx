@@ -11,7 +11,7 @@ import { restrictToVerticalAxis } from '@dnd-kit/modifiers';
 import AdminLayout from '../components/AdminLayout';
 import { useAppState } from '../state/useAppState';
 import { logAdminAction } from '../lib/adminApi';
-import { stockZoneFor } from '../data/catalog';
+import { catalogVisibilityToggle, stockZoneFor } from '../data/catalog';
 
 const STOCK_ZONE_COLOR = { red: '#c0392b', orange: '#d98c00', normal: undefined };
 
@@ -53,7 +53,7 @@ function findAncestorIds(nodes, targetId, trail) {
 
 // Admin-only fork of ProductionCatalog.jsx — same AppState handlers
 // (addCatalogNode/removeCatalogNode/updateCatalogNodePrice/
-// setCatalogNodeHidden/moveCatalogNode/reorderCatalogSiblings) and the
+// setCatalogNodeVisibility/moveCatalogNode/reorderCatalogSiblings) and the
 // same admin-audit-log calls, restyled to match the Admin Portal redesign
 // plus drag-and-drop reordering and collapsible groups. Kept separate
 // rather than sharing one component with /production/catalog because that
@@ -145,6 +145,7 @@ function CatalogRow({
   const collapsed = collapsedIds.has(node.id);
   const canReorder = canMoveUp || canMoveDown;
   const zone = stockZoneFor(node.stockQty, node.stockBaseline);
+  const visibility = catalogVisibilityToggle(node);
 
   const { setNodeRef, attributes, listeners, transform, transition, isDragging } = useSortable({
     id: node.id,
@@ -334,9 +335,11 @@ function CatalogRow({
             </button>
           </div>
           <button type="button" onClick={() => setAddingChild((v) => !v)} className="text-secondary hover:text-primary text-label-bold font-semibold whitespace-nowrap">+ Variant</button>
-          <button type="button" onClick={() => onToggleHidden(node.id, !node.hidden)} className="text-secondary hover:text-on-surface text-label-bold font-semibold">
-            {node.hidden ? 'Unhide' : 'Hide'}
+          <button type="button" onClick={() => onToggleHidden(node.id, visibility.patch)} className="text-secondary hover:text-on-surface text-label-bold font-semibold">
+            {visibility.label}
           </button>
+          {visibility.autoHidden && <span className="text-xs text-outline whitespace-nowrap">Auto-hidden (low stock)</span>}
+          {visibility.shownWhenLow && <span className="text-xs text-outline whitespace-nowrap">Low stock — shown</span>}
           <button type="button" onClick={handleRemove} className="text-error hover:text-error/70 text-label-bold font-semibold">Remove</button>
         </div>
       </div>
@@ -386,7 +389,7 @@ function CatalogRow({
 
 export default function AdminCatalog() {
   const {
-    state, addCatalogNode, removeCatalogNode, updateCatalogNodePrice, renameCatalogNode, updateCatalogNodeStock, setCatalogNodeHidden, moveCatalogNode, reorderCatalogSiblings,
+    state, addCatalogNode, removeCatalogNode, updateCatalogNodePrice, renameCatalogNode, updateCatalogNodeStock, setCatalogNodeVisibility, moveCatalogNode, reorderCatalogSiblings,
     linkCatalogNodeStockGroup, unlinkCatalogNodeStockGroup,
   } = useAppState();
   const [newTopCode, setNewTopCode] = useState('');
@@ -476,9 +479,10 @@ export default function AdminCatalog() {
   // (which needs a starting number) the moment Admin blurs the field.
   const existingGroupKeys = new Set();
   collectStockGroupKeys(state.plakCatalog, existingGroupKeys);
-  const handleToggleHidden = (id, hidden) => {
-    setCatalogNodeHidden(id, hidden);
-    logCatalogAction(hidden ? 'Admin hid a catalog code' : 'Admin unhid a catalog code', id);
+  const handleToggleHidden = (id, patch) => {
+    setCatalogNodeVisibility(id, patch);
+    const hid = patch.hidden === true || patch.show_when_low === false;
+    logCatalogAction(hid ? 'Admin hid a catalog code' : 'Admin unhid a catalog code', id);
   };
   const handleMove = (id, direction) => {
     moveCatalogNode(id, direction);

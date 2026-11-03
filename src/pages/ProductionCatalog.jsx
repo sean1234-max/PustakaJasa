@@ -10,7 +10,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { restrictToVerticalAxis } from '@dnd-kit/modifiers';
 import Nav from '../components/Nav';
 import { useAppState } from '../state/useAppState';
-import { stockZoneFor } from '../data/catalog';
+import { catalogVisibilityToggle, stockZoneFor } from '../data/catalog';
 
 const STOCK_ZONE_COLOR = { red: '#c0392b', orange: '#d98c00', normal: undefined };
 
@@ -116,6 +116,7 @@ function CatalogRow({
   const hasChildren = Array.isArray(node.children) && node.children.length > 0;
   const collapsed = collapsedIds.has(node.id);
   const zone = stockZoneFor(node.stockQty, node.stockBaseline);
+  const visibility = catalogVisibilityToggle(node);
 
   const commitCode = () => {
     const next = codeDraft.trim();
@@ -221,7 +222,7 @@ function CatalogRow({
           </button>
         ) : <span style={{ display: 'inline-block', width: 28 }} />}
         <input
-          className={node.hidden ? 'input catalog-admin-code catalog-admin-code-hidden' : 'input catalog-admin-code'}
+          className={node.hidden || visibility.autoHidden ? 'input catalog-admin-code catalog-admin-code-hidden' : 'input catalog-admin-code'}
           value={codeDraft}
           aria-label={`Rename ${node.code}`}
           onChange={(e) => setCodeDraft(e.target.value)}
@@ -285,9 +286,11 @@ function CatalogRow({
             ⠿
           </button>
           <button type="button" className="btn btn-ghost" onClick={() => setAddingChild((v) => !v)}>+ Variant</button>
-          <button type="button" className={`btn ${node.hidden ? 'btn-secondary' : 'btn-ghost'}`} onClick={() => onToggleHidden(node.id, !node.hidden)}>
-            {node.hidden ? 'Unhide' : 'Hide'}
+          <button type="button" className={`btn ${visibility.label === 'Unhide' ? 'btn-secondary' : 'btn-ghost'}`} onClick={() => onToggleHidden(node.id, visibility.patch)}>
+            {visibility.label}
           </button>
+          {visibility.autoHidden && <span className="hint-text" style={{ fontSize: 11 }}>Auto-hidden (low stock)</span>}
+          {visibility.shownWhenLow && <span className="hint-text" style={{ fontSize: 11 }}>Low stock — shown</span>}
           <button type="button" className="btn btn-ghost" onClick={handleRemove}>Remove</button>
         </div>
       </div>
@@ -372,7 +375,7 @@ function findAncestorIds(nodes, targetId, trail) {
 
 export default function ProductionCatalog() {
   const {
-    state, addCatalogNode, removeCatalogNode, updateCatalogNodePrice, renameCatalogNode, updateCatalogNodeStock, setCatalogNodeHidden, reorderCatalogSiblings,
+    state, addCatalogNode, removeCatalogNode, updateCatalogNodePrice, renameCatalogNode, updateCatalogNodeStock, setCatalogNodeVisibility, reorderCatalogSiblings,
     linkCatalogNodeStockGroup, unlinkCatalogNodeStockGroup,
   } = useAppState();
   // Only the production manager changes the catalog (0080); the rest view it.
@@ -452,8 +455,8 @@ export default function ProductionCatalog() {
   const handleStockChange = (id, stockQty, stockGroupKey) => {
     updateCatalogNodeStock(id, stockQty, stockGroupKey);
   };
-  const handleToggleHidden = (id, hidden) => {
-    setCatalogNodeHidden(id, hidden);
+  const handleToggleHidden = (id, patch) => {
+    setCatalogNodeVisibility(id, patch);
   };
   // Every Stock Group name already in use anywhere in the catalog — lets a
   // row tell "join this existing group" apart from "create a brand new one"

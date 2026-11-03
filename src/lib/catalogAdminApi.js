@@ -21,7 +21,7 @@ export function buildPlakTree(rows, stockGroups) {
   const byId = new Map(rows.map((r) => {
     const group = r.stock_group_key ? groupByKey.get(r.stock_group_key) : null;
     return [r.id, {
-      id: r.id, code: r.code, price: Number(r.price) || 0, hidden: !!r.hidden,
+      id: r.id, code: r.code, price: Number(r.price) || 0, hidden: !!r.hidden, showWhenLow: !!r.show_when_low,
       stockQty: group ? group.stock_qty : (r.stock_qty ?? null),
       stockBaseline: group ? group.stock_baseline : (r.stock_baseline ?? null),
       stockGroupKey: r.stock_group_key || null,
@@ -50,7 +50,7 @@ export async function fetchPlakCatalog() {
   const [{ data, error }, { data: groups, error: groupError }] = await Promise.all([
     supabase
       .from('plak_catalog_nodes')
-      .select('id, parent_id, code, price, hidden, sort_order, stock_qty, stock_baseline, stock_group_key')
+      .select('id, parent_id, code, price, hidden, show_when_low, sort_order, stock_qty, stock_baseline, stock_group_key')
       .order('sort_order', { ascending: true }),
     supabase.from('plak_stock_groups').select('key, stock_qty, stock_baseline'),
   ]);

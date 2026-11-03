@@ -981,7 +981,7 @@ export const LOW_STOCK_WARN_RATIO = 0.40;
 // A code with no baseline set only ever hits stockQty === 0 exactly (there's
 // no percentage to measure against), so it still hides at literal zero —
 // same "deliberately out of stock" meaning as before this ratio existed.
-function isLowStockHidden(stockQty, stockBaseline) {
+export function isLowStockHidden(stockQty, stockBaseline) {
   if (stockQty == null) return false;
   if (stockQty === 0) return true;
   if (stockBaseline > 0) return stockQty <= stockBaseline * LOW_STOCK_HIDE_RATIO;
@@ -1002,7 +1002,7 @@ function isLowStockHidden(stockQty, stockBaseline) {
 export function filterHiddenPlakCatalog(nodes, blocked = false) {
   return (nodes || []).flatMap((node) => {
     if (node.hidden) return [];
-    const nowBlocked = blocked || isLowStockHidden(node.stockQty, node.stockBaseline);
+    const nowBlocked = blocked || (!node.showWhenLow && isLowStockHidden(node.stockQty, node.stockBaseline));
     if (nowBlocked) return [];
     const hasChildren = Array.isArray(node.children) && node.children.length > 0;
     if (!hasChildren) return [node];
@@ -1010,6 +1010,17 @@ export function filterHiddenPlakCatalog(nodes, blocked = false) {
     if (children.length === 0) return [];
     return [{ ...node, children }];
   });
+}
+
+// The catalog row's Hide/Unhide button (Sean, 2026-11-03). A code auto-hidden for low stock can
+// be shown again by Production (showWhenLow — e.g. 3 more PK 261 / A for one school) and hidden
+// again after; Production's own Hide (`hidden`) still wins over both.
+export function catalogVisibilityToggle(node) {
+  if (node.hidden) return { label: 'Unhide', patch: { hidden: false }, autoHidden: false };
+  if (!isLowStockHidden(node.stockQty, node.stockBaseline)) return { label: 'Hide', patch: { hidden: true }, autoHidden: false };
+  return node.showWhenLow
+    ? { label: 'Hide', patch: { show_when_low: false }, autoHidden: false, shownWhenLow: true }
+    : { label: 'Unhide', patch: { show_when_low: true }, autoHidden: true };
 }
 
 // Every tracked code — leaf or parent, independently tracked or sharing a

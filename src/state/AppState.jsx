@@ -3412,9 +3412,10 @@ export function AppStateProvider({ children }) {
   // beneath it (see filterHiddenPlakCatalog), but each node's hidden state
   // is stored and toggled independently, so unhiding a group later doesn't
   // silently reveal a variant that was individually hidden before that.
-  const setCatalogNodeHidden = useCallback(async (id, hidden) => {
+  // `patch` is { hidden } or { show_when_low } — see catalogVisibilityToggle.
+  const setCatalogNodeVisibility = useCallback(async (id, patch) => {
     try {
-      await updatePlakNode(id, { hidden });
+      await updatePlakNode(id, patch);
       await refreshPlakCatalog();
     } catch (err) {
       console.error('Failed to update Jenis Plak visibility in Supabase:', err);
@@ -3487,7 +3488,7 @@ export function AppStateProvider({ children }) {
     openProductionEdit,
     loadExcelIntoProductionEdit,
     saveProductionEdit,
-    addCatalogNode, removeCatalogNode, updateCatalogNodePrice, renameCatalogNode, updateCatalogNodeStock, setCatalogNodeHidden, moveCatalogNode,
+    addCatalogNode, removeCatalogNode, updateCatalogNodePrice, renameCatalogNode, updateCatalogNodeStock, setCatalogNodeVisibility, moveCatalogNode,
     linkCatalogNodeStockGroup, unlinkCatalogNodeStockGroup,
     reorderCatalogSiblings,
     refreshAssignedSalesman,

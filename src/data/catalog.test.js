@@ -6,7 +6,7 @@ import {
   shipmentDatePassed, resolveSelempangWarna, isKelasSubject, kelasListLabel,
   MALAY_ORDINALS, ordinalToNum, numToOrdinal,
   CATEGORIES, makeDynamicCategoryKey, isDynamicCategoryKey, resolveCategory, categoriesUsedByItems,
-  filterHiddenPlakCatalog, getLowStockAlerts,
+  filterHiddenPlakCatalog, getLowStockAlerts, catalogVisibilityToggle,
   parseDisplayDate, defaultShipmentDate, toMalaysiaDay, malaysiaDayIso,
 } from './catalog';
 
@@ -414,5 +414,24 @@ describe('invoiceSource', () => {
     expect(invoiceSource(original, [original])).toBe(original);
     expect(invoiceSource(tambahan, [tambahan])).toBe(tambahan);
     expect(invoiceSource({ ...tambahan, invoiceId: 'DWI-2' }, [original]).invoiceId).toBe('DWI-2');
+  });
+});
+
+describe('catalogVisibilityToggle — Production can show a low-stock code again', () => {
+  const low = { code: 'A', stockQty: 772, stockBaseline: 3922 }; // PK 261 / A, 19.7%
+
+  it('an auto-hidden code offers Unhide, and once shown it is orderable until Hide', () => {
+    expect(catalogVisibilityToggle(low)).toMatchObject({ label: 'Unhide', patch: { show_when_low: true }, autoHidden: true });
+    const shown = { ...low, showWhenLow: true };
+    expect(filterHiddenPlakCatalog([low])).toEqual([]);
+    expect(filterHiddenPlakCatalog([shown]).map((n) => n.code)).toEqual(['A']);
+    expect(getStockStatus('A', [shown])).toMatchObject({ maxOrderable: 772 });
+    expect(catalogVisibilityToggle(shown)).toMatchObject({ label: 'Hide', patch: { show_when_low: false } });
+  });
+
+  it("Production's own Hide still wins, and a normal code toggles hidden as before", () => {
+    expect(filterHiddenPlakCatalog([{ ...low, showWhenLow: true, hidden: true }])).toEqual([]);
+    expect(catalogVisibilityToggle({ code: 'B', hidden: true })).toMatchObject({ label: 'Unhide', patch: { hidden: false } });
+    expect(catalogVisibilityToggle({ code: 'B' })).toMatchObject({ label: 'Hide', patch: { hidden: true } });
   });
 });
