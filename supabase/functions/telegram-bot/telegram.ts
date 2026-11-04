@@ -63,5 +63,11 @@ export function telegramBot(token: string) {
     return false;
   }
 
-  return { webhookSecret, reply, sendDocument, setWebhook, downloadFile, inAnyGroup };
+  // The group's admins (people only, not bots)
+  async function adminIds(chatId: number | string): Promise<number[]> {
+    const res = await (await fetch(`${api}/getChatAdministrators?chat_id=${encodeURIComponent(chatId)}`)).json();
+    return res.ok ? (res.result as { user: { id: number; is_bot: boolean } }[]).filter((m) => !m.user.is_bot).map((m) => m.user.id) : [];
+  }
+
+  return { webhookSecret, reply, sendDocument, setWebhook, downloadFile, inAnyGroup, adminIds };
 }

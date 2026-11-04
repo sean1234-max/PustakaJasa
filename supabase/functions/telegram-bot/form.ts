@@ -3,8 +3,10 @@
 // and the MP THP sheets only — for the salesman to check, finish (KOD) and upload as usual. The
 // website's own filler writes the form (templateExport.js, bundled as form.bundle.js), so it reads
 // back exactly like a hand-filled one.
-// Who may use it: members of the groups in FORM_BOT_GROUP_IDS (default: the Production group) — the
-// bot must be in those groups. Adding / removing someone there is the whole access list.
+// Where: a private chat, or a salesman's own group (Sean + the bot + one salesman; every file sent there
+// is filled in — the bot's Group Privacy must be off to see them).
+// Who may use it: members of the groups in FORM_BOT_GROUP_IDS (default: the Production group), and
+// groups one of them made (an admin). The bot must be in FORM_BOT_GROUP_IDS' groups to check.
 
 import { DOMParser, XMLSerializer } from 'npm:@xmldom/xmldom@0.9.12';
 import { esc, telegramBot, MAX_FILE_BYTES } from './telegram.ts';
@@ -22,19 +24,25 @@ const HELP = 'Send me the teacher\'s kertas kerja (PDF, Word, Excel or a photo) 
 
 type Msg = Record<string, any>;
 
+// A private chat: the sender is in one of GROUPS. A salesman's group (Sean + the bot + one salesman,
+// Sean 2026-11-04): one of its admins is — the person who made it, never the salesman.
+async function allowed(msg: Msg) {
+  if (msg.chat.type === 'private') return formBot.inAnyGroup(msg.from?.id, GROUPS);
+  for (const id of await formBot.adminIds(msg.chat.id)) if (await formBot.inAnyGroup(id, GROUPS)) return true;
+  return false;
+}
+
 export async function handleForm(msg: Msg, aiAllowed: () => Promise<boolean>) {
-  if (msg.chat?.type !== 'private') {
-    // groups only decide who may use it; "/id" there tells Sean the id for FORM_BOT_GROUP_IDS
-    if (/^\/id\b/.test(String(msg.text ?? ''))) return formBot.reply(msg.chat.id, msg.message_id, `This group's id: <code>${esc(msg.chat.id)}</code>`);
-    return;
-  }
   const chatId = msg.chat.id;
-  if (!(await formBot.inAnyGroup(msg.from?.id, GROUPS))) {
-    return formBot.reply(chatId, msg.message_id, 'Sorry, this bot is only for Pustaka Jasa salesmen. Please ask Sean to add you.');
-  }
+  const inGroup = msg.chat?.type !== 'private';
   const doc = msg.document;
   const photo = Array.isArray(msg.photo) ? msg.photo[msg.photo.length - 1] : null;
   const file = doc || photo;
+  if (inGroup && !file) return; // a group's own chatter
+  if (/\(FORM ANUGERAH\)\.xlsx$/i.test(doc?.file_name || '')) return; // the bot's own form, forwarded back
+  if (!(await allowed(msg))) {
+    return formBot.reply(chatId, msg.message_id, 'Sorry, this bot is only for Pustaka Jasa salesmen. Please ask Sean to add you.');
+  }
   if (!file) return formBot.reply(chatId, msg.message_id, HELP);
   if ((file.file_size || 0) > MAX_FILE_BYTES) return formBot.reply(chatId, msg.message_id, 'That file is too big for me (20 MB at most).');
   const fileName = doc?.file_name || 'photo.jpg';
