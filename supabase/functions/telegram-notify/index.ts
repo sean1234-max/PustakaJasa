@@ -1,7 +1,8 @@
 // Telegram notices for Production (Sean, 2026-11-04): a message in the team's group when an order
-// comes in for review, and a summary every morning of what is still waiting. Called every 5 minutes
-// by pg_cron (migration 0106); each run sends only what hasn't been sent yet (telegram_sent), so an
-// extra call does nothing. No caller auth for that reason.
+// comes in for review, and one review list a day — every order in Reviewing Order, ✅ once Done
+// Review — edited in place whenever it changes (migration 0108; it replaced the 9:00 summary).
+// Called every 3 minutes by pg_cron; each run sends only what hasn't been sent yet (telegram_sent),
+// so an extra call does nothing. No caller auth for that reason.
 //
 // Secrets (Supabase → Edge Functions → Secrets): TELEGRAM_BOT_TOKEN (from @BotFather) and
 // TELEGRAM_CHAT_ID (the group). To find the group's id: add the bot to the group, send any message
@@ -15,9 +16,8 @@ const TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN') ?? '';
 const CHAT_ID = Deno.env.get('TELEGRAM_CHAT_ID') ?? '';
 const SITE_URL = Deno.env.get('SITE_URL') ?? 'https://pustaka-jasa.vercel.app';
 
-const SUMMARY_HOUR_MY = 9;          // the morning summary goes out from 9:00 Malaysia time
 const MAX_NEW_PER_RUN = 10;         // a backlog arrives over a few runs, not as a flood
-const SUMMARY_OLDEST_SHOWN = 10;
+const LIST_SHOWN = 40;              // per part of the list: a Telegram message holds 4096 characters
 const MS_PER_DAY = 86_400_000;
 
 const db = createClient(SUPABASE_URL, SECRET_KEY);
@@ -26,20 +26,34 @@ const esc = (t: unknown) => String(t ?? '').replace(/&/g, '&amp;').replace(/</g,
 const orderLink = (id: string) => `<a href="${SITE_URL}/#/production/orders/${encodeURIComponent(id)}">${esc(id)}</a>`;
 
 // Malaysia's calendar day and hour, whatever the server's clock (memory: always Malaysia time)
-function malaysiaNow() {
+function malaysiaNow(at = new Date()) {
   const parts = Object.fromEntries(new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Asia/Kuala_Lumpur', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', hour12: false,
-  }).formatToParts(new Date()).map((p) => [p.type, p.value]));
-  return { day: `${parts.year}-${parts.month}-${parts.day}`, hour: Number(parts.hour) };
+    timeZone: 'Asia/Kuala_Lumpur', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false,
+  }).formatToParts(at).map((p) => [p.type, p.value]));
+  return { day: `${parts.year}-${parts.month}-${parts.day}`, time: `${parts.hour}:${parts.minute}` };
 }
 
-async function send(text: string) {
-  const res = await fetch(`https://api.telegram.org/bot${TOKEN}/sendMessage`, {
+async function telegram(method: string, payload: Record<string, unknown>) {
+  const res = await fetch(`https://api.telegram.org/bot${TOKEN}/${method}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chat_id: CHAT_ID, text, parse_mode: 'HTML', disable_web_page_preview: true }),
+    body: JSON.stringify({ chat_id: CHAT_ID, parse_mode: 'HTML', disable_web_page_preview: true, ...payload }),
   });
-  if (!res.ok) throw new Error(`Telegram ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  const body = await res.json().catch(() => ({}));
+  return { ok: res.ok, body };
+}
+
+// the new message's id
+async function send(text: string, silent = false): Promise<number> {
+  const { ok, body } = await telegram('sendMessage', { text, disable_notification: silent });
+  if (!ok) throw new Error(`Telegram sendMessage: ${String(body.description).slice(0, 300)}`);
+  return body.result.message_id;
+}
+
+// false when the message is gone (deleted, auto-deleted) or too old to edit
+async function edit(messageId: number, text: string) {
+  const { ok, body } = await telegram('editMessageText', { message_id: messageId, text });
+  return ok || /not modified/i.test(String(body.description));
 }
 
 // sent once: a row in telegram_sent is written only after Telegram took the message
@@ -55,7 +69,7 @@ const plaqueCount = (items: unknown) => (Array.isArray(items) ? items : [])
   .reduce((n, it) => n + (Number((it as Record<string, unknown>)?.qty) || 0), 0);
 
 // Every order in Reviewing Order — the ones already Done Review (waiting for the salesman to approve)
-// too, ticked in the morning summary (Sean, 2026-11-05)
+// too, ticked in the review list (Sean, 2026-11-05)
 async function reviewingOrders() {
   const { data, error } = await db.from('orders')
     .select('id, sekolah, sales, function_date, urgent, created_at, reviewed_at, items')
@@ -73,14 +87,55 @@ function newOrderText(o: Record<string, unknown>) {
   ].join('\n');
 }
 
-function summaryText(orders: Record<string, unknown>[]) {
-  if (orders.length === 0) return '☀️ Good morning — no orders in Reviewing Order.';
-  const days = (o: Record<string, unknown>) => Math.floor((Date.now() - new Date(String(o.created_at)).getTime()) / MS_PER_DAY);
-  const toReview = orders.filter((o) => !o.reviewed_at).length;
-  const oldest = orders.slice(0, SUMMARY_OLDEST_SHOWN).map((o) => (
-    `• ${orderLink(String(o.id))} ${esc(o.sekolah)}${o.sales ? ` · ${esc(o.sales)}` : ''} — waiting ${days(o)} day(s)${o.reviewed_at ? ' ✅' : ''}`));
-  const more = orders.length > SUMMARY_OLDEST_SHOWN ? [`… and ${orders.length - SUMMARY_OLDEST_SHOWN} more`] : [];
-  return [`☀️ Good morning — ${toReview} order(s) waiting for review, ${orders.length - toReview} done ✅ (waiting for the salesman). Oldest:`, ...oldest, ...more].join('\n');
+const waitedDays = (o: Record<string, unknown>) => Math.floor((Date.now() - new Date(String(o.created_at)).getTime()) / MS_PER_DAY);
+
+// ❗ (Sean 2026-11-04): review has to be done by the day after the order is placed, so an order still
+// waiting from an earlier Malaysia day is due — placed on the 4th, it gets ❗ from the 5th
+const isDue = (o: Record<string, unknown>, today: string) => !o.reviewed_at && malaysiaNow(new Date(String(o.created_at))).day < today;
+
+function listPart(orders: Record<string, unknown>[], icon: string, today: string) {
+  return [
+    ...orders.slice(0, LIST_SHOWN).map((o) => {
+      const days = waitedDays(o);
+      return `${icon}${isDue(o, today) ? '❗' : ''} ${orderLink(String(o.id))} ${esc(o.sekolah)}${o.sales ? ` · ${esc(o.sales)}` : ''}${o.urgent ? ' 🔥' : ''}${!o.reviewed_at && days > 0 ? ` — ${days}d` : ''}`;
+    }),
+    ...(orders.length > LIST_SHOWN ? [`… and ${orders.length - LIST_SHOWN} more`] : []),
+  ];
+}
+
+// The review list without its "updated" line — what decides whether it needs editing
+function reviewListBody(orders: Record<string, unknown>[], today: string) {
+  const waiting = orders.filter((o) => !o.reviewed_at);
+  const done = orders.filter((o) => o.reviewed_at);
+  const due = waiting.filter((o) => isDue(o, today)).length;
+  return [
+    `📋 <b>Review list</b> — ${waiting.length} to review${due ? ` (❗ ${due} due)` : ''}, ${done.length} done ✅`,
+    '',
+    ...(waiting.length ? listPart(waiting, '⏳', today) : ['Nothing waiting for review 🎉']),
+    ...(done.length ? ['', ...listPart(done, '✅', today)] : []),
+  ].join('\n');
+}
+
+async function sha256(text: string) {
+  const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return [...new Uint8Array(hash)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+// Today's review list: sent (quietly) once a day, then edited whenever an order comes, is reviewed or leaves
+async function updateReviewList(orders: Record<string, unknown>[], now: { day: string; time: string }) {
+  const key = `live:${now.day}`;
+  const body = reviewListBody(orders, now.day);
+  const hash = await sha256(body);
+  const { data: row } = await db.from('telegram_sent').select('message_id, body_hash').eq('key', key).maybeSingle();
+  if (row?.body_hash === hash) return false;
+  const text = `${body}\n\n<i>Updated ${now.time} · ❗ = placed before today, review it today · ✅ = Done Review, waiting for the salesman to approve</i>`;
+  if (row?.message_id && await edit(row.message_id, text)) {
+    await db.from('telegram_sent').update({ body_hash: hash }).eq('key', key);
+    return true;
+  }
+  const messageId = await send(text, true);
+  await db.from('telegram_sent').upsert({ key, message_id: messageId, body_hash: hash });
+  return true;
 }
 
 Deno.serve(async (req) => {
@@ -116,9 +171,8 @@ Deno.serve(async (req) => {
       if (sentNew >= MAX_NEW_PER_RUN) break;
       if (await sendOnce(`new:${o.id}`, newOrderText(o))) sentNew++;
     }
-    const now = malaysiaNow();
-    const summary = now.hour >= SUMMARY_HOUR_MY && await sendOnce(`summary:${now.day}`, summaryText(orders));
-    return json({ ok: true, sentNew, summary });
+    const list = await updateReviewList(orders, malaysiaNow());
+    return json({ ok: true, sentNew, list });
   } catch (err) {
     console.error('telegram-notify failed:', err);
     return json({ ok: false, error: String(err).slice(0, 300) }, 500);
