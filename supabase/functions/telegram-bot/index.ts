@@ -10,9 +10,13 @@
 // Secrets: TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, ANTHROPIC_API_KEY. Set up once: open this function with
 // ?setup=1 — it registers itself as the bot's webhook (Telegram then signs each call with a secret
 // derived from the token). telegram-notify keeps sending the review notices; this only answers.
+//
+// The form bot (form.ts) is a second Telegram bot on this same function: TELEGRAM_FORM_BOT_TOKEN,
+// webhook ?bot=form (set up with ?setup=1&bot=form).
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
-import { esc, reply, setWebhook, webhookSecret, downloadFile, MAX_FILE_BYTES } from './telegram.ts';
+import { esc, telegramBot, MAX_FILE_BYTES } from './telegram.ts';
+import { formBot, handleForm } from './form.ts';
 import { readFile } from './files.ts';
 import { orderPlaquesText, proposeChanges, type Order } from './order.ts';
 import { readChanges, compareFile } from './ai.ts';
@@ -24,6 +28,7 @@ const SITE_URL = Deno.env.get('SITE_URL') ?? 'https://pustaka-jasa.vercel.app';
 const BOT_NAME = (Deno.env.get('TELEGRAM_BOT_USERNAME') ?? 'PjsbReviewAgent').toLowerCase();
 
 const db = createClient(SUPABASE_URL, SECRET_KEY);
+const bot = telegramBot(Deno.env.get('TELEGRAM_BOT_TOKEN') ?? '');
 const ORDER_ID_RE = /\bORD-?\s?(\d{3,5})\b/i;
 const MAX_DIFFS_SHOWN = 25;
 
@@ -49,7 +54,7 @@ async function aiAllowed() {
 // ------------------------------------------------------------------ change requests
 async function handleChanges(msg: Msg, text: string, who: string) {
   const read = await readChanges(text, todayMy());
-  if (!read) return reply(msg.chat.id, msg.message_id, 'Sorry, I couldn\'t read that message. Please try again.');
+  if (!read) return bot.reply(msg.chat.id, msg.message_id, 'Sorry, I couldn\'t read that message. Please try again.');
   const asked = (read.input.requests as Record<string, string | null>[]) || [];
   const notHandled = (read.input.notHandled as string[]) || [];
   const blocks: string[] = [];
@@ -76,7 +81,7 @@ async function handleChanges(msg: Msg, text: string, who: string) {
   }
   if (notHandled.length) blocks.push(['⚠ Not done by the bot — change these in Edit Order:', ...notHandled.map((n) => `• ${esc(n)}`)].join('\n'));
   if (!blocks.length) blocks.push(`I didn't find a Shipment Date, Function Date or Remark change with an order number (ORD-xxxx).\n\n${HELP}`);
-  return reply(msg.chat.id, msg.message_id, blocks.join('\n\n'));
+  return bot.reply(msg.chat.id, msg.message_id, blocks.join('\n\n'));
 }
 
 // ------------------------------------------------------------------ file compare
@@ -84,20 +89,20 @@ const KIND_ICON: Record<string, string> = { missing_in_order: '❌ In the file, 
 
 async function handleCompare(msg: Msg, fileMsg: Msg, text: string, who: string) {
   const orderId = normOrderId(text);
-  if (!orderId) return reply(msg.chat.id, msg.message_id, 'Which order? Add the order number, e.g. <b>@PjsbReviewAgent check ORD-0234</b>');
+  if (!orderId) return bot.reply(msg.chat.id, msg.message_id, 'Which order? Add the order number, e.g. <b>@PjsbReviewAgent check ORD-0234</b>');
   const doc = fileMsg.document;
   const photo = Array.isArray(fileMsg.photo) ? fileMsg.photo[fileMsg.photo.length - 1] : null;
   const file = doc || photo;
   const fileName = doc?.file_name || 'photo.jpg';
-  if ((file.file_size || 0) > MAX_FILE_BYTES) return reply(msg.chat.id, msg.message_id, 'That file is too big for me (20 MB at most).');
+  if ((file.file_size || 0) > MAX_FILE_BYTES) return bot.reply(msg.chat.id, msg.message_id, 'That file is too big for me (20 MB at most).');
   const { data: order } = await db.from('orders').select('id, sekolah, items').eq('id', orderId).maybeSingle();
-  if (!order) return reply(msg.chat.id, msg.message_id, `${esc(orderId)} — no such order.`);
-  const content = readFile(await downloadFile(file.file_id), fileName);
-  if (!content) return reply(msg.chat.id, msg.message_id, `I can't read "${esc(fileName)}" — send a PDF, Word (.docx), Excel or a picture.`);
-  await reply(msg.chat.id, msg.message_id, `🔍 Comparing ${esc(fileName)} with ${orderLink(orderId)}… (about a minute)`);
+  if (!order) return bot.reply(msg.chat.id, msg.message_id, `${esc(orderId)} — no such order.`);
+  const content = readFile(await bot.downloadFile(file.file_id), fileName);
+  if (!content) return bot.reply(msg.chat.id, msg.message_id, `I can't read "${esc(fileName)}" — send a PDF, Word (.docx), Excel or a picture.`);
+  await bot.reply(msg.chat.id, msg.message_id, `🔍 Comparing ${esc(fileName)} with ${orderLink(orderId)}… (about a minute)`);
 
   const result = await compareFile(content, fileName, orderId, orderPlaquesText(order.items || []));
-  if (!result) return reply(msg.chat.id, msg.message_id, 'Sorry, I couldn\'t compare that file. Please try again.');
+  if (!result) return bot.reply(msg.chat.id, msg.message_id, 'Sorry, I couldn\'t compare that file. Please try again.');
   const diffs = (result.input.differences as Record<string, string>[]) || [];
   await db.from('bot_requests').insert({ kind: 'compare', order_id: orderId, requested_by: who, source_text: fileName, result: result.input, status: 'done' });
   const lines = [`🔍 ${orderLink(orderId)} ${esc(order.sekolah)} vs ${esc(fileName)}`, esc(result.input.summary)];
@@ -112,7 +117,7 @@ async function handleCompare(msg: Msg, fileMsg: Msg, text: string, who: string) 
     if (ofKind.length > MAX_DIFFS_SHOWN) lines.push(`… and ${ofKind.length - MAX_DIFFS_SHOWN} more`);
   }
   if (!diffs.length) lines.push('', '✅ No differences found.');
-  return reply(msg.chat.id, msg.message_id, lines.join('\n'));
+  return bot.reply(msg.chat.id, msg.message_id, lines.join('\n'));
 }
 
 // ------------------------------------------------------------------ routing
@@ -124,24 +129,27 @@ async function handle(msg: Msg) {
   const who = [msg.from?.first_name, msg.from?.last_name].filter(Boolean).join(' ') || msg.from?.username || 'Telegram';
   const text = [own.replace(new RegExp(`@${BOT_NAME}`, 'ig'), '').trim(), repliedTo?.text ?? repliedTo?.caption ?? ''].filter(Boolean).join('\n\n');
   const fileMsg = msg.document || msg.photo ? msg : repliedTo?.document || repliedTo?.photo ? repliedTo : null;
-  if (!text && !fileMsg) return reply(msg.chat.id, msg.message_id, HELP);
-  if (!(await aiAllowed())) return reply(msg.chat.id, msg.message_id, 'The AI budget for this month is used up — please do this one by hand.');
+  if (!text && !fileMsg) return bot.reply(msg.chat.id, msg.message_id, HELP);
+  if (!(await aiAllowed())) return bot.reply(msg.chat.id, msg.message_id, 'The AI budget for this month is used up — please do this one by hand.');
   return fileMsg ? handleCompare(msg, fileMsg, text, who) : handleChanges(msg, text, who);
 }
 
 Deno.serve(async (req) => {
   const url = new URL(req.url);
+  // ?bot=form: the form bot's webhook (form.ts); otherwise the review bot's
+  const isForm = url.searchParams.get('bot') === 'form';
+  const which = isForm ? formBot : bot;
   if (url.searchParams.get('setup') === '1') {
-    return Response.json(await setWebhook(`${SUPABASE_URL}/functions/v1/telegram-bot`));
+    return Response.json(await which.setWebhook(`${SUPABASE_URL}/functions/v1/telegram-bot${isForm ? '?bot=form' : ''}`));
   }
-  if (req.headers.get('X-Telegram-Bot-Api-Secret-Token') !== await webhookSecret()) return new Response('forbidden', { status: 403 });
+  if (req.headers.get('X-Telegram-Bot-Api-Secret-Token') !== await which.webhookSecret()) return new Response('forbidden', { status: 403 });
   const update = await req.json().catch(() => null);
   const msg = update?.message;
-  if (!msg || String(msg.chat?.id) !== CHAT_ID) return new Response('ok');
+  if (!msg || (!isForm && String(msg.chat?.id) !== CHAT_ID)) return new Response('ok');
   // answer in the background — Telegram only waits for the 200
-  const work = handle(msg).catch(async (err) => {
+  const work = (isForm ? handleForm(msg, aiAllowed) : handle(msg)).catch(async (err) => {
     console.error('telegram-bot failed:', err);
-    await reply(msg.chat.id, msg.message_id, 'Sorry, something went wrong. Please try again.').catch(() => {});
+    await which.reply(msg.chat.id, msg.message_id, 'Sorry, something went wrong. Please try again.').catch(() => {});
   });
   // @ts-ignore EdgeRuntime is provided by the Supabase Edge runtime
   if (typeof EdgeRuntime !== 'undefined') EdgeRuntime.waitUntil(work); else await work;
