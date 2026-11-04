@@ -17,7 +17,7 @@ const SITE_URL = Deno.env.get('SITE_URL') ?? 'https://pustaka-jasa.vercel.app';
 
 const SUMMARY_HOUR_MY = 9;          // the morning summary goes out from 9:00 Malaysia time
 const MAX_NEW_PER_RUN = 10;         // a backlog arrives over a few runs, not as a flood
-const SUMMARY_OLDEST_SHOWN = 5;
+const SUMMARY_OLDEST_SHOWN = 10;
 const MS_PER_DAY = 86_400_000;
 
 const db = createClient(SUPABASE_URL, SECRET_KEY);
@@ -54,10 +54,12 @@ async function sendOnce(key: string, text: string) {
 const plaqueCount = (items: unknown) => (Array.isArray(items) ? items : [])
   .reduce((n, it) => n + (Number((it as Record<string, unknown>)?.qty) || 0), 0);
 
-async function pendingReviews() {
+// Every order in Reviewing Order — the ones already Done Review (waiting for the salesman to approve)
+// too, ticked in the morning summary (Sean, 2026-11-05)
+async function reviewingOrders() {
   const { data, error } = await db.from('orders')
-    .select('id, sekolah, sales, function_date, urgent, created_at, items')
-    .eq('status', 'Reviewing Order').is('reviewed_at', null).is('cancelled_at', null)
+    .select('id, sekolah, sales, function_date, urgent, created_at, reviewed_at, items')
+    .eq('status', 'Reviewing Order').is('cancelled_at', null)
     .order('created_at', { ascending: true });
   if (error) throw error;
   return data ?? [];
@@ -72,10 +74,13 @@ function newOrderText(o: Record<string, unknown>) {
 }
 
 function summaryText(orders: Record<string, unknown>[]) {
-  if (orders.length === 0) return '☀️ Good morning — no orders waiting for review.';
+  if (orders.length === 0) return '☀️ Good morning — no orders in Reviewing Order.';
   const days = (o: Record<string, unknown>) => Math.floor((Date.now() - new Date(String(o.created_at)).getTime()) / MS_PER_DAY);
-  const oldest = orders.slice(0, SUMMARY_OLDEST_SHOWN).map((o) => `• ${orderLink(String(o.id))} ${esc(o.sekolah)} — waiting ${days(o)} day(s)`);
-  return [`☀️ Good morning — ${orders.length} order(s) waiting for review. Oldest:`, ...oldest].join('\n');
+  const toReview = orders.filter((o) => !o.reviewed_at).length;
+  const oldest = orders.slice(0, SUMMARY_OLDEST_SHOWN).map((o) => (
+    `• ${orderLink(String(o.id))} ${esc(o.sekolah)}${o.sales ? ` · ${esc(o.sales)}` : ''} — waiting ${days(o)} day(s)${o.reviewed_at ? ' ✅' : ''}`));
+  const more = orders.length > SUMMARY_OLDEST_SHOWN ? [`… and ${orders.length - SUMMARY_OLDEST_SHOWN} more`] : [];
+  return [`☀️ Good morning — ${toReview} order(s) waiting for review, ${orders.length - toReview} done ✅ (waiting for the salesman). Oldest:`, ...oldest, ...more].join('\n');
 }
 
 Deno.serve(async (req) => {
@@ -96,9 +101,9 @@ Deno.serve(async (req) => {
   if (!CHAT_ID) return json({ ok: false, error: 'TELEGRAM_CHAT_ID is not set' });
 
   try {
-    const orders = await pendingReviews();
+    const orders = await reviewingOrders();
     let sentNew = 0;
-    for (const o of orders) {
+    for (const o of orders.filter((x) => !x.reviewed_at)) {
       if (sentNew >= MAX_NEW_PER_RUN) break;
       if (await sendOnce(`new:${o.id}`, newOrderText(o))) sentNew++;
     }

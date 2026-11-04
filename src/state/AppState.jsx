@@ -2583,6 +2583,20 @@ export function AppStateProvider({ children }) {
     }
   }, [patch]);
 
+  // Production: a Function Date / Remark a salesman sent through the Telegram bot (Sean, 2026-11-05;
+  // utils/botRequests.js) — applied from the order page, never by the bot itself.
+  const updateOrderDetails = useCallback(async (orderId, details) => {
+    const fields = storedDays(details);
+    try {
+      await updateOrder(orderId, fields);
+    } catch (err) {
+      console.error('Failed to save the order details:', err);
+      return { ok: false, message: describeOrderWriteError(err, 'update') };
+    }
+    patch((latest) => ({ orders: latest.orders.map((o) => (o.id === orderId ? { ...o, ...fields } : o)) }));
+    return { ok: true };
+  }, [patch]);
+
   const retryUrgentSheetSync = useCallback((orderId) => {
     const order = stateRef.current.orders.find((o) => o.id === orderId);
     if (order) attemptUrgentSheetSync(order);
@@ -3474,7 +3488,7 @@ export function AppStateProvider({ children }) {
     openAmend, updateAmend,
     openAddOn, addOnAddToCart, removeFromAddOnCart, submitPendingAddOn, cancelPendingAddOn, rejectAddOn, approveAddOn, approveOrder, setInvoiceId, approveAndSetInvoiceId,
     setJenisPlakInvoiceGroup, renameInvoiceNumber,
-    retryUrgentSheetSync, updateShipmentAndUrgency,
+    retryUrgentSheetSync, updateShipmentAndUrgency, updateOrderDetails,
     cancelOrder,
     reassignSalesman,
     uploadCorrectedExcel, loadCorrectedExcelPreview,

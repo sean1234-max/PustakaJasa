@@ -20,6 +20,7 @@ import { downloadTextFile } from '../utils/downloadBlob';
 import { getInvoiceItems, withOrderOwnSettings } from '../utils/orderBatches';
 import ImportFileButtons from '../components/ImportFileButtons';
 import ProductionChecks, { AiFileReportCheck, AiReviewCheck } from '../components/ProductionChecks';
+import BotChangeRequests from '../components/BotChangeRequests';
 import ShipmentUrgencyEditor from '../components/ShipmentUrgencyEditor';
 import ProductionPriceEditor from '../components/ProductionPriceEditor';
 import ProductionInvoiceEntry from '../components/ProductionInvoiceEntry';
@@ -506,6 +507,7 @@ export default function ProductionOrderDetail() {
         </div>
 
         <div className="screen-only">
+        <BotChangeRequests order={order} />
         {/* Production review (supabase/migrations/0077): check the order, fix
             it in the editor if needed, then Done Review so Sales can approve. */}
         {reviewing && (
