@@ -142,8 +142,30 @@ function fromDbOrder(row) {
 // generous (covers years of a real shop's volume) but stops the list from
 // growing without limit. Any single order not in the loaded window can still
 // be opened: fetchOrderById + AppState.ensureOrderLoaded merge it in on demand.
+//
+// The list leaves out `snapshot` (the whole New Order draft, ~90% of the table — 62 MB of 256
+// orders made every login wait, Sean 2026-11-04) and keeps only its `placedBy`. Every other
+// column is listed by name: a NEW orders column must be added here too, or the dashboards won't
+// see it (an order opened via fetchOrderById still gets the full row).
+const ORDER_LIST_COLUMNS = [
+  'id', 'invoice_id', 'date_placed', 'delivery_date', 'total_amount', 'status', 'price_adjusted',
+  'sekolah', 'sales', 'pic_name', 'phone', 'remark', 'shipment_date', 'function_date',
+  'logo_data_url', 'logo_file_name', 'items', 'created_at', 'created_by', 'school_type',
+  'salesman_id', 'pending_addon_items', 'pending_addon_status', 'pending_addon_reject_reason',
+  'ketua_panitia', 'terms', 'logo_remark', 'school_language', 'original_total_qty', 'amended',
+  'printed_at', 'cancel_reason', 'cancelled_at', 'cancelled_by', 'import_file_path',
+  'import_file_name', 'urgent', 'urgent_sheet_synced_at', 'corrected_import_file_path',
+  'corrected_import_file_name', 'corrected_import_uploaded_at', 'invoice_groups', 'reviewed_at',
+  'typed_at', 'salesman_delivery', 'created_by_salesman', 'import_files', 'invoice_set_at',
+  'invoice_set_by_name', 'invoice_set_by_role', 'kiv_done_at', 'plak_done_at',
+  'kiv_production_done_at', 'artwork_confirmed_at', 'artwork_confirmed_by_name',
+  'artwork_confirmed_by_role', 'parent_order_id', 'crystal_typed_at', 'duplicate_check',
+  'kiv_filled_rows', 'pending_addon_shipment_date', 'artwork_manual',
+  'placed_by:snapshot->>placedBy',
+].join(',');
+
 export async function fetchOrders(userId, role, { limit = 500 } = {}) {
-  let query = supabase.from('orders').select('*')
+  let query = supabase.from('orders').select(ORDER_LIST_COLUMNS)
     .order('created_at', { ascending: false })
     .limit(limit);
   if (role === 'teacher' && userId) {
@@ -156,7 +178,7 @@ export async function fetchOrders(userId, role, { limit = 500 } = {}) {
   // no client-side filter is needed here.
   const { data, error } = await query;
   if (error) throw error;
-  return data.map(fromDbOrder);
+  return data.map(({ placed_by, ...row }) => fromDbOrder({ ...row, snapshot: placed_by ? { placedBy: placed_by } : null }));
 }
 
 // One order by id — RLS still applies, so a user asking for an order they
