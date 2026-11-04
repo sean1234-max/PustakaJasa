@@ -39,6 +39,9 @@ export async function handleForm(msg: Msg, aiAllowed: () => Promise<boolean>) {
   const photo = Array.isArray(msg.photo) ? msg.photo[msg.photo.length - 1] : null;
   const file = doc || photo;
   if (inGroup && !file) return; // a group's own chatter
+  // the Production group is the review bot's (@PjsbReviewAgent compares files there); this bot is in it
+  // only to check who may use it (Sean 2026-11-05: it filled a form for a compare request)
+  if (inGroup && GROUPS.includes(String(chatId))) return;
   if (/\(FORM ANUGERAH\)\.xlsx$/i.test(doc?.file_name || '')) return; // the bot's own form, forwarded back
   if (!(await allowed(msg))) {
     return formBot.reply(chatId, msg.message_id, 'Sorry, this bot is only for Pustaka Jasa salesmen. Please ask Sean to add you.');
