@@ -14,6 +14,15 @@ export type FileContent =
 
 const IMAGE_TYPES: Record<string, string> = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif' };
 
+// A sheet's filled cells only, one row a line ("A | B | 3"): as CSV a blank FORM ANUGERAH sheet is
+// ~36,000 commas, and the sheets with the order got cut off (ORD-0203: "the file is a blank template")
+function sheetText(ws: XLSX.WorkSheet) {
+  return (XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false }) as unknown[][])
+    .map((r) => r.map((v) => String(v).trim()).filter(Boolean).join(' | '))
+    .filter(Boolean)
+    .join('\n');
+}
+
 export function readFile(bytes: Uint8Array, fileName: string): FileContent | null {
   const ext = (fileName.split('.').pop() || '').toLowerCase();
   if (ext === 'pdf') return { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: encodeBase64(bytes) } };
@@ -22,7 +31,7 @@ export function readFile(bytes: Uint8Array, fileName: string): FileContent | nul
     const wb = XLSX.read(bytes, { type: 'array' });
     const text = wb.SheetNames
       .filter((n) => wb.Workbook?.Sheets?.find((s: { name: string; Hidden?: number }) => s.name === n)?.Hidden !== 1)
-      .map((n) => `=== Sheet: ${n} ===\n${XLSX.utils.sheet_to_csv(wb.Sheets[n], { blankrows: false })}`)
+      .map((n) => `=== Sheet: ${n} ===\n${sheetText(wb.Sheets[n])}`)
       .join('\n\n');
     return { type: 'text', text: text.slice(0, MAX_TEXT_CHARS) };
   }
