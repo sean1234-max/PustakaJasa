@@ -17,6 +17,16 @@ function workbookFromSheets(sheets) {
 }
 
 describe('matchJenisPlakPath', () => {
+  // ORD-0180: a corrected Excel's "OTHER - K841 C" became the bare catalog "OTHER" (no name), which
+  // blocked the whole ORDER LAIN-LAIN sheet.
+  it('keeps a named OTHER as written; a bare OTHER still matches only the catalog OTHER', () => {
+    const tree = [{ code: 'OTHER' }, { code: 'K841' }];
+    expect(matchJenisPlakPath('OTHER - K841 C', tree)).toBe('OTHER - K841 C');
+    expect(matchJenisPlakPath(' others -  ACC 635 ', tree)).toBe('OTHER - ACC 635');
+    expect(matchJenisPlakPath('OTHER', tree)).toBe('OTHER');
+    expect(matchJenisPlakPath('OTHER -', tree)).not.toMatch(/^OTHER - /);
+  });
+
   // Real order: "VB / D / RED" imported as "VB / B / RED" — the "B" inside
   // "VB" (and the "D" inside "RED") counted as a mention of that finish letter.
   it('matches a one-letter finish only as its own word, not inside the product code', () => {

@@ -2148,7 +2148,14 @@ const zeroForO = (text) => String(text).replace(/\b[A-Z0-9-]*O[A-Z0-9-]*\b/gi, (
 // the code as written matches nothing. Keyed by the code with spaces and dashes taken out.
 const CODE_ALIASES = { P261: 'PK 261 A' };
 
+// "OTHER - K841 C" from a file is kept as written (its price comes from the row's HARGA PER UNIT) —
+// matching it found only the bare "OTHER", which blocked a corrected Excel's whole sheet (ORD-0180,
+// Sean 2026-11-04). A bare "OTHER" / "OTHER -" still has no name and still gets picked again.
+const NAMED_OTHER_RE = /^\s*OTHERS?\s*-\s*(\S.*?)\s*$/i;
+
 export function matchJenisPlakPath(rawText, plakTree) {
+  const named = NAMED_OTHER_RE.exec(String(rawText || ''));
+  if (named) return `OTHER - ${named[1]}`;
   const exact = matchJenisPlakPathAsWritten(rawText, plakTree);
   const alias = CODE_ALIASES[String(rawText || '').toUpperCase().replace(/[\s-]/g, '')];
   if (!exact && alias) return matchJenisPlakPathAsWritten(alias, plakTree);
