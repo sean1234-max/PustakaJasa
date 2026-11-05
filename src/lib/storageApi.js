@@ -42,6 +42,22 @@ export async function uploadOrderImportFile(file) {
   }
 }
 
+// The teacher's kertas kerja (0110): any file type, kept as uploaded next to the order's Excel for
+// Production to compare. Goes up as octet-stream (the bucket allows it; it is only downloaded
+// back). Returns { path, name }, or throws with a message for the person uploading.
+export async function uploadKertasKerjaFile(file) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Please log in again, then upload the file.');
+  const ext = (String(file.name || '').match(/\.[a-z0-9]{1,8}$/i)?.[0] || '').toLowerCase();
+  const path = `${user.id}/kk-${crypto.randomUUID()}${ext}`;
+  const { error } = await supabase.storage.from('order-imports').upload(path, file, { contentType: 'application/octet-stream', upsert: false });
+  if (error) {
+    console.error('kertas kerja upload failed:', error);
+    throw new Error(/size|large/i.test(error.message || '') ? `"${file.name}" is bigger than 20 MB.` : `Could not upload "${file.name}". Please try again.`);
+  }
+  return { path, name: String(file.name || 'kertas kerja').slice(0, 200) };
+}
+
 // A short-lived signed download URL for a stored import file (private
 // bucket). `download: true` sets Content-Disposition so the browser saves
 // it rather than trying to open it. Returns null on any failure.

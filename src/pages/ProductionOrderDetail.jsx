@@ -19,6 +19,7 @@ import { getExportableCategories, splitOrderCategories, getOrderJenisPlakGroups,
 import { downloadTextFile } from '../utils/downloadBlob';
 import { getInvoiceItems, withOrderOwnSettings } from '../utils/orderBatches';
 import ImportFileButtons from '../components/ImportFileButtons';
+import KertasKerjaButtons from '../components/KertasKerjaButtons';
 import ProductionChecks, { AiFileReportCheck, AiReviewCheck } from '../components/ProductionChecks';
 import BotChangeRequests from '../components/BotChangeRequests';
 import ShipmentUrgencyEditor from '../components/ShipmentUrgencyEditor';
@@ -607,6 +608,7 @@ export default function ProductionOrderDetail() {
               <div className="dim">{order.importFilePath ? 'Teacher’s file (Excel / Word / PDF) + the website’s Excel' : 'The website’s Excel'}</div>
               <ImportFileButtons order={order} buttonClassName="btn btn-primary" errorClassName="login-error" websiteExcel />
             </div>
+            <KertasKerjaButtons order={order} />
 
             {!reviewing && <CorrectedExcelControl
               order={order}

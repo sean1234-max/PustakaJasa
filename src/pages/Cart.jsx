@@ -7,6 +7,8 @@ import CrystalPreview, { crystalRowsOf } from '../components/CrystalPreview';
 import CrystalConfirmModal from '../components/CrystalConfirmModal';
 import StockViolationMessage from '../components/StockViolationMessage';
 import DuplicateOrderModal from '../components/DuplicateOrderModal';
+import KertasKerjaAskModal from '../components/KertasKerjaAskModal';
+import { KERTAS_KERJA_ANCHOR } from '../components/KertasKerjaUpload';
 import { isCrystalCode } from '../utils/exportCsv';
 
 const isSelempangItem = (ci) => resolveCategory(ci.categoryKey)?.selempang;
@@ -109,6 +111,9 @@ export default function Cart() {
   // Teacher and salesman answer in a full-screen dialog (Sean, 2026-10-15 / 10-17); only a
   // salesman may submit first and confirm the artwork later (Sales order Summary → Confirm Artwork).
   const [crystalModal, setCrystalModal] = useState(false);
+  // no kertas kerja uploaded: asked first (KertasKerjaAskModal), then the crystal / duplicate checks
+  const [askKertasKerja, setAskKertasKerja] = useState(false);
+  const startSubmit = () => (hasCrystal ? setCrystalModal(true) : handleSubmit());
   const [crystalBusy, setCrystalBusy] = useState(false);
   const confirmCrystals = async (artworkConfirmed = true) => {
     setCrystalBusy(true);
@@ -276,11 +281,17 @@ export default function Cart() {
           {state.cartToast && <span className="toast-inline">{state.cartToast}</span>}
           <button
             type="button" className="btn btn-primary" disabled={state.cart.length === 0 || submitting || !!stockViolation || !!otherViolation || !!dupes}
-            onClick={() => (hasCrystal ? setCrystalModal(true) : handleSubmit())}
+            onClick={() => (state.kertasKerjaFiles?.length ? startSubmit() : setAskKertasKerja(true))}
           >
             {submitting ? 'Submitting…' : 'Submit Order'}
           </button>
         </div>
+        <KertasKerjaAskModal
+          open={askKertasKerja} busy={submitting}
+          onYes={() => { setAskKertasKerja(false); restoreCartToDraft(); navigate('/order/step2', { state: { scrollTo: KERTAS_KERJA_ANCHOR } }); }}
+          onNo={() => { setAskKertasKerja(false); startSubmit(); }}
+          onClose={() => setAskKertasKerja(false)}
+        />
         <CrystalConfirmModal
           open={crystalModal} busy={crystalBusy}
           onYes={() => confirmCrystals(true)} onLater={isSalesman ? () => confirmCrystals(false) : null} onEdit={editCrystals} onCancel={() => setCrystalModal(false)}

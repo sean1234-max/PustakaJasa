@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
+import KertasKerjaUpload from '../components/KertasKerjaUpload';
 import { useAppState } from '../state/useAppState';
 import { ACTIVE_CATEGORIES, filterHiddenPlakCatalog, categoriesUsedByItems } from '../data/catalog';
 import { computeBlocks } from '../utils/computeBlocks';
@@ -130,6 +131,8 @@ export default function AddOn() {
             <p key={i} className="hint-text" style={{ margin: '4px 0 0', color: '#b45309' }}>{w.text}</p>
           ))}
         </div>
+
+        <KertasKerjaUpload stateKey="addOnKertasKerja" />
 
         <div className="card-kicker">Jenis Anugerah (Category)</div>
         <div style={{ margin: 'var(--space-3) 0 var(--space-8)' }}>

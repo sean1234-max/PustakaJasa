@@ -5,6 +5,7 @@ import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import CrystalPreview from '../components/CrystalPreview';
 import PlakPreview from '../components/PlakPreview';
+import KertasKerjaUpload from '../components/KertasKerjaUpload';
 import { isCrystalCode } from '../utils/exportCsv';
 import { useAppState } from '../state/useAppState';
 import { buildCategoryCartItems } from '../state/categoryCartItems';
@@ -656,6 +657,8 @@ export default function NewOrderStep2() {
             </div>
           </div>
         )}
+
+        <KertasKerjaUpload stateKey="kertasKerjaFiles" />
 
         <div className="card-kicker">Jenis Anugerah (Category)</div>
         <div style={{ margin: 'var(--space-3) 0 var(--space-2)' }}>

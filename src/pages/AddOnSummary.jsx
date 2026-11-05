@@ -5,6 +5,8 @@ import { useAppState } from '../state/useAppState';
 import { addonRepeatsOrder, addonRepeatMessage } from '../utils/addonCheck';
 import { getStockStatus, formatDate, toMalaysiaDay, resolveCategory, malaysiaToday, malaysiaDayIso } from '../data/catalog';
 import StockViolationMessage from '../components/StockViolationMessage';
+import KertasKerjaAskModal from '../components/KertasKerjaAskModal';
+import { KERTAS_KERJA_ANCHOR } from '../components/KertasKerjaUpload';
 
 // The add-on's cart (Sean, 2026-10-09): the same Order Summary as New
 // Order's Cart for the original order, then TAMBAHAN below in the same form.
@@ -66,6 +68,8 @@ export default function AddOnSummary() {
     })
     .find(Boolean), [addOnSummaryItems, state.plakCatalog]);
 
+  // no kertas kerja uploaded on Add On: asked first (KertasKerjaAskModal)
+  const [askKertasKerja, setAskKertasKerja] = useState(false);
   const handleSubmit = async () => {
     if (submitting || stockViolation) return;
     const repeat = addonRepeatsOrder(state.addOnCart, order?.items);
@@ -140,10 +144,16 @@ export default function AddOnSummary() {
         )}
         <div className="row-split">
           <button type="button" className="btn btn-ghost" onClick={() => navigate(`/addon/${order.id}`)}>← Back to Add On</button>
-          <button type="button" className="btn btn-primary" disabled={submitting || !!stockViolation || addOnSummaryItems.length === 0} onClick={handleSubmit}>
+          <button type="button" className="btn btn-primary" disabled={submitting || !!stockViolation || addOnSummaryItems.length === 0} onClick={() => (state.addOnKertasKerja?.length ? handleSubmit() : setAskKertasKerja(true))}>
             {submitting ? 'Submitting…' : 'Submit Tambahan'}
           </button>
         </div>
+        <KertasKerjaAskModal
+          open={askKertasKerja} busy={submitting}
+          onYes={() => { setAskKertasKerja(false); navigate(`/addon/${order.id}`, { state: { scrollTo: KERTAS_KERJA_ANCHOR } }); }}
+          onNo={() => { setAskKertasKerja(false); handleSubmit(); }}
+          onClose={() => setAskKertasKerja(false)}
+        />
       </div>
     </div>
   );

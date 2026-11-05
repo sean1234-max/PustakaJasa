@@ -340,6 +340,10 @@ function initialState() {
     // import a second Excel before submitting, so each cart item remembers
     // its own file (`importFile`) and the order keeps all of them.
     importFiles: [],
+    // The teacher's kertas kerja ({ path, name }) uploaded on Order Details (0110), for Production
+    // to compare with the order; addOnKertasKerja is the Add On's.
+    kertasKerjaFiles: [],
+    addOnKertasKerja: [],
 
     // No category open on entry to Order Details — the teacher either
     // uploads a FORM ANUGERAH file (which auto-selects whichever categories
@@ -729,7 +733,7 @@ export function AppStateProvider({ children }) {
       sales: '', picName: '', phone: '', ketuaPanitia: '', terms: '', remark: '',
       shipmentDateSelected: null, funcSelected: null,
       logoDataUrl: null, logoFileName: '', logoRemark: '', schoolType: null, stepError: '',
-      importFilePath: null, importFileName: null, importFiles: [],
+      importFilePath: null, importFileName: null, importFiles: [], kertasKerjaFiles: [],
       step2ImportStatus: null, step2ChoiceAnswers: {},
       step2UploadedFiles: [],
 
@@ -1830,6 +1834,7 @@ export function AppStateProvider({ children }) {
       ...storedDays({ shipmentDate: st.shipmentDateSelected, functionDate: st.funcSelected }),
       logoDataUrl: st.logoDataUrl, logoFileName: st.logoFileName, logoRemark: st.logoRemark, schoolType: st.schoolType,
       ...orderImportFields(st),
+      kertasKerjaFiles: st.kertasKerjaFiles || [],
       duplicateCheck,
       snapshot, items: st.cart.map((ci) => ({ ...ci })),
       artworkConfirmedAt: artworkConfirmed ? new Date().toISOString() : null,
@@ -1869,7 +1874,7 @@ export function AppStateProvider({ children }) {
       patch({ cartToast: message });
       return null;
     }
-    patch((latest) => ({ lastOrderId: newId, orders: [newOrder, ...latest.orders], cart: [], cartToast: '', step2ImportStatus: null, step2ChoiceAnswers: {}, step2UploadedFiles: [] }));
+    patch((latest) => ({ lastOrderId: newId, orders: [newOrder, ...latest.orders], cart: [], cartToast: '', step2ImportStatus: null, step2ChoiceAnswers: {}, step2UploadedFiles: [], kertasKerjaFiles: [] }));
     // crystal changes the teacher made before submitting (Cart → Edit Crystal): onto the order now
     if (st.cart.some((ci) => isCrystalCode(ci.jenisPlak))) saveCrystalDraft(newId).catch((err) => console.error('Order saved, but its crystal changes were not:', err));
     // who confirmed the artwork is stamped by the database (0089) — read it back for the order page
@@ -1902,7 +1907,7 @@ export function AppStateProvider({ children }) {
       logoDataUrl: ord.logoDataUrl || null, logoFileName: ord.logoFileName || '', logoRemark: ord.logoRemark || '', schoolType: ord.schoolType || null,
       // A reorder is a fresh order — no upload behind it unless the teacher
       // imports one now.
-      importFilePath: null, importFileName: null, importFiles: [],
+      importFilePath: null, importFileName: null, importFiles: [], kertasKerjaFiles: [],
       stepError: '',
 
       category: restored.category || 'TOKOH',
@@ -2021,7 +2026,7 @@ export function AppStateProvider({ children }) {
 
   const openAddOn = useCallback((ord) => {
     patch((st) => ({
-      addOnOrderId: ord.id, addOnCategory: null, addOnCart: [], addOnImportFilePath: null, addOnImportFileName: null,
+      addOnOrderId: ord.id, addOnCategory: null, addOnCart: [], addOnImportFilePath: null, addOnImportFileName: null, addOnKertasKerja: [],
       addOnLineValues: {}, addOnMatrixValues: {},
       addOnRowsByBlock: buildInitialRowsByBlock(st.schoolLanguage), addOnColumnsByBlock: buildInitialColumnsByBlock(), addOnPlakRows: buildInitialPlakRows(),
       addOnNextRowId: 1000, addOnNextPlakRowId: 1000, addOnNextColumnId: 1000, addOnVisibleBlocksByCategory: {},
@@ -2084,8 +2089,9 @@ export function AppStateProvider({ children }) {
       return false;
     }
 
+    const pendingAddonKertasKerja = st.addOnKertasKerja?.length ? st.addOnKertasKerja : null;
     try {
-      await updateOrder(st.addOnOrderId, { pendingAddonItems: newItems, pendingAddonStatus: 'pending', pendingAddonRejectReason: null, pendingAddonShipmentDate });
+      await updateOrder(st.addOnOrderId, { pendingAddonItems: newItems, pendingAddonStatus: 'pending', pendingAddonRejectReason: null, pendingAddonShipmentDate, pendingAddonKertasKerja });
     } catch (err) {
       console.error('Failed to submit add-on to Supabase:', err);
       if (!isTestOrder) {
@@ -2098,9 +2104,10 @@ export function AppStateProvider({ children }) {
 
     patch((latest) => ({
       orders: latest.orders.map((o) => (
-        o.id === st.addOnOrderId ? { ...o, pendingAddonItems: newItems, pendingAddonStatus: 'pending', pendingAddonRejectReason: null, pendingAddonShipmentDate } : o
+        o.id === st.addOnOrderId ? { ...o, pendingAddonItems: newItems, pendingAddonStatus: 'pending', pendingAddonRejectReason: null, pendingAddonShipmentDate, pendingAddonKertasKerja } : o
       )),
       addOnCart: [],
+      addOnKertasKerja: [],
     }));
     flashToast('updateToast', 'Add-on submitted — Production will review it, then Sales approves it.');
     return true;
@@ -2112,7 +2119,7 @@ export function AppStateProvider({ children }) {
   const cancelPendingAddOn = useCallback(async (orderId) => {
     const order = stateRef.current.orders.find((o) => o.id === orderId);
     if (!order) return { ok: false };
-    const fields = { pendingAddonItems: null, pendingAddonStatus: null, pendingAddonRejectReason: null, pendingAddonShipmentDate: null };
+    const fields = { pendingAddonItems: null, pendingAddonStatus: null, pendingAddonRejectReason: null, pendingAddonShipmentDate: null, pendingAddonKertasKerja: null };
     try {
       await updateOrder(orderId, fields);
     } catch (err) {
@@ -2453,7 +2460,7 @@ export function AppStateProvider({ children }) {
     } catch (err) {
       console.error('Add-on approved, but its new order could not be loaded:', err);
     }
-    const cleared = { pendingAddonItems: null, pendingAddonStatus: null, pendingAddonRejectReason: null, pendingAddonShipmentDate: null };
+    const cleared = { pendingAddonItems: null, pendingAddonStatus: null, pendingAddonRejectReason: null, pendingAddonShipmentDate: null, pendingAddonKertasKerja: null };
     patch((latest) => ({
       orders: [
         ...(child ? [child] : []),
