@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { resolveCategory } from '../data/catalog';
 import { buildCsvRows } from './exportCsv';
-import { redPickFor, redLinesProblem } from './redLines';
+import { redPickFor, redLinesProblem, applyRedLines } from './redLines';
 
 // ORD-0059's PPKI shape (Sean, 2026-10-15): the teacher put the event in row 2
 // and the red award + class in row 3.
@@ -63,5 +63,15 @@ describe('MERAH ticks (redLines)', () => {
     expect(redLinesProblem(lines, A, aliran)).toBe('');
     expect(redLinesProblem({ ...lines, [`${A}redLines`]: '3' }, A, aliran)).toBe('');
     expect(redLinesProblem({ ...lines, [`${A}redLines`]: 'none' }, A, aliran)).toBe('');
+  });
+
+  it('MP THP: the subject goes red on its own, the Tahun stays black', () => {
+    const mp = resolveCategory('MP1');
+    const M = 'MP1::0::';
+    const lines = { [`${M}2`]: 'TERBAIK', [`${M}2b`]: 'BAHASA MELAYU', [`${M}3`]: 'TAHUN 1' };
+    const subjectRed = redPickFor(lines, M, mp, '2b').value;
+    expect(subjectRed).toBe('2,2b');
+    const out = applyRedLines(['H', '', 'TERBAIK', 'BAHASA MELAYU', 'TAHUN 1'], { ...lines, [`${M}redLines`]: subjectRed }, M, mp);
+    expect(out.row.slice(2)).toEqual(['TERBAIK\nBAHASA MELAYU', 'TAHUN 1', '']);
   });
 });

@@ -43,9 +43,13 @@ export function visibleRefSlots(lines, prefix, cat) {
 // The body rows (not the title) as engraved units: rows feeding the same
 // field(s) (PBD's ACARA + its second box) move together.
 function bodyUnits(lines, prefix, cat) {
-  const slotFields = slotFieldsFor(cat);
+  const visible = visibleRefSlots(lines, prefix, cat);
+  // PPKI / MP THP with a SUBJEK row: SUBJEK (line 1) and TAHUN (line 2) each take their own
+  // MERAH, so the subject can go red while the Tahun stays black (Sean, 2026-11-05)
+  const splitSubject = cat?.mode === 'matrix' && visible.includes('2b');
+  const slotFields = splitSubject ? { ...slotFieldsFor(cat), '2b': ['event_line_1'], 3: ['event_line_2'] } : slotFieldsFor(cat);
   if (!slotFields) return [];
-  return visibleRefSlots(lines, prefix, cat).reduce((units, slot) => {
+  return visible.reduce((units, slot) => {
     const fields = slotFields[slot];
     if (!fields || HEADER_SLOTS.has(slot)) return units;
     const same = units.find((u) => u.fields.join() === fields.join());
