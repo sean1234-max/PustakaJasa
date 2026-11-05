@@ -228,7 +228,8 @@ async function runTool(ctx: AssistantCtx, name: string, input: Record<string, un
 async function history(db: SupabaseClient): Promise<Anthropic.Beta.BetaMessageParam[]> {
   const { data } = await db.from('bot_chat').select('role, text').order('id', { ascending: false }).limit(HISTORY_ROWS);
   const turns: Anthropic.Beta.BetaMessageParam[] = [];
-  for (const row of (data || []).reverse()) {
+  // an empty row (a failed file message, 2026-11-05) would make the API reject the whole history
+  for (const row of (data || []).reverse().filter((r) => String(r.text || '').trim())) {
     const last = turns[turns.length - 1];
     if (last?.role === row.role) last.content = `${last.content}\n\n${row.text}`;
     else turns.push({ role: row.role as 'user' | 'assistant', content: row.text });
