@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import { DOMParser, XMLSerializer } from '@xmldom/xmldom';
-import { toFormPlaques, type ReadPlaque } from './formPlaques.ts';
+import { toFormPlaques, toFormSelempang, type ReadPlaque } from './formPlaques.ts';
 import { fillOrderTemplate } from '../../../src/utils/templateExport.js';
 import { parseFormAnugerahExcel } from '../../../src/utils/excelImport.js';
 
@@ -23,6 +23,17 @@ describe('toFormPlaques', () => {
 
   it('drops rows with no quantity', () => {
     expect(toFormPlaques([read({ award: 'JOHAN', qty: 0 })])).toEqual([]);
+  });
+});
+
+describe('toFormSelempang', () => {
+  it('keeps the four website colours and blanks any other', () => {
+    expect(toFormSelempang([
+      { acara: ' PENGAWAS ', warna: 'biru', qty: 10 },
+      { acara: 'PUSPANITA', warna: 'UNGU', qty: 2 },
+      { acara: 'PRS', warna: 'MERAH', qty: 0 },
+      { acara: '', warna: 'HIJAU', qty: 3 },
+    ])).toEqual([{ acara: 'PENGAWAS', warna: 'BIRU', qty: 10 }, { acara: 'PUSPANITA', warna: '', qty: 2 }]);
   });
 });
 
@@ -49,5 +60,16 @@ describe('form bot → FORM ANUGERAH → the website reads it back', () => {
       .toEqual([['TAHUN 1', ['VENUS', 'MARS']], ['TAHUN 2', ['BESTARI']]]);
     expect(shown('MP2')[0].classes.map((c: { tahunFrom: string; subjects: { name: string; qty: number }[] }) => [c.tahunFrom, c.subjects.map((s) => s.name)]))
       .toEqual([['TAHUN 4', ['BAHASA MELAYU']], ['TAHUN 5', ['SAINS']]]);
+  });
+
+  it('writes the sashes into SELEMPANG', async () => {
+    const b = fs.readFileSync('public/templates/FORM-ANUGERAH.xlsx');
+    const selempang = toFormSelempang([{ acara: 'PENGAWAS', warna: 'BIRU', qty: 10 }, { acara: 'PUSPANITA', warna: 'KUNING', qty: 4 }]);
+    const out = await fillOrderTemplate(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength),
+      { plaques: [], selempang, front: { sekolah: 'SK TEST' }, priceOf: () => null }, { DOMParser, XMLSerializer });
+    const parsed = parseFormAnugerahExcel(out.buffer);
+    const rows = Object.values(parsed.categorized).flat()
+      .flatMap((s: { selempangRows?: { acara: string; warna: string; qty: number }[] }) => s.selempangRows || []);
+    expect(rows.map((r) => [r.acara, r.warna, r.qty])).toEqual([['PENGAWAS', 'BIRU', 10], ['PUSPANITA', 'KUNING', 4]]);
   });
 });

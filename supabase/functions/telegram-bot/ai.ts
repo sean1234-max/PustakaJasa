@@ -89,7 +89,7 @@ Report every real difference: an award or plaque in the file that the order does
 
 // ------------------------------------------------------------------ form bot (a teacher's kertas kerja → FORM ANUGERAH)
 const FORM_SCHEMA = {
-  type: 'object', additionalProperties: false, required: ['school', 'teacher', 'plaques', 'questions'],
+  type: 'object', additionalProperties: false, required: ['school', 'teacher', 'plaques', 'selempang', 'questions'],
   properties: {
     school: { type: 'string', description: 'the school\'s name as written, "" if not stated' },
     teacher: { type: 'string', description: 'the teacher\'s name / phone as written, "" if not stated' },
@@ -112,6 +112,17 @@ const FORM_SCHEMA = {
         },
       },
     },
+    selempang: {
+      type: 'array',
+      items: {
+        type: 'object', additionalProperties: false, required: ['acara', 'warna', 'qty'],
+        properties: {
+          acara: { type: 'string', description: 'what the sash is for / says, as written (e.g. PENGAWAS, PUSPANITA)' },
+          warna: { type: 'string', enum: ['BIRU', 'HIJAU', 'KUNING', 'MERAH', ''], description: 'the colour; "" if not stated or another colour' },
+          qty: { type: 'integer', description: 'how many sashes' },
+        },
+      },
+    },
     questions: { type: 'array', items: { type: 'string' }, description: 'short notes for the salesman: anything unclear, guessed or left out' },
   },
 } as const;
@@ -122,6 +133,7 @@ Each plaque is one of:
 - mp_class: a subject award (MATA PELAJARAN TERBAIK) given per CLASS — subject, tahun, kelas (e.g. BAHASA MELAYU, 1, VENUS), one row per subject and class.
 - mp_subject: a subject award given per TAHUN, no class — award title, subject, tahun.
 - umum: everything else (ANUGERAH PELAJAR CEMERLANG, TOKOH, sports places, PBD, KEHADIRAN PENUH, LONJAKAN SAUJANA, …) — award / line3 / line4 as engraved.
+Sashes (selempang) are not plaques: list them in selempang — acara, warna (BIRU / HIJAU / KUNING / MERAH; blue / green / yellow / red; any other or no colour → "" and a question), qty.
 Rules: copy the wording exactly as the teacher wrote it (fix nothing but obvious spacing); one row per distinct wording with its quantity — count recipients / places when no number is given; never invent plaques, quantities or codes; a total that doesn't match the rows goes in questions; anything unclear goes in questions. Text after "Notes from the salesman" is the salesman's own instruction and wins. Call read_form exactly once.`;
 
 export function readForm(file: FileContent, fileName: string, notes: string) {

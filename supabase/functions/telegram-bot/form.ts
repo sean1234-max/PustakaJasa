@@ -1,6 +1,6 @@
 // The form bot (Sean, 2026-11-04): a salesman sends a teacher's kertas kerja (PDF, Word, Excel or a
-// photo) in a private chat; the bot reads it and sends back FORM ANUGERAH filled in — ORDER LAIN-LAIN
-// and the MP THP sheets only — for the salesman to check, finish (KOD) and upload as usual. The
+// photo) in a private chat; the bot reads it and sends back FORM ANUGERAH filled in — ORDER LAIN-LAIN,
+// the MP THP sheets and SELEMPANG (2026-11-05) — for the salesman to check, finish (KOD) and upload as usual. The
 // website's own filler writes the form (templateExport.js, bundled as form.bundle.js), so it reads
 // back exactly like a hand-filled one.
 // Where: a private chat, or a salesman's own group (Sean + the bot + one salesman; every file sent there
@@ -12,7 +12,7 @@ import { DOMParser, XMLSerializer } from 'npm:@xmldom/xmldom@0.9.12';
 import { esc, telegramBot, MAX_FILE_BYTES } from './telegram.ts';
 import { readFile, type FileContent } from './files.ts';
 import { readForm } from './ai.ts';
-import { toFormPlaques, type ReadPlaque } from './formPlaques.ts';
+import { toFormPlaques, toFormSelempang, type ReadPlaque, type ReadSelempang } from './formPlaques.ts';
 // @ts-ignore a plain JS bundle
 import { fillOrderTemplate } from './form.bundle.js';
 
@@ -64,19 +64,24 @@ export async function fillForm(content: FileContent, fileName: string, notes: st
   const read = await readForm(content, fileName, notes);
   if (!read) return { ok: false as const, message: 'Sorry, I couldn\'t read that file. Please try again, or send a clearer copy.' };
   const plaques = toFormPlaques(read.input.plaques as ReadPlaque[]);
-  if (!plaques.length) return { ok: false as const, message: 'I didn\'t find any plaques in that file.' };
+  const selempang = toFormSelempang(read.input.selempang as ReadSelempang[]);
+  if (!plaques.length && !selempang.length) return { ok: false as const, message: 'I didn\'t find any plaques or sashes in that file.' };
 
   const res = await fetch(`${SITE_URL}/templates/FORM-ANUGERAH.xlsx`);
   if (!res.ok) throw new Error(`template download ${res.status}`);
   const front = { sekolah: String(read.input.school || ''), cikgu: String(read.input.teacher || '') };
-  const out = await fillOrderTemplate(await res.arrayBuffer(), { plaques, selempang: [], front, priceOf: () => null }, { DOMParser, XMLSerializer });
+  const out = await fillOrderTemplate(await res.arrayBuffer(), { plaques, selempang, front, priceOf: () => null }, { DOMParser, XMLSerializer });
 
   const placed = Object.entries(out.placed as Record<string, number>);
   const total = placed.reduce((a, [, n]) => a + n, 0);
   const noKod = plaques.filter((p) => !p.code).length;
+  const sashes = selempang.reduce((a, s) => a + s.qty, 0);
+  const noWarna = selempang.filter((s) => !s.warna).length;
   const caption = [
     `✅ FORM ANUGERAH — ${total} plaque(s)`,
     ...placed.map(([sheet, n]) => `• ${esc(sheet)}: ${n}`),
+    ...(sashes ? [`• SELEMPANG: ${sashes} sash(es)`] : []),
+    ...(noWarna ? [`⚠ WARNA is empty on ${noWarna} SELEMPANG row(s) — fill it in before you upload.`] : []),
     ...(noKod ? [`⚠ KOD is empty on ${noKod} row(s) — fill it in before you upload.`] : []),
     ...(total < out.plaqueCount ? [`⚠ ${out.plaqueCount - total} plaque(s) didn't fit the form — add them by hand.`] : []),
     'Please check it against the teacher\'s file, then upload it on the website as usual.',
