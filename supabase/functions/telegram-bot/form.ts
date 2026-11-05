@@ -12,6 +12,8 @@ import { DOMParser, XMLSerializer } from 'npm:@xmldom/xmldom@0.9.12';
 import { esc, telegramBot, MAX_FILE_BYTES } from './telegram.ts';
 import { readFile, type FileContent } from './files.ts';
 import { readForm } from './ai.ts';
+import { db } from './db.ts';
+import { readFormCached } from './formCache.ts';
 import { toFormPlaques, toFormSelempang, type ReadPlaque, type ReadSelempang } from './formPlaques.ts';
 // @ts-ignore a plain JS bundle
 import { fillOrderTemplate } from './form.bundle.js';
@@ -61,7 +63,7 @@ export async function handleForm(msg: Msg, aiAllowed: () => Promise<boolean>) {
 
 // The kertas kerja → FORM ANUGERAH filled in (also the assistant's "ExcelFormAgent" job, assistant.ts)
 export async function fillForm(content: FileContent, fileName: string, notes: string) {
-  const read = await readForm(content, fileName, notes);
+  const read = await readFormCached(db, readForm, content, fileName, notes);
   if (!read) return { ok: false as const, message: 'Sorry, I couldn\'t read that file. Please try again, or send a clearer copy.' };
   const plaques = toFormPlaques(read.input.plaques as ReadPlaque[]);
   const selempang = toFormSelempang(read.input.selempang as ReadSelempang[]);
@@ -84,6 +86,7 @@ export async function fillForm(content: FileContent, fileName: string, notes: st
     ...(noWarna ? [`⚠ WARNA is empty on ${noWarna} SELEMPANG row(s) — fill it in before you upload.`] : []),
     ...(noKod ? [`⚠ KOD is empty on ${noKod} row(s) — fill it in before you upload.`] : []),
     ...(total < out.plaqueCount ? [`⚠ ${out.plaqueCount - total} plaque(s) didn't fit the form — add them by hand.`] : []),
+    ...(read.cached ? ['♻️ Same file as before — reused the earlier reading (no AI cost).'] : []),
     'Please check it against the teacher\'s file, then upload it on the website as usual.',
   ].join('\n');
   const base = (front.sekolah || fileName.replace(/\.[^.]+$/, '')).replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'ORDER';

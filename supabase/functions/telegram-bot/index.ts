@@ -21,7 +21,7 @@
 //
 // The form bot (form.ts, TELEGRAM_FORM_BOT_TOKEN, ?bot=form) serves the salesmen in private chats.
 
-import { createClient } from 'npm:@supabase/supabase-js@2';
+import { db, SUPABASE_URL } from './db.ts';
 import { esc, telegramBot, MAX_FILE_BYTES } from './telegram.ts';
 import { fillForm, formBot, handleForm } from './form.ts';
 import { readFile, type FileContent } from './files.ts';
@@ -29,13 +29,10 @@ import { askedDay, orderPlaquesText, proposeChanges, type Order } from './order.
 import { readChanges, compareFile } from './ai.ts';
 import { askAssistant } from './assistant.ts';
 
-const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
-const SECRET_KEY = JSON.parse(Deno.env.get('SUPABASE_SECRET_KEYS')!)['default'];
 const CHAT_ID = Deno.env.get('TELEGRAM_CHAT_ID') ?? '';
 const SITE_URL = Deno.env.get('SITE_URL') ?? 'https://pustaka-jasa.vercel.app';
 const BOT_NAME = (Deno.env.get('TELEGRAM_BOT_USERNAME') ?? 'PjsbReviewAgent').toLowerCase();
 
-const db = createClient(SUPABASE_URL, SECRET_KEY);
 const bot = telegramBot(Deno.env.get('TELEGRAM_BOT_TOKEN') ?? '');
 const assistantBot = telegramBot(Deno.env.get('TELEGRAM_ASSISTANT_BOT_TOKEN') ?? '');
 const ASSISTANT_NAME = (Deno.env.get('TELEGRAM_ASSISTANT_BOT_USERNAME') ?? '').toLowerCase();
