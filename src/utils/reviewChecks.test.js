@@ -197,6 +197,12 @@ describe('the AI half', () => {
     expect(plaques.map((p) => [p.id, p.red, p.count])).toEqual([['P1', 'JOHAN', 2], ['P2', 'NAIB JOHAN', 1]]);
   });
 
+  it('leaves crystals out — their wording is not reviewed', () => {
+    const crystal = ['MAJLIS 2026', '', 'ANUGERAH NILAM (L)', '', '', 'CRYSTAL / C1', 'UMUM', '', ''];
+    expect(aiPlaquesOf(order, () => [crystal, row('JOHAN', 'ALI')]).map((p) => p.red)).toEqual(['JOHAN']);
+    expect(reviewOrder(order, () => [{ ...crystal, 2: '(IKUT SUBJEK)' }].map((r) => Object.values(r)))).toEqual([]);
+  });
+
   it('turns the model\'s answer into issues placed on the first plaque', () => {
     const plaques = aiPlaquesOf(order, () => [row('JOHAN', 'ALI'), row('NAIB JOHAN', 'ABU')]);
     const [issue] = aiIssuesToReview([{ rule: 'I5', plaqueIds: ['P1', 'P2', 'P9'], message: 'Has a student name', suggestion: '' }], plaques);

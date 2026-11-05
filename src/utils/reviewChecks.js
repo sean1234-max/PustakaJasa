@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import { buildCsvRows, CSV_COLUMNS } from './exportCsv';
+import { buildCsvRows, CSV_COLUMNS, isCrystalCode } from './exportCsv';
 import { frontPgMatchKey, parseFormAnugerahExcel, readFrontPgTotals } from './excelImport';
 import { resolveCategory } from '../data/catalog';
 import { findPossibleTypo } from './typoCheck';
@@ -64,6 +64,8 @@ export function checkPlaque(p, { umum, okWords = [] }) {
 }
 
 const itemRows = (order, item) => buildCsvRows(order, null, [item]).rows;
+// Crystals are artwork the salesman confirms with the teacher — their wording isn't reviewed (Sean, 2026-11-05)
+const plaqueRows = (rowsOf, order, item) => rowsOf(order, item).filter((r) => !isCrystalCode(r[col('jenis_plak')]));
 const isBareOther = (item) => /^OTHER\b/i.test(String(item.jenisPlak || '').trim())
   && (norm(item.jenisPlak) === 'OTHER' || !(Number(item.unitPrice) > 0));
 
@@ -92,7 +94,7 @@ export function reviewOrder(order, rowsOf = itemRows) {
     const okWords = String(item.detail?.lines?.[`${prefix}wordsOk`] || '').split(',').filter(Boolean);
     // red or black already chosen for this sheet (Production's MERAH, or the teacher's on ORDER LAIN-LAIN)
     const merahChosen = item.detail?.lines?.[`${prefix}${merahKeyOf(umum)}`] != null;
-    rowsOf(order, item).forEach((r) => {
+    plaqueRows(rowsOf, order, item).forEach((r) => {
       const plaque = {
         header: r[col('event_header')], position: r[col('position')],
         line1: r[col('event_line_1')], line2: r[col('event_line_2')], positionBlack: r[col('position_black')] === '1',
@@ -118,7 +120,7 @@ export function reviewOrder(order, rowsOf = itemRows) {
 // red / black go to the model; the rest stays here to place its answer (count, sheet, CSV row).
 export function aiPlaquesOf(order, rowsOf = itemRows) {
   const seen = new Map();
-  (order.items || []).forEach((item) => rowsOf(order, item).forEach((r) => {
+  (order.items || []).forEach((item) => plaqueRows(rowsOf, order, item).forEach((r) => {
     const positionBlack = r[col('position_black')] === '1';
     const words = {
       sheet: item.categoryLabel || resolveCategory(item.categoryKey)?.label || item.categoryKey,
