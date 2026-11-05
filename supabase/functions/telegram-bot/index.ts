@@ -1,11 +1,13 @@
-// Production's Telegram bot (Sean, 2026-11-05) — the team's group only, and only when it's mentioned
-// (@PjsbReviewAgent) or replied to:
+// Production's Telegram bot (Sean, 2026-11-05) — the team's group only. Since 2026-11-05 the group is
+// Sean and the bots, so every message is for it (no @ needed):
 //   • a salesman's message (pasted, or replied to) → the Shipment Date / Function Date / Remark changes
 //     it asks for, as a preview. Production applies them on the order page (Apply / Dismiss), with the
 //     website's own functions; this bot never changes an order. Quantities / wording are listed as
 //     not handled.
 //   • a file (PDF, Word, Excel, picture) with an order number → how it differs from that order.
 //   • "summary <day>" → every order placed that day (no AI).
+//   • anything else → Sean's assistant (assistant.ts): questions about orders, his to-do list, change
+//     requests typed in his own words.
 // Requests are kept in bot_requests (migration 0107).
 //
 // Secrets: TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, ANTHROPIC_API_KEY. Set up once: open this function with
@@ -21,6 +23,7 @@ import { formBot, handleForm } from './form.ts';
 import { readFile } from './files.ts';
 import { askedDay, orderPlaquesText, proposeChanges, type Order } from './order.ts';
 import { readChanges, compareFile } from './ai.ts';
+import { askAssistant, type ChangeRequest } from './assistant.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SECRET_KEY = JSON.parse(Deno.env.get('SUPABASE_SECRET_KEYS')!)['default'];
@@ -40,11 +43,15 @@ const showDate = (iso: string) => (iso ? new Date(`${iso}T00:00:00`).toLocaleDat
 const FIELD_LABEL: Record<string, string> = { shipmentDate: 'Shipment Date', functionDate: 'Function Date', remark: 'Remark' };
 
 const HELP = [
-  'Mention me in this group:',
-  '• Reply to a salesman\'s message with <b>@PjsbReviewAgent</b> — I read the Shipment Date / Function Date / Remark changes and you Apply them on the order page.',
-  '• Send a file (PDF, Word, Excel, picture) with <b>@PjsbReviewAgent check ORD-0234</b> — I compare it with that order.',
-  '• <b>@PjsbReviewAgent summary 4/11</b> — every order placed that day.',
+  'Just talk to me in this group:',
+  '• Ask anything about the orders — <b>where is ORD-0234?</b>, <b>how many orders from SK TAMAN MELAWATI this month?</b>',
+  '• <b>remember me: 1. help Harriet convert the Excel</b> — I keep your to-do list; <b>my list</b>, <b>1 done</b>.',
+  '• Forward a salesman\'s message — I read the Shipment Date / Function Date / Remark changes and you Apply them on the order page.',
+  '• Send a file (PDF, Word, Excel, picture) with <b>check ORD-0234</b> — I compare it with that order.',
+  '• <b>summary 4/11</b> — every order placed that day.',
+  '• Every morning I report the day ahead, every evening what was done, and I ask you when an order looks stuck.',
 ].join('\n');
+const HELP_RE = /^\s*(\/?help|\/start|what can you do\b.*|apa (yang )?(boleh|awak boleh) (buat|tolong)\b.*|你(能|可以|会)做(什么|甚么).*|你会什么.*)\s*[?？]?\s*$/i;
 
 type Msg = Record<string, any>;
 
@@ -57,15 +64,20 @@ async function aiAllowed() {
 async function handleChanges(msg: Msg, text: string, who: string) {
   const read = await readChanges(text, todayMy());
   if (!read) return bot.reply(msg.chat.id, msg.message_id, 'Sorry, I couldn\'t read that message. Please try again.');
-  const asked = (read.input.requests as Record<string, string | null>[]) || [];
-  const notHandled = (read.input.notHandled as string[]) || [];
+  const blocks = await changeBlocks((read.input.requests as ChangeRequest[]) || [], (read.input.notHandled as string[]) || [], text, who);
+  if (!blocks.length) blocks.push(`I didn't find a Shipment Date, Function Date or Remark change with an order number (ORD-xxxx).\n\n${HELP}`);
+  return bot.reply(msg.chat.id, msg.message_id, blocks.join('\n\n'));
+}
+
+// The change previews (saved in bot_requests for Apply on the order page), one block per order
+async function changeBlocks(asked: ChangeRequest[], notHandled: string[], text: string, who: string) {
   const blocks: string[] = [];
   for (const r of asked) {
     const orderId = normOrderId(String(r.orderId || ''));
     if (!orderId) continue;
     const { data: order } = await db.from('orders').select('id, sekolah, status, shipment_date, function_date, remark').eq('id', orderId).maybeSingle();
     if (!order) { blocks.push(`❓ ${esc(orderId)} — no such order.`); continue; }
-    const { changes, refused } = proposeChanges(order as Order, r);
+    const { changes, refused } = proposeChanges(order as Order, r as Record<string, string | null>);
     const lines = [`📝 ${orderLink(orderId)} ${esc(order.sekolah)}`];
     for (const c of changes) {
       lines.push(c.field === 'remark'
@@ -82,8 +94,7 @@ async function handleChanges(msg: Msg, text: string, who: string) {
     blocks.push(lines.join('\n'));
   }
   if (notHandled.length) blocks.push(['⚠ Not done by the bot — change these in Edit Order:', ...notHandled.map((n) => `• ${esc(n)}`)].join('\n'));
-  if (!blocks.length) blocks.push(`I didn't find a Shipment Date, Function Date or Remark change with an order number (ORD-xxxx).\n\n${HELP}`);
-  return bot.reply(msg.chat.id, msg.message_id, blocks.join('\n\n'));
+  return blocks;
 }
 
 // ------------------------------------------------------------------ file compare
@@ -125,7 +136,8 @@ async function handleCompare(msg: Msg, fileMsg: Msg, text: string, who: string) 
 // ------------------------------------------------------------------ day summary
 // "@PjsbReviewAgent summary 4/11" → every order placed that Malaysian day (Sean 2026-11-05). Straight from
 // the database — no AI.
-const SUMMARY_RE = /\b(summary|summarise|summarize|senarai|list)\b/i;
+// only a message that starts with it — "what's on my list today" is a question for the assistant
+const SUMMARY_RE = /^\s*(summary|summarise|summarize|senarai)\b/i;
 const MAX_MESSAGE_CHARS = 3800; // Telegram's limit is 4096
 const rm = (n: number) => `RM ${n.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -156,19 +168,37 @@ async function handleSummary(msg: Msg, day: string) {
 }
 
 // ------------------------------------------------------------------ routing
+// The assistant's plain-text answer for Telegram's HTML, order numbers as links
+const assistantHtml = (text: string) => esc(text).replace(/\bORD-\d{4,5}\b/g, (id) => orderLink(id));
+
 async function handle(msg: Msg) {
-  const own = String(msg.text ?? msg.caption ?? '');
+  if (msg.from?.is_bot) return;
+  const raw = String(msg.text ?? msg.caption ?? '');
+  const own = raw.replace(new RegExp(`@${BOT_NAME}`, 'ig'), '').trim();
   const repliedTo = msg.reply_to_message as Msg | undefined;
-  const mentioned = own.toLowerCase().includes(`@${BOT_NAME}`) || repliedTo?.from?.username?.toLowerCase() === BOT_NAME;
-  if (!mentioned) return;
   const who = [msg.from?.first_name, msg.from?.last_name].filter(Boolean).join(' ') || msg.from?.username || 'Telegram';
-  const text = [own.replace(new RegExp(`@${BOT_NAME}`, 'ig'), '').trim(), repliedTo?.text ?? repliedTo?.caption ?? ''].filter(Boolean).join('\n\n');
-  const fileMsg = msg.document || msg.photo ? msg : repliedTo?.document || repliedTo?.photo ? repliedTo : null;
-  if (!text && !fileMsg) return bot.reply(msg.chat.id, msg.message_id, HELP);
+  const quoted = String(repliedTo?.text ?? repliedTo?.caption ?? '');
+  // a file of this message, or the file it replies to when it names an order ("check ORD-0234")
+  const fileMsg = msg.document || msg.photo ? msg : (repliedTo?.document || repliedTo?.photo) && normOrderId(own) ? repliedTo : null;
+  if (!own && !fileMsg) return raw ? bot.reply(msg.chat.id, msg.message_id, HELP) : undefined;
+  if (!fileMsg && HELP_RE.test(own) && !ORDER_ID_RE.test(own)) return bot.reply(msg.chat.id, msg.message_id, HELP);
   const summaryDay = !fileMsg && SUMMARY_RE.test(own) ? askedDay(own, todayMy()) : '';
   if (summaryDay) return handleSummary(msg, summaryDay);
   if (!(await aiAllowed())) return bot.reply(msg.chat.id, msg.message_id, 'The AI budget for this month is used up — please do this one by hand.');
-  return fileMsg ? handleCompare(msg, fileMsg, text, who) : handleChanges(msg, text, who);
+  if (fileMsg) return handleCompare(msg, fileMsg, [own, quoted].filter(Boolean).join('\n\n'), who);
+  // a forwarded salesman's message: its date / Remark changes, as before
+  if (msg.forward_origin || msg.forward_date) return handleChanges(msg, own, who);
+
+  const reply = await askAssistant({
+    db, today: todayMy(), who,
+    proposeChanges: async (requests, notHandled) => {
+      const blocks = await changeBlocks(requests, notHandled, own, who);
+      if (!blocks.length) return 'nothing to post: no order number or no Shipment Date / Function Date / Remark change';
+      await bot.reply(msg.chat.id, msg.message_id, blocks.join('\n\n'));
+      return `posted the preview: ${blocks.length} block(s); Production presses Apply on the order page`;
+    },
+  }, quoted ? `${own}\n\n(replying to this message: "${quoted.slice(0, 1500)}")` : own);
+  return bot.reply(msg.chat.id, msg.message_id, assistantHtml(reply));
 }
 
 Deno.serve(async (req) => {

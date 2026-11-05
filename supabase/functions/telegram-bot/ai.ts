@@ -5,11 +5,11 @@
 import Anthropic from 'npm:@anthropic-ai/sdk';
 import type { FileContent } from './files.ts';
 
-const MODEL = Deno.env.get('BOT_MODEL') ?? 'claude-opus-5-5';
+export const MODEL = Deno.env.get('BOT_MODEL') ?? 'claude-opus-5-5';
 // Not streamed: an Edge Function has 2 s of CPU, and the SDK's stream re-parses the tool's JSON on every
 // delta — a long plaque list used it all up (form bot, 2026-11-04). Waiting costs no CPU; the explicit
 // timeout lets a long answer through without streaming.
-const anthropic = new Anthropic({ apiKey: Deno.env.get('ANTHROPIC_API_KEY')!, timeout: 9 * 60 * 1000 });
+export const anthropic = new Anthropic({ apiKey: Deno.env.get('ANTHROPIC_API_KEY')!, timeout: 9 * 60 * 1000 });
 
 async function callTool(system: string, content: Anthropic.Beta.BetaContentBlockParam[], tool: { name: string; description: string; schema: Record<string, unknown> }, effort: 'low' | 'medium' | 'high', maxTokens = 16000) {
   const res = await anthropic.beta.messages.create({

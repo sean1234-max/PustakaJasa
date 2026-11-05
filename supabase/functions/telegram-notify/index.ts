@@ -1,6 +1,7 @@
 // Telegram notices for Production (Sean, 2026-11-04): a message in the team's group when an order
 // comes in for review, and one review list a day — every order in Reviewing Order, ✅ once Done
 // Review — edited in place whenever it changes (migration 0108; it replaced the 9:00 summary).
+// Since 2026-11-05 also Sean's morning report, evening summary and questions (reports.ts).
 // Called every 3 minutes by pg_cron; each run sends only what hasn't been sent yet (telegram_sent),
 // so an extra call does nothing. No caller auth for that reason.
 //
@@ -9,6 +10,7 @@
 // there, then open this function with ?find=1 — it lists the chats the bot has seen.
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { runReports } from './reports.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SECRET_KEY = JSON.parse(Deno.env.get('SUPABASE_SECRET_KEYS')!)['default'];
@@ -171,8 +173,12 @@ Deno.serve(async (req) => {
       if (sentNew >= MAX_NEW_PER_RUN) break;
       if (await sendOnce(`new:${o.id}`, newOrderText(o))) sentNew++;
     }
-    const list = await updateReviewList(orders, malaysiaNow());
-    return json({ ok: true, sentNew, list });
+    const now = malaysiaNow();
+    const list = await updateReviewList(orders, now);
+    // Sean's morning / evening reports and questions — their own failure doesn't stop the review list
+    const reports = await runReports({ db, send: (html) => send(html), esc, orderLink }, now)
+      .catch((err) => { console.error('telegram reports failed:', err); return [`failed: ${String(err).slice(0, 200)}`]; });
+    return json({ ok: true, sentNew, list, reports });
   } catch (err) {
     console.error('telegram-notify failed:', err);
     return json({ ok: false, error: String(err).slice(0, 300) }, 500);
