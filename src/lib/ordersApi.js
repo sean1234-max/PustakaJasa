@@ -319,3 +319,32 @@ export async function reassignOrderSalesman(orderId, newSalesmanId) {
   const { error } = await supabase.rpc('reassign_order_salesman', { p_order_id: orderId, p_new_salesman_id: newSalesmanId });
   if (error) throw error;
 }
+
+// Telegram link + order drafts (Sean, 2026-11-05; migration 0114). The salesman links his Telegram
+// once with a code; the form bot then keeps a FORM ANUGERAH + Function Details he sends as a draft
+// that New Order opens (?draft=<id>).
+const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+export async function createTelegramLinkCode() {
+  const { data, error } = await supabase.rpc('create_telegram_link_code');
+  if (error) throw error;
+  return data;
+}
+
+export async function isTelegramLinked() {
+  const { data, error } = await supabase.from('telegram_links').select('telegram_user_id').maybeSingle();
+  if (error) throw error;
+  return !!data;
+}
+
+export async function fetchOrderDraft(id) {
+  const { data, error } = await supabase.from('order_drafts').select('id, fields, file_path, file_name').eq('id', id).maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+export async function downloadDraftFile(path, name) {
+  const { data, error } = await supabase.storage.from('order-imports').download(path);
+  if (error) throw error;
+  return new File([data], name || 'FORM ANUGERAH.xlsx', { type: XLSX_TYPE });
+}

@@ -8,6 +8,7 @@ import { matchesOrderSearch } from '../utils/orderSearch';
 import OrderUrgentBadge from '../components/OrderUrgentBadge';
 import AddOnTag from '../components/AddOnTag';
 import { nearestFirst } from '../utils/urgentOrder';
+import TelegramConnect from '../components/TelegramConnect';
 import ConfirmButton from '../components/ConfirmButton';
 import { countReservedPlaques, isCrystalCode } from '../utils/exportCsv';
 
@@ -87,6 +88,7 @@ export default function SalesDashboard() {
               : 'Review incoming orders from every school — check Jenis Plak, quantities, and price per unit before approving.'}
           </p>
         </div>
+        <TelegramConnect />
       </div>
 
       {isManager && (

@@ -197,6 +197,15 @@ export default function NewOrderStep2() {
     }
   };
 
+  // The FORM ANUGERAH from a Telegram order draft (NewOrderStep1 ?draft=): uploaded once, as if picked here
+  const draftFile = state.pendingDraftFile;
+  useEffect(() => {
+    if (!draftFile) return;
+    patch({ pendingDraftFile: null });
+    handleImportFiles([draftFile]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per draft file
+  }, [draftFile]);
+
   // "Read with AI" for the sheets the rule-based reader skipped. Its tabs
   // and notes are ADDED to the current import (nothing already imported is
   // touched), and the offer goes away once used.

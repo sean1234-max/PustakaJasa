@@ -1,12 +1,12 @@
-import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import Nav from '../components/Nav';
 import DatePicker from '../components/DatePicker';
 import ImageDrop from '../components/ImageDrop';
 import { useAppState } from '../state/useAppState';
-import { formatDate, addDays } from '../data/catalog';
+import { formatDate, addDays, toMalaysiaDay } from '../data/catalog';
 import { uploadLogo } from '../lib/storageApi';
-import { searchSchools } from '../lib/ordersApi';
+import { searchSchools, fetchOrderDraft, downloadDraftFile } from '../lib/ordersApi';
 
 const SCHOOL_SEARCH_DELAY_MS = 250;
 
@@ -63,9 +63,41 @@ function SchoolSearch({ value, picked, onPick }) {
 }
 
 export default function NewOrderStep1() {
-  const { state, patch, today, refreshAssignedSalesman, pickActingSchool } = useAppState();
+  const { state, patch, today, refreshAssignedSalesman, pickActingSchool, startNewOrder } = useAppState();
   const isSalesman = state.role === 'salesman';
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const draftId = searchParams.get('draft');
+  const draftLoaded = useRef(null);
+
+  // A draft the form bot kept (?draft=<id>, migration 0114): a fresh New Order with its Function
+  // Details, the school when the name matches exactly one, and its FORM ANUGERAH waiting for Step 2.
+  useEffect(() => {
+    if (!draftId || draftLoaded.current === draftId) return;
+    draftLoaded.current = draftId;
+    (async () => {
+      try {
+        const draft = await fetchOrderDraft(draftId);
+        if (!draft) { patch({ stepError: 'That order link is not yours, or it no longer exists.' }); return; }
+        startNewOrder();
+        const f = draft.fields || {};
+        const day = (iso) => (iso ? toMalaysiaDay(`${iso}T00:00:00+08:00`) : null);
+        patch({
+          picName: f.picName || '', phone: f.phone || '', ketuaPanitia: f.ketuaPanitia || '', terms: f.terms || '',
+          funcSelected: day(f.functionDate), shipmentDateSelected: day(f.shipmentDate),
+          pendingDraftFile: draft.file_path ? await downloadDraftFile(draft.file_path, draft.file_name) : null,
+        });
+        const name = String(f.sekolah || '').trim();
+        const matches = name ? await searchSchools(name) : [];
+        const school = matches.find((m) => m.sekolah.toUpperCase() === name.toUpperCase()) || (matches.length === 1 ? matches[0] : null);
+        if (school) pickActingSchool(school);
+        else if (name) patch({ stepError: `Please pick the school "${name}" from the list.` });
+      } catch (err) {
+        console.error('Could not open the order draft:', err);
+        patch({ stepError: 'Could not open the order from Telegram. Check your connection and try again.' });
+      }
+    })();
+  }, [draftId, patch, pickActingSchool, startNewOrder]);
   const dueMinDate = addDays(today, 3);
   // Local, not AppState — this only matters while the teacher is on this
   // one screen (Next is blocked below until it settles), and doesn't need
