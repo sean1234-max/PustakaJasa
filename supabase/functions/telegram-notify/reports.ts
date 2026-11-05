@@ -24,6 +24,9 @@ const STUCK_DONE_REVIEW_DAYS = 2;
 const SHOWN = 25;
 const MS_PER_DAY = 86_400_000;
 const TEST_ORDERS = 'ORD-90%';
+const CREDIT_LOW_USD = 5;           // warn when the estimated credit left is under this…
+const CREDIT_LOW_SHARE = 0.2;       // …or under this share of the balance Sean last gave
+const CREDIT_ERROR_WINDOW_MS = 30 * 60_000;
 
 const shiftDay = (day: string, days: number) => new Date(Date.parse(`${day}T00:00:00Z`) + days * MS_PER_DAY).toISOString().slice(0, 10);
 const myDay = (v: unknown) => (v ? new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kuala_Lumpur' }).format(new Date(String(v))) : '');
@@ -65,6 +68,41 @@ async function openTasks(db: SupabaseClient) {
   return data || [];
 }
 
+// The AI credit as far as we can tell (migration 0113): the balance Sean last gave minus every AI cost since
+async function creditEstimate(db: SupabaseClient) {
+  const { data, error } = await db.rpc('ai_balance_estimate');
+  if (error) throw error;
+  const e = Array.isArray(data) ? data[0] : null;
+  return e ? { id: Number(e.balance_id), given: Number(e.set_usd), left: Number(e.left_usd) } : null;
+}
+
+// What a day of AI costs lately, to say how long the credit lasts
+async function dailySpendUsd(db: SupabaseClient) {
+  const { data } = await db.rpc('ai_spend_cents_since', { since: new Date(Date.now() - 7 * MS_PER_DAY).toISOString() });
+  return Number(data || 0) / 100 / 7;
+}
+
+export const creditIsLow = (c: { given: number; left: number }) => c.left < Math.max(CREDIT_LOW_USD, c.given * CREDIT_LOW_SHARE);
+const usd = (n: number) => `$${n.toFixed(2)}`;
+const lastsFor = (left: number, perDay: number) => (perDay > 0 ? ` — about ${Math.max(0, Math.floor(left / perDay))} day(s) at ${usd(perDay)}/day` : '');
+
+// Sean hears at once when the credit is gone (an AI call refused for it), and before, when it runs low
+async function creditAlerts(d: ReportDeps, today: string) {
+  const sent: string[] = [];
+  const { data: refused } = await d.db.rpc('ai_credit_errors_since', { since: new Date(Date.now() - CREDIT_ERROR_WINDOW_MS).toISOString() });
+  if (Number(refused || 0) > 0 && !(await wasSent(d.db, `ai-out:${today}`))) {
+    await d.send('⚠️ <b>The AI credit has run out</b> — every AI feature (website and bots) has stopped.\nTop up at platform.claude.com → Add funds, then tell me the new balance (e.g. "我充值了，余额 $30").');
+    sent.push(`ai-out:${today}`);
+  }
+  const c = await creditEstimate(d.db);
+  if (c && creditIsLow(c) && !(await wasSent(d.db, `ai-low:${c.id}`))) {
+    await d.send(`🔋 <b>AI credit running low</b> — about ${usd(c.left)} left of the ${usd(c.given)} you gave me${lastsFor(c.left, await dailySpendUsd(d.db))}.\nTop up at platform.claude.com → Add funds, then tell me the new balance.`);
+    sent.push(`ai-low:${c.id}`);
+  }
+  await markSent(d.db, sent);
+  return sent.length;
+}
+
 // The problems, each with the key it's asked under
 export function problemsOf(orders: Row[], today: string, now = Date.now()) {
   const tomorrow = shiftDay(today, 1);
@@ -97,7 +135,7 @@ const shipLine = (d: ReportDeps) => (o: Row) => `• ${d.orderLink(o.id)} ${d.es
 
 async function morningReport(d: ReportDeps, today: string) {
   const yesterday = shiftDay(today, -1);
-  const [orders, placed, tasks] = await Promise.all([openOrders(d.db), countOn(d.db, 'created_at', yesterday), openTasks(d.db)]);
+  const [orders, placed, tasks, credit, perDay] = await Promise.all([openOrders(d.db), countOn(d.db, 'created_at', yesterday), openTasks(d.db), creditEstimate(d.db).catch(() => null), dailySpendUsd(d.db)]);
   const by = (s: string) => orders.filter((o) => stage(o) === s).length;
   const shipsOn = (day: string) => orders.filter((o) => myDay(o.shipment_date) === day);
   const problems = problemsOf(orders, today);
@@ -115,6 +153,8 @@ async function morningReport(d: ReportDeps, today: string) {
     ...(problems.length ? ['', `❗ <b>Need your answer (${problems.length})</b>`, ...problems.slice(0, SHOWN).map((p) => `• ${p.text(d)}`)] : []),
     '',
     '📝 <b>Your list</b>', ...taskLines(d, tasks, today),
+    '',
+    credit ? `🤖 AI credit: about ${usd(credit.left)} left${lastsFor(credit.left, perDay)}${creditIsLow(credit) ? ' ❗' : ''}` : `🤖 AI credit: unknown — tell me the balance in the Claude Console (AI costs ${usd(perDay)}/day lately)`,
   ].join('\n');
   await d.send(text);
   await markSent(d.db, problems.map((p) => p.key));
@@ -172,6 +212,9 @@ export async function runReports(d: ReportDeps, now: { day: string; time: string
     await markSent(d.db, [`evening:${now.day}`]);
     done.push('evening');
   }
+  // the AI credit, any time of day — a stopped AI can't wait for the morning
+  const credit = await creditAlerts(d, now.day).catch((err) => { console.error('credit alert failed:', err); return 0; });
+  if (credit) done.push(`credit ${credit}`);
   // questions only once the day's morning report is out (it lists the ones already there)
   if (within(now.time, ASKING) && await wasSent(d.db, `morning:${now.day}`)) {
     const asked = await askNewProblems(d, now.day);

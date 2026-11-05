@@ -10,6 +10,7 @@ import type Anthropic from 'npm:@anthropic-ai/sdk';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { anthropic, MODEL } from './ai.ts';
 import { orderPlaquesText } from './order.ts';
+import { logUsage } from './usage.ts';
 import { applyEdit, prepareEdit, type EditAsk } from './orderEdit.ts';
 
 const MAX_TURNS = 8;              // tool round-trips per question
@@ -114,6 +115,12 @@ const TOOLS: Anthropic.Beta.BetaToolUnion[] = [
     input_schema: { type: 'object', additionalProperties: false, required: ['request_id'], properties: { request_id: { type: 'string' } } },
   },
   {
+    name: 'ai_credit',
+    description: 'The Anthropic AI credit (pays for every AI feature of the website and the bots): this month\'s spend and the estimated balance left. When Sean says he topped up or tells you the balance shown in the Claude Console, pass it as balance_usd so the estimate starts from it; otherwise null.',
+    strict: true,
+    input_schema: { type: 'object', additionalProperties: false, required: ['balance_usd'], properties: { balance_usd: nullable('number', 'the credit balance in US$ now, as Sean gave it') } },
+  },
+  {
     name: 'convert_kertas_kerja',
     description: 'ExcelFormAgent: turn the file Sean sent (a teacher\'s kertas kerja: PDF, Word, Excel or photo) into FORM ANUGERAH (Excel) and send it to the group. Takes 1-2 minutes.',
     strict: true,
@@ -199,6 +206,23 @@ async function listTasks(db: SupabaseClient) {
   return ok({ open: await openTasks(db), doneLast7Days: done || [] });
 }
 
+// The credit as far as we can tell: Anthropic doesn't let a program read the balance, so it is the
+// balance Sean last gave minus every AI cost logged since (migration 0113)
+async function aiCredit(db: SupabaseClient, balanceUsd: number | null, who: string) {
+  if (balanceUsd != null) {
+    if (!(balanceUsd >= 0)) return { error: 'the balance must be a number of US$, 0 or more' };
+    const { error } = await db.from('ai_balance').insert({ amount_usd: balanceUsd, set_by: who });
+    if (error) return { error: error.message };
+  }
+  const [{ data: est }, { data: month }] = await Promise.all([db.rpc('ai_balance_estimate'), db.rpc('ai_month_spend_cents')]);
+  const e = Array.isArray(est) ? est[0] : null;
+  return {
+    spentThisMonthUsd: Math.round(Number(month || 0)) / 100,
+    balance: e ? { givenUsd: Number(e.set_usd), givenAt: e.set_at, spentSinceUsd: Number(e.spent_usd), estimatedLeftUsd: Number(e.left_usd) } : 'unknown — ask Sean for the balance shown in the Claude Console',
+    note: 'estimate from logged costs; the Claude Console (platform.claude.com) has the real balance',
+  };
+}
+
 async function runTool(ctx: AssistantCtx, name: string, input: Record<string, unknown>) {
   const { db } = ctx;
   if (name === 'find_orders') return findOrders(db, input);
@@ -219,6 +243,7 @@ async function runTool(ctx: AssistantCtx, name: string, input: Record<string, un
   }
   if (name === 'prepare_order_change') return ok(await prepareEdit(db, input as unknown as EditAsk, ctx.who));
   if (name === 'confirm_order_change') return ok(await applyEdit(db, String(input.request_id || ''), ctx.sentAt, ctx.who));
+  if (name === 'ai_credit') return ok(await aiCredit(db, input.balance_usd as number | null, ctx.who));
   if (name === 'convert_kertas_kerja') return ok(ctx.fileName ? { result: await ctx.convertForm(String(input.notes || '')) } : { error: 'no file with this message — ask Sean to send it' });
   if (name === 'compare_file_with_order') return ok(ctx.fileName ? { result: await ctx.compareFile(String(input.order_id || '')) } : { error: 'no file with this message — ask Sean to send it' });
   return ok({ error: `unknown tool ${name}` });
@@ -255,7 +280,8 @@ export async function askAssistant(ctx: AssistantCtx, text: string) {
       betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default',
       thinking: { type: 'adaptive' }, output_config: { effort: 'medium' },
       system: system(ctx.today, ctx.fileName), tools: TOOLS, messages,
-    });
+    }).catch(async (err) => { await logUsage('assistant', MODEL, null, ctx.fileName, String(err)); throw err; });
+    await logUsage('assistant', res.model || MODEL, res.usage, ctx.fileName);
     if (res.stop_reason === 'refusal') return 'Sorry, I can\'t help with that one.';
     const uses = res.content.filter((c): c is Anthropic.Beta.BetaToolUseBlock => c.type === 'tool_use');
     if (res.stop_reason !== 'tool_use' || !uses.length) {

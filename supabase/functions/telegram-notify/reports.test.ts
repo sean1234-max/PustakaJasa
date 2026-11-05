@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { problemsOf } from './reports.ts';
+import { creditIsLow, problemsOf } from './reports.ts';
 
 const NOW = Date.parse('2026-11-05T10:00:00+08:00');
 const order = (over = {}) => ({ id: 'ORD-0300', sekolah: 'SK X', sales: 'ALI', status: 'In Production', reviewed_at: null, shipment_date: '2026-11-20T00:00:00+08:00', ...over });
@@ -22,5 +22,14 @@ describe('problemsOf', () => {
 
   it('says nothing about an order on track', () => {
     expect(keys([order(), order({ shipment_date: null })])).toEqual([]);
+  });
+});
+
+describe('creditIsLow', () => {
+  it('warns under $5 or under a fifth of the balance given', () => {
+    expect(creditIsLow({ given: 30, left: 4.9 })).toBe(true);
+    expect(creditIsLow({ given: 100, left: 19 })).toBe(true);
+    expect(creditIsLow({ given: 100, left: 21 })).toBe(false);
+    expect(creditIsLow({ given: 10, left: 6 })).toBe(false);
   });
 });

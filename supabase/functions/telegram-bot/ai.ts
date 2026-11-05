@@ -4,16 +4,23 @@
 
 import Anthropic from 'npm:@anthropic-ai/sdk';
 import type { FileContent } from './files.ts';
+import { logUsage } from './usage.ts';
 
 export const MODEL = Deno.env.get('BOT_MODEL') ?? 'claude-opus-5-5';
+// Copying a kertas kerja into the form (2026-11-05): Sonnet first, as the website's file reader does —
+// Opus only when Sonnet gives no answer and there is time left for a second call
+const FORM_MODEL = Deno.env.get('BOT_FORM_MODEL') ?? 'claude-sonnet-5-5';
+const SECOND_TRY_WITHIN_MS = 60_000;
 // Not streamed: an Edge Function has 2 s of CPU, and the SDK's stream re-parses the tool's JSON on every
 // delta — a long plaque list used it all up (form bot, 2026-11-04). Waiting costs no CPU; the explicit
 // timeout lets a long answer through without streaming.
 export const anthropic = new Anthropic({ apiKey: Deno.env.get('ANTHROPIC_API_KEY')!, timeout: 9 * 60 * 1000 });
 
-async function callTool(system: string, content: Anthropic.Beta.BetaContentBlockParam[], tool: { name: string; description: string; schema: Record<string, unknown> }, effort: 'low' | 'medium' | 'high', maxTokens = 16000) {
+type CallOpts = { model?: string; fileName?: string | null };
+
+async function callTool(system: string, content: Anthropic.Beta.BetaContentBlockParam[], tool: { name: string; description: string; schema: Record<string, unknown> }, effort: 'low' | 'medium' | 'high', maxTokens = 16000, { model = MODEL, fileName = null }: CallOpts = {}) {
   const res = await anthropic.beta.messages.create({
-    model: MODEL,
+    model,
     max_tokens: maxTokens,
     betas: ['server-side-fallback-2026-07-01'],
     fallbacks: 'default',
@@ -23,7 +30,8 @@ async function callTool(system: string, content: Anthropic.Beta.BetaContentBlock
     tools: [{ name: tool.name, description: tool.description, input_schema: tool.schema, strict: true }],
     tool_choice: { type: 'auto' },
     messages: [{ role: 'user', content }],
-  });
+  }).catch(async (err) => { await logUsage(tool.name, model, null, fileName, String(err)); throw err; });
+  await logUsage(tool.name, res.model || model, res.usage, fileName);
   const use = res.content.find((c): c is Anthropic.Beta.BetaToolUseBlock => c.type === 'tool_use');
   if (res.stop_reason === 'refusal' || res.stop_reason === 'max_tokens' || !use) {
     console.error(`${tool.name}: no answer (${res.stop_reason})`, JSON.stringify(res.usage));
@@ -87,7 +95,7 @@ Report every real difference: an award or plaque in the file that the order does
     file.type === 'text' ? { type: 'text', text: `FILE "${fileName}":\n${file.text}` } : file,
     { type: 'text', text: `ORDER ${orderId}:\n${orderText}` },
   ];
-  return callTool(system, content, { name: 'compare_result', description: 'Report how the file and the order differ.', schema: COMPARE_SCHEMA }, 'high');
+  return callTool(system, content, { name: 'compare_result', description: 'Report how the file and the order differ.', schema: COMPARE_SCHEMA }, 'high', 16000, { fileName });
 }
 
 // ------------------------------------------------------------------ form bot (a teacher's kertas kerja → FORM ANUGERAH)
@@ -139,10 +147,14 @@ Each plaque is one of:
 Sashes (selempang) are not plaques: list them in selempang — acara, warna (BIRU / HIJAU / KUNING / MERAH; blue / green / yellow / red; any other or no colour → "" and a question), qty.
 Rules: copy the wording exactly as the teacher wrote it (fix nothing but obvious spacing); one row per distinct wording with its quantity — count recipients / places when no number is given; never invent plaques, quantities or codes; a total that doesn't match the rows goes in questions; anything unclear goes in questions. Text after "Notes from the salesman" is the salesman's own instruction and wins. Call read_form exactly once.`;
 
-export function readForm(file: FileContent, fileName: string, notes: string) {
+export async function readForm(file: FileContent, fileName: string, notes: string) {
   const content: Anthropic.Beta.BetaContentBlockParam[] = [
     file.type === 'text' ? { type: 'text', text: `FILE "${fileName}":\n${file.text}` } : file,
     ...(notes ? [{ type: 'text' as const, text: `Notes from the salesman: ${notes}` }] : []),
   ];
-  return callTool(FORM_SYSTEM, content, { name: 'read_form', description: 'List the plaques the order asks for.', schema: FORM_SCHEMA }, 'low', 64000);
+  const tool = { name: 'read_form', description: 'List the plaques the order asks for.', schema: FORM_SCHEMA };
+  const started = Date.now();
+  const first = await callTool(FORM_SYSTEM, content, tool, 'low', 64000, { model: FORM_MODEL, fileName });
+  if (first || FORM_MODEL === MODEL || Date.now() - started > SECOND_TRY_WITHIN_MS) return first;
+  return callTool(FORM_SYSTEM, content, tool, 'low', 64000, { model: MODEL, fileName });
 }

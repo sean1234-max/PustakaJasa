@@ -196,6 +196,7 @@ const ASSISTANT_HELP = [
   '• Send a file with <b>check ORD-0234</b> — ReviewAgent compares it with that order.',
   '• <b>remember me: 1. help Harriet convert the Excel</b> — I keep your to-do list; <b>my list</b>, <b>1 done</b>.',
   '• <b>summary 4/11</b> — every order placed that day.',
+  '• <b>AI 额度剩多少？</b> / <b>我充值了，余额 $30</b> — I keep track of the AI credit and warn you before it runs out.',
   '• Every morning I report the day ahead, every evening what was done, and I ask you when an order looks stuck.',
 ].join('\n');
 const HELP_RE = /^\s*(\/?help|\/start|what can you do\b.*|apa (yang )?(boleh|awak boleh) (buat|tolong)\b.*|你(能|可以|会)做(什么|甚么).*|你会什么.*)\s*[?？]?\s*$/i;
