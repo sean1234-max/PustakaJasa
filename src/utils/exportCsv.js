@@ -138,7 +138,8 @@ export function crystalWithPlak(order) {
 
 // Reserved names filled in after the plaques were typed (0097 kiv_filled_rows, row ids):
 // made on the KIV card, in Typing, once no Reserved name is left (Sean, 2026-10-17).
-const filledRowIds = (order) => new Set(Array.isArray(order?.kivFilledRows) ? order.kivFilledRows : []);
+// compared as text: fill_reserved_names stores the ids as JSON object keys ("1003"), the rows have numbers
+const filledRowIds = (order) => new Set(Array.isArray(order?.kivFilledRows) ? order.kivFilledRows.map(String) : []);
 export const hasLateNames = (order) => countReservedPlaques(order) === 0 && filledRowIds(order).size > 0;
 
 // The KIV card's own plaques: only the rows named after typing (none = null).
@@ -146,7 +147,7 @@ export function lateNamesOrder(order) {
   const ids = filledRowIds(order);
   if (!hasLateNames(order)) return null;
   const items = (order.items || []).flatMap((it) => {
-    const rows = (Array.isArray(it.detail?.rows) ? it.detail.rows : []).filter((r) => ids.has(r.id));
+    const rows = (Array.isArray(it.detail?.rows) ? it.detail.rows : []).filter((r) => ids.has(String(r.id)));
     if (rows.length === 0) return [];
     return [{ ...it, qty: rows.reduce((n, r) => n + (Number(r.qty) || 0), 0), detail: { ...it.detail, rows } }];
   });

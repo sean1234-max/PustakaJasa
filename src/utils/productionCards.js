@@ -1,5 +1,5 @@
 import { getOrderInvoiceSlices, getInvoiceItems } from './orderBatches';
-import { kivParts, hasMainPart, isCrystalCode } from './exportCsv';
+import { kivParts, hasMainPart, isCrystalCode, lateNamesOrder } from './exportCsv';
 
 // The Production dashboard's cards for one order (Sean, 2026-10-28, ORD-0108). A split order shows
 // one card per invoice, each judged by its OWN items: an invoice of only crystals has nothing to type
@@ -33,7 +33,15 @@ export function productionCards(ord, plakCatalog) {
   const kivInvoices = split ? slices.filter((s) => kivParts(s).length > 0).map((s) => s.invoiceId).filter(Boolean) : [];
   // a SHORT SUPPLY-only card keeps the whole order's numbers
   const crystals = crystalTotals(ord);
-  const totals = crystals.any ? { totalQty: crystals.qty, totalAmount: crystals.amount } : { totalQty: ord.totalQty, totalAmount: ord.totalAmount };
+  // names filled in after typing: the card is only those plaques (Sean, 2026-11-05, ORD-0178); otherwise the
+  // whole order (an order has no totalQty of its own — it's the items' sum, as getOrderInvoiceSlices counts it)
+  const late = lateNamesOrder(ord);
+  const sumOf = (items) => ({
+    totalQty: items.reduce((n, it) => n + (Number(it.qty) || 0), 0),
+    totalAmount: items.reduce((n, it) => n + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0),
+  });
+  const totals = crystals.any ? { totalQty: crystals.qty, totalAmount: crystals.amount }
+    : late ? sumOf(late.items) : { totalQty: sumOf(ord.items || []).totalQty, totalAmount: ord.totalAmount };
   return [...slices, { ...slices[0], items: ord.items, ...totals, _sliceKey: `${slices[0]._sliceKey}::kiv`, _part: 'kiv', _kivInvoices: kivInvoices }];
 }
 

@@ -1230,6 +1230,11 @@ describe('KIV: Reserved names filled in after typing (0097)', () => {
     expect(late.items[0].qty).toBe(2);
   });
 
+  it('finds a numbered row from the text id fill_reserved_names stores (ORD-0178: "1003" vs 1003)', () => {
+    const order = { ...base, kivFilledRows: ['1003'], items: [tokoh([{ id: 1002, namaMurid: 'ALI', qty: 1 }, { id: 1003, namaMurid: 'ABU', qty: 1 }])] };
+    expect(lateNamesOrder(order).items[0].detail.rows.map((r) => r.id)).toEqual([1003]);
+  });
+
   it('has no KIV card when the names came before typing', () => {
     const order = { ...base, typedAt: null, items: [tokoh([{ id: 'a', namaMurid: 'ALI', qty: 1 }])] };
     expect(kivParts(order)).toEqual([]);
