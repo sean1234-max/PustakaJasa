@@ -10,6 +10,7 @@ import DuplicateOrderModal from '../components/DuplicateOrderModal';
 import KertasKerjaAskModal from '../components/KertasKerjaAskModal';
 import { KERTAS_KERJA_ANCHOR } from '../components/KertasKerjaUpload';
 import { isCrystalCode } from '../utils/exportCsv';
+import { orderImportFields } from '../utils/importFiles';
 
 const isSelempangItem = (ci) => resolveCategory(ci.categoryKey)?.selempang;
 
@@ -98,6 +99,8 @@ export default function Cart() {
   }, [groupedCartRowsByPlak, selempangQty, state.plakCatalog]);
   // An OTHER with no name ("OTHER" read from a file) or no price can't be submitted (Sean, 2026-10-22).
   const otherViolation = state.cart.find((ci) => otherPlakIncomplete(ci.jenisPlak, ci.unitPrice));
+  // The order file (FORM ANUGERAH / WORDING / PDF) must be uploaded; the kertas kerja is optional (Sean, 2026-11-05).
+  const noOrderFile = orderImportFields(state).importFiles.length === 0;
 
   // Crystals: the artwork is checked in the preview below before the order goes in (Sean,
   // 2026-10-14). Yes = confirmed. A teacher's No stops the submit; a salesman may submit
@@ -139,7 +142,7 @@ export default function Cart() {
   // The school's look-alike orders first (0094): if any, the person submitting
   // has to say it's a separate order before it goes.
   const handleSubmit = async (artworkConfirmed = false) => {
-    if (state.cart.length === 0 || submitting || stockViolation || otherViolation) return;
+    if (state.cart.length === 0 || submitting || stockViolation || otherViolation || noOrderFile) return;
     setSubmitting(true);
     const found = await checkDuplicateOrders();
     setSubmitting(false);
@@ -275,12 +278,17 @@ export default function Cart() {
             {' '}(OTHER needs its name and price — edit this category, pick OTHER again and fill in both before submitting.)
           </p>
         )}
+        {noOrderFile && state.cart.length > 0 && (
+          <p className="hint-text" style={{ color: '#c0392b', fontWeight: 600 }}>
+            Sila upload fail order (FORM ANUGERAH / WORDING) di Order Details dahulu. (Upload the order file on Order Details before submitting — the kertas kerja alone is not enough.)
+          </p>
+        )}
         <DuplicateOrderModal sekolah={state.sekolah} orders={dupes?.found || null} busy={submitting} onYes={goAhead} onNo={() => setDupes(null)} />
         <div className="row-split">
           <button type="button" className="btn btn-ghost" onClick={() => { restoreCartToDraft(); navigate('/order/step2'); }}>← Back to Order</button>
           {state.cartToast && <span className="toast-inline">{state.cartToast}</span>}
           <button
-            type="button" className="btn btn-primary" disabled={state.cart.length === 0 || submitting || !!stockViolation || !!otherViolation || !!dupes}
+            type="button" className="btn btn-primary" disabled={state.cart.length === 0 || submitting || !!stockViolation || !!otherViolation || !!dupes || noOrderFile}
             onClick={() => (state.kertasKerjaFiles?.length ? startSubmit() : setAskKertasKerja(true))}
           >
             {submitting ? 'Submitting…' : 'Submit Order'}

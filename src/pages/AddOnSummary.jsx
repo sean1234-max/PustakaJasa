@@ -70,8 +70,10 @@ export default function AddOnSummary() {
 
   // no kertas kerja uploaded on Add On: asked first (KertasKerjaAskModal)
   const [askKertasKerja, setAskKertasKerja] = useState(false);
+  // the Tambahan's order file must be uploaded; the kertas kerja is optional (Sean, 2026-11-05)
+  const noOrderFile = !state.addOnImportFilePath && !state.addOnCart.some((ci) => ci.importFile);
   const handleSubmit = async () => {
-    if (submitting || stockViolation) return;
+    if (submitting || stockViolation || noOrderFile) return;
     const repeat = addonRepeatsOrder(state.addOnCart, order?.items);
     if (repeat && !window.confirm(addonRepeatMessage(order.id, repeat))) return;
     setSubmitting(true);
@@ -142,9 +144,14 @@ export default function AddOnSummary() {
             </p>
           </div>
         )}
+        {noOrderFile && addOnSummaryItems.length > 0 && (
+          <p className="hint-text" style={{ color: '#c0392b', fontWeight: 600 }}>
+            Sila upload fail order Tambahan (FORM ANUGERAH / WORDING) di Add On dahulu. (Upload the Tambahan order file on Add On before submitting — the kertas kerja alone is not enough.)
+          </p>
+        )}
         <div className="row-split">
           <button type="button" className="btn btn-ghost" onClick={() => navigate(`/addon/${order.id}`)}>← Back to Add On</button>
-          <button type="button" className="btn btn-primary" disabled={submitting || !!stockViolation || addOnSummaryItems.length === 0} onClick={() => (state.addOnKertasKerja?.length ? handleSubmit() : setAskKertasKerja(true))}>
+          <button type="button" className="btn btn-primary" disabled={submitting || !!stockViolation || addOnSummaryItems.length === 0 || noOrderFile} onClick={() => (state.addOnKertasKerja?.length ? handleSubmit() : setAskKertasKerja(true))}>
             {submitting ? 'Submitting…' : 'Submit Tambahan'}
           </button>
         </div>
