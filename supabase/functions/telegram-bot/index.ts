@@ -273,7 +273,12 @@ Deno.serve(async (req) => {
   // answer in the background — Telegram only waits for the 200
   const work = (isForm ? handleForm(msg, aiAllowed) : kind === 'assistant' ? handleAssistant(msg) : handle(msg)).catch(async (err) => {
     console.error('telegram-bot failed:', err);
-    await which.reply(msg.chat.id, msg.message_id, 'Sorry, something went wrong. Please try again.').catch(() => {});
+    // the Anthropic account ran dry (2026-11-05: the HADIAH HAC PDF "failed" for this) — say so, a retry won't help
+    const noCredit = /credit balance is too low/i.test(String(err?.message ?? err));
+    const text = noCredit
+      ? '⚠️ The AI account is out of credit, so I can\'t read files or answer right now. Sean: please top up at console.anthropic.com → Plans & Billing.'
+      : 'Sorry, something went wrong. Please try again.';
+    await which.reply(msg.chat.id, msg.message_id, text).catch(() => {});
   });
   // @ts-ignore EdgeRuntime is provided by the Supabase Edge runtime
   if (typeof EdgeRuntime !== 'undefined') EdgeRuntime.waitUntil(work); else await work;
