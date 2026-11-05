@@ -25,7 +25,7 @@ import { buildCategoryCartItems } from './categoryCartItems';
 import { AppStateContext } from './AppStateContext';
 import { saveCrystalDraft, clearCrystalDraft } from '../lib/crystalDraft';
 import {
-  fetchOrders, fetchOrderById, markArtworkManual, insertOrder, updateOrder, approveAddonAsOrder, nextOrderSeq, fetchAllSalesmen, reassignOrderSalesman,
+  fetchOrders, fetchOrderById, markArtworkManual, saveProductionNote, insertOrder, updateOrder, approveAddonAsOrder, nextOrderSeq, fetchAllSalesmen, reassignOrderSalesman,
   findPossibleDuplicates,
 } from '../lib/ordersApi';
 import {
@@ -3054,6 +3054,18 @@ export function AppStateProvider({ children }) {
     return null;
   }, [patch]);
 
+  // Production's remark on an In Production card (0109). Returns an error message, or null.
+  const setProductionNote = useCallback(async (orderId, note) => {
+    try {
+      await saveProductionNote(orderId, note.trim());
+    } catch (err) {
+      console.error('Failed to save the Production remark in Supabase:', err);
+      return describeOrderWriteError(err, 'update');
+    }
+    patch((st) => ({ orders: st.orders.map((o) => (o.id === orderId ? { ...o, productionNote: note.trim() } : o)) }));
+    return null;
+  }, [patch]);
+
   // Production or the order's salesman types the real names over its "Reserved" rows
   // (0097, Sean 2026-10-17). names: { rowId: name }. Returns an error message, or null.
   const fillReservedNames = useCallback(async (orderId, names) => {
@@ -3498,7 +3510,7 @@ export function AppStateProvider({ children }) {
     markTypingDone,
     updateReferenceOrder,
     markReviewDone,
-    markAddOnReviewed, saveProductionPrices, markKivDone, markKivProductionDone, confirmArtwork, manualArtwork, fillReservedNames,
+    markAddOnReviewed, saveProductionPrices, markKivDone, markKivProductionDone, confirmArtwork, manualArtwork, setProductionNote, fillReservedNames,
     openProductionEdit,
     loadExcelIntoProductionEdit,
     saveProductionEdit,

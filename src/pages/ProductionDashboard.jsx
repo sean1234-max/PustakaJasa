@@ -14,6 +14,7 @@ import { MANUAL_ARTWORK_NOTE } from '../components/CrystalPreview';
 import { matchesOrderSearch } from '../utils/orderSearch';
 import { duplicateSummary } from '../utils/duplicateOrders';
 import ProductionInvoiceEntry from '../components/ProductionInvoiceEntry';
+import ProductionNote from '../components/ProductionNote';
 
 // Production works 'In Production' orders (invoice number or not — that's
 // Store Admin's job now, see supabase/migrations/0036_add_invoicing_role.sql
@@ -353,6 +354,7 @@ export default function ProductionDashboard() {
               {cardTab === 'approved' && <ProductionInvoiceEntry order={ord} />}
               <div className="dim" style={{ fontSize: 11 }}>{addonCard ? 'Tambahan Amount' : 'Total Amount'}</div>
               <div className={`order-card-total${!addonCard && ord.priceAdjusted ? ' amount-adjusted' : ''}`}>RM {shownAmount.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+              {cardTab === 'active' && <ProductionNote key={ord.id} order={ord} />}
 
               <div className="order-card-actions" style={cardTab === 'active' || cardTab === 'typing' || cardTab === 'reviewing' || cardTab === 'addon' || cardTab === 'kiv' ? { display: 'flex', gap: 'var(--space-2)' } : undefined}>
                 {cardTab === 'reviewing' && (

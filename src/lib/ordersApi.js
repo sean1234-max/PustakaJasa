@@ -133,6 +133,7 @@ function fromDbOrder(row) {
     artworkConfirmedByName: row.artwork_confirmed_by_name || null,
     artworkConfirmedByRole: row.artwork_confirmed_by_role || null,
     artworkManual: !!row.artwork_manual,
+    productionNote: row.production_note || '',
     parentOrderId: row.parent_order_id || null,
   };
 }
@@ -161,7 +162,7 @@ const ORDER_LIST_COLUMNS = [
   'kiv_production_done_at', 'artwork_confirmed_at', 'artwork_confirmed_by_name',
   'artwork_confirmed_by_role', 'parent_order_id', 'crystal_typed_at', 'duplicate_check',
   'kiv_filled_rows', 'pending_addon_shipment_date', 'artwork_manual',
-  'placed_by:snapshot->>placedBy',
+  'production_note', 'placed_by:snapshot->>placedBy',
 ].join(',');
 
 export async function fetchOrders(userId, role, { limit = 500 } = {}) {
@@ -228,6 +229,12 @@ export async function approveAddonAsOrder(orderId, items, priceAdjusted) {
   const { data, error } = await supabase.rpc('approve_addon', { p_order_id: orderId, p_items: items, p_price_adjusted: priceAdjusted });
   if (error) throw error;
   return data;
+}
+
+// Production's own remark on an In Production card (0109). Its own write, like markArtworkManual.
+export async function saveProductionNote(id, note) {
+  const { error } = await supabase.from('orders').update({ production_note: note || null }).eq('id', id);
+  if (error) throw error;
 }
 
 // Manual crystal artwork (0102): confirmed for Production, drawn by a designer.
