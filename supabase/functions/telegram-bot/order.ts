@@ -60,3 +60,27 @@ export function proposeChanges(order: Order, asked: Asked) {
   }
   return { changes, refused };
 }
+
+// The day a "summary" message asks about, as YYYY-MM-DD (Sean 2026-11-05): "4/11", "4/11/2026",
+// "2026-11-04", "4th November 2026", "Nov 4", "4 Ogos", "today" / "yesterday". Day before month; no year
+// = this year. '' when it names no day.
+const MONTHS = ['jan', 'feb', 'ma[rc]', 'apr', 'ma[yi]', 'jun', 'jul', 'aug|ogo', 'sep', 'o[ck]t', 'nov', 'de[cs]|dis'];
+const monthOf = (word: string) => MONTHS.findIndex((m) => new RegExp(`^(${m})`, 'i').test(word)) + 1;
+const MONTH_WORD = '([a-z]{3,9})\\.?';
+
+export function askedDay(text: string, today: string) {
+  const iso = (y: number, m: number, d: number) => {
+    const t = new Date(Date.UTC(y, m - 1, d));
+    return m >= 1 && m <= 12 && t.getUTCDate() === d ? t.toISOString().slice(0, 10) : '';
+  };
+  const year = Number(today.slice(0, 4));
+  const shift = (days: number) => new Date(Date.parse(`${today}T00:00:00Z`) + days * 86400000).toISOString().slice(0, 10);
+  let m;
+  if ((m = /\b(\d{4})-(\d{1,2})-(\d{1,2})\b/.exec(text))) return iso(+m[1], +m[2], +m[3]);
+  if ((m = /\b(\d{1,2})[/.](\d{1,2})(?:[/.](\d{2,4}))?\b/.exec(text))) return iso(m[3] ? (m[3].length === 2 ? 2000 + +m[3] : +m[3]) : year, +m[2], +m[1]);
+  if ((m = new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+(?:of\\s+)?${MONTH_WORD}(?:,?\\s+(\\d{4}))?`, 'i').exec(text)) && monthOf(m[2])) return iso(m[3] ? +m[3] : year, monthOf(m[2]), +m[1]);
+  if ((m = new RegExp(`\\b${MONTH_WORD}\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b(?:,?\\s+(\\d{4}))?`, 'i').exec(text)) && monthOf(m[1])) return iso(m[3] ? +m[3] : year, monthOf(m[1]), +m[2]);
+  if (/\b(today|hari ini)\b/i.test(text)) return today;
+  if (/\b(yesterday|semalam)\b/i.test(text)) return shift(-1);
+  return '';
+}

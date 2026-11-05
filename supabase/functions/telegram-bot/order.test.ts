@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { proposeChanges, orderPlaquesText } from './order.ts';
+import { proposeChanges, orderPlaquesText, askedDay } from './order.ts';
 
 const order = (over = {}) => ({
   id: 'ORD-0233', sekolah: 'SK SRI SERDANG', status: 'Salesman Approved',
@@ -41,5 +41,24 @@ describe('orderPlaquesText', () => {
     const text = orderPlaquesText(items);
     expect(text).toContain('- PKF 265: 2');
     expect(text).toMatch(/ORDER LAIN-LAIN \| PKF 265 \| .*JOHAN.* × 2/);
+  });
+});
+
+describe('askedDay', () => {
+  const today = '2026-11-05';
+  it.each([
+    ['Give me of summary list that all order placed on 4th November 2026', '2026-11-04'],
+    ['summary 4/11', '2026-11-04'],
+    ['summary 4/11/26', '2026-11-04'],
+    ['summary 2026-11-04', '2026-11-04'],
+    ['summary Nov 4', '2026-11-04'],
+    ['senarai 4 Ogos', '2026-08-04'],
+    ['senarai 1 Mac', '2026-03-01'],
+    ['summary today', '2026-11-05'],
+    ['summary yesterday', '2026-11-04'],
+    ['summary 31/2', ''],
+    ['summary please', ''],
+  ])('%s → %s', (text, day) => {
+    expect(askedDay(text, today)).toBe(day);
   });
 });

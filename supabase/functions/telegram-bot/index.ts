@@ -5,6 +5,7 @@
 //     website's own functions; this bot never changes an order. Quantities / wording are listed as
 //     not handled.
 //   • a file (PDF, Word, Excel, picture) with an order number → how it differs from that order.
+//   • "summary <day>" → every order placed that day (no AI).
 // Requests are kept in bot_requests (migration 0107).
 //
 // Secrets: TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, ANTHROPIC_API_KEY. Set up once: open this function with
@@ -18,7 +19,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 import { esc, telegramBot, MAX_FILE_BYTES } from './telegram.ts';
 import { formBot, handleForm } from './form.ts';
 import { readFile } from './files.ts';
-import { orderPlaquesText, proposeChanges, type Order } from './order.ts';
+import { askedDay, orderPlaquesText, proposeChanges, type Order } from './order.ts';
 import { readChanges, compareFile } from './ai.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
@@ -42,6 +43,7 @@ const HELP = [
   'Mention me in this group:',
   '• Reply to a salesman\'s message with <b>@PjsbReviewAgent</b> — I read the Shipment Date / Function Date / Remark changes and you Apply them on the order page.',
   '• Send a file (PDF, Word, Excel, picture) with <b>@PjsbReviewAgent check ORD-0234</b> — I compare it with that order.',
+  '• <b>@PjsbReviewAgent summary 4/11</b> — every order placed that day.',
 ].join('\n');
 
 type Msg = Record<string, any>;
@@ -120,6 +122,39 @@ async function handleCompare(msg: Msg, fileMsg: Msg, text: string, who: string) 
   return bot.reply(msg.chat.id, msg.message_id, lines.join('\n'));
 }
 
+// ------------------------------------------------------------------ day summary
+// "@PjsbReviewAgent summary 4/11" → every order placed that Malaysian day (Sean 2026-11-05). Straight from
+// the database — no AI.
+const SUMMARY_RE = /\b(summary|summarise|summarize|senarai|list)\b/i;
+const MAX_MESSAGE_CHARS = 3800; // Telegram's limit is 4096
+const rm = (n: number) => `RM ${n.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+async function handleSummary(msg: Msg, day: string) {
+  const next = new Date(Date.parse(`${day}T00:00:00Z`) + 86400000).toISOString().slice(0, 10);
+  const { data, error } = await db.from('orders')
+    .select('id, sekolah, sales, status, total_amount, parent_order_id, cancelled_at')
+    .gte('created_at', `${day}T00:00:00+08:00`).lt('created_at', `${next}T00:00:00+08:00`)
+    .order('created_at');
+  if (error) throw error;
+  const orders = data || [];
+  const live = orders.filter((o) => !o.cancelled_at);
+  const total = live.reduce((a, o) => a + Number(o.total_amount || 0), 0);
+  const head = `📋 <b>Orders placed on ${showDate(day)}</b> — ${live.length} order(s), ${rm(total)}${orders.length > live.length ? ` (${orders.length - live.length} cancelled)` : ''}`;
+  const rows = orders.map((o) => [
+    `${o.cancelled_at ? '❌' : '•'} ${orderLink(o.id)} ${esc(o.sekolah)}`,
+    o.sales && `(${esc(o.sales)})`,
+    `— ${rm(Number(o.total_amount || 0))} · ${esc(o.cancelled_at ? 'Cancelled' : o.status)}`,
+    o.parent_order_id && `· Tambahan of ${esc(o.parent_order_id)}`,
+  ].filter(Boolean).join(' '));
+  const lines = [head, ''];
+  for (const [i, row] of rows.entries()) {
+    if (lines.join('\n').length + row.length > MAX_MESSAGE_CHARS) { lines.push(`… and ${rows.length - i} more`); break; }
+    lines.push(row);
+  }
+  if (!orders.length) lines.push('No orders were placed that day.');
+  return bot.reply(msg.chat.id, msg.message_id, lines.join('\n'));
+}
+
 // ------------------------------------------------------------------ routing
 async function handle(msg: Msg) {
   const own = String(msg.text ?? msg.caption ?? '');
@@ -130,6 +165,8 @@ async function handle(msg: Msg) {
   const text = [own.replace(new RegExp(`@${BOT_NAME}`, 'ig'), '').trim(), repliedTo?.text ?? repliedTo?.caption ?? ''].filter(Boolean).join('\n\n');
   const fileMsg = msg.document || msg.photo ? msg : repliedTo?.document || repliedTo?.photo ? repliedTo : null;
   if (!text && !fileMsg) return bot.reply(msg.chat.id, msg.message_id, HELP);
+  const summaryDay = !fileMsg && SUMMARY_RE.test(own) ? askedDay(own, todayMy()) : '';
+  if (summaryDay) return handleSummary(msg, summaryDay);
   if (!(await aiAllowed())) return bot.reply(msg.chat.id, msg.message_id, 'The AI budget for this month is used up — please do this one by hand.');
   return fileMsg ? handleCompare(msg, fileMsg, text, who) : handleChanges(msg, text, who);
 }
