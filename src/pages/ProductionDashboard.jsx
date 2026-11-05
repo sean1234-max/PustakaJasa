@@ -292,11 +292,12 @@ export default function ProductionDashboard() {
                     <span className="status-pill" style={{ background: '#fff4ce', color: '#8a6d00' }}>Excel Updated</span>
                   )}
                   <OrderUrgentBadge urgent={ord.urgent} />
-                  <span className="status-pill" style={statusPillStyle(partDone(ord) ? 'Completed' : ord.status)}>
-                    {partDone(ord) ? 'Completed' : isKivCard
+                  {(() => {
+                    const label = partDone(ord) ? 'Completed' : isKivCard
                       ? (kivInTyping(ord) ? 'Typing' : needsKiv(ord) ? 'KIV & ARTWORK' : ord.status)
-                      : (ord.status === 'In Production' && !ord.typedAt ? 'Typing' : ord.status)}
-                  </span>
+                      : (ord.status === 'In Production' && !ord.typedAt ? 'Typing' : ord.status);
+                    return <span className="status-pill" style={statusPillStyle(label === 'Typing' || label === 'Completed' ? label : ord.status)}>{label}</span>;
+                  })()}
                   {isKivCard && reserved > 0 && (
                     <span className="status-pill" style={{ background: '#fff4ce', color: '#8a6d00' }}>RESERVED ×{reserved}</span>
                   )}

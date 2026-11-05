@@ -501,7 +501,7 @@ export default function ProductionOrderDetail() {
             {order.correctedImportFilePath && (
               <span className="status-pill no-print" style={{ background: '#fff4ce', color: '#8a6d00' }}>Excel Updated</span>
             )}
-            <span className="status-pill" style={statusPillStyle(sliceStatus)}>{sliceLabel}</span>
+            <span className="status-pill" style={statusPillStyle(sliceLabel === 'Typing' ? 'Typing' : sliceStatus)}>{sliceLabel}</span>
             {reviewing && isReviewed(order) && <span className="status-pill no-print" style={{ background: '#dcefe3', color: '#2f6b4f' }}>✓ Review Done</span>}
           </div>
         </div>

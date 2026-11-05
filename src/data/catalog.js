@@ -1143,6 +1143,8 @@ export const STATUS_TEXT = ['#1d1f20', '#1d1f20', '#fff', '#fff', '#fff', '#fff'
 // the app goes through this so the fallback/`Cancelled` styling can't drift.
 export function statusPillStyle(status) {
   if (status === 'Cancelled') return { background: '#e7d3d0', color: '#7a2f27' };
+  // Typing (In Production / KIV not typed yet) in cyan, so it stands out from the blue stages (Sean, 2026-11-05).
+  if (status === 'Typing') return { background: '#8fe3ea', color: '#0b4f57' };
   const i = STATUS_STAGES.indexOf(status);
   return { background: STATUS_BG[i] ?? '#e4ecf2', color: STATUS_TEXT[i] ?? '#1d1f20' };
 }
