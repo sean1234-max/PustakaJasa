@@ -273,7 +273,8 @@ Deno.serve(async (req) => {
   // answer in the background — Telegram only waits for the 200
   const work = (isForm ? handleForm(msg, aiAllowed) : kind === 'assistant' ? handleAssistant(msg) : handle(msg)).catch(async (err) => {
     console.error('telegram-bot failed:', err);
-    await which.reply(msg.chat.id, msg.message_id, 'Sorry, something went wrong. Please try again.').catch(() => {});
+    const noCredit = /credit balance is too low/i.test(String(err));
+    await which.reply(msg.chat.id, msg.message_id, noCredit ? 'The AI account has run out of credit — please ask Sean to top it up.' : 'Sorry, something went wrong. Please try again.').catch(() => {});
   });
   // @ts-ignore EdgeRuntime is provided by the Supabase Edge runtime
   if (typeof EdgeRuntime !== 'undefined') EdgeRuntime.waitUntil(work); else await work;

@@ -24,9 +24,12 @@ async function callTool(system: string, content: Anthropic.Beta.BetaContentBlock
     tool_choice: { type: 'auto' },
     messages: [{ role: 'user', content }],
   });
-  if (res.stop_reason === 'refusal' || res.stop_reason === 'max_tokens') return null;
   const use = res.content.find((c): c is Anthropic.Beta.BetaToolUseBlock => c.type === 'tool_use');
-  return use ? { input: use.input as Record<string, unknown>, usage: res.usage } : null;
+  if (res.stop_reason === 'refusal' || res.stop_reason === 'max_tokens' || !use) {
+    console.error(`${tool.name}: no answer (${res.stop_reason})`, JSON.stringify(res.usage));
+    return null;
+  }
+  return { input: use.input as Record<string, unknown>, usage: res.usage };
 }
 
 // ------------------------------------------------------------------ change requests
@@ -141,5 +144,5 @@ export function readForm(file: FileContent, fileName: string, notes: string) {
     file.type === 'text' ? { type: 'text', text: `FILE "${fileName}":\n${file.text}` } : file,
     ...(notes ? [{ type: 'text' as const, text: `Notes from the salesman: ${notes}` }] : []),
   ];
-  return callTool(FORM_SYSTEM, content, { name: 'read_form', description: 'List the plaques the order asks for.', schema: FORM_SCHEMA }, 'medium', 32000);
+  return callTool(FORM_SYSTEM, content, { name: 'read_form', description: 'List the plaques the order asks for.', schema: FORM_SCHEMA }, 'low', 64000);
 }
