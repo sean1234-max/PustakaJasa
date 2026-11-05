@@ -157,13 +157,22 @@ Deno.serve(async (req) => {
     // ok / description: Telegram's own word when the token is wrong or nothing has come in
     return json({ ok: body.ok, description: body.description ?? null, chats: [...chats].map(([id, title]) => ({ id, title })) });
   }
-  // helper: how Telegram's deliveries to telegram-bot are going (no token in the answer)
+  // helper: how Telegram's deliveries to telegram-bot are going (no token in the answer);
+  // &bot=assistant for the assistant bot. chat: whether TELEGRAM_CHAT_ID still is the group
+  // (a group upgraded to a supergroup gets a new id)
   if (new URL(req.url).searchParams.get('webhook') === '1') {
-    const info = (await (await fetch(`https://api.telegram.org/bot${TOKEN}/getWebhookInfo`)).json()).result ?? {};
-    const me = (await (await fetch(`https://api.telegram.org/bot${TOKEN}/getMe`)).json()).result ?? {};
+    const token = new URL(req.url).searchParams.get('bot') === 'assistant' ? ASSISTANT_TOKEN : TOKEN;
+    const call = async (method: string) => (await fetch(`https://api.telegram.org/bot${token}/${method}`)).json();
+    const info = (await call('getWebhookInfo')).result ?? {};
+    const me = (await call('getMe')).result ?? {};
+    // getChat still answers for a group that was upgraded; a chat action (no message) says it moved
+    const chat = await call(`getChat?chat_id=${encodeURIComponent(CHAT_ID)}`);
+    const action = await call(`sendChatAction?chat_id=${encodeURIComponent(CHAT_ID)}&action=typing`);
+    if (chat.ok && !action.ok) Object.assign(chat, { ok: false, description: action.description, parameters: action.parameters });
     return json({
       pending: info.pending_update_count, lastError: info.last_error_message ?? null, lastErrorAt: info.last_error_date ?? null,
       allowed: info.allowed_updates ?? null, readsAllGroupMessages: me.can_read_all_group_messages, username: me.username,
+      chat: chat.ok ? { type: chat.result.type, title: chat.result.title } : { error: chat.description, migratedTo: chat.parameters?.migrate_to_chat_id ?? null },
     });
   }
   if (!CHAT_ID) return json({ ok: false, error: 'TELEGRAM_CHAT_ID is not set' });
