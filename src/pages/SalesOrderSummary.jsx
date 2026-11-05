@@ -21,6 +21,7 @@ import { getOrderChangeStamp } from '../utils/orderStamp';
 import { addonRepeatsOrder, addonRepeatMessage } from '../utils/addonCheck';
 import { isUrgentShipment } from '../utils/urgentOrder';
 import RemarkText from '../components/RemarkText';
+import KertasKerjaButtons from '../components/KertasKerjaButtons';
 
 // Read-only everywhere — this page only ever displays what the teacher
 // already submitted, it never edits the underlying order/category data.
@@ -403,6 +404,7 @@ export default function SalesOrderSummary() {
                   <RemarkText text={order.remark} />
                 </div>
               )}
+              <KertasKerjaButtons order={order} />
 
               {addonView ? (
                 <>
