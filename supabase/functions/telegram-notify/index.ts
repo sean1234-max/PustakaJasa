@@ -15,6 +15,8 @@ import { runReports } from './reports.ts';
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SECRET_KEY = JSON.parse(Deno.env.get('SUPABASE_SECRET_KEYS')!)['default'];
 const TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN') ?? '';
+// Sean's reports come from his assistant bot (telegram-bot ?bot=assistant), the review bot until it's set
+const ASSISTANT_TOKEN = Deno.env.get('TELEGRAM_ASSISTANT_BOT_TOKEN') || TOKEN;
 const CHAT_ID = Deno.env.get('TELEGRAM_CHAT_ID') ?? '';
 const SITE_URL = Deno.env.get('SITE_URL') ?? 'https://pustaka-jasa.vercel.app';
 
@@ -35,8 +37,8 @@ function malaysiaNow(at = new Date()) {
   return { day: `${parts.year}-${parts.month}-${parts.day}`, time: `${parts.hour}:${parts.minute}` };
 }
 
-async function telegram(method: string, payload: Record<string, unknown>) {
-  const res = await fetch(`https://api.telegram.org/bot${TOKEN}/${method}`, {
+async function telegram(method: string, payload: Record<string, unknown>, token = TOKEN) {
+  const res = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ chat_id: CHAT_ID, parse_mode: 'HTML', disable_web_page_preview: true, ...payload }),
@@ -46,8 +48,8 @@ async function telegram(method: string, payload: Record<string, unknown>) {
 }
 
 // the new message's id
-async function send(text: string, silent = false): Promise<number> {
-  const { ok, body } = await telegram('sendMessage', { text, disable_notification: silent });
+async function send(text: string, silent = false, token = TOKEN): Promise<number> {
+  const { ok, body } = await telegram('sendMessage', { text, disable_notification: silent }, token);
   if (!ok) throw new Error(`Telegram sendMessage: ${String(body.description).slice(0, 300)}`);
   return body.result.message_id;
 }
@@ -176,7 +178,7 @@ Deno.serve(async (req) => {
     const now = malaysiaNow();
     const list = await updateReviewList(orders, now);
     // Sean's morning / evening reports and questions — their own failure doesn't stop the review list
-    const reports = await runReports({ db, send: (html) => send(html), esc, orderLink }, now)
+    const reports = await runReports({ db, send: (html) => send(html, false, ASSISTANT_TOKEN), esc, orderLink }, now)
       .catch((err) => { console.error('telegram reports failed:', err); return [`failed: ${String(err).slice(0, 200)}`]; });
     return json({ ok: true, sentNew, list, reports });
   } catch (err) {

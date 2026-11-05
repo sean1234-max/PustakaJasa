@@ -1,13 +1,16 @@
-// The bot as Sean's assistant in the Production group (Sean, 2026-11-05): he talks to it like a boss
-// to a staff member — questions about orders ("where is ORD-0234?", "how many orders from SK X this
-// week?"), his to-do list ("remember me: 1. help Harriet convert the Excel"), a salesman's change request.
-// The model answers through tools that only READ orders; the only writes are Sean's own to-do list and
-// the change previews Production applies on the order page (bot_requests). When it isn't sure, it asks.
+// Sean's assistant bot in the Production group (Sean, 2026-11-05): the one bot he talks to, like a boss
+// to his manager — questions about orders ("where is ORD-0234?", "how many orders from SK X this
+// week?"), his to-do list ("remember me: 1. help Harriet convert the Excel"), and jobs it hands to the
+// other bots' work: ExcelFormAgent (a kertas kerja → FORM ANUGERAH, form.ts) and ReviewAgent (a file
+// compared with an order; an order's Shipment Date / Function Date / Remark changed — orderEdit.ts,
+// only after Sean confirms in a later message). Everything else only READS orders. When it isn't
+// sure, it asks.
 
 import type Anthropic from 'npm:@anthropic-ai/sdk';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { anthropic, MODEL } from './ai.ts';
 import { orderPlaquesText } from './order.ts';
+import { applyEdit, prepareEdit, type EditAsk } from './orderEdit.ts';
 
 const MAX_TURNS = 8;              // tool round-trips per question
 const HISTORY_ROWS = 12;          // what was said before, for follow-ups
@@ -16,13 +19,15 @@ const ORDERS_SCANNED = 1000;
 const PLAQUES_CHARS = 6000;
 const TEXT_CHARS = 2000;
 
-export type ChangeRequest = { orderId: string; shipmentDate: string | null; functionDate: string | null; remarkAdd: string | null };
 export type AssistantCtx = {
   db: SupabaseClient;
   today: string;                  // Malaysia day, YYYY-MM-DD
   who: string;
-  // posts the change preview in the group (index.ts handleChanges) and says what it posted
-  proposeChanges: (requests: ChangeRequest[], notHandled: string[]) => Promise<string>;
+  sentAt: Date;                   // when Sean sent this message (a change he confirms must be older)
+  fileName: string | null;        // the file sent with (or replied to by) this message
+  // the staff's jobs on that file; each sends its own result to the group and says what it sent
+  convertForm: (notes: string) => Promise<string>;
+  compareFile: (orderId: string) => Promise<string>;
 };
 
 const nextDay = (day: string) => new Date(Date.parse(`${day}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
@@ -87,35 +92,47 @@ const TOOLS: Anthropic.Beta.BetaToolUnion[] = [
     input_schema: { type: 'object', additionalProperties: false, required: ['ids'], properties: { ids: { type: 'array', items: { type: 'integer' } } } },
   },
   {
-    name: 'propose_order_changes',
-    description: 'A salesman (or Sean) asks to change an order\'s Shipment Date, Function Date or Remark: post a preview that Production applies on the order page. Never for anything else.',
+    name: 'prepare_order_change',
+    description: 'ReviewAgent: get a Shipment Date / Function Date / Remark change of one order ready. Nothing changes yet — show Sean the before → after and ask him to confirm. Remark: "replace" when he says change it to / tukar / 改成, "append" when he says add / tambah / 加.',
     strict: true,
     input_schema: {
-      type: 'object', additionalProperties: false, required: ['requests', 'not_handled'],
+      type: 'object', additionalProperties: false, required: ['order_id', 'shipment_date', 'function_date', 'remark_mode', 'remark_text'],
       properties: {
-        requests: {
-          type: 'array',
-          items: {
-            type: 'object', additionalProperties: false, required: ['orderId', 'shipmentDate', 'functionDate', 'remarkAdd'],
-            properties: {
-              orderId: { type: 'string', description: 'e.g. ORD-0233, exactly as written' },
-              shipmentDate: nullable('string', 'new Shipment Date YYYY-MM-DD, or null'),
-              functionDate: nullable('string', 'new Function Date YYYY-MM-DD, or null'),
-              remarkAdd: nullable('string', 'text to add to the Remark, or null'),
-            },
-          },
-        },
-        not_handled: { type: 'array', items: { type: 'string' }, description: 'other changes asked for (quantities, wording …), one line each with the order id' },
+        order_id: { type: 'string', description: 'e.g. ORD-0234' },
+        shipment_date: nullable('string', `new Shipment Date, ${DAY}`),
+        function_date: nullable('string', `new Function Date, ${DAY}`),
+        remark_mode: { type: ['string', 'null'], enum: ['replace', 'append', null] },
+        remark_text: nullable('string', 'the new Remark (replace) or the text to add (append), exactly as Sean wrote it'),
       },
     },
   },
+  {
+    name: 'confirm_order_change',
+    description: 'ReviewAgent: write a prepared change, ONLY after Sean has said yes (ok / yes / 确认 / betul) in a message after you showed it to him.',
+    strict: true,
+    input_schema: { type: 'object', additionalProperties: false, required: ['request_id'], properties: { request_id: { type: 'string' } } },
+  },
+  {
+    name: 'convert_kertas_kerja',
+    description: 'ExcelFormAgent: turn the file Sean sent (a teacher\'s kertas kerja: PDF, Word, Excel or photo) into FORM ANUGERAH (Excel) and send it to the group. Takes 1-2 minutes.',
+    strict: true,
+    input_schema: { type: 'object', additionalProperties: false, required: ['notes'], properties: { notes: { type: 'string', description: 'Sean\'s instructions for the form, e.g. "semua PKC 263", or ""' } } },
+  },
+  {
+    name: 'compare_file_with_order',
+    description: 'ReviewAgent: compare the file Sean sent with an order and send the differences to the group. Takes about a minute.',
+    strict: true,
+    input_schema: { type: 'object', additionalProperties: false, required: ['order_id'], properties: { order_id: { type: 'string' } } },
+  },
 ];
 
-const system = (today: string) => `You are the assistant of Sean, the boss of Pustaka Jasa / DOUBLE WIN, a Malaysian company that makes school award plaques, medals and crystals. You talk with him in his Telegram group "DOUBLE WIN PRODUCTION". Today is ${today} (Malaysia).
+const system = (today: string, fileName: string | null) => `You are the assistant of Sean, the boss of Pustaka Jasa / DOUBLE WIN, a Malaysian company that makes school award plaques, medals and crystals. You talk with him in his Telegram group "DOUBLE WIN PRODUCTION". Today is ${today} (Malaysia).
+You are the manager of two staff bots and hand them the jobs: ExcelFormAgent turns a teacher's kertas kerja into FORM ANUGERAH (convert_kertas_kerja); ReviewAgent compares a file with an order (compare_file_with_order) and changes an order's Shipment Date / Function Date / Remark (prepare_order_change, confirm_order_change). Say which staff you gave a job to.
+${fileName ? `Sean sent a file with this message: "${fileName}". If he doesn't say what to do with it, ask (convert it to FORM ANUGERAH, or compare it with which order?).` : 'No file came with this message; for convert / compare, ask Sean to send the file.'}
 Work like a good staff member:
 - Answer from the tools, never from memory or a guess. Order numbers look like ORD-0234.
 - Order stages: Reviewing Order (Production checks it) → Done Review (waiting for the salesman to approve) → Salesman Approved (waiting for the invoice) → In Production → Completed. Orders ORD-90xx are test orders: leave them out unless asked.
-- You can only READ orders. You can't change an order — except a Shipment Date / Function Date / Remark change, which you post as a preview with propose_order_changes for Production to Apply. Anything else to change: tell Sean to use Edit Order on the website.
+- Changing an order: only its Shipment Date, Function Date or Remark. First prepare_order_change and show Sean exactly what it becomes, then ask "确认？". Only when he says yes in his NEXT message, confirm_order_change. Never confirm in the same turn you prepared. Anything else (quantities, wording, Jenis Plak, prices): tell him to use Edit Order on the website.
 - Keep Sean's to-do list: add what he asks you to remember, tick off what he says is done, show it when he asks.
 - If something is unclear or you're not sure, ASK Sean a short question instead of guessing. If you see a problem (a late order, a missing invoice …), say it.
 - Reply in the language Sean writes in (usually Simplified Chinese; keep order numbers, school names, statuses and plaque wording as they are). Short and to the point, like a message to the boss. Plain text only — no Markdown, no HTML; "• " for lists.`;
@@ -199,9 +216,10 @@ async function runTool(ctx: AssistantCtx, name: string, input: Record<string, un
     const { data, error } = await db.from('bot_tasks').update({ done_at: new Date().toISOString() }).in('id', ids).is('done_at', null).select('id, text');
     return ok(error ? { error: error.message } : { done: data, notFoundOrAlreadyDone: ids.filter((id) => !(data || []).some((t) => t.id === id)) });
   }
-  if (name === 'propose_order_changes') {
-    return ok({ posted: await ctx.proposeChanges((input.requests as ChangeRequest[]) || [], (input.not_handled as string[]) || []) });
-  }
+  if (name === 'prepare_order_change') return ok(await prepareEdit(db, input as unknown as EditAsk, ctx.who));
+  if (name === 'confirm_order_change') return ok(await applyEdit(db, String(input.request_id || ''), ctx.sentAt, ctx.who));
+  if (name === 'convert_kertas_kerja') return ok(ctx.fileName ? { result: await ctx.convertForm(String(input.notes || '')) } : { error: 'no file with this message — ask Sean to send it' });
+  if (name === 'compare_file_with_order') return ok(ctx.fileName ? { result: await ctx.compareFile(String(input.order_id || '')) } : { error: 'no file with this message — ask Sean to send it' });
   return ok({ error: `unknown tool ${name}` });
 }
 
@@ -234,7 +252,7 @@ export async function askAssistant(ctx: AssistantCtx, text: string) {
       model: MODEL, max_tokens: 8000,
       betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default',
       thinking: { type: 'adaptive' }, output_config: { effort: 'medium' },
-      system: system(ctx.today), tools: TOOLS, messages,
+      system: system(ctx.today, ctx.fileName), tools: TOOLS, messages,
     });
     if (res.stop_reason === 'refusal') return 'Sorry, I can\'t help with that one.';
     const uses = res.content.filter((c): c is Anthropic.Beta.BetaToolUseBlock => c.type === 'tool_use');

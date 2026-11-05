@@ -10,7 +10,7 @@
 
 import { DOMParser, XMLSerializer } from 'npm:@xmldom/xmldom@0.9.12';
 import { esc, telegramBot, MAX_FILE_BYTES } from './telegram.ts';
-import { readFile } from './files.ts';
+import { readFile, type FileContent } from './files.ts';
 import { readForm } from './ai.ts';
 import { toFormPlaques, type ReadPlaque } from './formPlaques.ts';
 // @ts-ignore a plain JS bundle
@@ -53,11 +53,18 @@ export async function handleForm(msg: Msg, aiAllowed: () => Promise<boolean>) {
   if (!content) return formBot.reply(chatId, msg.message_id, `I can't read "${esc(fileName)}" — send a PDF, Word (.docx), Excel or a photo.`);
   if (!(await aiAllowed())) return formBot.reply(chatId, msg.message_id, 'The AI budget for this month is used up — please fill this one by hand.');
   await formBot.reply(chatId, msg.message_id, `📝 Reading ${esc(fileName)} and filling FORM ANUGERAH… (1–2 minutes)`);
+  const filled = await fillForm(content, fileName, String(msg.caption ?? '').trim());
+  if (!filled.ok) return formBot.reply(chatId, msg.message_id, filled.message);
+  await formBot.sendDocument(chatId, msg.message_id, filled.buffer, filled.fileName, filled.caption);
+  if (filled.notes.length) await formBot.reply(chatId, msg.message_id, ['❓ Please check:', ...filled.notes.map((n) => `• ${esc(n)}`)].join('\n'));
+}
 
-  const read = await readForm(content, fileName, String(msg.caption ?? '').trim());
-  if (!read) return formBot.reply(chatId, msg.message_id, 'Sorry, I couldn\'t read that file. Please try again, or send a clearer copy.');
+// The kertas kerja → FORM ANUGERAH filled in (also the assistant's "ExcelFormAgent" job, assistant.ts)
+export async function fillForm(content: FileContent, fileName: string, notes: string) {
+  const read = await readForm(content, fileName, notes);
+  if (!read) return { ok: false as const, message: 'Sorry, I couldn\'t read that file. Please try again, or send a clearer copy.' };
   const plaques = toFormPlaques(read.input.plaques as ReadPlaque[]);
-  if (!plaques.length) return formBot.reply(chatId, msg.message_id, 'I didn\'t find any plaques in that file.');
+  if (!plaques.length) return { ok: false as const, message: 'I didn\'t find any plaques in that file.' };
 
   const res = await fetch(`${SITE_URL}/templates/FORM-ANUGERAH.xlsx`);
   if (!res.ok) throw new Error(`template download ${res.status}`);
@@ -67,7 +74,6 @@ export async function handleForm(msg: Msg, aiAllowed: () => Promise<boolean>) {
   const placed = Object.entries(out.placed as Record<string, number>);
   const total = placed.reduce((a, [, n]) => a + n, 0);
   const noKod = plaques.filter((p) => !p.code).length;
-  const questions = (read.input.questions as string[]) || [];
   const caption = [
     `✅ FORM ANUGERAH — ${total} plaque(s)`,
     ...placed.map(([sheet, n]) => `• ${esc(sheet)}: ${n}`),
@@ -76,7 +82,8 @@ export async function handleForm(msg: Msg, aiAllowed: () => Promise<boolean>) {
     'Please check it against the teacher\'s file, then upload it on the website as usual.',
   ].join('\n');
   const base = (front.sekolah || fileName.replace(/\.[^.]+$/, '')).replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'ORDER';
-  await formBot.sendDocument(chatId, msg.message_id, out.buffer, `${base} (FORM ANUGERAH).xlsx`, caption);
-  const notes = [...questions, ...(out.notes as string[])];
-  if (notes.length) await formBot.reply(chatId, msg.message_id, ['❓ Please check:', ...notes.map((n) => `• ${esc(n)}`)].join('\n'));
+  return {
+    ok: true as const, buffer: out.buffer as Uint8Array, fileName: `${base} (FORM ANUGERAH).xlsx`, caption, total,
+    notes: [...((read.input.questions as string[]) || []), ...(out.notes as string[])],
+  };
 }
