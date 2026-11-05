@@ -47,7 +47,8 @@ const TOOLS: Anthropic.Beta.BetaToolUnion[] = [
         order_id: nullable('string', 'e.g. ORD-0234'),
         school: nullable('string', 'part of the school name, e.g. "TAMAN MELAWATI"'),
         salesman: nullable('string', 'part of the salesman name'),
-        status: { type: ['string', 'null'], enum: [...STATUSES, null], description: '"Done Review" = reviewed, waiting for the salesman to approve' },
+        // strict tools reject null in an enum: 'any' = no filter
+        status: { type: 'string', enum: [...STATUSES, 'any'], description: '"Done Review" = reviewed, waiting for the salesman to approve; "any" = every status' },
         placed_from: nullable('string', `placed on or after, ${DAY}`),
         placed_to: nullable('string', `placed on or before, ${DAY}`),
         shipment_from: nullable('string', `Shipment Date on or after, ${DAY}`),
@@ -101,7 +102,7 @@ const TOOLS: Anthropic.Beta.BetaToolUnion[] = [
         order_id: { type: 'string', description: 'e.g. ORD-0234' },
         shipment_date: nullable('string', `new Shipment Date, ${DAY}`),
         function_date: nullable('string', `new Function Date, ${DAY}`),
-        remark_mode: { type: ['string', 'null'], enum: ['replace', 'append', null] },
+        remark_mode: { type: 'string', enum: ['replace', 'append', 'none'], description: '"none" = the Remark stays as it is' },
         remark_text: nullable('string', 'the new Remark (replace) or the text to add (append), exactly as Sean wrote it'),
       },
     },
@@ -128,7 +129,7 @@ const TOOLS: Anthropic.Beta.BetaToolUnion[] = [
 
 const system = (today: string, fileName: string | null) => `You are the assistant of Sean, the boss of Pustaka Jasa / DOUBLE WIN, a Malaysian company that makes school award plaques, medals and crystals. You talk with him in his Telegram group "DOUBLE WIN PRODUCTION". Today is ${today} (Malaysia).
 You are the manager of two staff bots and hand them the jobs: ExcelFormAgent turns a teacher's kertas kerja into FORM ANUGERAH (convert_kertas_kerja); ReviewAgent compares a file with an order (compare_file_with_order) and changes an order's Shipment Date / Function Date / Remark (prepare_order_change, confirm_order_change). Say which staff you gave a job to.
-${fileName ? `Sean sent a file with this message: "${fileName}". If he doesn't say what to do with it, ask (convert it to FORM ANUGERAH, or compare it with which order?).` : 'No file came with this message; for convert / compare, ask Sean to send the file.'}
+${fileName ? `Sean sent a file with this message: "${fileName}". Unless he says to compare it with an order (or it already is a FORM ANUGERAH), hand it to ExcelFormAgent (convert_kertas_kerja) straight away — a file on its own means "convert this".` : 'No file came with this message; for convert / compare, ask Sean to send the file.'}
 Work like a good staff member:
 - Answer from the tools, never from memory or a guess. Order numbers look like ORD-0234.
 - Order stages: Reviewing Order (Production checks it) → Done Review (waiting for the salesman to approve) → Salesman Approved (waiting for the invoice) → In Production → Completed. Orders ORD-90xx are test orders: leave them out unless asked.
@@ -152,7 +153,7 @@ async function findOrders(db: SupabaseClient, f: Record<string, unknown>) {
     q = q.is('cancelled_at', null);
     if (f.status === 'Done Review') q = q.eq('status', 'Reviewing Order').not('reviewed_at', 'is', null);
     else if (f.status === 'Reviewing Order') q = q.eq('status', 'Reviewing Order').is('reviewed_at', null);
-    else if (f.status) q = q.eq('status', f.status);
+    else if (f.status && f.status !== 'any') q = q.eq('status', f.status);
   }
   if (f.placed_from) q = q.gte('created_at', `${f.placed_from}T00:00:00+08:00`);
   if (f.placed_to) q = q.lt('created_at', `${nextDay(String(f.placed_to))}T00:00:00+08:00`);

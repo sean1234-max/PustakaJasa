@@ -253,7 +253,7 @@ async function handleAssistant(msg: Msg) {
       await say(await compareReport(id, c, fileName!, who));
       return 'sent the comparison to the group';
     },
-  }, quoted ? `${own}\n\n(replying to this message: "${quoted.slice(0, 1500)}")` : own);
+  }, [own || '(a file, no message)', quoted && `(replying to this message: "${quoted.slice(0, 1500)}")`].filter(Boolean).join('\n\n'));
   return say(assistantHtml(reply));
 }
 

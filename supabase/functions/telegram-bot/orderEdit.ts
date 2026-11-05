@@ -12,7 +12,7 @@ export type EditAsk = {
   order_id: string;
   shipment_date: string | null;
   function_date: string | null;
-  remark_mode: 'replace' | 'append' | null;
+  remark_mode: 'replace' | 'append' | 'none' | null;
   remark_text: string | null;
 };
 
