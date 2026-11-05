@@ -214,12 +214,17 @@ async function aiCredit(db: SupabaseClient, balanceUsd: number | null, who: stri
     const { error } = await db.from('ai_balance').insert({ amount_usd: balanceUsd, set_by: who });
     if (error) return { error: error.message };
   }
-  const [{ data: est }, { data: month }] = await Promise.all([db.rpc('ai_balance_estimate'), db.rpc('ai_month_spend_cents')]);
+  const [{ data: est }, { data: month }, { data: settings }] = await Promise.all([
+    db.rpc('ai_balance_estimate'), db.rpc('ai_month_spend_cents'), db.from('ai_settings').select('usd_to_myr').maybeSingle(),
+  ]);
   const e = Array.isArray(est) ? est[0] : null;
+  const rate = Number(settings?.usd_to_myr) || 4.3;
+  const both = (usd: number) => ({ usd: Math.round(usd * 100) / 100, rm: Math.round(usd * rate * 100) / 100 });
   return {
-    spentThisMonthUsd: Math.round(Number(month || 0)) / 100,
-    balance: e ? { givenUsd: Number(e.set_usd), givenAt: e.set_at, spentSinceUsd: Number(e.spent_usd), estimatedLeftUsd: Number(e.left_usd) } : 'unknown — ask Sean for the balance shown in the Claude Console',
-    note: 'estimate from logged costs; the Claude Console (platform.claude.com) has the real balance',
+    usdToRm: rate,
+    spentThisMonth: both(Number(month || 0) / 100),
+    balance: e ? { given: both(Number(e.set_usd)), givenAt: e.set_at, spentSince: both(Number(e.spent_usd)), estimatedLeft: both(Number(e.left_usd)) } : 'unknown — ask Sean for the balance shown in the Claude Console',
+    note: 'estimate from logged costs; the Claude Console (platform.claude.com) has the real balance. Always tell Sean both US$ and RM.',
   };
 }
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { creditIsLow, problemsOf } from './reports.ts';
+import { creditIsLow, money, problemsOf } from './reports.ts';
 
 const NOW = Date.parse('2026-11-05T10:00:00+08:00');
 const order = (over = {}) => ({ id: 'ORD-0300', sekolah: 'SK X', sales: 'ALI', status: 'In Production', reviewed_at: null, shipment_date: '2026-11-20T00:00:00+08:00', ...over });
@@ -31,5 +31,12 @@ describe('creditIsLow', () => {
     expect(creditIsLow({ given: 100, left: 19 })).toBe(true);
     expect(creditIsLow({ given: 100, left: 21 })).toBe(false);
     expect(creditIsLow({ given: 10, left: 6 })).toBe(false);
+  });
+});
+
+describe('money', () => {
+  it('shows US$ and RM together', () => {
+    expect(money(30, 4.3)).toBe('$30.00 (RM129.00)');
+    expect(money(0.5, 4.3)).toBe('$0.50 (RM2.15)');
   });
 });

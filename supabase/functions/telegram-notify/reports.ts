@@ -27,6 +27,7 @@ const TEST_ORDERS = 'ORD-90%';
 const CREDIT_LOW_USD = 5;           // warn when the estimated credit left is under this…
 const CREDIT_LOW_SHARE = 0.2;       // …or under this share of the balance Sean last gave
 const CREDIT_ERROR_WINDOW_MS = 30 * 60_000;
+const DEFAULT_USD_TO_MYR = 4.3;
 
 const shiftDay = (day: string, days: number) => new Date(Date.parse(`${day}T00:00:00Z`) + days * MS_PER_DAY).toISOString().slice(0, 10);
 const myDay = (v: unknown) => (v ? new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kuala_Lumpur' }).format(new Date(String(v))) : '');
@@ -83,8 +84,14 @@ async function dailySpendUsd(db: SupabaseClient) {
 }
 
 export const creditIsLow = (c: { given: number; left: number }) => c.left < Math.max(CREDIT_LOW_USD, c.given * CREDIT_LOW_SHARE);
-const usd = (n: number) => `$${n.toFixed(2)}`;
-const lastsFor = (left: number, perDay: number) => (perDay > 0 ? ` — about ${Math.max(0, Math.floor(left / perDay))} day(s) at ${usd(perDay)}/day` : '');
+
+// US$ → RM at the website's AI rate (ai_settings.usd_to_myr), so Sean sees both
+async function usdToMyr(db: SupabaseClient) {
+  const { data } = await db.from('ai_settings').select('usd_to_myr').maybeSingle();
+  return Number(data?.usd_to_myr) || DEFAULT_USD_TO_MYR;
+}
+export const money = (n: number, rate: number) => `$${n.toFixed(2)} (RM${(n * rate).toFixed(2)})`;
+const lastsFor = (left: number, perDay: number, rate: number) => (perDay > 0 ? ` — about ${Math.max(0, Math.floor(left / perDay))} day(s) at ${money(perDay, rate)}/day` : '');
 
 // Sean hears at once when the credit is gone (an AI call refused for it), and before, when it runs low
 async function creditAlerts(d: ReportDeps, today: string) {
@@ -96,7 +103,8 @@ async function creditAlerts(d: ReportDeps, today: string) {
   }
   const c = await creditEstimate(d.db);
   if (c && creditIsLow(c) && !(await wasSent(d.db, `ai-low:${c.id}`))) {
-    await d.send(`🔋 <b>AI credit running low</b> — about ${usd(c.left)} left of the ${usd(c.given)} you gave me${lastsFor(c.left, await dailySpendUsd(d.db))}.\nTop up at platform.claude.com → Add funds, then tell me the new balance.`);
+    const rate = await usdToMyr(d.db);
+    await d.send(`🔋 <b>AI credit running low</b> — about ${money(c.left, rate)} left of the ${money(c.given, rate)} you gave me${lastsFor(c.left, await dailySpendUsd(d.db), rate)}.\nTop up at platform.claude.com → Add funds, then tell me the new balance.`);
     sent.push(`ai-low:${c.id}`);
   }
   await markSent(d.db, sent);
@@ -135,7 +143,7 @@ const shipLine = (d: ReportDeps) => (o: Row) => `• ${d.orderLink(o.id)} ${d.es
 
 async function morningReport(d: ReportDeps, today: string) {
   const yesterday = shiftDay(today, -1);
-  const [orders, placed, tasks, credit, perDay] = await Promise.all([openOrders(d.db), countOn(d.db, 'created_at', yesterday), openTasks(d.db), creditEstimate(d.db).catch(() => null), dailySpendUsd(d.db)]);
+  const [orders, placed, tasks, credit, perDay, rate] = await Promise.all([openOrders(d.db), countOn(d.db, 'created_at', yesterday), openTasks(d.db), creditEstimate(d.db).catch(() => null), dailySpendUsd(d.db), usdToMyr(d.db)]);
   const by = (s: string) => orders.filter((o) => stage(o) === s).length;
   const shipsOn = (day: string) => orders.filter((o) => myDay(o.shipment_date) === day);
   const problems = problemsOf(orders, today);
@@ -154,7 +162,7 @@ async function morningReport(d: ReportDeps, today: string) {
     '',
     '📝 <b>Your list</b>', ...taskLines(d, tasks, today),
     '',
-    credit ? `🤖 AI credit: about ${usd(credit.left)} left${lastsFor(credit.left, perDay)}${creditIsLow(credit) ? ' ❗' : ''}` : `🤖 AI credit: unknown — tell me the balance in the Claude Console (AI costs ${usd(perDay)}/day lately)`,
+    credit ? `🤖 AI credit: about ${money(credit.left, rate)} left${lastsFor(credit.left, perDay, rate)}${creditIsLow(credit) ? ' ❗' : ''}` : `🤖 AI credit: unknown — tell me the balance in the Claude Console (AI costs ${money(perDay, rate)}/day lately)`,
   ].join('\n');
   await d.send(text);
   await markSent(d.db, problems.map((p) => p.key));
