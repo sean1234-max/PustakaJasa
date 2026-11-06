@@ -73,7 +73,7 @@ function headerLabel(tc) {
   return cellText(tc).replace(/\s+/g, ' ').replace(/[:.*]/g, '').trim().toUpperCase();
 }
 
-const WORDING_LABELS = ['WORDING', 'LABEL'];
+const WORDING_LABELS = ['WORDING', 'LABEL', 'LABEL PADA HADIAH', 'LABEL PADA PLAK'];
 const QTY_LABELS = ['KUANTITI', 'BILANGAN', 'QTY', 'KUANTITI (UNIT)', 'UNIT'];
 const KOD_LABELS = ['KOD HADIAH', 'KOD', 'KOD PLAK', 'JENIS PLAK', 'CODE', 'JENIS', 'JENIS/KOD', 'KOD/JENIS', 'KOD/JENIS/WARNA'];
 // A table headed "KOD / JENIS / WARNA" (SK DENAI ALAM, 2026-10-27) is the school's own list:
@@ -216,7 +216,8 @@ function readTableRows(tbl, tableIdx, notes, carry = null) {
     const cells = directChildren(rows[ri], W_NS, 'tc');
     const lines = cells[wordingCol] ? cellLines(cells[wordingCol]) : [];
     const qtyRaw = cells[qtyCol] ? cellText(cells[qtyCol]).replace(/\s+/g, ' ').trim() : '';
-    let kodRaw = kodCol >= 0 && cells[kodCol] ? cellText(cells[kodCol]) : '';
+    // a code typed twice in one cell (a merged cell's leftover, MAG 2026: "PK 261 C / PK 261 C") once
+    let kodRaw = kodCol >= 0 && cells[kodCol] ? [...new Set(cellLines(cells[kodCol]))].join('\n') : '';
     // A code cell merged down over the rows of its group is empty on every row but the first
     if (kodRaw.trim()) mergedKod = kodRaw;
     else if (kodCol >= 0 && cells[kodCol] && continuesMergeAbove(cells[kodCol])) kodRaw = mergedKod;
@@ -239,6 +240,7 @@ function readTableRows(tbl, tableIdx, notes, carry = null) {
     }
     if (qty == null) {
       if (qtyRaw) notes.push(`${where}: couldn't read the quantity "${qtyRaw}" for "${lines.join(' / ')}" — please add it by hand.`);
+      else out.push({ noQty: true, lines, where });
       continue;
     }
     if (qty <= 0) continue;
@@ -625,50 +627,11 @@ const plaqueCount = (rows) => rows.reduce((s, r) => s + (r.extraKod ? 0 : r.qty)
 // AppState.jsx/addOnDiff.js merge either file type through the same code
 // path. `DOMParser` is injectable for tests (node has none). Never throws.
 export async function parseWordingDocx(arrayBuffer, { DOMParser: DP = globalThis.DOMParser } = {}) {
-  let zip;
-  try {
-    zip = await JSZip.loadAsync(arrayBuffer);
-  } catch {
-    return { klasMatrix: null, error: BAD_FILE };
-  }
-  const xmlFile = zip.file('word/document.xml');
-  if (!xmlFile) return { klasMatrix: null, error: BAD_FILE };
-  const xmlText = await xmlFile.async('text');
-  const doc = new DP().parseFromString(xmlText, 'application/xml');
-  if (!doc || !doc.documentElement || doc.getElementsByTagName('parsererror').length > 0) {
-    return { klasMatrix: null, error: BAD_FILE };
-  }
-  const body = doc.getElementsByTagNameNS(W_NS, 'body')[0];
-  const heading = body ? findHeading(body) : '';
-
-  const notes = [];
-  const rows = [];
-  const listRows = [];
-  let carry = null;
-  Array.from(doc.getElementsByTagNameNS(W_NS, 'tbl')).forEach((tbl, tableIdx) => {
-    const tableRows = [];
-    const read = readTableRows(tbl, tableIdx, notes, carry);
-    if (read.header) carry = read.header.list ? read.header : null;
-    read.rows.forEach((r) => {
-      if (!r.isTotal) { tableRows.push(r); return; }
-      // A JUMLAH/TOTAL row checks only its own table's rows above it.
-      const sum = tableRows.reduce((s, x) => s + x.qty, 0);
-      if (r.qty != null && r.qty !== sum) {
-        notes.push(`${r.where}: the file's JUMLAH/TOTAL says ${r.qty}, but the rows above it add up to ${sum} — please check nothing is missing.`);
-      }
-    });
-    (read.header?.list ? listRows : rows).push(...tableRows);
-    // The teacher's own total typed under a list table ("81")
-    const sum = plaqueCount(tableRows);
-    if (read.totalBelow != null && read.totalBelow !== sum) {
-      notes.push(`Word table ${tableIdx + 1}: the total under it says ${read.totalBelow}, but its rows add up to ${sum} — please check nothing is missing.`);
-    }
-  });
-  const penerima = Array.from(doc.getElementsByTagNameNS(W_NS, 'p'))
-    .map((p) => /\bJUMLAH PENERIMA\s*:?\s*(\d+)/i.exec(paragraphText(p))).find(Boolean);
-  if (penerima && listRows.length && Number(penerima[1]) !== plaqueCount(listRows)) {
-    notes.push(`The file's JUMLAH PENERIMA says ${penerima[1]}, but the tables add up to ${plaqueCount(listRows)} — please check nothing is missing.`);
-  }
+  const doc = await loadDocx(arrayBuffer, DP);
+  if (!doc) return { klasMatrix: null, error: BAD_FILE };
+  const read = readWordingTables(doc);
+  const { heading, rows, listRows } = read;
+  const notes = [...read.notes, ...read.totalNotes];
 
   const { categorized, count, notes: groupNotes } = wordingRowsToCategorized(rows.map((r) => splitRowHeading(r, heading)), heading);
   notes.push(...groupNotes);
@@ -699,4 +662,68 @@ export async function parseWordingDocx(arrayBuffer, { DOMParser: DP = globalThis
   notes.push(...selempang.notes);
 
   return { categorized, notes, klasMatrix: null };
+}
+
+// Every WORDING / LABEL table of a parsed document.xml, row by row, before any grouping — the
+// website's import (above) and the form bot's no-AI reader (telegram-bot/ruleRead.ts, Sean
+// 2026-11-05) both start from it. `rows` / `listRows`: { lines, qty, kod, unit, heading? }.
+// `notes`: what couldn't be read; `totalNotes`: totals that don't add up; `noQty`: wording rows
+// with an empty quantity (skipped); `unreadTables`: tables of 2+ rows with no
+// recognized header (an order the reader can't see); `looseText`: body paragraphs outside tables.
+export function readWordingTables(doc) {
+  const body = doc.getElementsByTagNameNS(W_NS, 'body')[0];
+  const heading = body ? findHeading(body) : '';
+
+  const notes = [];
+  const totalNotes = []; // the file's own totals that don't add up — every row was still read
+  const rows = [];
+  const listRows = [];
+  let noQty = 0;
+  let unreadTables = 0;
+  let carry = null;
+  Array.from(doc.getElementsByTagNameNS(W_NS, 'tbl')).forEach((tbl, tableIdx) => {
+    const tableRows = [];
+    let countedBefore = 0;
+    const read = readTableRows(tbl, tableIdx, notes, carry);
+    if (read.header) carry = read.header.list ? read.header : null;
+    else if (directChildren(tbl, W_NS, 'tr').length > 1) unreadTables++;
+    read.rows.forEach((r) => {
+      if (r.noQty) { noQty++; return; }
+      if (!r.isTotal) { tableRows.push(r); return; }
+      // A JUMLAH/TOTAL row checks only its own table's rows above it: those since the last
+      // JUMLAH (a subtotal, "JUMLAH TAHUN 1"), or all of them (a grand total)
+      const sum = tableRows.reduce((s, x) => s + x.qty, 0);
+      const sinceLast = sum - countedBefore;
+      countedBefore = sum;
+      if (r.qty != null && r.qty !== sum && r.qty !== sinceLast) {
+        totalNotes.push(`${r.where}: the file's JUMLAH/TOTAL says ${r.qty}, but the rows above it add up to ${sinceLast === sum ? sum : `${sinceLast} (${sum} in the table)`} — please check nothing is missing.`);
+      }
+    });
+    (read.header?.list ? listRows : rows).push(...tableRows);
+    // The teacher's own total typed under a list table ("81")
+    const sum = plaqueCount(tableRows);
+    if (read.totalBelow != null && read.totalBelow !== sum) {
+      totalNotes.push(`Word table ${tableIdx + 1}: the total under it says ${read.totalBelow}, but its rows add up to ${sum} — please check nothing is missing.`);
+    }
+  });
+  const penerima = Array.from(doc.getElementsByTagNameNS(W_NS, 'p'))
+    .map((p) => /\bJUMLAH PENERIMA\s*:?\s*(\d+)/i.exec(paragraphText(p))).find(Boolean);
+  if (penerima && listRows.length && Number(penerima[1]) !== plaqueCount(listRows)) {
+    totalNotes.push(`The file's JUMLAH PENERIMA says ${penerima[1]}, but the tables add up to ${plaqueCount(listRows)} — please check nothing is missing.`);
+  }
+  const looseText = body
+    ? directChildren(body, W_NS, 'p').map((p) => paragraphText(p).replace(/\s+/g, ' ').trim()).filter(Boolean)
+    : [];
+  return { heading, notes, totalNotes, rows, listRows, noQty, unreadTables, looseText };
+}
+
+// The document.xml of a .docx, parsed — null when it isn't one
+export async function loadDocx(arrayBuffer, DP = globalThis.DOMParser) {
+  try {
+    const xml = await (await JSZip.loadAsync(arrayBuffer)).file('word/document.xml')?.async('text');
+    const doc = xml && new DP().parseFromString(xml, 'application/xml');
+    return doc?.documentElement && !doc.getElementsByTagName('parsererror').length ? doc : null;
+  } catch {
+    return null;
+  }
 }

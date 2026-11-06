@@ -19,8 +19,10 @@ import { db } from './db.ts';
 import { readFormCached } from './formCache.ts';
 import { toFormPlaques, toFormSelempang, type ReadPlaque, type ReadSelempang } from './formPlaques.ts';
 import { readDraftList, type DraftFields } from './orderDraft.ts';
+import { ruleRead, type TableRead } from './ruleRead.ts';
+import { logUsage } from './usage.ts';
 // @ts-ignore a plain JS bundle
-import { fillOrderTemplate } from './form.bundle.js';
+import { fillOrderTemplate, loadDocx, readWordingTables } from './form.bundle.js';
 
 const SITE_URL = Deno.env.get('SITE_URL') ?? 'https://pustaka-jasa.vercel.app';
 const GROUPS = (Deno.env.get('FORM_BOT_GROUP_IDS') ?? Deno.env.get('TELEGRAM_CHAT_ID') ?? '').split(',').map((s) => s.trim()).filter(Boolean);
@@ -110,19 +112,35 @@ export async function handleForm(msg: Msg, aiAllowed: () => Promise<boolean>) {
   if (!file) return formBot.reply(chatId, msg.message_id, HELP);
   if ((file.file_size || 0) > MAX_FILE_BYTES) return formBot.reply(chatId, msg.message_id, 'That file is too big for me (20 MB at most).');
   const fileName = doc?.file_name || 'photo.jpg';
-  const content = readFile(await formBot.downloadFile(file.file_id), fileName);
+  const bytes = await formBot.downloadFile(file.file_id);
+  const content = readFile(bytes, fileName);
   if (!content) return formBot.reply(chatId, msg.message_id, `I can't read "${esc(fileName)}" — send a PDF, Word (.docx), Excel or a photo.`);
   if (!(await aiAllowed())) return formBot.reply(chatId, msg.message_id, 'The AI budget for this month is used up — please fill this one by hand.');
   await formBot.reply(chatId, msg.message_id, `📝 Reading ${esc(fileName)} and filling FORM ANUGERAH… (1–2 minutes)`);
-  const filled = await fillForm(content, fileName, String(msg.caption ?? '').trim());
+  const filled = await fillForm(content, fileName, String(msg.caption ?? '').trim(), bytes);
   if (!filled.ok) return formBot.reply(chatId, msg.message_id, filled.message);
   await formBot.sendDocument(chatId, msg.message_id, filled.buffer, filled.fileName, filled.caption);
   if (filled.notes.length) await formBot.reply(chatId, msg.message_id, ['❓ Please check:', ...filled.notes.map((n) => `• ${esc(n)}`)].join('\n'));
 }
 
-// The kertas kerja → FORM ANUGERAH filled in (also the assistant's "ExcelFormAgent" job, assistant.ts)
-export async function fillForm(content: FileContent, fileName: string, notes: string) {
-  const read = await readFormCached(db, readForm, content, fileName, notes);
+// A Word file whose order is a WORDING / KUANTITI table, read by rules (ruleRead.ts) — null when the
+// rules aren't sure (then the AI reads it). Salesman's notes need the AI too. Logged at no cost.
+async function readByRules(bytes: Uint8Array | undefined, fileName: string, notes: string) {
+  if (!bytes || notes || !/\.docx$/i.test(fileName)) return null;
+  const doc = await loadDocx(bytes, DOMParser);
+  const result = doc ? ruleRead(readWordingTables(doc) as TableRead) : { ok: false as const, why: 'not a Word file' };
+  if (!result.ok) {
+    console.log(`rules can't read ${fileName}: ${result.why}`);
+    return null;
+  }
+  await logUsage('read_form_rules', 'rules', null, fileName);
+  return { input: result.input, cached: false, rules: true };
+}
+
+// The kertas kerja → FORM ANUGERAH filled in (also the assistant's "ExcelFormAgent" job, assistant.ts).
+// `bytes`: the file itself, for the no-AI Word reader.
+export async function fillForm(content: FileContent, fileName: string, notes: string, bytes?: Uint8Array) {
+  const read = await readByRules(bytes, fileName, notes) ?? await readFormCached(db, readForm, content, fileName, notes);
   if (!read) return { ok: false as const, message: 'Sorry, I couldn\'t read that file. Please try again, or send a clearer copy.' };
   const plaques = toFormPlaques(read.input.plaques as ReadPlaque[]);
   const selempang = toFormSelempang(read.input.selempang as ReadSelempang[]);
@@ -146,6 +164,7 @@ export async function fillForm(content: FileContent, fileName: string, notes: st
     ...(noKod ? [`⚠ KOD is empty on ${noKod} row(s) — fill it in before you upload.`] : []),
     ...(total < out.plaqueCount ? [`⚠ ${out.plaqueCount - total} plaque(s) didn't fit the form — add them by hand.`] : []),
     ...(read.cached ? ['♻️ Same file as before — reused the earlier reading (no AI cost).'] : []),
+    ...('rules' in read ? ['📐 Read from the Word table by rules (no AI cost).'] : []),
     'Please check it against the teacher\'s file, then upload it on the website as usual.',
   ].join('\n');
   const base = (front.sekolah || fileName.replace(/\.[^.]+$/, '')).replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'ORDER';

@@ -224,10 +224,12 @@ async function handleAssistant(msg: Msg) {
 
   // the file, read once when a staff job needs it — through the assistant bot (it received the message)
   let content: FileContent | null | undefined;
+  let bytes: Uint8Array | undefined;
   const fileContent = async () => {
     if (content !== undefined) return content;
     if ((file.file_size || 0) > MAX_FILE_BYTES) return (content = null);
-    return (content = readFile(await assistantBot.downloadFile(file.file_id), fileName!));
+    bytes = await assistantBot.downloadFile(file.file_id);
+    return (content = readFile(bytes, fileName!));
   };
   const cantRead = `I can't read "${fileName}" — send a PDF, Word (.docx), Excel or a picture (20 MB at most).`;
 
@@ -237,7 +239,7 @@ async function handleAssistant(msg: Msg) {
       const c = await fileContent();
       if (!c) return cantRead;
       await say(`📝 ExcelFormAgent is filling FORM ANUGERAH from ${esc(fileName)}… (1–2 minutes)`);
-      const filled = await fillForm(c, fileName!, notes);
+      const filled = await fillForm(c, fileName!, notes, bytes);
       if (!filled.ok) return filled.message;
       await assistantBot.sendDocument(msg.chat.id, msg.message_id, filled.buffer, filled.fileName, filled.caption);
       return `sent ${filled.fileName} (${filled.total} plaques) to the group${filled.notes.length ? `; questions to raise with Sean: ${filled.notes.join(' | ')}` : ''}`;

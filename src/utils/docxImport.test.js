@@ -145,6 +145,20 @@ describe('parseWordingDocx', () => {
     expect(res.notes[3]).toMatch(/No event heading/);
   });
 
+  it('checks a JUMLAH subtotal against its own group only (MAG 2026: "JUMLAH TAHUN 1")', async () => {
+    const buf = await makeDocx(para('MAJLIS X') + table([
+      ['BIL', 'LABEL PADA HADIAH', 'KUANTITI', 'KOD HADIAH'],
+      ['1', 'ANUGERAH A\nTAHUN 1', '8', 'PK 1'],
+      ['2', 'ANUGERAH B\nTAHUN 1', '8', 'PK 1'],
+      ['', 'JUMLAH TAHUN 1', '16', ''],
+      ['3', 'ANUGERAH A\nTAHUN 2', '8', 'PK 1'],
+      ['', 'JUMLAH TAHUN 2', '7', ''],
+      ['', 'JUMLAH BESAR', '24', ''],
+    ]));
+    const res = await parse(buf);
+    expect(res.notes).toEqual([expect.stringMatching(/says 7, but the rows above it add up to 8 \(24 in the table\)/)]);
+  });
+
   it('flags rows with no plaque code, and a likely leftover copy of coded rows', async () => {
     const buf = await makeDocx(para('MAJLIS X') + table([
       ['BIL', 'WORDING', 'KUANTITI', 'KOD HADIAH'],
