@@ -138,6 +138,7 @@ function fromDbOrder(row) {
     artworkConfirmedByRole: row.artwork_confirmed_by_role || null,
     artworkManual: !!row.artwork_manual,
     productionNote: row.production_note || '',
+    salesmanPrintedAt: row.salesman_printed_at || null,
     parentOrderId: row.parent_order_id || null,
   };
 }
@@ -166,7 +167,7 @@ const ORDER_LIST_COLUMNS = [
   'kiv_production_done_at', 'artwork_confirmed_at', 'artwork_confirmed_by_name',
   'artwork_confirmed_by_role', 'parent_order_id', 'crystal_typed_at', 'duplicate_check',
   'kiv_filled_rows', 'pending_addon_shipment_date', 'artwork_manual',
-  'production_note', 'kertas_kerja_files', 'pending_addon_kertas_kerja', 'placed_by:snapshot->>placedBy',
+  'production_note', 'salesman_printed_at', 'kertas_kerja_files', 'pending_addon_kertas_kerja', 'placed_by:snapshot->>placedBy',
 ].join(',');
 
 export async function fetchOrders(userId, role, { limit = 500 } = {}) {
@@ -233,6 +234,12 @@ export async function approveAddonAsOrder(orderId, items, priceAdjusted) {
   const { data, error } = await supabase.rpc('approve_addon', { p_order_id: orderId, p_items: items, p_price_adjusted: priceAdjusted });
   if (error) throw error;
   return data;
+}
+
+// The salesman's own Printed mark on a Salesman Approved card (0115); null clears it. Its own write.
+export async function saveSalesmanPrinted(id, at) {
+  const { error } = await supabase.from('orders').update({ salesman_printed_at: at }).eq('id', id);
+  if (error) throw error;
 }
 
 // Production's own remark on an In Production card (0109). Its own write, like markArtworkManual.

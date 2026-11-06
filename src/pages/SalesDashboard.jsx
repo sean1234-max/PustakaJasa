@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import { useAppState } from '../state/useAppState';
 import { ManualArtworkButton } from '../components/CrystalPreview';
-import { statusPillStyle, isAddonInFlight, invoiceLabel, invoiceSource } from '../data/catalog';
+import { statusPillStyle, isAddonInFlight, invoiceLabel, invoiceSource, formatDateTime } from '../data/catalog';
 import { matchesOrderSearch } from '../utils/orderSearch';
 import OrderUrgentBadge from '../components/OrderUrgentBadge';
 import AddOnTag from '../components/AddOnTag';
@@ -29,7 +29,7 @@ const FILTERS = [
 ];
 
 export default function SalesDashboard() {
-  const { state, openAmend, openAddOn, confirmArtwork, manualArtwork } = useAppState();
+  const { state, openAmend, openAddOn, confirmArtwork, manualArtwork, setSalesmanPrinted } = useAppState();
   // search / filters / tab / scroll kept when an order is opened and closed again (useSessionState)
   const viewKey = `SalesDashboard:${state.userAuthId || ''}`;
   useRestoreScroll(viewKey);
@@ -175,6 +175,10 @@ export default function SalesDashboard() {
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
                       <OrderUrgentBadge urgent={ord.urgent} />
                       <span className="status-pill" style={statusPillStyle(ord.status)}>{ord.status}</span>
+                      {/* the salesman's own Printed mark (0115) — shown only here, on the Sales dashboard */}
+                      {ord.status === 'Salesman Approved' && ord.salesmanPrintedAt && (
+                        <span className="status-pill" style={{ background: '#dcefe3', color: '#2f6b4f' }}>Printed ({formatDateTime(ord.salesmanPrintedAt)})</span>
+                      )}
                     </div>
                   </div>
                   {ord.status === 'Reviewing Order' && (
@@ -245,6 +249,20 @@ export default function SalesDashboard() {
                           Update KIV
                         </button>
                       )}
+                    </div>
+                  )}
+                  {ord.status === 'Salesman Approved' && cardFilter === 'Salesman Approved' && (
+                    <div className="order-card-actions" style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-2)' }}>
+                      <ConfirmButton
+                        label={ord.salesmanPrintedAt ? 'Undo Printed' : 'Printed'} style={{ flex: 1 }}
+                        className={ord.salesmanPrintedAt ? 'btn btn-ghost' : 'btn btn-secondary'}
+                        question={ord.salesmanPrintedAt ? `Take the Printed mark off ${ord.id}?` : `Mark ${ord.id} as printed?`}
+                        confirmLabel={ord.salesmanPrintedAt ? 'Yes, undo' : 'Yes, printed'}
+                        onConfirm={async () => {
+                          const err = await setSalesmanPrinted(ord.id, !ord.salesmanPrintedAt);
+                          setArtworkErr((e) => ({ ...e, [ord.id]: err || '' }));
+                        }}
+                      />
                     </div>
                   )}
                   {artworkErr[ord.id] && <p className="hint-text" style={{ color: '#b91c1c' }}>{artworkErr[ord.id]}</p>}

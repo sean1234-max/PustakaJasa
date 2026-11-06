@@ -25,7 +25,7 @@ import { buildCategoryCartItems } from './categoryCartItems';
 import { AppStateContext } from './AppStateContext';
 import { saveCrystalDraft, clearCrystalDraft } from '../lib/crystalDraft';
 import {
-  fetchOrders, fetchOrderById, markArtworkManual, saveProductionNote, insertOrder, updateOrder, approveAddonAsOrder, nextOrderSeq, fetchAllSalesmen, reassignOrderSalesman,
+  fetchOrders, fetchOrderById, markArtworkManual, saveProductionNote, saveSalesmanPrinted, insertOrder, updateOrder, approveAddonAsOrder, nextOrderSeq, fetchAllSalesmen, reassignOrderSalesman,
   findPossibleDuplicates,
 } from '../lib/ordersApi';
 import {
@@ -3061,6 +3061,19 @@ export function AppStateProvider({ children }) {
     return null;
   }, [patch]);
 
+  // The salesman's Printed mark (0115): on = now, off = cleared. Returns an error message, or null.
+  const setSalesmanPrinted = useCallback(async (orderId, on) => {
+    const at = on ? new Date().toISOString() : null;
+    try {
+      await saveSalesmanPrinted(orderId, at);
+    } catch (err) {
+      console.error('Failed to save the Printed mark in Supabase:', err);
+      return describeOrderWriteError(err, 'update');
+    }
+    patch((st) => ({ orders: st.orders.map((o) => (o.id === orderId ? { ...o, salesmanPrintedAt: at } : o)) }));
+    return null;
+  }, [patch]);
+
   // Production's remark on an In Production card (0109). Returns an error message, or null.
   const setProductionNote = useCallback(async (orderId, note) => {
     try {
@@ -3517,7 +3530,7 @@ export function AppStateProvider({ children }) {
     markTypingDone,
     updateReferenceOrder,
     markReviewDone,
-    markAddOnReviewed, saveProductionPrices, markKivDone, markKivProductionDone, confirmArtwork, manualArtwork, setProductionNote, fillReservedNames,
+    markAddOnReviewed, saveProductionPrices, markKivDone, markKivProductionDone, confirmArtwork, manualArtwork, setProductionNote, setSalesmanPrinted, fillReservedNames,
     openProductionEdit,
     loadExcelIntoProductionEdit,
     saveProductionEdit,
