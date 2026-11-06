@@ -204,6 +204,7 @@ export default function StoreAdminDashboard() {
               <div className="order-card-meta">
                 <div><div className="dim">Sekolah</div><div>{ord.sekolah || '—'}</div></div>
                 <div><div className="dim">Salesman</div><div>{ord.sales || '—'}</div></div>
+                <div><div className="dim">Guru</div><div>{ord.picName || '—'}</div></div>
                 <div><div className="dim">Order Date</div><div>{ord.datePlaced}</div></div>
                 <div><div className="dim">Order Type</div><div>{stamp ? 'Original + Tambahan' : 'Original'}</div></div>
               </div>

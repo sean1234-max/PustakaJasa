@@ -194,6 +194,7 @@ export default function SalesDashboard() {
 
                   <div className="order-card-meta" style={{ gridTemplateColumns: '1fr' }}>
                     <div><div className="dim">Sekolah</div><div>{ord.sekolah || '—'}</div></div>
+                    <div><div className="dim">Guru</div><div>{ord.picName || '—'}</div></div>
                   </div>
                   <div className="order-card-meta">
                     <div><div className="dim">Date Placed</div><div>{ord.datePlaced}</div></div>

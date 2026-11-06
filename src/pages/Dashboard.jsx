@@ -126,6 +126,7 @@ export default function Dashboard() {
               <div className="order-card-meta">
                 <div><div className="dim">Date Placed</div><div>{ord.datePlaced}</div></div>
                 <div><div className="dim">Est. Delivery</div><div>{ord.deliveryDate}</div></div>
+                <div><div className="dim">Guru</div><div>{ord.picName || '—'}</div></div>
               </div>
               <div className="order-card-invoice"><span className="dim">Invoice ID:</span> {invoiceIdLabel}</div>
               <div className="dim" style={{ fontSize: 11 }}>Total Amount</div>

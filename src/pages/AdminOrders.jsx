@@ -226,6 +226,20 @@ export default function AdminOrders() {
                     <span className="block text-body-md text-on-surface font-medium truncate">{invoiceLabel(ord) || '—'}</span>
                   </div>
                 </div>
+                <div className="grid grid-cols-2 gap-4 mt-4">
+                  <div>
+                    <span className="block text-body-sm text-on-surface-variant mb-0.5">Guru</span>
+                    <span className="block text-body-md text-on-surface font-medium truncate">{ord.picName || '—'}</span>
+                  </div>
+                  <div>
+                    <span className="block text-body-sm text-on-surface-variant mb-0.5">Total QTY</span>
+                    <span className="block text-body-md text-on-surface font-medium">{(ord.items || []).reduce((n, it) => n + (Number(it.qty) || 0), 0)}</span>
+                  </div>
+                  <div>
+                    <span className="block text-body-sm text-on-surface-variant mb-0.5">Total Amount</span>
+                    <span className="block text-body-md text-on-surface font-medium">{formatRM(ord.totalAmount)}</span>
+                  </div>
+                </div>
               </button>
             );
           })}
