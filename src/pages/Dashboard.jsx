@@ -7,6 +7,7 @@ import { getOrderInvoiceSlices } from '../utils/orderBatches';
 import { nearestFirst } from '../utils/urgentOrder';
 import OrderUrgentBadge from '../components/OrderUrgentBadge';
 import AddOnTag from '../components/AddOnTag';
+import { useSessionState, useRestoreScroll } from '../utils/useSessionState';
 
 const FILTERS = [
   { key: 'Reviewing Order', label: 'Reviewing Order', match: (o) => o.status === 'Reviewing Order' },
@@ -17,8 +18,11 @@ const FILTERS = [
 
 export default function Dashboard() {
   const { state, openAddOn, openAmend, reorderOrder, cancelPendingAddOn } = useAppState();
+  // search / filters / tab / scroll kept when an order is opened and closed again (useSessionState)
+  const viewKey = `Dashboard:${state.userAuthId || ''}`;
+  useRestoreScroll(viewKey);
   const navigate = useNavigate();
-  const [filter, setFilter] = useState('Reviewing Order');
+  const [filter, setFilter] = useSessionState(`${viewKey}:filter`, 'Reviewing Order');
   const [expandedAddOnId, setExpandedAddOnId] = useState(null);
 
   // A split order (orders.invoice_groups, 0070) shows one card per invoice

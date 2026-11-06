@@ -4,6 +4,7 @@ import AdminLayout from '../components/AdminLayout';
 import { useAppState } from '../state/useAppState';
 import { ORDER_STATUSES, statusPillStyle, malaysiaToday, invoiceLabel } from '../data/catalog';
 import { matchesOrderSearch } from '../utils/orderSearch';
+import { useSessionState, useRestoreScroll } from '../utils/useSessionState';
 
 const DATE_OPTIONS = ['All Time', 'Today', 'This Week', 'This Month', 'Custom Range'];
 // Stable empty fallback so the useMemos below don't see a fresh [] every
@@ -76,15 +77,18 @@ function Select({ label, value, onChange, children }) {
 
 export default function AdminOrders() {
   const { state } = useAppState();
+  // search / filters / tab / scroll kept when an order is opened and closed again (useSessionState)
+  const viewKey = `AdminOrders:${state.userAuthId || ''}`;
+  useRestoreScroll(viewKey);
   const navigate = useNavigate();
   // Search Order (Sean, 2026-11-03): school, Order ID, Invoice Number or salesman, with the filters below
-  const [search, setSearch] = useState('');
-  const [schoolFilter, setSchoolFilter] = useState('all');
-  const [salesmanFilter, setSalesmanFilter] = useState('all');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [dateFilter, setDateFilter] = useState('All Time');
-  const [customFrom, setCustomFrom] = useState('');
-  const [customTo, setCustomTo] = useState('');
+  const [search, setSearch] = useSessionState(`${viewKey}:search`, '');
+  const [schoolFilter, setSchoolFilter] = useSessionState(`${viewKey}:schoolFilter`, 'all');
+  const [salesmanFilter, setSalesmanFilter] = useSessionState(`${viewKey}:salesmanFilter`, 'all');
+  const [statusFilter, setStatusFilter] = useSessionState(`${viewKey}:statusFilter`, 'all');
+  const [dateFilter, setDateFilter] = useSessionState(`${viewKey}:dateFilter`, 'All Time');
+  const [customFrom, setCustomFrom] = useSessionState(`${viewKey}:customFrom`, '');
+  const [customTo, setCustomTo] = useSessionState(`${viewKey}:customTo`, '');
 
   const orders = state.orders || EMPTY_ORDERS;
   const schoolOptions = useMemo(() => [...new Set(orders.map((o) => o.sekolah).filter(Boolean))].sort(), [orders]);

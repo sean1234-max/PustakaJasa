@@ -11,6 +11,7 @@ import { nearestFirst } from '../utils/urgentOrder';
 import TelegramConnect from '../components/TelegramConnect';
 import ConfirmButton from '../components/ConfirmButton';
 import { countReservedPlaques, isCrystalCode } from '../utils/exportCsv';
+import { useSessionState, useRestoreScroll } from '../utils/useSessionState';
 
 // Sales works one stage at a time — filter tabs map 1:1 to STATUS_STAGES.
 // A 'Reviewing Order' order can only be approved once Production has
@@ -29,16 +30,19 @@ const FILTERS = [
 
 export default function SalesDashboard() {
   const { state, openAmend, openAddOn, confirmArtwork, manualArtwork } = useAppState();
+  // search / filters / tab / scroll kept when an order is opened and closed again (useSessionState)
+  const viewKey = `SalesDashboard:${state.userAuthId || ''}`;
+  useRestoreScroll(viewKey);
   const [artworkErr, setArtworkErr] = useState({});
   const navigate = useNavigate();
-  const [filter, setFilter] = useState(FILTERS[0].status);
+  const [filter, setFilter] = useSessionState(`${viewKey}:filter`, FILTERS[0].status);
   // A Sales Manager's `state.orders` already contains every salesman's
   // orders (RLS — supabase/migrations/0048_sales_manager.sql); this dropdown
   // just narrows the view to one salesman. A regular salesman only ever has
   // their own, so it isn't shown for them.
   const isManager = !!state.isSalesManager;
-  const [salesmanFilter, setSalesmanFilter] = useState('all');
-  const [search, setSearch] = useState('');
+  const [salesmanFilter, setSalesmanFilter] = useSessionState(`${viewKey}:salesmanFilter`, 'all');
+  const [search, setSearch] = useSessionState(`${viewKey}:search`, '');
   // RLS already limits state.orders to this salesman's own orders (a Sales
   // Manager sees everyone's but edits only their own — isOwn below).
   // ponytail: searches the loaded orders (fetchOrders' newest 500); add a

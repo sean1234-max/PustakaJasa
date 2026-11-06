@@ -15,6 +15,7 @@ import { matchesOrderSearch } from '../utils/orderSearch';
 import { duplicateSummary } from '../utils/duplicateOrders';
 import ProductionInvoiceEntry from '../components/ProductionInvoiceEntry';
 import ProductionNote from '../components/ProductionNote';
+import { useSessionState, useRestoreScroll } from '../utils/useSessionState';
 
 // Production works 'In Production' orders (invoice number or not — that's
 // Store Admin's job now, see supabase/migrations/0036_add_invoicing_role.sql
@@ -91,21 +92,24 @@ function cardTypeOf(o) {
 
 export default function ProductionDashboard() {
   const { state, today, markProductionDone, markTypingDone, markReviewDone, markAddOnReviewed, markKivDone, markKivProductionDone } = useAppState();
+  // search / filters / tab / scroll kept when an order is opened and closed again (useSessionState)
+  const viewKey = `ProductionDashboard:${state.userAuthId || ''}`;
+  useRestoreScroll(viewKey);
   const navigate = useNavigate();
   // The team's own accounts (kesin, sean …) open on Reviewing Order — their
   // first job (Sean, 2026-10-07); the manager (production@pjsb.com) opens on
   // Typing (Sean, 2026-10-13).
-  const [tab, setTab] = useState(state.isProductionManager ? 'typing' : 'reviewing');
+  const [tab, setTab] = useSessionState(`${viewKey}:tab`, state.isProductionManager ? 'typing' : 'reviewing');
   // Lets Production see, at a glance, everything due out on one shipment
   // date — useful across all three tabs (what's coming up in Pending
   // Invoice, what's ready to ship today, what already went out).
-  const [shipmentDateFilter, setShipmentDateFilter] = useState('');
-  const [cardTypeFilter, setCardTypeFilter] = useState('');
+  const [shipmentDateFilter, setShipmentDateFilter] = useSessionState(`${viewKey}:shipmentDateFilter`, '');
+  const [cardTypeFilter, setCardTypeFilter] = useSessionState(`${viewKey}:cardTypeFilter`, '');
   // Search Order (Sean, 2026-10-15): Order ID, Invoice Number, school or salesman, across every
   // tab — the orders this account may see (RLS: the manager all, a team account its salesmen's).
   // ponytail: searches the loaded orders (fetchOrders' newest 500); add a server-side ilike
   // search once Production sees more than that.
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useSessionState(`${viewKey}:search`, '');
   const searching = !!search.trim();
 
 

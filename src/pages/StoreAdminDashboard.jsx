@@ -8,6 +8,7 @@ import { getOrderInvoiceSlices } from '../utils/orderBatches';
 import { fetchMyAssignedSalesmen, fetchAllSalesmen } from '../lib/ordersApi';
 import { nearestFirst, URGENT_ORDERS_SHEET_URL } from '../utils/urgentOrder';
 import OrderUrgentBadge from '../components/OrderUrgentBadge';
+import { useSessionState, useRestoreScroll } from '../utils/useSessionState';
 
 // Store Admin (formerly "Invoicing Department" — role renamed 0047) can see
 // and act on every order, including ones still 'Reviewing Order' — a
@@ -35,12 +36,15 @@ const TABS = [
 
 export default function StoreAdminDashboard() {
   const { state } = useAppState();
+  // search / filters / tab / scroll kept when an order is opened and closed again (useSessionState)
+  const viewKey = `StoreAdminDashboard:${state.userAuthId || ''}`;
+  useRestoreScroll(viewKey);
   const navigate = useNavigate();
-  const [tab, setTab] = useState(TABS[0].key);
-  const [search, setSearch] = useState('');
-  const [salesmanFilter, setSalesmanFilter] = useState('all');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [typeFilter, setTypeFilter] = useState('all');
+  const [tab, setTab] = useSessionState(`${viewKey}:tab`, TABS[0].key);
+  const [search, setSearch] = useSessionState(`${viewKey}:search`, '');
+  const [salesmanFilter, setSalesmanFilter] = useSessionState(`${viewKey}:salesmanFilter`, 'all');
+  const [statusFilter, setStatusFilter] = useSessionState(`${viewKey}:statusFilter`, 'all');
+  const [typeFilter, setTypeFilter] = useSessionState(`${viewKey}:typeFilter`, 'all');
 
   // A Tambahan's own order (parent_order_id, 0091) is billed in AutoCount and
   // never gets an Invoice Number here, so Store Admin doesn't list it at all
