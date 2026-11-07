@@ -40,6 +40,8 @@ function toDbOrder(order) {
     import_file_path: order.importFilePath ?? null,
     import_file_name: order.importFileName ?? null,
     import_files: order.importFiles ?? [],
+    previous_import_files: order.previousImportFiles ?? [],
+    salesman_edited_at: order.salesmanEditedAt ?? null,
     kertas_kerja_files: order.kertasKerjaFiles ?? [],
     duplicate_check: order.duplicateCheck ?? null,
     corrected_import_file_path: order.correctedImportFilePath ?? null,
@@ -104,6 +106,8 @@ function fromDbOrder(row) {
     importFilePath: row.import_file_path || null,
     importFileName: row.import_file_name || null,
     importFiles: row.import_files || [],
+    previousImportFiles: row.previous_import_files || [],
+    salesmanEditedAt: row.salesman_edited_at || null,
     kertasKerjaFiles: row.kertas_kerja_files || [],
     pendingAddonKertasKerja: row.pending_addon_kertas_kerja || null,
     duplicateCheck: row.duplicate_check || null,
@@ -167,7 +171,8 @@ const ORDER_LIST_COLUMNS = [
   'kiv_production_done_at', 'artwork_confirmed_at', 'artwork_confirmed_by_name',
   'artwork_confirmed_by_role', 'parent_order_id', 'crystal_typed_at', 'duplicate_check',
   'kiv_filled_rows', 'pending_addon_shipment_date', 'artwork_manual',
-  'production_note', 'salesman_printed_at', 'kertas_kerja_files', 'pending_addon_kertas_kerja', 'placed_by:snapshot->>placedBy',
+  'production_note', 'salesman_printed_at', 'kertas_kerja_files', 'pending_addon_kertas_kerja',
+  'previous_import_files', 'salesman_edited_at', 'placed_by:snapshot->>placedBy',
 ].join(',');
 
 export async function fetchOrders(userId, role, { limit = 500 } = {}) {

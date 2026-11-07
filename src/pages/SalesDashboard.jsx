@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import { useAppState } from '../state/useAppState';
 import { ManualArtworkButton } from '../components/CrystalPreview';
+import SalesmanEditedTag from '../components/SalesmanEditedTag';
 import { statusPillStyle, isAddonInFlight, invoiceLabel, invoiceSource, formatDateTime } from '../data/catalog';
 import { matchesOrderSearch } from '../utils/orderSearch';
 import OrderUrgentBadge from '../components/OrderUrgentBadge';
@@ -29,7 +30,7 @@ const FILTERS = [
 ];
 
 export default function SalesDashboard() {
-  const { state, openAmend, openAddOn, confirmArtwork, manualArtwork, setSalesmanPrinted } = useAppState();
+  const { state, openEditOrder, openAddOn, confirmArtwork, manualArtwork, setSalesmanPrinted } = useAppState();
   // search / filters / tab / scroll kept when an order is opened and closed again (useSessionState)
   const viewKey = `SalesDashboard:${state.userAuthId || ''}`;
   useRestoreScroll(viewKey);
@@ -49,16 +50,16 @@ export default function SalesDashboard() {
   // server-side ilike search if a salesman ever has more than that.
   const searching = !!search.trim();
 
-  // Before approval: Update Details; after: Add On only (Sean, 2026-10-09).
+  // Before Production's Done Review: Edit Order (the whole order, Sean 2026-11-07); after approval: Add On only.
   const actionsFor = (ord) => {
     const isOwn = !state.isSalesManager || ord.salesmanId === state.userAuthId;
     return {
-      canAmend: isOwn && ord.status === 'Reviewing Order',
+      canAmend: isOwn && ord.status === 'Reviewing Order' && !ord.reviewedAt,
       // a Tambahan's own order takes no add-on of its own — add to the original (0091)
       canAddOn: isOwn && ['Salesman Approved', 'In Production', 'Completed'].includes(ord.status) && !isAddonInFlight(ord) && !ord.parentOrderId,
     };
   };
-  const startAmend = (ord) => { openAmend(ord); navigate(`/amend/${ord.id}`); };
+  const startAmend = (ord) => { openEditOrder(ord); navigate('/order/step1'); };
   const startAddOn = (ord) => { openAddOn(ord); navigate(`/addon/${ord.id}`); };
   const salesmanOptions = useMemo(
     () => [...new Set((state.orders || []).map((o) => o.sales).filter(Boolean))].sort(),
@@ -192,6 +193,7 @@ export default function SalesDashboard() {
                   {ord.correctedImportFilePath && (
                     <span className="status-pill" style={{ background: '#fff4ce', color: '#8a6d00', marginTop: 'var(--space-2)' }}>Excel Updated</span>
                   )}
+                  <SalesmanEditedTag order={ord} style={{ marginTop: 'var(--space-2)' }} />
                   {cardFilter === ADDON_FILTER && (
                     <span className="status-pill" style={{ background: 'var(--color-accent-100)', color: 'var(--color-accent-900)', marginTop: 'var(--space-2)' }}>Add-On Pending</span>
                   )}
@@ -216,7 +218,7 @@ export default function SalesDashboard() {
                       {cardFilter === ADDON_FILTER ? 'Review Add-On' : pendingReview ? 'Approve Order' : 'View Summary'}
                     </button>
                     {canAmend && (
-                      <button type="button" className="btn btn-secondary" style={{ flex: 1 }} onClick={() => startAmend(ord)}>Update Details</button>
+                      <button type="button" className="btn btn-secondary" style={{ flex: 1 }} onClick={() => startAmend(ord)}>Edit Order</button>
                     )}
                     {canAddOn && (
                       <button type="button" className="btn btn-secondary" style={{ flex: 1 }} onClick={() => startAddOn(ord)}>Add On</button>

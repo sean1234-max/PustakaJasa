@@ -93,6 +93,21 @@ export default function ImportFileButtons({ order, buttonClassName, errorClassNa
           </button>
         )}
       </div>
+      {(order.previousImportFiles || []).length > 0 && (
+        <div className="hint-text" style={{ marginTop: 'var(--space-2)' }}>
+          Older files (replaced — kept for reference, not used for this order):{' '}
+          {order.previousImportFiles.map((file, i) => (
+            <button
+              key={`${file.path}-${i}`} type="button" className="btn btn-ghost"
+              style={{ padding: '0 4px', minHeight: 0, textDecoration: 'line-through', fontSize: 'inherit' }}
+              title={file.replacedAt ? `Replaced ${new Date(file.replacedAt).toLocaleString('en-MY')}` : undefined}
+              onClick={async () => { setError(''); if (!(await saveOrderImportAs(file.path, `OLD-${file.name || 'order.xlsx'}`))) setError('Could not download the file right now. Please try again.'); }}
+            >
+              {file.corrected ? 'Corrected: ' : ''}{file.name || 'order file'}
+            </button>
+          ))}
+        </div>
+      )}
       {error && <div className={errorClassName} style={{ marginTop: 4 }}>{error}</div>}
     </>
   );

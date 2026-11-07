@@ -30,6 +30,7 @@ import { getAiFileHelperStatus, startAiFileHelperJob, getAiFileHelperJob } from 
 import { schoolFolderFor } from '../data/schoolFolders';
 import { getOrderChangeStamp } from '../utils/orderStamp';
 import RemarkText from '../components/RemarkText';
+import SalesmanEditedTag from '../components/SalesmanEditedTag';
 
 // 3 flashes × 0.5s (index.css .kiv-row-flash), then the rows go back to normal
 const KIV_FLASH_MS = 1700;
@@ -502,6 +503,7 @@ export default function ProductionOrderDetail() {
             {order.correctedImportFilePath && (
               <span className="status-pill no-print" style={{ background: '#fff4ce', color: '#8a6d00' }}>Excel Updated</span>
             )}
+            <SalesmanEditedTag order={order} />
             <span className="status-pill" style={statusPillStyle(sliceLabel === 'Typing' ? 'Typing' : sliceStatus)}>{sliceLabel}</span>
             {reviewing && isReviewed(order) && <span className="status-pill no-print" style={{ background: '#dcefe3', color: '#2f6b4f' }}>✓ Review Done</span>}
           </div>
