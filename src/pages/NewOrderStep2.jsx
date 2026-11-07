@@ -583,8 +583,15 @@ export default function NewOrderStep2() {
       </div>
 
       <div className="card elev-md">
-        <div className="card-kicker">New Order — Product</div>
-        <div className="card-title" style={{ marginBottom: 'var(--space-6)' }}>Order Details</div>
+        <div className="card-kicker">{state.editOrderId ? `Edit Order — ${state.editOrderId}` : 'New Order — Product'}</div>
+        <div className="card-title" style={{ marginBottom: state.editOrderId ? 'var(--space-2)' : 'var(--space-6)' }}>Order Details</div>
+        {state.editOrderId && (
+          <p className="hint-text" style={{ margin: '0 0 var(--space-6)' }}>
+            Every category of this order is already in the cart. Change one here and add it to the cart again to replace it, or
+            upload a newer order file: it becomes the order&apos;s file (the old one is kept, but no longer used).
+            When done, Review &amp; Save.
+          </p>
+        )}
 
         {/* Import Order File — its own standalone part, one shared control
             for the whole order rather than something each category tab has
@@ -846,6 +853,9 @@ export default function NewOrderStep2() {
                 {checking ? 'Checking…' : 'Add All to Cart'}
               </button>
             </div>
+            {state.editOrderId && state.cart.length > 0 && (
+              <button type="button" className="btn btn-secondary" onClick={() => navigate('/cart')}>Review &amp; Save ({state.cart.length} in cart) →</button>
+            )}
             {unansweredChoices.length > 0 && (
               <span className="hint-text" style={{ margin: 0 }}>Answer the {unansweredChoices.length} question(s) above first.</span>
             )}

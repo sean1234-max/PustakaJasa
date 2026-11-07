@@ -13,6 +13,7 @@ import { downloadTextFile } from '../utils/downloadBlob';
 import ImportFileButtons from '../components/ImportFileButtons';
 
 import { groupItemsByBatch } from '../utils/orderBatches';
+import SalesmanEditedTag from '../components/SalesmanEditedTag';
 
 // Admin-only fork of ProductionOrderDetail.jsx — same order data and the
 // same AppState handler (setInvoiceId), restyled to match the Admin Portal
@@ -158,6 +159,7 @@ export default function AdminOrderDetail() {
               <span className="px-3 py-1 rounded-md text-label-bold font-semibold" style={{ background: '#fff4ce', color: '#8a6d00' }}>Excel Updated</span>
             )}
             <span className="px-3 py-1 rounded-md text-label-bold font-semibold" style={statusPillStyle(order.status)}>{order.status}</span>
+            <SalesmanEditedTag order={order} />
           </div>
         </div>
 

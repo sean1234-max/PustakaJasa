@@ -9,6 +9,7 @@ import { fetchMyAssignedSalesmen, fetchAllSalesmen } from '../lib/ordersApi';
 import { nearestFirst, URGENT_ORDERS_SHEET_URL } from '../utils/urgentOrder';
 import OrderUrgentBadge from '../components/OrderUrgentBadge';
 import { useSessionState, useRestoreScroll } from '../utils/useSessionState';
+import SalesmanEditedTag from '../components/SalesmanEditedTag';
 
 // Store Admin (formerly "Invoicing Department" — role renamed 0047) can see
 // and act on every order, including ones still 'Reviewing Order' — a
@@ -189,6 +190,7 @@ export default function StoreAdminDashboard() {
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
                   <OrderUrgentBadge urgent={ord.urgent} />
                   <span className="status-pill" style={statusPillStyle(ord.status)}>{ord.status}</span>
+                  <SalesmanEditedTag order={ord} />
                 </div>
               </div>
               {/* Production uploaded a corrected copy of the teacher's file

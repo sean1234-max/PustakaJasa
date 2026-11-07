@@ -15,6 +15,7 @@ import ImportFileButtons from '../components/ImportFileButtons';
 import { getOrderChangeStamp } from '../utils/orderStamp';
 import { isUrgentShipment } from '../utils/urgentOrder';
 import RemarkText from '../components/RemarkText';
+import SalesmanEditedTag from '../components/SalesmanEditedTag';
 
 
 const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: false, matrix: false, jenisPlak: false };
@@ -473,6 +474,7 @@ export default function StoreAdminOrderDetail() {
             {order.correctedImportFilePath && (
               <span className="status-pill" style={{ background: '#fff4ce', color: '#8a6d00' }}>Excel Updated</span>
             )}
+            <SalesmanEditedTag order={order} />
             <span className="status-pill" style={statusPillStyle(order.status)}>{order.status}</span>
           </div>
         </div>

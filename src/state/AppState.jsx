@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import {
   CATEGORIES, ACTIVE_CATEGORIES, formatDate, standardUnitPrice, getCategorySubjects, matrixCellKey, customMatrixLabelKey,
-  isReviewed, isAddonInFlight,
+  isReviewed, isAddonInFlight, toMalaysiaDay,
   resolveCategory, categoriesUsedByItems, isDynamicCategoryKey, nextFreeCategoryKey, malaysiaToday, malaysiaDayIso,
 } from '../data/catalog';
 import { buildInitialRowsByBlock, buildInitialColumnsByBlock, buildInitialPlakRows } from '../data/formDefaults';
@@ -35,7 +35,7 @@ import {
 } from '../lib/catalogAdminApi';
 import { supabase } from '../lib/supabaseClient';
 import { uploadOrderImportFile, getOrderImportUrl } from '../lib/storageApi';
-import { withImportFile, tagImportFiles, orderImportFields } from '../utils/importFiles';
+import { withImportFile, tagImportFiles, orderImportFields, editedOrderFiles } from '../utils/importFiles';
 import { REMARK_ITEMS_HEADER } from '../utils/schoolList';
 import { syncUrgentOrderToSheet, highlightUrgentKitDoc } from '../lib/urgentSheetApi';
 import { isUrgentShipment, urgentSheetAction, SHIPMENT_EDITABLE_STATUSES } from '../utils/urgentOrder';
@@ -344,6 +344,9 @@ function initialState() {
     // to compare with the order; addOnKertasKerja is the Add On's.
     kertasKerjaFiles: [],
     addOnKertasKerja: [],
+    // Salesman Edit Order (Sean, 2026-11-07): the New Order flow is open on this submitted order
+    // (Step 1 → Step 2 → Cart's Save Changes saves over it) — null for a normal New Order.
+    editOrderId: null,
 
     // No category open on entry to Order Details — the teacher either
     // uploads a FORM ANUGERAH file (which auto-selects whichever categories
@@ -742,7 +745,7 @@ export function AppStateProvider({ children }) {
       rowsByBlock: buildInitialRowsByBlock(st.schoolLanguage), columnsByBlock: buildInitialColumnsByBlock(), plakRows: buildInitialPlakRows(),
       nextRowId: 1000, nextPlakRowId: 1000, nextColumnId: 1000, visibleBlocksByCategory: {},
 
-      cart: [], cartToast: '',
+      cart: [], cartToast: '', editOrderId: null,
       // A salesman picks the school fresh for every New Order.
       ...(st.role === 'salesman' ? { sekolah: '', actingSchoolId: null } : {}),
     }));
@@ -1908,7 +1911,7 @@ export function AppStateProvider({ children }) {
       // A reorder is a fresh order — no upload behind it unless the teacher
       // imports one now.
       importFilePath: null, importFileName: null, importFiles: [], kertasKerjaFiles: [],
-      stepError: '',
+      stepError: '', editOrderId: null,
 
       category: restored.category || 'TOKOH',
       lineValues: restored.lineValues, matrixValues: restored.matrixValues,
@@ -1920,6 +1923,43 @@ export function AppStateProvider({ children }) {
 
       cart: [], cartToast: '',
     }));
+  }, [patch]);
+
+  // Salesman Edit Order (Sean, 2026-11-07): the whole order back in the New Order flow — Function
+  // Details on Step 1, every category on Step 2 (already in the cart, so a category left alone stays
+  // as it was), a new order file can be uploaded. Cart's Save Changes (saveEditedOrder) writes it over
+  // the same order. Only while it's 'Reviewing Order' and Production hasn't done its review.
+  const openEditOrder = useCallback((ord) => {
+    clearCrystalDraft();
+    patch((st) => {
+      const lang = ord.schoolLanguage || 'SK';
+      const cart = (ord.items || []).map((it) => ({ ...it }));
+      const blank = {
+        ...st, cart,
+        lineValues: {}, matrixValues: {},
+        rowsByBlock: buildInitialRowsByBlock(lang), columnsByBlock: buildInitialColumnsByBlock(), plakRows: buildInitialPlakRows(),
+        nextRowId: 1000, nextPlakRowId: 1000, nextColumnId: 1000, visibleBlocksByCategory: {},
+      };
+      const keys = [...new Set(cart.map((ci) => ci.categoryKey))];
+      const draft = keys.reduce((acc, key) => ({ ...acc, ...restoreCategoryDraft(acc, key) }), blank);
+      return {
+        editOrderId: ord.id,
+        sekolah: ord.sekolah || '', actingSchoolId: ord.createdBy || null, schoolLanguage: lang,
+        sales: ord.sales || '', selectedSalesmanId: ord.salesmanId || '',
+        picName: ord.picName || '', phone: ord.phone || '', ketuaPanitia: ord.ketuaPanitia || '', terms: ord.terms || '', remark: ord.remark || '',
+        shipmentDateSelected: toMalaysiaDay(ord.shipmentDate), funcSelected: toMalaysiaDay(ord.functionDate),
+        logoDataUrl: ord.logoDataUrl || null, logoFileName: ord.logoFileName || '', logoRemark: ord.logoRemark || '', schoolType: ord.schoolType || null,
+        // only files uploaded during this edit; the order's own stay on it until one of these replaces them
+        importFilePath: null, importFileName: null, importFiles: [], kertasKerjaFiles: ord.kertasKerjaFiles || [],
+        step2ImportStatus: null, step2ChoiceAnswers: {}, step2UploadedFiles: [], stepError: '',
+        category: keys[0] || null,
+        lineValues: draft.lineValues, matrixValues: draft.matrixValues, rowsByBlock: draft.rowsByBlock,
+        columnsByBlock: draft.columnsByBlock, plakRows: draft.plakRows,
+        nextRowId: draft.nextRowId, nextPlakRowId: draft.nextPlakRowId, nextColumnId: draft.nextColumnId,
+        visibleBlocksByCategory: draft.visibleBlocksByCategory,
+        cart, cartToast: '',
+      };
+    });
   }, [patch]);
 
   // Teacher editing under "Reviewing Order" (until Done Review) — restored 2026-08-25 after
@@ -2023,6 +2063,79 @@ export function AppStateProvider({ children }) {
     flashToast('updateToast', reReview.reviewedAt === null ? 'Update successful — Production will review the order again.' : 'Update successful.');
     return { ok: true };
   }, [patch, flashToast, resyncUrgentSheet]);
+
+  // Cart's Save Changes in Salesman Edit Order. Checked against the order as the database has it now:
+  // still 'Reviewing Order', Production's review not done. A new order file replaces the order's files;
+  // they — and Production's Corrected Excel, which would otherwise still stand in for the order — move to
+  // previousImportFiles: kept, never read again. Stock follows the difference, like an amend.
+  const saveEditedOrder = useCallback(async ({ artworkConfirmed = false } = {}) => {
+    const st = stateRef.current;
+    const orderId = st.editOrderId;
+    let order;
+    try {
+      order = orderId ? await fetchOrderById(orderId) : null;
+    } catch (err) {
+      console.error('Could not re-read the order before saving the edit:', err);
+      patch({ cartToast: 'Could not check the order right now. Please try again.' });
+      return { ok: false };
+    }
+    if (!order) { patch({ cartToast: 'Order not found.' }); return { ok: false }; }
+    if (order.status !== 'Reviewing Order' || isReviewed(order)) {
+      patch({ cartToast: 'Production has already reviewed this order — it can no longer be edited.' });
+      return { ok: false };
+    }
+    if (st.cart.length === 0) { patch({ cartToast: 'The order would have no plaques left.' }); return { ok: false }; }
+
+    const now = new Date().toISOString();
+    const { newFiles, replaced, items } = editedOrderFiles(order, st, now);
+    const totalAmount = items.reduce((sum, it) => sum + (Number(it.harga) || 0), 0);
+    const hasCrystal = items.some((it) => isCrystalCode(it.jenisPlak));
+    const fields = {
+      picName: st.picName, phone: st.phone, ketuaPanitia: st.ketuaPanitia, terms: st.terms, remark: st.remark,
+      ...storedDays({ functionDate: st.funcSelected, shipmentDate: st.shipmentDateSelected }),
+      logoDataUrl: st.logoDataUrl, logoFileName: st.logoFileName, logoRemark: st.logoRemark, schoolType: st.schoolType,
+      items, totalAmount,
+      priceAdjusted: items.some((it) => it.unitPrice !== standardUnitPrice(it.jenisPlak, st.plakCatalog)),
+      kertasKerjaFiles: st.kertasKerjaFiles || [],
+      ...(newFiles.length ? { importFilePath: newFiles[0].path, importFileName: newFiles[0].name, importFiles: newFiles } : {}),
+      ...(replaced.length ? { previousImportFiles: [...(order.previousImportFiles || []), ...replaced] } : {}),
+      ...(order.correctedImportFilePath ? { correctedImportFilePath: null, correctedImportFileName: null, correctedImportUploadedAt: null } : {}),
+      // the artwork question was asked again (Cart); a Later leaves it unconfirmed
+      ...(hasCrystal && artworkConfirmed && !order.artworkConfirmedAt ? { artworkConfirmedAt: now } : {}),
+      ...(hasCrystal && !artworkConfirmed ? { artworkConfirmedAt: null } : {}),
+      salesmanEditedAt: now,
+    };
+
+    const { deduct, restore } = stockDiff(order.items, items);
+    const realStock = !isTestOrderId(order.id);
+    try {
+      if (realStock) await deductPlakStock(deduct);
+    } catch (err) {
+      console.error('Failed to take stock for a salesman edit:', err);
+      patch({ cartToast: describeStockError(err) });
+      return { ok: false };
+    }
+    try {
+      await updateOrder(order.id, fields);
+    } catch (err) {
+      console.error('Failed to save the salesman edit:', err);
+      if (realStock) restorePlakStock(deduct).catch((e) => console.error('Failed to give stock back after a failed edit:', e));
+      patch({ cartToast: describeOrderWriteError(err, 'update') });
+      return { ok: false };
+    }
+    if (realStock) restorePlakStock(restore).catch((err) => console.error('Failed to give back stock after an edit:', err));
+    // crystal changes made from the Cart (Edit Crystal) go onto the order, as at submit
+    if (hasCrystal) saveCrystalDraft(order.id).catch((err) => console.error('Order saved, but its crystal changes were not:', err));
+    let fresh = null;
+    try { fresh = await fetchOrderById(order.id); } catch (err) { console.error('Saved, but could not reload the order:', err); }
+    patch((latest) => ({
+      orders: latest.orders.map((o) => (o.id === order.id ? (fresh || { ...o, ...fields }) : o)),
+      editOrderId: null, cart: [], cartToast: '', importFilePath: null, importFileName: null, importFiles: [],
+      step2ImportStatus: null, step2ChoiceAnswers: {}, step2UploadedFiles: [], kertasKerjaFiles: [],
+    }));
+    flashToast('updateToast', 'Order updated — Production will see the new version.');
+    return { ok: true, id: order.id };
+  }, [patch, flashToast]);
 
   const openAddOn = useCallback((ord) => {
     patch((st) => ({
@@ -3515,7 +3628,7 @@ export function AppStateProvider({ children }) {
 
   const value = {
     state, patch, today: TODAY, login, logout,
-    resetCurrentCategory, startNewOrder, addToCart, addAllToCart, removeFromCart, editCartCategory, restoreCartToDraft, submitOrder, checkDuplicateOrders, reorderOrder,
+    resetCurrentCategory, startNewOrder, addToCart, addAllToCart, removeFromCart, editCartCategory, restoreCartToDraft, submitOrder, checkDuplicateOrders, reorderOrder, openEditOrder, saveEditedOrder,
     importFormAnugerahExcel, importFormAnugerahExcelInto, convertImportToForm, readSkippedSheetsWithAi,
     openAmend, updateAmend,
     openAddOn, addOnAddToCart, removeFromAddOnCart, submitPendingAddOn, cancelPendingAddOn, rejectAddOn, approveAddOn, approveOrder, setInvoiceId, approveAndSetInvoiceId,

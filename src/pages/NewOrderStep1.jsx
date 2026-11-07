@@ -65,6 +65,9 @@ function SchoolSearch({ value, picked, onPick }) {
 export default function NewOrderStep1() {
   const { state, patch, today, refreshAssignedSalesman, pickActingSchool, startNewOrder } = useAppState();
   const isSalesman = state.role === 'salesman';
+  // Salesman Edit Order (openEditOrder): this submitted order's details; school and salesman stay as they are
+  const editing = !!state.editOrderId;
+  const editOrder = editing ? state.orders.find((o) => o.id === state.editOrderId) : null;
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const draftId = searchParams.get('draft');
@@ -98,7 +101,10 @@ export default function NewOrderStep1() {
       }
     })();
   }, [draftId, patch, pickActingSchool, startNewOrder]);
-  const dueMinDate = addDays(today, 3);
+  const newOrderMinDate = addDays(today, 3);
+  // an edited order may keep the Function Date it already has, even when that's sooner
+  const keptFunctionDate = editOrder?.functionDate ? toMalaysiaDay(editOrder.functionDate) : null;
+  const dueMinDate = keptFunctionDate && keptFunctionDate < newOrderMinDate ? keptFunctionDate : newOrderMinDate;
   // Local, not AppState — this only matters while the teacher is on this
   // one screen (Next is blocked below until it settles), and doesn't need
   // to survive a navigation the way the rest of the draft does.
@@ -135,10 +141,16 @@ export default function NewOrderStep1() {
   // might already be stale. The actual enforcement is server-side (see
   // supabase/migrations/0025_allow_multiple_salesmen_per_school.sql); this
   // just keeps what's shown here honest.
-  useEffect(() => { refreshAssignedSalesman(); }, [refreshAssignedSalesman]);
+  useEffect(() => { if (!editing) refreshAssignedSalesman(); }, [editing, refreshAssignedSalesman]);
+
+  const cancelEdit = () => {
+    const id = state.editOrderId;
+    startNewOrder();
+    navigate(`/sales/orders/${id}`);
+  };
 
   const handleNext = () => {
-    if (isSalesman && !state.actingSchoolId) {
+    if (!editing && isSalesman && !state.actingSchoolId) {
       patch({ stepError: 'Please pick the school from the list.' });
       return;
     }
@@ -146,7 +158,7 @@ export default function NewOrderStep1() {
       patch({ stepError: 'Please enter the school name.' });
       return;
     }
-    if (!state.selectedSalesmanId) {
+    if (!editing && !state.selectedSalesmanId) {
       patch({ stepError: state.assignedSalesmen.length === 0 ? 'Your school has not been assigned to a salesman yet. Please contact the administrator.' : 'Please select which salesman this order is for.' });
       return;
     }
@@ -172,6 +184,10 @@ export default function NewOrderStep1() {
     }
     if (!state.funcSelected) {
       patch({ stepError: 'Please select a function date.' });
+      return;
+    }
+    if (editing && state.shipmentDateSelected && state.shipmentDateSelected > state.funcSelected) {
+      patch({ stepError: 'Shipment Date can’t be after the Function Date.' });
       return;
     }
     if (!state.schoolType) {
@@ -218,19 +234,29 @@ export default function NewOrderStep1() {
       </div>
 
       <div className="card elev-md">
-        <div className="card-kicker">New Order — Function</div>
-        <div className="card-title" style={{ marginBottom: 'var(--space-6)' }}>Function Details</div>
+        <div className="card-kicker">{editing ? `Edit Order — ${state.editOrderId}` : 'New Order — Function'}</div>
+        <div className="card-title" style={{ marginBottom: editing ? 'var(--space-2)' : 'var(--space-6)' }}>Function Details</div>
+        {editing && (
+          <p className="hint-text" style={{ margin: '0 0 var(--space-6)' }}>
+            Change anything on this order, then Next → Order Details (upload a newer order file there if you have one) → Save Changes.
+            Production hasn&apos;t reviewed it yet; once they have, it can no longer be edited here.
+          </p>
+        )}
 
         <div className="form-grid-2">
           <div className="field">
             <label htmlFor="sekolah">Sekolah (School Name)</label>
-            {isSalesman
+            {editing
+              ? <input className="input" id="sekolah" disabled readOnly value={state.sekolah} />
+              : isSalesman
               ? <SchoolSearch value={state.sekolah} picked={!!state.actingSchoolId} onPick={pickActingSchool} />
               : <input className="input" id="sekolah" placeholder="School name" value={state.sekolah} onChange={(e) => patch({ sekolah: e.target.value })} />}
           </div>
           <div className="field">
             <label htmlFor="sales">Sales</label>
-            {!state.assignedSalesmanLoaded ? (
+            {editing ? (
+              <input className="input" id="sales" disabled readOnly value={state.sales} />
+            ) : !state.assignedSalesmanLoaded ? (
               <input className="input" id="sales" disabled readOnly value="Loading..." />
             ) : state.assignedSalesmen.length > 1 ? (
               <select
@@ -290,9 +316,13 @@ export default function NewOrderStep1() {
 
         <div className="form-grid-2">
           <DatePicker label="Function Date" id="funcDate" selected={state.funcSelected} onSelect={(d) => patch({ funcSelected: d })} today={today} minDate={dueMinDate} />
+          {editing && (
+            <DatePicker label="Shipment Date (optional)" id="shipDate" selected={state.shipmentDateSelected} onSelect={(d) => patch({ shipmentDateSelected: d })} today={today} minDate={today} />
+          )}
         </div>
         <p className="hint-text" style={{ marginBottom: 'var(--space-4)' }}>
-          Function Date must be on or after {formatDate(dueMinDate)} (at least 4 days from today, including today).
+          Function Date must be on or after {formatDate(dueMinDate)}{dueMinDate < newOrderMinDate ? ' (the date this order already has, or later)' : ' (at least 4 days from today, including today)'}.
+          {editing && ' The Shipment Date can also be set when you approve the order.'}
         </p>
 
         <div className="field" style={{ marginBottom: 'var(--space-6)' }}>
@@ -339,6 +369,7 @@ export default function NewOrderStep1() {
         )}
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 'var(--space-4)' }}>
+          {editing && <button type="button" className="btn btn-ghost" style={{ marginRight: 'auto' }} onClick={cancelEdit}>Cancel Edit</button>}
           {state.stepError && <span className="hint-text" style={{ margin: 0, color: '#b3261e' }}>{state.stepError}</span>}
           <button type="button" className="btn btn-primary" onClick={handleNext}>
             Next Step

@@ -54,3 +54,25 @@ export function orderImportFiles(order) {
   if (order?.importFiles?.length) return order.importFiles;
   return order?.importFilePath ? [{ path: order.importFilePath, name: order.importFileName || 'order.xlsx' }] : [];
 }
+
+// Salesman Edit Order (Sean, 2026-11-07): which order files the saved edit uses. A file uploaded during
+// the edit replaces the order's own (they move to `replaced`, kept but no longer read); none uploaded —
+// the order keeps its files. Production's Corrected Excel is always replaced: the salesman's version is now
+// the order. Items kept from before stop pointing at a replaced file.
+export function editedOrderFiles(order, st, now) {
+  const oldFiles = orderImportFiles(order);
+  const oldPaths = new Set(oldFiles.map((f) => f.path));
+  const used = orderImportFields(st).importFiles.filter((f) => !oldPaths.has(f.path));
+  const newFiles = used.length ? used : (st.importFiles || []);
+  const replaced = [
+    ...(newFiles.length ? oldFiles : []),
+    ...(order.correctedImportFilePath ? [{ path: order.correctedImportFilePath, name: order.correctedImportFileName || 'corrected.xlsx', corrected: true }] : []),
+  ].map((f) => ({ ...f, replacedAt: now }));
+  const items = (st.cart || []).map((ci) => {
+    if (!newFiles.length || !ci.importFile || !oldPaths.has(ci.importFile)) return { ...ci };
+    const rest = { ...ci };
+    delete rest.importFile;
+    return rest;
+  });
+  return { newFiles, replaced, items };
+}

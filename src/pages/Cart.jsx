@@ -10,12 +10,15 @@ import DuplicateOrderModal from '../components/DuplicateOrderModal';
 import KertasKerjaAskModal from '../components/KertasKerjaAskModal';
 import { KERTAS_KERJA_ANCHOR } from '../components/KertasKerjaUpload';
 import { isCrystalCode } from '../utils/exportCsv';
-import { orderImportFields } from '../utils/importFiles';
+import { orderImportFields, orderImportFiles } from '../utils/importFiles';
 
 const isSelempangItem = (ci) => resolveCategory(ci.categoryKey)?.selempang;
 
 export default function Cart() {
-  const { state, patch, today, removeFromCart, editCartCategory, restoreCartToDraft, submitOrder, checkDuplicateOrders } = useAppState();
+  const { state, patch, today, removeFromCart, editCartCategory, restoreCartToDraft, submitOrder, checkDuplicateOrders, saveEditedOrder, startNewOrder } = useAppState();
+  // Salesman Edit Order: this cart is a submitted order's, saved back over it (saveEditedOrder)
+  const editing = !!state.editOrderId;
+  const editOrder = editing ? state.orders.find((o) => o.id === state.editOrderId) : null;
   const [dupes, setDupes] = useState(null); // look-alike orders shown, waiting for an answer
   const navigate = useNavigate();
   const [submitting, setSubmitting] = useState(false);
@@ -91,16 +94,22 @@ export default function Cart() {
     return rows
       .map((row) => {
         const status = getStockStatus(row.jenisPlak, state.plakCatalog);
-        return status && Number(row.qty) > status.maxOrderable
+        // an edited order already holds its own pieces
+        const held = (editOrder?.items || []).filter((it) => it.jenisPlak === row.jenisPlak).reduce((s, it) => s + (Number(it.qty) || 0), 0);
+        return status && Number(row.qty) - held > status.maxOrderable
           ? { ...row, maxOrderable: status.maxOrderable, hidden: !!status.hidden, categoryLabel: row.categoryKey ? resolveCategory(row.categoryKey)?.label : null }
           : null;
       })
       .find(Boolean);
-  }, [groupedCartRowsByPlak, selempangQty, state.plakCatalog]);
+  }, [groupedCartRowsByPlak, selempangQty, state.plakCatalog, editOrder]);
   // An OTHER with no name ("OTHER" read from a file) or no price can't be submitted (Sean, 2026-10-22).
   const otherViolation = state.cart.find((ci) => otherPlakIncomplete(ci.jenisPlak, ci.unitPrice));
   // The order file (FORM ANUGERAH / WORDING / PDF) must be uploaded; the kertas kerja is optional (Sean, 2026-11-05).
-  const noOrderFile = orderImportFields(state).importFiles.length === 0;
+  const noOrderFile = orderImportFields(state).importFiles.length === 0 && !(editOrder && orderImportFiles(editOrder).length > 0);
+  // Edit Order: a newer order file was uploaded but nothing read from it is in the cart yet — saving now
+  // would pair the new file with the old plaques
+  const newFileNotAdded = editing && (state.importFiles || []).length > 0
+    && !state.cart.some((ci) => (state.importFiles || []).some((f) => f.path === ci.importFile));
 
   // Crystals: the artwork is checked in the preview below before the order goes in (Sean,
   // 2026-10-14). Yes = confirmed. A teacher's No stops the submit; a salesman may submit
@@ -135,6 +144,12 @@ export default function Cart() {
 
   const send = async (artworkConfirmed, duplicateCheck) => {
     setSubmitting(true);
+    if (editing) {
+      const res = await saveEditedOrder({ artworkConfirmed });
+      setSubmitting(false);
+      if (res.ok) navigate(`/sales/orders/${res.id}`);
+      return;
+    }
     const id = await submitOrder({ artworkConfirmed, duplicateCheck });
     setSubmitting(false);
     if (id) navigate('/success');
@@ -142,7 +157,9 @@ export default function Cart() {
   // The school's look-alike orders first (0094): if any, the person submitting
   // has to say it's a separate order before it goes.
   const handleSubmit = async (artworkConfirmed = false) => {
-    if (state.cart.length === 0 || submitting || stockViolation || otherViolation || noOrderFile) return;
+    if (state.cart.length === 0 || submitting || stockViolation || otherViolation || noOrderFile || newFileNotAdded) return;
+    // an edited order is the same order, not a look-alike of one
+    if (editing) { send(artworkConfirmed, null); return; }
     setSubmitting(true);
     const found = await checkDuplicateOrders();
     setSubmitting(false);
@@ -162,7 +179,7 @@ export default function Cart() {
     <div className="screen-wrap">
       <Nav />
       <div className="card elev-md">
-        <div className="card-kicker">Review Order</div>
+        <div className="card-kicker">{editing ? `Edit Order — ${state.editOrderId}` : 'Review Order'}</div>
         <div className="card-title" style={{ marginBottom: 'var(--space-6)' }}>Order Summary</div>
 
         <div className="form-grid-2 cart-summary-grid">
@@ -185,8 +202,9 @@ export default function Cart() {
             <div><span className="dim">KETUA PANITIA :</span> {state.ketuaPanitia}</div>
           </div>
           <div className="summary-col">
-            <div><span className="dim">TARIKH ORDER :</span> {formatDate(today)}</div>
+            <div><span className="dim">TARIKH ORDER :</span> {editOrder ? editOrder.datePlaced : formatDate(today)}</div>
             <div><span className="dim">TARIKH FUNCTION :</span> {formatDate(state.funcSelected)}</div>
+            {editing && state.shipmentDateSelected && <div><span className="dim">SHIPMENT DATE :</span> {formatDate(state.shipmentDateSelected)}</div>}
             <div><span className="dim">TERMS :</span> {state.terms}</div>
           </div>
         </div>
@@ -283,15 +301,23 @@ export default function Cart() {
             Sila upload fail order (FORM ANUGERAH / WORDING) di Order Details dahulu. (Upload the order file on Order Details before submitting — the kertas kerja alone is not enough.)
           </p>
         )}
+        {newFileNotAdded && (
+          <p className="hint-text" style={{ color: '#c0392b', fontWeight: 600 }}>
+            The new order file you uploaded isn&apos;t in the cart yet — go Back to Order and press Add All to Cart, so the order follows the new file.
+          </p>
+        )}
         <DuplicateOrderModal sekolah={state.sekolah} orders={dupes?.found || null} busy={submitting} onYes={goAhead} onNo={() => setDupes(null)} />
         <div className="row-split">
           <button type="button" className="btn btn-ghost" onClick={() => { restoreCartToDraft(); navigate('/order/step2'); }}>← Back to Order</button>
+          {editing && (
+            <button type="button" className="btn btn-ghost" onClick={() => { const id = state.editOrderId; startNewOrder(); navigate(`/sales/orders/${id}`); }}>Cancel Edit</button>
+          )}
           {state.cartToast && <span className="toast-inline">{state.cartToast}</span>}
           <button
-            type="button" className="btn btn-primary" disabled={state.cart.length === 0 || submitting || !!stockViolation || !!otherViolation || !!dupes || noOrderFile}
+            type="button" className="btn btn-primary" disabled={state.cart.length === 0 || submitting || !!stockViolation || !!otherViolation || !!dupes || noOrderFile || newFileNotAdded}
             onClick={() => (state.kertasKerjaFiles?.length ? startSubmit() : setAskKertasKerja(true))}
           >
-            {submitting ? 'Submitting…' : 'Submit Order'}
+            {editing ? (submitting ? 'Saving…' : 'Save Changes') : (submitting ? 'Submitting…' : 'Submit Order')}
           </button>
         </div>
         <KertasKerjaAskModal

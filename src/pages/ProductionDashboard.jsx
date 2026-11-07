@@ -16,6 +16,7 @@ import { duplicateSummary } from '../utils/duplicateOrders';
 import ProductionInvoiceEntry from '../components/ProductionInvoiceEntry';
 import ProductionNote from '../components/ProductionNote';
 import { useSessionState, useRestoreScroll } from '../utils/useSessionState';
+import SalesmanEditedTag from '../components/SalesmanEditedTag';
 
 // Production works 'In Production' orders (invoice number or not — that's
 // Store Admin's job now, see supabase/migrations/0036_add_invoicing_role.sql
@@ -296,6 +297,7 @@ export default function ProductionDashboard() {
                   {ord.correctedImportFilePath && (
                     <span className="status-pill" style={{ background: '#fff4ce', color: '#8a6d00' }}>Excel Updated</span>
                   )}
+                  <SalesmanEditedTag order={ord} />
                   <OrderUrgentBadge urgent={ord.urgent} />
                   {(() => {
                     const label = partDone(ord) ? 'Completed' : isKivCard

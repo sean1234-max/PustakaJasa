@@ -16,6 +16,7 @@ import { splitOrderCategories, isCrystalCode, firstKivCategory } from '../utils/
 import ReservedNamesForm from '../components/ReservedNamesForm';
 import CrystalPreview from '../components/CrystalPreview';
 import PlakPreview from '../components/PlakPreview';
+import SalesmanEditedTag from '../components/SalesmanEditedTag';
 import ShipmentConfirmModal from '../components/ShipmentConfirmModal';
 import { getOrderChangeStamp } from '../utils/orderStamp';
 import { addonRepeatsOrder, addonRepeatMessage } from '../utils/addonCheck';
@@ -30,7 +31,7 @@ const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: f
 const KIV_FLASH_MS = 1700; // 3 flashes (index.css .tab-flash / .kiv-row-flash)
 
 export default function SalesOrderSummary() {
-  const { state, today, approveOrder, approveAddOn, rejectAddOn, recordPrint, ensureOrderLoaded, loadCorrectedExcelPreview, openAmend, openAddOn, confirmArtwork, manualArtwork, fillReservedNames } = useAppState();
+  const { state, today, approveOrder, approveAddOn, rejectAddOn, recordPrint, ensureOrderLoaded, loadCorrectedExcelPreview, openEditOrder, openAddOn, confirmArtwork, manualArtwork, fillReservedNames } = useAppState();
   const { id } = useParams();
   const navigate = useNavigate();
   const order = state.orders.find((o) => o.id === id);
@@ -83,7 +84,8 @@ export default function SalesOrderSummary() {
   const reviewing = order?.status === 'Reviewing Order';
   const awaitingReview = reviewing && !isReviewed(order);
   const addonReviewed = order?.pendingAddonStatus === 'reviewed';
-  const canAmend = reviewing;
+  // Edit Order only before Production's Done Review (Sean, 2026-11-07)
+  const canAmend = awaitingReview;
   const canAddOn = ['Salesman Approved', 'In Production', 'Completed'].includes(order?.status) && !isAddonInFlight(order) && !order?.parentOrderId;
   const editable = reviewing && isReviewed(order) && isOwn;
 
@@ -323,6 +325,7 @@ export default function SalesOrderSummary() {
             {order.correctedImportFilePath && (
               <span className="status-pill no-print" style={{ background: '#fff4ce', color: '#8a6d00' }}>Excel Updated</span>
             )}
+            <SalesmanEditedTag order={order} />
             <span className="status-pill" style={statusPillStyle(order.status)}>{order.status}</span>
           </div>
         </div>
@@ -538,11 +541,11 @@ export default function SalesOrderSummary() {
                 {awaitingReview && <button type="button" className="btn btn-primary" disabled>Waiting for Production review</button>}
                 {!reviewing && <button type="button" className="btn btn-primary" onClick={handlePrint}>Print Order</button>}
               </div>
-              {/* Update Details until approval (a reviewed order goes back to
-                  Production), Add On after it — same as the teacher (0085). */}
+              {/* Edit Order until Production's Done Review (the whole order: details, categories, a new
+                  order file — Sean 2026-11-07), Add On after approval. */}
               {isOwn && (canAmend || canAddOn) && (
                 <div className="row-split" style={{ marginTop: 'var(--space-3)', justifyContent: 'flex-end', gap: 'var(--space-2)' }}>
-                  {canAmend && <button type="button" className="btn btn-secondary" onClick={() => { openAmend(order); navigate(`/amend/${order.id}`); }}>Update Details</button>}
+                  {canAmend && <button type="button" className="btn btn-secondary" onClick={() => { openEditOrder(order); navigate('/order/step1'); }}>Edit Order</button>}
                   {canAddOn && <button type="button" className="btn btn-secondary" onClick={() => { openAddOn(order); navigate(`/addon/${order.id}`); }}>Add On</button>}
                 </div>
               )}
