@@ -620,19 +620,24 @@ function makeBook(zip, files, { DOMParser: DP, XMLSerializer: XS }) {
 
 const colNum = (ref) => XLSX.utils.decode_cell(ref).c;
 
+// An element's own children of one kind. getElementsByTagNameNS walks the whole sheet on every call
+// (xmldom), and setCell made three such walks per cell: a 1,200-plaque form took ~2.8 s of CPU, over
+// the bot's limit (MAG 2026-11-07). Rows are sheetData's children, cells a row's.
+const childrenNamed = (el, name) => Array.from(el.childNodes).filter((n) => n.nodeType === 1 && n.localName === name);
+
 // Write one cell (string, number, or '' to empty it), keeping its style.
 function setCell(doc, ref, value) {
   const { r } = XLSX.utils.decode_cell(ref);
-  const sheetData = doc.getElementsByTagNameNS(MAIN_NS, 'sheetData')[0];
+  const sheetData = childrenNamed(doc.documentElement, 'sheetData')[0];
   const rowNum = r + 1;
-  let row = Array.from(sheetData.getElementsByTagNameNS(MAIN_NS, 'row')).find((x) => Number(x.getAttribute('r')) === rowNum);
+  const rows = childrenNamed(sheetData, 'row');
+  let row = rows.find((x) => Number(x.getAttribute('r')) === rowNum);
   if (!row) {
     row = doc.createElementNS(MAIN_NS, 'row');
     row.setAttribute('r', String(rowNum));
-    const after = Array.from(sheetData.getElementsByTagNameNS(MAIN_NS, 'row')).find((x) => Number(x.getAttribute('r')) > rowNum);
-    sheetData.insertBefore(row, after || null);
+    sheetData.insertBefore(row, rows.find((x) => Number(x.getAttribute('r')) > rowNum) || null);
   }
-  const cells = Array.from(row.getElementsByTagNameNS(MAIN_NS, 'c'));
+  const cells = childrenNamed(row, 'c');
   let c = cells.find((x) => x.getAttribute('r') === ref);
   if (!c) {
     c = doc.createElementNS(MAIN_NS, 'c');
