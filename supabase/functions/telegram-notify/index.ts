@@ -11,6 +11,7 @@
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { runReports } from './reports.ts';
+import { reviewMark, REVIEW_MARKS_LEGEND } from './reviewMarks.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SECRET_KEY = JSON.parse(Deno.env.get('SUPABASE_SECRET_KEYS')!)['default'];
@@ -80,7 +81,21 @@ async function reviewingOrders() {
     .eq('status', 'Reviewing Order').is('cancelled_at', null)
     .order('created_at', { ascending: true });
   if (error) throw error;
-  return data ?? [];
+  const orders = data ?? [];
+  // ReviewAgent's own review of each (telegram-bot autoReview.ts), for the list's marks
+  const { data: reviews } = orders.length
+    ? await db.from('order_auto_reviews').select('order_id, status, issue_count, answered_at').in('order_id', orders.map((o) => o.id))
+    : { data: [] };
+  const byId = new Map((reviews ?? []).map((r) => [r.order_id, r]));
+  return orders.map((o) => ({ ...o, autoReview: byId.get(o.id) }));
+}
+
+// ReviewAgent reviews the next order (telegram-bot ?job=review) — started, not waited for: one compare
+// takes a minute or two, longer than this run should
+function startAutoReview() {
+  return fetch(`${SUPABASE_URL}/functions/v1/telegram-bot?job=review`, { method: 'POST', headers: { 'x-job-key': SECRET_KEY } })
+    .then((r) => r.status)
+    .catch((err) => { console.error('auto review start failed:', err); return 0; });
 }
 
 function newOrderText(o: Record<string, unknown>) {
@@ -101,7 +116,7 @@ function listPart(orders: Record<string, unknown>[], icon: string, today: string
   return [
     ...orders.slice(0, LIST_SHOWN).map((o) => {
       const days = waitedDays(o);
-      return `${icon}${isDue(o, today) ? '❗' : ''} ${orderLink(String(o.id))} ${esc(o.sekolah)}${o.sales ? ` · ${esc(o.sales)}` : ''}${o.urgent ? ' 🔥' : ''}${!o.reviewed_at && days > 0 ? ` — ${days}d` : ''}`;
+      return `${icon}${isDue(o, today) ? '❗' : ''} ${orderLink(String(o.id))} ${esc(o.sekolah)}${o.sales ? ` · ${esc(o.sales)}` : ''}${o.urgent ? ' 🔥' : ''}${!o.reviewed_at && days > 0 ? ` — ${days}d` : ''}${o.reviewed_at ? '' : reviewMark(o.autoReview as Parameters<typeof reviewMark>[0])}`;
     }),
     ...(orders.length > LIST_SHOWN ? [`… and ${orders.length - LIST_SHOWN} more`] : []),
   ];
@@ -132,7 +147,7 @@ async function updateReviewList(orders: Record<string, unknown>[], now: { day: s
   const hash = await sha256(body);
   const { data: row } = await db.from('telegram_sent').select('message_id, body_hash').eq('key', key).maybeSingle();
   if (row?.body_hash === hash) return false;
-  const text = `${body}\n\n<i>Updated ${now.time} · ❗ = placed before today, review it today · ✅ = Done Review, waiting for the salesman to approve</i>`;
+  const text = `${body}\n\n<i>Updated ${now.time} · ❗ = placed before today, review it today · ✅ = Done Review, waiting for the salesman to approve\n${REVIEW_MARKS_LEGEND}</i>`;
   if (row?.message_id && await edit(row.message_id, text)) {
     await db.from('telegram_sent').update({ body_hash: hash }).eq('key', key);
     return true;
@@ -178,6 +193,7 @@ Deno.serve(async (req) => {
   if (!CHAT_ID) return json({ ok: false, error: 'TELEGRAM_CHAT_ID is not set' });
 
   try {
+    const review = startAutoReview();
     const orders = await reviewingOrders();
     let sentNew = 0;
     for (const o of orders.filter((x) => !x.reviewed_at)) {
@@ -189,7 +205,7 @@ Deno.serve(async (req) => {
     // Sean's morning / evening reports and questions — their own failure doesn't stop the review list
     const reports = await runReports({ db, send: (html) => send(html, false, ASSISTANT_TOKEN), esc, orderLink }, now)
       .catch((err) => { console.error('telegram reports failed:', err); return [`failed: ${String(err).slice(0, 200)}`]; });
-    return json({ ok: true, sentNew, list, reports });
+    return json({ ok: true, sentNew, list, reports, autoReview: await review });
   } catch (err) {
     console.error('telegram-notify failed:', err);
     return json({ ok: false, error: String(err).slice(0, 300) }, 500);

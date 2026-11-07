@@ -25,6 +25,7 @@ import { db, SUPABASE_URL } from './db.ts';
 import { esc, telegramBot, MAX_FILE_BYTES } from './telegram.ts';
 import { fillForm, formBot, handleForm } from './form.ts';
 import { handleOrderButton } from './orderChat.ts';
+import { runReviewJob, handleSalesmanGroup } from './autoReview.ts';
 import { readFile, type FileContent } from './files.ts';
 import { askedDay, orderPlaquesText, proposeChanges, type Order } from './order.ts';
 import { readChanges, compareFile } from './ai.ts';
@@ -52,6 +53,8 @@ const HELP = [
   '• Reply to a salesman\'s message with <b>@PjsbReviewAgent</b> — I read the Shipment Date / Function Date / Remark changes and you Apply them on the order page.',
   '• Send a file (PDF, Word, Excel, picture) with <b>@PjsbReviewAgent check ORD-0234</b> — I compare it with that order.',
   '• <b>@PjsbReviewAgent summary 4/11</b> — every order placed that day.',
+  '',
+  'I also review every new order by myself (the teacher\'s kertas kerja vs the order, and the red lines). When I find something I ask the salesman in his own group — type <b>@PjsbReviewAgent link</b> once in each salesman\'s group so I know whose it is.',
 ].join('\n');
 
 type Msg = Record<string, any>;
@@ -258,8 +261,19 @@ async function handleAssistant(msg: Msg) {
   return say(assistantHtml(reply));
 }
 
+// ?job=review — telegram-notify's 3-minute run asks ReviewAgent to review the next order (autoReview.ts).
+// Only that function knows the secret key it sends.
+const JOB_KEY = JSON.parse(Deno.env.get('SUPABASE_SECRET_KEYS') ?? '{}')['default'] ?? '';
+
 Deno.serve(async (req) => {
   const url = new URL(req.url);
+  if (url.searchParams.get('job') === 'review') {
+    if (!JOB_KEY || req.headers.get('x-job-key') !== JOB_KEY) return new Response('forbidden', { status: 403 });
+    const work = runReviewJob(bot, aiAllowed).then((r) => console.log('auto review:', JSON.stringify(r))).catch((err) => console.error('auto review job failed:', err));
+    // @ts-ignore EdgeRuntime is provided by the Supabase Edge runtime
+    if (typeof EdgeRuntime !== 'undefined') EdgeRuntime.waitUntil(work); else await work;
+    return new Response('started', { status: 202 });
+  }
   // ?bot=form: the form bot's webhook (form.ts); ?bot=assistant: the assistant's; otherwise the review bot's
   const kind = url.searchParams.get('bot') === 'form' ? 'form' : url.searchParams.get('bot') === 'assistant' ? 'assistant' : 'review';
   const isForm = kind === 'form';
@@ -282,6 +296,13 @@ Deno.serve(async (req) => {
     return new Response('ok');
   }
   const msg = update?.message;
+  // the review bot in a salesman's own group: "link", and his replies to its reviews (autoReview.ts)
+  if (msg && kind === 'review' && String(msg.chat?.id) !== CHAT_ID && msg.chat?.type !== 'private') {
+    const work = handleSalesmanGroup(msg, bot, BOT_NAME).catch((err) => console.error('telegram-bot (salesman group) failed:', err));
+    // @ts-ignore EdgeRuntime is provided by the Supabase Edge runtime
+    if (typeof EdgeRuntime !== 'undefined') EdgeRuntime.waitUntil(work); else await work;
+    return new Response('ok');
+  }
   if (!msg || (!isForm && String(msg.chat?.id) !== CHAT_ID)) return new Response('ok');
   // answer in the background — Telegram only waits for the 200
   const work = (isForm ? handleForm(msg, aiAllowed) : kind === 'assistant' ? handleAssistant(msg) : handle(msg)).catch(async (err) => {
