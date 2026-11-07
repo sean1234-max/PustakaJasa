@@ -90,14 +90,21 @@ const COMPARE_SCHEMA = {
 } as const;
 
 export function compareFile(file: FileContent, fileName: string, orderId: string, orderText: string) {
+  return compareFiles([{ content: file, name: fileName }], orderId, orderText);
+}
+
+// The teacher's file(s) — a kertas kerja can come in several files / photos — against the order
+export function compareFiles(files: { content: FileContent; name: string }[], orderId: string, orderText: string) {
   const system = `You compare a school's award-plaque order file with the order as it is in the website, for a Malaysian plaque company's Production team. Text is Malay, usually ALL CAPS.
 The order lists every plaque (sheet | Jenis Plak | engraved lines × how many) and the totals per Jenis Plak; "[red]" marks the red line.
-Report every real difference: an award or plaque in the file that the order doesn't have (missing_in_order), one in the order the file doesn't have (extra_in_order), different words (wording — misspellings too), different quantities (quantity). Ignore layout, line breaks, letter case, the order's own codes and things the file simply doesn't state. Be precise; an empty list is fine when they match. Call compare_result exactly once.`;
+${files.length > 1 ? 'The school\'s order comes in several files (pages of one kertas kerja): read them together as one.\n' : ''}Report every real difference: an award or plaque in the file that the order doesn't have (missing_in_order), one in the order the file doesn't have (extra_in_order), different words (wording — misspellings too), different quantities (quantity). Ignore layout, line breaks, letter case, the order's own codes and things the file simply doesn't state. Be precise; an empty list is fine when they match. Call compare_result exactly once.`;
   const content: Anthropic.Beta.BetaContentBlockParam[] = [
-    file.type === 'text' ? { type: 'text', text: `FILE "${fileName}":\n${file.text}` } : file,
+    ...files.flatMap(({ content: file, name }): Anthropic.Beta.BetaContentBlockParam[] => (file.type === 'text'
+      ? [{ type: 'text', text: `FILE "${name}":\n${file.text}` }]
+      : [{ type: 'text', text: `FILE "${name}":` }, file as Anthropic.Beta.BetaContentBlockParam])),
     { type: 'text', text: `ORDER ${orderId}:\n${orderText}` },
   ];
-  return callTool(system, content, { name: 'compare_result', description: 'Report how the file and the order differ.', schema: COMPARE_SCHEMA }, 'high', 16000, { fileName });
+  return callTool(system, content, { name: 'compare_result', description: 'Report how the file and the order differ.', schema: COMPARE_SCHEMA }, 'high', 16000, { fileName: files.map((f) => f.name).join(', ') });
 }
 
 // ------------------------------------------------------------------ form bot (a teacher's kertas kerja → FORM ANUGERAH)

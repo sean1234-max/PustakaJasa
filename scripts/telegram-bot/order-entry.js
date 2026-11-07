@@ -9,3 +9,5 @@ export { standardUnitPrice, isCustomPlakCode } from '../../src/data/catalog.js';
 export { isCrystalCode } from '../../src/utils/exportCsv.js';
 // Production's own typo words (custom_typo_words), added to the word list as the website does
 export { setCustomTypoWords } from '../../src/utils/typoCheck.js';
+// ReviewAgent's red-line check (autoReview.ts): the website AI Review's own program rules
+export { reviewOrder } from '../../src/utils/reviewChecks.js';
