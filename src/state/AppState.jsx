@@ -38,7 +38,6 @@ import { uploadOrderImportFile, getOrderImportUrl } from '../lib/storageApi';
 import { withImportFile, tagImportFiles, orderImportFields, editedOrderFiles } from '../utils/importFiles';
 import { REMARK_ITEMS_HEADER } from '../utils/schoolList';
 import { syncUrgentOrderToSheet, highlightUrgentKitDoc } from '../lib/urgentSheetApi';
-import { markTypingSheet, clearTypingSheet } from '../lib/typingSheetApi';
 import { isUrgentShipment, urgentSheetAction, SHIPMENT_EDITABLE_STATUSES } from '../utils/urgentOrder';
 import { fetchCustomTypoWords } from '../lib/typoWordsApi';
 import { setCustomTypoWords } from '../utils/typoCheck';
@@ -2338,8 +2337,6 @@ export function AppStateProvider({ children }) {
     }));
     // a cancelled order is no longer urgent: its KIT DOC row loses the red
     if (order.urgent) highlightUrgentKitDoc();
-    // and its "SEAN (NOV)" mark comes off the Form_Responses sheet (none there → nothing happens)
-    if (order.typedAt || order.kivDoneAt || (order.invoiceGroups || []).some((g) => g.typedAt)) clearTypingSheet(orderId);
 
     // Stock restore is best-effort AFTER the cancel is committed. A failure
     // here leaves the order correctly cancelled but the stock not yet
@@ -3081,18 +3078,11 @@ export function AppStateProvider({ children }) {
     patch((st) => ({ orders: st.orders.map((o) => (o.id === order.id ? { ...o, ...next } : o)) }));
   }, [patch]);
 
-  const flashProductionToast = useCallback((message, ms = 2500) => {
+  const flashProductionToast = useCallback((message) => {
     patch({ productionToast: message });
     clearTimeout(productionToastTimer.current);
-    productionToastTimer.current = setTimeout(() => patch({ productionToast: '' }), ms);
+    productionToastTimer.current = setTimeout(() => patch({ productionToast: '' }), 2500);
   }, [patch]);
-
-  // Done Typing / KIV done → the order's row on the Form_Responses sheet gets "SEAN (NOV)" (0116).
-  // Runs after the order is saved and never blocks it; a row that needs a person stays on screen longer.
-  const markTypingSheetAfterDone = useCallback((orderId) => {
-    if (isTestOrderId(orderId)) return;
-    markTypingSheet(orderId).then((message) => { if (message) flashProductionToast(message, 12000); });
-  }, [flashProductionToast]);
 
   // Production's Done Typing (0078): the AI file for this invoice is
   // generated — the Production head can print it. Status stays In Production.
@@ -3108,12 +3098,11 @@ export function AppStateProvider({ children }) {
       // confirmed crystals were typed with these plaques (crystalWithPlak)
       await writeSlice(order, slice, slice.isDefault && crystalWithPlak(order) ? { typedAt, crystalTypedAt: typedAt } : { typedAt });
       flashProductionToast('Typing done — the order is now In Production, ready to print.');
-      markTypingSheetAfterDone(orderId);
     } catch (err) {
       console.error('Failed to mark typing done in Supabase:', err);
       flashProductionToast(describeOrderWriteError(err, 'update'));
     }
-  }, [writeSlice, flashProductionToast, markTypingSheetAfterDone]);
+  }, [writeSlice, flashProductionToast]);
 
   // KIV & ARTWORK (Sean, 2026-10-14) — an order's Reserved plaques and
   // crystals, made alongside its ordinary plaques (exportCsv.js kivParts).
@@ -3147,8 +3136,7 @@ export function AppStateProvider({ children }) {
     }
     patch((st) => ({ orders: st.orders.map((o) => (o.id === orderId ? { ...o, kivDoneAt, ...(confirmsArtwork ? { artworkConfirmedAt: kivDoneAt } : {}) } : o)) }));
     flashProductionToast(`${kivParts(order).join(' + ')} done${confirmsArtwork ? ' (artwork confirmed)' : ''} — now in In Production.`);
-    markTypingSheetAfterDone(orderId);
-  }, [patch, flashProductionToast, markTypingSheetAfterDone]);
+  }, [patch, flashProductionToast]);
 
   // The crystal artwork is right (Sean, 2026-10-14): a salesman's Confirm Artwork. The database
   // stamps who and when (0089) — read back so the page shows it. Returns an error message or null.
