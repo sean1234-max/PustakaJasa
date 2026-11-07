@@ -5,10 +5,12 @@
 import Anthropic from 'npm:@anthropic-ai/sdk';
 import type { FileContent } from './files.ts';
 import { logUsage } from './usage.ts';
+import { isEmptyReading } from './formCache.ts';
 
 export const MODEL = Deno.env.get('BOT_MODEL') ?? 'claude-opus-5-5';
 // Copying a kertas kerja into the form (2026-11-05): Sonnet first, as the website's file reader does —
-// Opus only when Sonnet gives no answer and there is time left for a second call
+// Opus when Sonnet gives no answer or an empty one (it gave up on a big order, SK JUGRA 2026-11-06)
+// and there is time left for a second call
 const FORM_MODEL = Deno.env.get('BOT_FORM_MODEL') ?? 'claude-sonnet-5-5';
 const SECOND_TRY_WITHIN_MS = 60_000;
 // Not streamed: an Edge Function has 2 s of CPU, and the SDK's stream re-parses the tool's JSON on every
@@ -155,6 +157,6 @@ export async function readForm(file: FileContent, fileName: string, notes: strin
   const tool = { name: 'read_form', description: 'List the plaques the order asks for.', schema: FORM_SCHEMA };
   const started = Date.now();
   const first = await callTool(FORM_SYSTEM, content, tool, 'low', 64000, { model: FORM_MODEL, fileName });
-  if (first || FORM_MODEL === MODEL || Date.now() - started > SECOND_TRY_WITHIN_MS) return first;
-  return callTool(FORM_SYSTEM, content, tool, 'low', 64000, { model: MODEL, fileName });
+  if (!isEmptyReading(first) || FORM_MODEL === MODEL || Date.now() - started > SECOND_TRY_WITHIN_MS) return first;
+  return (await callTool(FORM_SYSTEM, content, tool, 'medium', 64000, { model: MODEL, fileName })) ?? first;
 }

@@ -37,8 +37,11 @@ export function readFile(bytes: Uint8Array, fileName: string): FileContent | nul
   }
   if (ext === 'docx') {
     const xml = strFromU8(unzipSync(bytes, { filter: (f) => f.name === 'word/document.xml' })['word/document.xml']);
-    const text = xml.replace(/<\/w:p>/g, '\n').replace(/<w:tab\/>/g, '\t').replace(/<[^>]+>/g, '')
-      .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+    // line breaks inside a paragraph kept, a table row's cells side by side ("(1PKB ALFA)TERBAIK PBD…"
+    // ran together, SK JUGRA 2026-11-06)
+    const text = xml.replace(/<w:(?:br|cr)\b[^>]*\/>/g, '\n').replace(/<\/w:p>\s*<\/w:tc>/g, ' | ').replace(/<\/w:tr>/g, '\n').replace(/<\/w:p>/g, '\n').replace(/<w:tab\/>/g, '\t').replace(/<[^>]+>/g, '')
+      .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+      .replace(/^[\s|]+$/gm, '').replace(/\n{2,}/g, '\n'); // rows of empty cells
     return { type: 'text', text: text.slice(0, MAX_TEXT_CHARS) };
   }
   return null;

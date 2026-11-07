@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { formKey, readFormCached } from './formCache.ts';
+import { formKey, isEmptyReading, readFormCached } from './formCache.ts';
 
 // form_reads as a Map behind the few supabase-js calls readFormCached makes
 function fakeDb() {
@@ -18,12 +18,13 @@ const pdf = { type: 'text' as const, text: 'SK SERI KUNDANG — PRESTASI TERBAIK
 describe('readFormCached', () => {
   it('reads a file once and reuses the reading for the same file', async () => {
     const db = fakeDb();
-    const read = vi.fn(async () => ({ input: { school: 'SK SERI KUNDANG' } }));
+    const reading = { school: 'SK SERI KUNDANG', plaques: [{ award: 'PRESTASI TERBAIK AKADEMIK' }] };
+    const read = vi.fn(async () => ({ input: reading }));
     const first = await readFormCached(db as never, read, pdf, 'HADIAH HAC 1.pdf', '');
     const again = await readFormCached(db as never, read, pdf, 'HADIAH HAC 1 (copy).pdf', '');
     expect(read).toHaveBeenCalledTimes(1);
-    expect(first).toEqual({ input: { school: 'SK SERI KUNDANG' }, cached: false });
-    expect(again).toEqual({ input: { school: 'SK SERI KUNDANG' }, cached: true });
+    expect(first).toEqual({ input: reading, cached: false });
+    expect(again).toEqual({ input: reading, cached: true });
   });
 
   it('reads again when the content or the notes differ', async () => {
@@ -39,6 +40,20 @@ describe('readFormCached', () => {
     const db = fakeDb();
     expect(await readFormCached(db as never, async () => null, pdf, 'a.pdf', '')).toBeNull();
     expect(db.rows.size).toBe(0);
+  });
+
+  it("doesn't save a reading with no plaques and no sashes (Sonnet gave up on SK JUGRA, 2026-11-06)", async () => {
+    const db = fakeDb();
+    const gaveUp = { input: { school: 'SK JUGRA', plaques: [], selempang: [], questions: ['please re-run'] } };
+    expect(await readFormCached(db as never, async () => gaveUp, pdf, 'a.pdf', '')).toEqual({ ...gaveUp, cached: false });
+    expect(db.rows.size).toBe(0);
+  });
+
+  it('knows an empty reading', () => {
+    expect(isEmptyReading(null)).toBe(true);
+    expect(isEmptyReading({ input: { plaques: [], selempang: [] } })).toBe(true);
+    expect(isEmptyReading({ input: { plaques: [{}], selempang: [] } })).toBe(false);
+    expect(isEmptyReading({ input: { plaques: [], selempang: [{}] } })).toBe(false);
   });
 
   it('keys ignore the file name but not the notes', async () => {
