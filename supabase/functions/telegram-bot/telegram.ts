@@ -26,7 +26,38 @@ export function telegramBot(token: string) {
     if (!res.ok) console.error('Telegram sendMessage failed:', res.status, (await res.text()).slice(0, 300));
   }
 
-  async function sendDocument(chatId: number | string, replyTo: number, bytes: Uint8Array, fileName: string, captionHtml: string) {
+  // A message with buttons under it (rows of [label, callback data ≤ 64 bytes]); returns its message_id
+  async function ask(chatId: number | string, replyTo: number | null, html: string, buttons: [string, string][][] = []) {
+    const text = html.length > MAX_MESSAGE_CHARS ? `${html.slice(0, MAX_MESSAGE_CHARS)}\n…` : html;
+    const res = await fetch(`${api}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId, text, parse_mode: 'HTML', disable_web_page_preview: true,
+        ...(replyTo ? { reply_parameters: { message_id: replyTo, allow_sending_without_reply: true } } : {}),
+        ...(buttons.length ? { reply_markup: { inline_keyboard: buttons.map((row) => row.map(([label, data]) => ({ text: label, callback_data: data }))) } } : {}),
+      }),
+    });
+    const body = await res.json().catch(() => null);
+    if (!res.ok || !body?.ok) { console.error('Telegram sendMessage failed:', res.status, JSON.stringify(body).slice(0, 300)); return null; }
+    return body.result.message_id as number;
+  }
+
+  // A tapped button: stop its spinner (with a short note), and take the buttons off that message
+  async function answerButton(callbackId: string, note = '') {
+    await fetch(`${api}/answerCallbackQuery`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ callback_query_id: callbackId, text: note.slice(0, 190) }),
+    }).catch(() => {});
+  }
+  async function dropButtons(chatId: number | string, messageId: number) {
+    await fetch(`${api}/editMessageReplyMarkup`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, message_id: messageId, reply_markup: { inline_keyboard: [] } }),
+    }).catch(() => {});
+  }
+
+  async function sendDocument(chatId: number | string, replyTo: number, bytes: Uint8Array, fileName: string, captionHtml: string): Promise<number | null> {
     const form = new FormData();
     form.append('chat_id', String(chatId));
     form.append('document', new Blob([bytes]), fileName);
@@ -35,13 +66,15 @@ export function telegramBot(token: string) {
     form.append('reply_parameters', JSON.stringify({ message_id: replyTo, allow_sending_without_reply: true }));
     const res = await fetch(`${api}/sendDocument`, { method: 'POST', body: form });
     if (!res.ok) throw new Error(`Telegram sendDocument ${res.status}: ${(await res.text()).slice(0, 300)}`);
+    return (await res.json().catch(() => null))?.result?.message_id ?? null;
   }
 
   async function setWebhook(url: string) {
     const res = await fetch(`${api}/setWebhook`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url, secret_token: await webhookSecret(), allowed_updates: ['message'] }),
+      // buttons (callback_query): the form bot's order Submit / answers (Sean, 2026-11-07)
+      body: JSON.stringify({ url, secret_token: await webhookSecret(), allowed_updates: ['message', 'callback_query'] }),
     });
     return res.json();
   }
@@ -69,5 +102,5 @@ export function telegramBot(token: string) {
     return res.ok ? (res.result as { user: { id: number; is_bot: boolean } }[]).filter((m) => !m.user.is_bot).map((m) => m.user.id) : [];
   }
 
-  return { webhookSecret, reply, sendDocument, setWebhook, downloadFile, inAnyGroup, adminIds };
+  return { webhookSecret, reply, ask, answerButton, dropButtons, sendDocument, setWebhook, downloadFile, inAnyGroup, adminIds };
 }

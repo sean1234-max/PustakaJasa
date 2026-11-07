@@ -24,6 +24,7 @@
 import { db, SUPABASE_URL } from './db.ts';
 import { esc, telegramBot, MAX_FILE_BYTES } from './telegram.ts';
 import { fillForm, formBot, handleForm } from './form.ts';
+import { handleOrderButton } from './orderChat.ts';
 import { readFile, type FileContent } from './files.ts';
 import { askedDay, orderPlaquesText, proposeChanges, type Order } from './order.ts';
 import { readChanges, compareFile } from './ai.ts';
@@ -268,6 +269,18 @@ Deno.serve(async (req) => {
   }
   if (req.headers.get('X-Telegram-Bot-Api-Secret-Token') !== await which.webhookSecret()) return new Response('forbidden', { status: 403 });
   const update = await req.json().catch(() => null);
+  // the form bot's buttons (the order chat's answers and Submit, orderChat.ts)
+  if (isForm && update?.callback_query) {
+    const cb = update.callback_query;
+    const work = handleOrderButton(cb, aiAllowed).catch(async (err) => {
+      console.error('telegram-bot (button) failed:', err);
+      const chatId = cb.message?.chat?.id;
+      if (chatId) await formBot.reply(chatId, cb.message.message_id, 'Sorry, something went wrong. Please try again.').catch(() => {});
+    });
+    // @ts-ignore EdgeRuntime is provided by the Supabase Edge runtime
+    if (typeof EdgeRuntime !== 'undefined') EdgeRuntime.waitUntil(work); else await work;
+    return new Response('ok');
+  }
   const msg = update?.message;
   if (!msg || (!isForm && String(msg.chat?.id) !== CHAT_ID)) return new Response('ok');
   // answer in the background — Telegram only waits for the 200
