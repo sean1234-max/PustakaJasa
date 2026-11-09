@@ -24,6 +24,7 @@ export const FIELD_LABEL: Record<string, string> = {
 // The website's Function Details rule (NewOrderStep1.jsx): at least 4 days from today, today included
 export const FUNCTION_MIN_DAYS = 3;
 
+export const isSkSchool = (name: string | null | undefined) => /^\s*SK\b/i.test(String(name || ''));
 export const addDaysIso = (day: string, n: number) => new Date(Date.parse(`${day}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
 const PHONE_RE = /^[0-9-]{7,}$/;
 
@@ -55,7 +56,8 @@ export function nextDetailStep(s: Session, today: string, lang: Lang = 'en'): St
   if (d.shipmentDate && d.functionDate <= d.shipmentDate) return { kind: 'field', field: 'functionDate', why: t(`The Function Date must be after the Shipment Date (${showDay(d.shipmentDate)}).`, `Function Date 一定要比 Shipment Date（${showDay(d.shipmentDate)}）晚。`) };
   // shipping within the urgent window: the salesman confirms it is urgent (or changes the date)
   if (isUrgent(today, d.shipmentDate) && s.answers?._urgentOk !== d.shipmentDate) return { kind: 'urgent', days: daysBetween(today, d.shipmentDate) };
-  if (!d.schoolType) return { kind: 'schoolType' };
+  // an SK school takes the SK logo without asking (Sean, 2026-11-10); any other school is asked
+  if (!d.schoolType && !isSkSchool(s.school?.sekolah || d.sekolah)) return { kind: 'schoolType' };
   if (d.schoolType === 'NOT_SK' && !d.logoUrl) return { kind: 'logo' };
   if (d.schoolType === 'NOT_SK' && !d.logoRemark?.trim()) return { kind: 'field', field: 'logoRemark' };
   if (!s.excel) return { kind: 'excel' };
