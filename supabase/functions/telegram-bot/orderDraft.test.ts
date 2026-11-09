@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { readDraftList } from './orderDraft.ts';
+import { readDraftList, listTemplate } from './orderDraft.ts';
 
 const TODAY = '2026-11-05';
 
@@ -28,5 +28,15 @@ describe('readDraftList', () => {
 
   it('leaves unknown terms blank for the salesman to pick', () => {
     expect(readDraftList('SEKOLAH: SK A\nTERMS: 30 days', TODAY)?.fields.terms).toBe('');
+  });
+});
+
+describe('listTemplate', () => {
+  it('the blank list, with what is known filled in, reads back', () => {
+    const t = listTemplate({ sekolah: 'sk taman muda', cikgu: 'Pn Aisyah\n' });
+    expect(t.split('\n')).toEqual(['SEKOLAH NAMA: SK TAMAN MUDA', 'CIKGU NAMA: PN AISYAH', 'PHONE NUMBER:', 'KETUA PANITIA:', 'TERMS:', 'SHIPMENT DATE:', 'FUNCTION DATE:']);
+    const filled = t.replace('PHONE NUMBER:', 'PHONE NUMBER: 012-3456789').replace('TERMS:', 'TERMS: L/O').replace('FUNCTION DATE:', 'FUNCTION DATE: 23/11/2026');
+    expect(readDraftList(filled, TODAY)).toMatchObject({ fields: { sekolah: 'SK TAMAN MUDA', picName: 'PN AISYAH', phone: '012-3456789', terms: 'L/O', functionDate: '2026-11-23' } });
+    expect(readDraftList(listTemplate(), TODAY)).toBeNull();
   });
 });

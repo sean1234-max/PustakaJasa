@@ -16,7 +16,7 @@
 import { db } from './db.ts';
 import { esc, MAX_FILE_BYTES } from './telegram.ts';
 import { formBot } from './formBot.ts';
-import { readDraftList } from './orderDraft.ts';
+import { readDraftList, listTemplate } from './orderDraft.ts';
 import { askedDay } from './order.ts';
 import { anthropic } from './ai.ts';
 import { logUsage } from './usage.ts';
@@ -359,7 +359,12 @@ export async function handleOrderMessage(msg: Msg, aiAllowed: AiAllowed): Promis
       await formBot.reply(chatId, msg.message_id, 'Connect Telegram on the website first (dashboard → Connect Telegram), then send me the 6-digit code. / 请先在网站按 Connect Telegram，再把 6 位数代码发给我。');
       return true;
     }
-    const { excel, kk } = await filesFor(msg);
+    let { excel, kk } = await filesFor(msg);
+    // no Excel with the list: the FORM ANUGERAH the bot is waiting for a list for (startFromForm)
+    if (!excel) {
+      const waiting = await openSession(chatId, userId);
+      if (waiting?.pending?.kind === 'list' && waiting.excel) { excel = waiting.excel; kk = [...waiting.kertas_kerja, ...kk]; }
+    }
     await db.from('bot_order_sessions').update({ state: 'cancelled' }).eq('chat_id', chatId).eq('telegram_user_id', userId).eq('state', 'open');
     const { data, error } = await db.from('bot_order_sessions').insert({
       chat_id: chatId, telegram_user_id: userId, profile_id: salesman.id,
@@ -389,6 +394,11 @@ export async function handleOrderMessage(msg: Msg, aiAllowed: AiAllowed): Promis
   const t = tr(lang);
   const file = fileOf(msg);
 
+  // waiting only for the list: a new file is a new order (form.ts fills it / hands out a new list), and
+  // ordinary chat in a group is left alone
+  if (p.kind === 'list' && (file || (msg.chat?.type !== 'private' && msg.reply_to_message?.from?.is_bot !== true))) {
+    if (!(/^\s*(cancel|batal)\s*$/i.test(text) && !file)) return false;
+  }
   if (/^\s*(cancel|batal)\s*$/i.test(text) && !file) {
     await save(s, { state: 'cancelled', pending: null });
     await formBot.reply(chatId, msg.message_id, t('✖ Cancelled — nothing submitted.', '✖ 已取消 — 没有 submit。'));
@@ -465,7 +475,9 @@ export async function handleOrderMessage(msg: Msg, aiAllowed: AiAllowed): Promis
   }
   await formBot.reply(chatId, msg.message_id, p.kind === 'excel'
     ? t('Waiting for the FORM ANUGERAH Excel (or type <b>cancel</b>).', '在等 FORM ANUGERAH 的 Excel（或打 <b>cancel</b>）。')
-    : p.kind === 'busy' ? t('One moment — still checking.', '请稍等 — 还在检查。') : t('Please tap a button above (or type <b>cancel</b>).', '请按上面的按钮（或打 <b>cancel</b>）。'));
+    : p.kind === 'busy' ? t('One moment — still checking.', '请稍等 — 还在检查。')
+    : p.kind === 'list' ? t('Copy the list above, fill it in and send it to me.', '请复制上面的清单，填好后发给我。')
+    : t('Please tap a button above (or type <b>cancel</b>).', '请按上面的按钮（或打 <b>cancel</b>）。'));
   return true;
 }
 
@@ -569,10 +581,42 @@ async function submit(s: Row, salesman: { id: string; name: string }, aiAllowed:
   const t = await T(s);
   const pcs = read.items.reduce((n: number, it: { qty: unknown }) => n + (Number(it.qty) || 0), 0);
   await formBot.ask(s.chat_id, null, [
-    `✅ <b>${t('Submitted', '已 submit')} — ${esc(orderId)}</b>`,
+    `✅ <b>${t('Order submitted successfully', '订单已成功 submit')} · ${esc(orderId)}</b>`,
     `${esc(s.school?.sekolah)} · ${t(`${pcs} pcs`, `${pcs} 块`)} · RM ${Number(read.total).toFixed(2)}`,
     `👉 <a href="${link}">${t('Open on the website', '在网站打开')}</a>`,
     ...(crystal ? [t('💎 Crystal artwork not confirmed — check Crystal Preview, then Confirm Artwork.', '💎 Crystal 的图还没确认 — 打开订单看 Crystal Preview，再按 Confirm Artwork。')] : []),
   ].join('\n'));
 }
 
+
+// ------------------------------------------------------------------ the list, handed out
+// The list to fill (Sean, 2026-11-10): the bot hands it out — copy, fill in, send back — with what it already
+// knows filled in (the school and teacher it read from the kertas kerja).
+export function listPromptHtml(lang: 'en' | 'zh', known: { sekolah?: string; cikgu?: string } = {}) {
+  return [
+    tr(lang)('📋 <b>To submit:</b> copy this list, fill it in and send it to me (as a reply to the Excel).', '📋 <b>要 submit：</b>复制下面的清单，填好后发给我（回复那份 Excel）。'),
+    `<pre>${esc(listTemplate(known))}</pre>`,
+  ].join('\n');
+}
+
+/**
+ * A FORM ANUGERAH with no list yet — sent by the salesman, or just filled by the bot (form.ts): kept as this
+ * chat's order waiting for its list, and the list handed out. `kertasKerja`: the teacher's file it came from.
+ */
+export async function startFromForm(msg: Msg, excel: FileRef, kertasKerja: FileRef[], known: { sekolah?: string; cikgu?: string } = {}) {
+  const chatId = msg.chat.id;
+  const userId = Number(msg.from?.id);
+  const salesman = await salesmanOf(userId);
+  const lang = salesman ? await langOfProfile(db, salesman.id) : 'zh';
+  const promptId = await formBot.ask(chatId, msg.message_id, listPromptHtml(lang, known));
+  if (!salesman) {
+    await formBot.ask(chatId, null, 'Connect Telegram on the website first (dashboard → Connect Telegram), then send me the 6-digit code. / 请先在网站按 Connect Telegram，再把 6 位数代码发给我。');
+    return;
+  }
+  await db.from('bot_order_sessions').update({ state: 'cancelled' }).eq('chat_id', chatId).eq('telegram_user_id', userId).eq('state', 'open');
+  const { error } = await db.from('bot_order_sessions').insert({
+    chat_id: chatId, telegram_user_id: userId, profile_id: salesman.id, details: {}, excel,
+    kertas_kerja: kertasKerja, kertas_asked: kertasKerja.length > 0, pending: { kind: 'list', messageId: promptId },
+  });
+  if (error) throw error;
+}

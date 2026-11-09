@@ -73,7 +73,8 @@ export function telegramBot(token: string, opts: { onMigrate?: (oldId: number, n
     }).catch(() => {});
   }
 
-  async function sendDocument(chatId: number | string, replyTo: number, bytes: Uint8Array, fileName: string, captionHtml: string): Promise<number | null> {
+  // -> the sent message's id and its file's id (to be sent back to the bot later)
+  async function sendDocument(chatId: number | string, replyTo: number, bytes: Uint8Array, fileName: string, captionHtml: string): Promise<{ messageId: number; fileId: string } | null> {
     const form = new FormData();
     form.append('chat_id', String(chatId));
     form.append('document', new Blob([bytes]), fileName);
@@ -82,7 +83,8 @@ export function telegramBot(token: string, opts: { onMigrate?: (oldId: number, n
     form.append('reply_parameters', JSON.stringify({ message_id: replyTo, allow_sending_without_reply: true }));
     const res = await fetch(`${api}/sendDocument`, { method: 'POST', body: form });
     if (!res.ok) throw new Error(`Telegram sendDocument ${res.status}: ${(await res.text()).slice(0, 300)}`);
-    return (await res.json().catch(() => null))?.result?.message_id ?? null;
+    const sent = (await res.json().catch(() => null))?.result;
+    return sent ? { messageId: sent.message_id, fileId: sent.document?.file_id ?? '' } : null;
   }
 
   async function setWebhook(url: string) {
