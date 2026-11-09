@@ -48,3 +48,15 @@ export function readDraftList(text: string, today: string) {
   const missing = (Object.keys(fields) as (keyof DraftFields)[]).filter((k) => !fields[k]);
   return { fields, missing };
 }
+
+// The blank list ExcelFormAgent hands the salesman to fill (Sean, 2026-11-10: "excelformagent 自动会弹出这个
+// list 让 user 填"), with what's already known filled in. It reads back with readDraftList.
+const LIST_LABELS = ['SEKOLAH NAMA', 'CIKGU NAMA', 'PHONE NUMBER', 'KETUA PANITIA', 'TERMS', 'SHIPMENT DATE', 'FUNCTION DATE'];
+const clean = (v: unknown) => String(v ?? '').replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
+
+export function listTemplate(known: { sekolah?: string; cikgu?: string; phone?: string } = {}) {
+  const value: Record<string, string> = {
+    'SEKOLAH NAMA': clean(known.sekolah).toUpperCase(), 'CIKGU NAMA': clean(known.cikgu).toUpperCase(), 'PHONE NUMBER': clean(known.phone),
+  };
+  return LIST_LABELS.map((l) => `${l}: ${value[l] || ''}`.trimEnd()).join('\n');
+}

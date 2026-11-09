@@ -15,7 +15,8 @@
 import { DOMParser, XMLSerializer } from 'npm:@xmldom/xmldom@0.9.12';
 import { esc, MAX_FILE_BYTES } from './telegram.ts';
 import { formBot } from './formBot.ts';
-import { handleOrderMessage } from './orderChat.ts';
+import { handleOrderMessage, startFromForm } from './orderChat.ts';
+import * as XLSX from 'npm:xlsx@0.18.5';
 import { tr, folded, topLines, langOfTelegramUser, type Lang } from './i18n.ts';
 import { readFile, type FileContent } from './files.ts';
 import { readForm } from './ai.ts';
@@ -98,7 +99,6 @@ export async function handleForm(msg: Msg, aiAllowed: () => Promise<unknown>) {
   // the Production group is the review bot's (@PjsbReviewAgent compares files there); this bot is in it
   // only to check who may use it (Sean 2026-11-05: it filled a form for a compare request)
   if (inGroup && GROUPS.includes(String(chatId))) return;
-  if (/\(FORM ANUGERAH\)\.xlsx$/i.test(doc?.file_name || '')) return; // the bot's own form, forwarded back
   const lang = await langOfTelegramUser(db, Number(msg.from?.id));
   const t = tr(lang);
   const say = (html: string) => formBot.reply(chatId, msg.message_id, html);
@@ -107,19 +107,37 @@ export async function handleForm(msg: Msg, aiAllowed: () => Promise<unknown>) {
   if ((file.file_size || 0) > MAX_FILE_BYTES) return say(t('❌ Too big (20 MB max).', '❌ 文件太大（最多 20 MB）。'));
   const fileName = doc?.file_name || 'photo.jpg';
   const bytes = await formBot.downloadFile(file.file_id);
+  // a FORM ANUGERAH already (the salesman's own, or the bot's sent back): nothing to fill — the list to submit
+  // it is handed out instead (orderChat.ts, Sean 2026-11-10)
+  if (isFormAnugerah(bytes, fileName)) return startFromForm(msg, { fileId: file.file_id, name: fileName }, []);
   const content = readFile(bytes, fileName);
   if (!content) return say(t('❌ I can\'t read this — send PDF, Word, Excel or a photo.', '❌ 读不了这个文件 — 请发 PDF、Word、Excel 或照片。'));
   if (!(await aiAllowed())) return say(t('❌ AI budget used up this month — please fill it by hand.', '❌ 这个月的 AI 额度用完了 — 请手动填。'));
   await say(t('📝 Filling FORM ANUGERAH… (1–2 min)', '📝 正在填 FORM ANUGERAH…（1–2 分钟）'));
   const filled = await fillForm(content, fileName, String(msg.caption ?? '').trim(), bytes, lang);
   if (!filled.ok) return say(filled.message);
-  const sentId = await formBot.sendDocument(chatId, msg.message_id, filled.buffer, filled.fileName, filled.caption);
+  const sent = await formBot.sendDocument(chatId, msg.message_id, filled.buffer, filled.fileName, filled.caption);
   // replying to this form with the list puts the order in, with this kertas kerja on it (orderChat.ts)
-  if (sentId) {
-    const { error: srcError } = await db.from('bot_form_sources').insert({ chat_id: chatId, message_id: sentId, file_id: file.file_id, file_name: fileName });
+  if (sent) {
+    const { error: srcError } = await db.from('bot_form_sources').insert({ chat_id: chatId, message_id: sent.messageId, file_id: file.file_id, file_name: fileName });
     if (srcError) console.error('bot_form_sources insert failed:', srcError.message);
   }
   if (filled.questionsHtml) await formBot.reply(chatId, msg.message_id, filled.questionsHtml);
+  // then the list to submit it, the school and teacher it read already in (Sean, 2026-11-10)
+  if (sent?.fileId) {
+    await startFromForm(msg, { fileId: sent.fileId, name: filled.fileName }, [{ fileId: file.file_id, name: fileName }], { sekolah: filled.front.sekolah, cikgu: filled.front.cikgu });
+  }
+}
+
+// The website's FORM ANUGERAH (its own sheets), not a teacher's kertas kerja that happens to be an Excel
+function isFormAnugerah(bytes: Uint8Array, fileName: string) {
+  if (!/\.xlsx$/i.test(fileName)) return false;
+  try {
+    const names = XLSX.read(bytes, { type: 'array', bookSheets: true }).SheetNames.map((n: string) => n.trim().toUpperCase());
+    return names.includes('FRONT PG') && names.includes('ORDER LAIN-LAIN');
+  } catch {
+    return false;
+  }
 }
 
 // A Word file whose order is a WORDING / KUANTITI table, read by rules (ruleRead.ts) — null when the
@@ -182,6 +200,6 @@ export async function fillForm(content: FileContent, fileName: string, notes: st
   const base = (front.sekolah || fileName.replace(/\.[^.]+$/, '')).replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'ORDER';
   return {
     ok: true as const, buffer: out.buffer as Uint8Array, fileName: `${base} (FORM ANUGERAH).xlsx`, caption, total,
-    questionsHtml, notes: [...asks, ...fyi],
+    questionsHtml, notes: [...asks, ...fyi], front,
   };
 }
