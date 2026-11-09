@@ -7,7 +7,9 @@ const MEMBER_STATUSES = ['creator', 'administrator', 'member', 'restricted'];
 
 export const esc = (t: unknown) => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-export function telegramBot(token: string) {
+// `onMigrate(oldId, newId)`: a group became a supergroup (its id changed, Sean 2026-11-09: Keith's group) —
+// a message to the old id is sent to the new one, and the caller saves the new id.
+export function telegramBot(token: string, opts: { onMigrate?: (oldId: number, newId: number) => Promise<void> } = {}) {
   const api = `https://api.telegram.org/bot${token}`;
 
   // The webhook's secret: derived from the bot token, so there is no second secret to keep
@@ -27,18 +29,25 @@ export function telegramBot(token: string) {
   }
 
   // A message with buttons under it (rows of [label, callback data ≤ 64 bytes]); returns its message_id
-  async function ask(chatId: number | string, replyTo: number | null, html: string, buttons: [string, string][][] = []) {
+  async function ask(chatId: number | string, replyTo: number | null, html: string, buttons: [string, string][][] = []): Promise<number | null> {
     const text = html.length > MAX_MESSAGE_CHARS ? `${html.slice(0, MAX_MESSAGE_CHARS)}\n…` : html;
-    const res = await fetch(`${api}/sendMessage`, {
+    const send = (to: number | string) => fetch(`${api}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        chat_id: chatId, text, parse_mode: 'HTML', disable_web_page_preview: true,
+        chat_id: to, text, parse_mode: 'HTML', disable_web_page_preview: true,
         ...(replyTo ? { reply_parameters: { message_id: replyTo, allow_sending_without_reply: true } } : {}),
         ...(buttons.length ? { reply_markup: { inline_keyboard: buttons.map((row) => row.map(([label, data]) => ({ text: label, callback_data: data }))) } } : {}),
       }),
     });
-    const body = await res.json().catch(() => null);
+    let res = await send(chatId);
+    let body = await res.json().catch(() => null);
+    const moved = body?.parameters?.migrate_to_chat_id;
+    if (!body?.ok && moved) {
+      if (opts.onMigrate) await opts.onMigrate(Number(chatId), Number(moved)).catch((err) => console.error('saving the new group id failed:', err));
+      res = await send(moved);
+      body = await res.json().catch(() => null);
+    }
     if (!res.ok || !body?.ok) { console.error('Telegram sendMessage failed:', res.status, JSON.stringify(body).slice(0, 300)); return null; }
     return body.result.message_id as number;
   }

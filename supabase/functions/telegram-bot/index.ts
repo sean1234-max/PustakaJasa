@@ -25,7 +25,8 @@ import { db, SUPABASE_URL } from './db.ts';
 import { esc, telegramBot, MAX_FILE_BYTES } from './telegram.ts';
 import { fillForm, formBot, handleForm } from './form.ts';
 import { handleOrderButton } from './orderChat.ts';
-import { runReviewJob, handleSalesmanGroup, handleReviewButton } from './autoReview.ts';
+import { runReviewJob, handleSalesmanGroup, handleReviewButton, groupMoved } from './autoReview.ts';
+import { remindSalesman } from './remind.ts';
 import { readFile, type FileContent } from './files.ts';
 import { askedDay, orderPlaquesText, proposeChanges, type Order } from './order.ts';
 import { readChanges, compareFile } from './ai.ts';
@@ -35,7 +36,8 @@ const CHAT_ID = Deno.env.get('TELEGRAM_CHAT_ID') ?? '';
 const SITE_URL = Deno.env.get('SITE_URL') ?? 'https://pustaka-jasa.vercel.app';
 const BOT_NAME = (Deno.env.get('TELEGRAM_BOT_USERNAME') ?? 'PjsbReviewAgent').toLowerCase();
 
-const bot = telegramBot(Deno.env.get('TELEGRAM_BOT_TOKEN') ?? '');
+// ReviewAgent: a salesman's group that became a supergroup is followed to its new id (autoReview.ts)
+const bot = telegramBot(Deno.env.get('TELEGRAM_BOT_TOKEN') ?? '', { onMigrate: groupMoved });
 const assistantBot = telegramBot(Deno.env.get('TELEGRAM_ASSISTANT_BOT_TOKEN') ?? '');
 const ASSISTANT_NAME = (Deno.env.get('TELEGRAM_ASSISTANT_BOT_USERNAME') ?? '').toLowerCase();
 type ChangeRequest = { orderId: string; shipmentDate: string | null; functionDate: string | null; remarkAdd: string | null };
@@ -248,6 +250,8 @@ async function handleAssistant(msg: Msg) {
       await assistantBot.sendDocument(msg.chat.id, msg.message_id, filled.buffer, filled.fileName, filled.caption);
       return `sent ${filled.fileName} (${filled.total} plaques) to the group${filled.notes.length ? `; questions to raise with Sean: ${filled.notes.join(' | ')}` : ''}`;
     },
+    // ReviewAgent posts the reminder in the salesman's own group (remind.ts)
+    remindSalesman: async (orderId, note) => JSON.stringify(await remindSalesman(db, bot, normOrderId(orderId) || orderId, note)),
     compareFile: async (orderId) => {
       const id = normOrderId(orderId);
       if (!id) return 'not an order number';

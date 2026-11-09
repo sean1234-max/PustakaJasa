@@ -198,7 +198,23 @@ export async function handleReviewButton(cb: Msg, bot: Bot) {
 
 // ------------------------------------------------------------------ the salesman's group
 /** A message to ReviewAgent in a group other than Production's: "link", or the words for "✏️ Neither". */
+// A group became a supergroup and got a new id (Sean, 2026-11-09: Keith's group): its link and its open
+// reviews move with it. Called from Telegram's own notice in the group and when a send finds it moved.
+export async function groupMoved(oldId: number, newId: number) {
+  if (!oldId || !newId || oldId === newId) return;
+  const { data: row } = await db.from('salesman_groups').select('profile_id, title').eq('chat_id', oldId).maybeSingle();
+  if (row) {
+    await db.from('salesman_groups').delete().eq('chat_id', oldId);
+    const { error } = await db.from('salesman_groups').upsert({ chat_id: newId, profile_id: row.profile_id, title: row.title, linked_at: new Date().toISOString() });
+    if (error) throw error;
+  }
+  await db.from('order_auto_reviews').update({ report_chat_id: newId }).eq('report_chat_id', oldId);
+}
+
 export async function handleSalesmanGroup(msg: Msg, bot: Bot, botName: string) {
+  // Telegram's notice that this group became a supergroup (in the old group, then in the new one)
+  if (msg.migrate_to_chat_id) return groupMoved(Number(msg.chat.id), Number(msg.migrate_to_chat_id));
+  if (msg.migrate_from_chat_id) return groupMoved(Number(msg.migrate_from_chat_id), Number(msg.chat.id));
   const text = String(msg.text ?? msg.caption ?? '').trim();
   const repliedTo = msg.reply_to_message as Msg | undefined;
   const toBot = repliedTo?.from?.username?.toLowerCase() === botName;
