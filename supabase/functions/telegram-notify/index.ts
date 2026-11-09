@@ -92,10 +92,10 @@ async function reviewingOrders() {
 
 // ReviewAgent reviews the next order (telegram-bot ?job=review) — started, not waited for: one compare
 // takes a minute or two, longer than this run should
-function startAutoReview() {
-  return fetch(`${SUPABASE_URL}/functions/v1/telegram-bot?job=review`, { method: 'POST', headers: { 'x-job-key': SECRET_KEY } })
+function startJob(job: 'review' | 'approvals') {
+  return fetch(`${SUPABASE_URL}/functions/v1/telegram-bot?job=${job}`, { method: 'POST', headers: { 'x-job-key': SECRET_KEY } })
     .then((r) => r.status)
-    .catch((err) => { console.error('auto review start failed:', err); return 0; });
+    .catch((err) => { console.error(`${job} job start failed:`, err); return 0; });
 }
 
 function newOrderText(o: Record<string, unknown>) {
@@ -193,7 +193,9 @@ Deno.serve(async (req) => {
   if (!CHAT_ID) return json({ ok: false, error: 'TELEGRAM_CHAT_ID is not set' });
 
   try {
-    const review = startAutoReview();
+    const review = startJob('review');
+    // Done Review → the salesman reminded to approve, in his own group (telegram-bot remind.ts)
+    const approvals = startJob('approvals');
     const orders = await reviewingOrders();
     let sentNew = 0;
     for (const o of orders.filter((x) => !x.reviewed_at)) {
@@ -205,7 +207,7 @@ Deno.serve(async (req) => {
     // Sean's morning / evening reports and questions — their own failure doesn't stop the review list
     const reports = await runReports({ db, send: (html) => send(html, false, ASSISTANT_TOKEN), esc, orderLink }, now)
       .catch((err) => { console.error('telegram reports failed:', err); return [`failed: ${String(err).slice(0, 200)}`]; });
-    return json({ ok: true, sentNew, list, reports, autoReview: await review });
+    return json({ ok: true, sentNew, list, reports, autoReview: await review, approvals: await approvals });
   } catch (err) {
     console.error('telegram-notify failed:', err);
     return json({ ok: false, error: String(err).slice(0, 300) }, 500);

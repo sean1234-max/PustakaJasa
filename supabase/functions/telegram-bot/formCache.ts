@@ -7,7 +7,8 @@ import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import type { FileContent } from './files.ts';
 
 // Bump when the reading itself changes (prompt / schema), so old readings aren't reused
-export const FORM_READ_VERSION = 'form-2026-11-05';
+// 2026-11-08: questions became { en, zh }, short, only what to ask the teacher
+export const FORM_READ_VERSION = 'form-2026-11-08';
 
 type Reading = { input: Record<string, unknown> } | null;
 type Reader = (content: FileContent, fileName: string, notes: string) => Promise<Reading>;

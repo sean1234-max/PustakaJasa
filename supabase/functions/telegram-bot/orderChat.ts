@@ -22,7 +22,8 @@ import { anthropic } from './ai.ts';
 import { logUsage } from './usage.ts';
 import { SYSTEM_PROMPT, buildUserPrompt } from '../check-engraving-text/prompt.ts';
 import { ISSUES_TOOL_SCHEMA, validateIssues, type CheckLine } from '../check-engraving-text/schema.ts';
-import { nextDetailStep, readFieldAnswer, summaryHtml, orderRow, showDay, FIELD_LABEL, type Session, type FileRef } from './orderFlow.ts';
+import { nextDetailStep, readFieldAnswer, summaryHtml, orderRow, showDay, type Session, type FileRef } from './orderFlow.ts';
+import { tr, langOfProfile } from './i18n.ts';
 // @ts-ignore a plain JS bundle
 import { readOrderForm, buildPlakTree, isCrystalCode, isCustomPlakCode, setCustomTypoWords } from './order.bundle.js';
 
@@ -156,11 +157,15 @@ async function findDuplicates(s: Row) {
   return (data || []).filter((o) => norm(o.pic_name) === norm(s.details.picName) && norm(s.details.picName));
 }
 
+// the salesman's language (i18n.ts): tr('English', '中文')
+const T = async (s: { profile_id: string }) => tr(await langOfProfile(db, s.profile_id));
+
 // ------------------------------------------------------------------ asking
 const btn = (s: Row, answer: string, label: string): [string, string] => [label.slice(0, 60), `o:${s.id}:${answer}`.slice(0, 64)];
 
 async function ask(s: Row, html: string, buttons: [string, string][][], pending: Record<string, any>) {
-  const id = await formBot.ask(s.chat_id, null, html, [...buttons, [btn(s, 'cancel', '✖ Cancel this order')]]);
+  const t = await T(s);
+  const id = await formBot.ask(s.chat_id, null, html, [...buttons, [btn(s, 'cancel', t('✖ Cancel', '✖ 取消'))]]);
   await save(s, { pending: { ...pending, messageId: id } });
 }
 
@@ -179,58 +184,60 @@ async function websiteLink(s: Row) {
 async function stopForWebsite(s: Row, why: string) {
   const link = await websiteLink(s).catch((err) => { console.error('draft for the website failed:', err); return `${SITE_URL}/#/order/step1`; });
   await save(s, { state: 'cancelled', pending: null });
-  await formBot.ask(s.chat_id, null, `${why}\n\n👉 <a href="${link}">Open it on the website</a> to finish it there.`);
+  const t = await T(s);
+  await formBot.ask(s.chat_id, null, `${why}\n👉 <a href="${link}">${t('Finish it on the website', '在网站完成')}</a>`);
 }
 
-const FIELD_Q: Record<string, string> = {
-  picName: 'What is the <b>Cikgu\'s name</b> (PIC)?',
-  phone: 'What is the Cikgu\'s <b>phone number</b>?',
-  ketuaPanitia: 'Who is the <b>Ketua Panitia</b>?',
-  functionDate: 'What is the <b>Function Date</b>? (e.g. 23/11/2026)',
-  shipmentDate: 'What is the <b>Shipment Date</b>? (e.g. 20/11/2026 — or "none")',
-  logoRemark: 'Describe the <b>logo</b> to use (Remark).',
+const FIELD_Q: Record<string, [string, string]> = {
+  picName: ['<b>Cikgu\'s name</b>?', '<b>老师名字</b>？'],
+  phone: ['Cikgu\'s <b>phone number</b>?', '老师<b>电话</b>？'],
+  ketuaPanitia: ['<b>Ketua Panitia</b>?', '<b>Ketua Panitia</b> 是谁？'],
+  functionDate: ['<b>Function Date</b>? (e.g. 23/11/2026)', '<b>Function Date</b>？（例如 23/11/2026）'],
+  shipmentDate: ['<b>Shipment Date</b>? (e.g. 20/11/2026, or "none")', '<b>Shipment Date</b>？（例如 20/11/2026，没有就打 "none"）'],
+  logoRemark: ['Describe the <b>logo</b> (Remark).', '<b>Logo</b> 说明（Remark）？'],
 };
 
 // The next thing the order needs, asked; or the summary with Submit
 async function advance(s: Row, salesman: { id: string; name: string }, aiAllowed: AiAllowed): Promise<void> {
   const today = todayMy();
-  const step = nextDetailStep(s, today);
+  const lang = await langOfProfile(db, s.profile_id);
+  const t = tr(lang);
+  const step = nextDetailStep(s, today, lang);
   if (step?.kind === 'school') {
     // one school matches: settled without a question, go on
     if (!(await askSchool(s))) return advance(s, salesman, aiAllowed);
     return;
   }
-  if (step) return askStep(s, step);
+  if (step) return askStep(s, step, t);
 
   const read = await readOrder(s, salesman);
   if (read.error) {
     const name = s.excel?.name;
     await save(s, { excel: null });
-    return ask(s, `I can't read <b>${esc(name)}</b> as a FORM ANUGERAH: ${esc(read.error)}\nPlease send the FORM ANUGERAH Excel.`, [], { kind: 'excel' });
+    return ask(s, t(`❌ Can't read <b>${esc(name)}</b> as FORM ANUGERAH. Send the FORM ANUGERAH Excel.`, `❌ <b>${esc(name)}</b> 读不到 FORM ANUGERAH。请发 FORM ANUGERAH 的 Excel。`), [], { kind: 'excel' });
   }
-  if (read.stop) return stopForWebsite(s, 'OK — this one needs to be finished by hand.');
+  if (read.stop) return stopForWebsite(s, t('OK — finish this one by hand.', '好 — 这张请手动完成。'));
   const q = read.questions[0];
   if (q) {
     if (q.kind === 'plak') {
       const again = s.subs.some((x) => x.whole && norm(x.to) === norm(q.raw));
-      return ask(s, `${again ? '⚠ That code isn\'t in the catalog either.\n' : ''}The Jenis Plak <b>${esc(q.raw)}</b> isn't in the catalog. Type the right code (e.g. <b>PKC 263</b>, <b>W038 / B</b>).`, [], { kind: 'plak', raw: q.raw });
+      return ask(s, `${again ? t('⚠️ Not in the catalog either.\n', '⚠️ 这个也不在目录里。\n') : ''}${t(`Jenis Plak <b>${esc(q.raw)}</b> isn't in the catalog — type the right code (e.g. PKC 263).`, `Jenis Plak <b>${esc(q.raw)}</b> 不在目录里 — 请打正确的代码（例如 PKC 263）。`)}`, [], { kind: 'plak', raw: q.raw });
     }
     if (q.kind === 'typo') {
-      return ask(s, `✏️ Possible typo — ${esc(q.text)}`,
-        [[btn(s, 'ty:use', `Use "${q.suggestion}"`), btn(s, 'ty:keep', `Keep "${q.word}"`)]], { kind: 'typo', blockKey: q.blockKey, word: q.word, suggestion: q.suggestion });
+      return ask(s, `✏️ ${t('Typo?', '错字？')} <b>${esc(q.word)}</b> → <b>${esc(q.suggestion)}</b>\n${esc(q.text)}`,
+        [[btn(s, 'ty:use', `✅ ${q.suggestion}`), btn(s, 'ty:keep', t(`Keep ${q.word}`, `保留 ${q.word}`))]], { kind: 'typo', blockKey: q.blockKey, word: q.word, suggestion: q.suggestion });
     }
     if (q.kind === 'choice') {
       return ask(s, `❓ ${esc(q.text)}`, (q.options || []).map((o) => [btn(s, `q:${o.key}`, o.label)]), { kind: 'question', id: q.id });
     }
-    return ask(s, `❓ ${esc(q.text)}`, [[btn(s, 'q:ok', q.kind === 'extra' ? '✅ Yes, engrave it' : '✅ OK, continue'), btn(s, 'q:stop', '✋ Stop — I\'ll do it on the website')]], { kind: 'question', id: q.id });
+    return ask(s, `❓ ${esc(q.text)}`, [[btn(s, 'q:ok', q.kind === 'extra' ? t('✅ Yes, engrave', '✅ 要刻') : t('✅ OK', '✅ 好')), btn(s, 'q:stop', t('✋ Stop (website)', '✋ 停（去网站做）'))]], { kind: 'question', id: q.id });
   }
   if (read.problems.length) {
     await save(s, { excel: null });
     return ask(s, [
-      '⚠ This FORM ANUGERAH can\'t go in yet:',
-      ...read.problems.map((p: string) => `• ${esc(p)}`),
-      '',
-      'Fix it in the Excel and send it to me again (the list stays as it is).',
+      t('⚠️ <b>Can\'t submit yet</b> — fix in the Excel, then send it again:', '⚠️ <b>还不能 submit</b> — 在 Excel 改好后再发给我：'),
+      ...read.problems.slice(0, 5).map((p: string, i: number) => `${i + 1}. ${esc(p)}`),
+      ...(read.problems.length > 5 ? [t(`+${read.problems.length - 5} more`, `还有 ${read.problems.length - 5} 个`)] : []),
     ].join('\n'), [], { kind: 'excel' });
   }
 
@@ -242,8 +249,8 @@ async function advance(s: Row, salesman: { id: string; name: string }, aiAllowed
   const spell = (s.answers._spell as any[]).findIndex((_, i) => !s.answers[`spell:${i}`]);
   if (spell >= 0) {
     const it = s.answers._spell[spell];
-    return ask(s, `✏️ Spelling — ${esc(it.where)}:\n<b>${esc(it.original)}</b> → <b>${esc(it.suggestion)}</b>?\n${esc(it.note)}`,
-      [[btn(s, `sp:${spell}:use`, `Use "${it.suggestion}"`), btn(s, `sp:${spell}:keep`, `Keep "${it.original}"`)]], { kind: 'spell', index: spell });
+    return ask(s, `✏️ ${t('Spelling?', '拼写？')} <b>${esc(it.original)}</b> → <b>${esc(it.suggestion)}</b>\n${esc(it.where)}`,
+      [[btn(s, `sp:${spell}:use`, `✅ ${it.suggestion}`), btn(s, `sp:${spell}:keep`, t(`Keep ${it.original}`, `保留 ${it.original}`))]], { kind: 'spell', index: spell });
   }
 
   // a possible duplicate (the website's DuplicateOrderModal)
@@ -252,34 +259,35 @@ async function advance(s: Row, salesman: { id: string; name: string }, aiAllowed
     if (dups.length) {
       await save(s, { answers: { ...s.answers, _dupFound: dups.map((o) => o.id) } });
       return ask(s, [
-        `⚠ ${esc(s.school?.sekolah)} already has an order from ${esc(s.details.picName)} for ${showDay(s.details.functionDate)}:`,
-        ...dups.map((o) => `• ${esc(o.id)} — ${esc(o.status)} — RM ${Number(o.total_amount).toFixed(2)}`),
-        'Is this a separate order?',
-      ].join('\n'), [[btn(s, 'dup:yes', '✅ Yes, a separate order'), btn(s, 'dup:no', '✋ No — stop')]], { kind: 'dup' });
+        t(`⚠️ Same Cikgu & Function Date already ordered:`, `⚠️ 同一位老师、同一个 Function Date 已经有单：`),
+        ...dups.map((o) => `• ${esc(o.id)} · ${esc(o.status)} · RM ${Number(o.total_amount).toFixed(2)}`),
+        t('Is this a separate order?', '这是另一张单吗？'),
+      ].join('\n'), [[btn(s, 'dup:yes', t('✅ Yes, separate', '✅ 是，另一张')), btn(s, 'dup:no', t('✋ No, stop', '✋ 不是，停'))]], { kind: 'dup' });
     }
     await save(s, { answers: { ...s.answers, _dup: 'none' } });
   }
 
   const crystal = read.items.some((it: { jenisPlak: string }) => isCrystalCode(it.jenisPlak));
-  return ask(s, summaryHtml(s, read.items, read.total, read.remark, crystal), [[btn(s, 'submit', '✅ Submit order')]], { kind: 'confirm' });
+  return ask(s, summaryHtml(s, read.items, read.total, read.remark, crystal, lang), [[btn(s, 'submit', '✅ Submit')]], { kind: 'confirm' });
 }
 
-async function askStep(s: Row, step: Exclude<ReturnType<typeof nextDetailStep>, null | { kind: 'school' }>) {
+async function askStep(s: Row, step: Exclude<ReturnType<typeof nextDetailStep>, null | { kind: 'school' }>, t: ReturnType<typeof tr>) {
   if (step.kind === 'field') {
-    return ask(s, `${step.why ? `⚠ ${esc(step.why)}\n` : ''}${FIELD_Q[step.field]}`, [], { kind: 'field', field: step.field });
+    return ask(s, `${step.why ? `⚠️ ${esc(step.why)}\n` : ''}${t(...FIELD_Q[step.field])}`, [], { kind: 'field', field: step.field });
   }
-  if (step.kind === 'terms') return ask(s, 'Which <b>Terms</b>?', [[btn(s, 'terms:L/O', 'L/O'), btn(s, 'terms:Cash', 'Cash')]], { kind: 'terms' });
+  if (step.kind === 'terms') return ask(s, '<b>Terms</b>?', [[btn(s, 'terms:L/O', 'L/O'), btn(s, 'terms:Cash', 'Cash')]], { kind: 'terms' });
   if (step.kind === 'schoolType') {
-    return ask(s, '<b>Logo</b> on the plaques?', [[btn(s, 'type:SK', 'SK logo'), btn(s, 'type:NOT_SK', 'The school\'s own logo')]], { kind: 'schoolType' });
+    return ask(s, t('<b>Logo</b>?', '<b>Logo</b> 用哪个？'), [[btn(s, 'type:SK', t('SK logo', 'SK logo')), btn(s, 'type:NOT_SK', t('School\'s own logo', '学校自己的 logo'))]], { kind: 'schoolType' });
   }
-  if (step.kind === 'logo') return ask(s, 'Send me the school\'s <b>logo</b> (a photo or image file).', [], { kind: 'logo' });
-  if (step.kind === 'excel') return ask(s, 'Now send me the <b>FORM ANUGERAH</b> Excel (or reply the list to it).', [], { kind: 'excel' });
-  return ask(s, 'Do you have the teacher\'s <b>kertas kerja</b>? Send it to me now (any file or photo), or tap below.',
-    [[btn(s, 'kk:none', 'No kertas kerja')]], { kind: 'kertas' });
+  if (step.kind === 'logo') return ask(s, t('Send the school\'s <b>logo</b> (photo or image).', '请发学校的 <b>logo</b>（照片或图片）。'), [], { kind: 'logo' });
+  if (step.kind === 'excel') return ask(s, t('Send the <b>FORM ANUGERAH</b> Excel.', '请发 <b>FORM ANUGERAH</b> 的 Excel。'), [], { kind: 'excel' });
+  return ask(s, t('Teacher\'s <b>kertas kerja</b>? Send it now, or tap below.', '有老师的 <b>kertas kerja</b> 吗？现在发给我，或按下面。'),
+    [[btn(s, 'kk:none', t('No kertas kerja', '没有 kertas kerja'))]], { kind: 'kertas' });
 }
 
 // true when it asked; false when one school matched and was taken
 async function askSchool(s: Row): Promise<boolean> {
+  const t = await T(s);
   const name = s.details.sekolah;
   const { data } = await db.from('profiles').select('id, sekolah, school_language').eq('role', 'teacher').eq('status', 'active')
     .ilike('sekolah', `%${name.replace(/[%_]/g, '')}%`).order('sekolah').limit(8);
@@ -292,10 +300,10 @@ async function askSchool(s: Row): Promise<boolean> {
   }
   if (rows.length) {
     await save(s, { answers: { ...s.answers, _schools: rows.map((r) => ({ id: r.id, sekolah: r.sekolah, schoolLanguage: r.school_language || 'SK' })) } });
-    await ask(s, `Which school is <b>${esc(name)}</b>?`, rows.map((r, i) => [btn(s, `sch:${i}`, r.sekolah)]), { kind: 'school' });
+    await ask(s, t(`Which school is <b>${esc(name)}</b>?`, `<b>${esc(name)}</b> 是哪一间？`), rows.map((r, i) => [btn(s, `sch:${i}`, r.sekolah)]), { kind: 'school' });
     return true;
   }
-  await ask(s, `I can't find the school <b>${esc(name)}</b>. Type part of its name (e.g. TAMAN MUDA).`, [], { kind: 'school' });
+  await ask(s, t(`Can't find <b>${esc(name)}</b> — type part of the school name (e.g. TAMAN MUDA).`, `找不到 <b>${esc(name)}</b> — 请打学校名的一部分（例如 TAMAN MUDA）。`), [], { kind: 'school' });
   return true;
 }
 
@@ -348,7 +356,7 @@ export async function handleOrderMessage(msg: Msg, aiAllowed: AiAllowed): Promis
   if (list) {
     const salesman = await salesmanOf(userId);
     if (!salesman) {
-      await formBot.reply(chatId, msg.message_id, 'I don\'t know which website account you are yet. On the website, press <b>Connect Telegram</b> on your dashboard and send me the 6-digit code it shows.');
+      await formBot.reply(chatId, msg.message_id, 'Connect Telegram on the website first (dashboard → Connect Telegram), then send me the 6-digit code. / 请先在网站按 Connect Telegram，再把 6 位数代码发给我。');
       return true;
     }
     const { excel, kk } = await filesFor(msg);
@@ -358,7 +366,7 @@ export async function handleOrderMessage(msg: Msg, aiAllowed: AiAllowed): Promis
       details: list.fields, excel, kertas_kerja: kk, kertas_asked: kk.length > 0, media_group_id: msg.media_group_id ?? null,
     }).select('*').single();
     if (error) throw error;
-    await formBot.reply(chatId, msg.message_id, `📋 Got it — <b>${esc(list.fields.sekolah)}</b>. Let me check everything…`);
+    await formBot.reply(chatId, msg.message_id, tr(await langOfProfile(db, salesman.id))(`📋 <b>${esc(list.fields.sekolah)}</b> — checking…`, `📋 <b>${esc(list.fields.sekolah)}</b> — 检查中…`));
     await advance(data as Row, salesman, aiAllowed);
     return true;
   }
@@ -377,26 +385,28 @@ export async function handleOrderMessage(msg: Msg, aiAllowed: AiAllowed): Promis
   if (!salesman) return false;
   // no question waiting: the bot is still working on this order (e.g. collecting an album's pages)
   const p = s.pending || { kind: 'busy' };
+  const lang = await langOfProfile(db, s.profile_id);
+  const t = tr(lang);
   const file = fileOf(msg);
 
   if (/^\s*(cancel|batal)\s*$/i.test(text) && !file) {
     await save(s, { state: 'cancelled', pending: null });
-    await formBot.reply(chatId, msg.message_id, 'Cancelled — nothing was submitted.');
+    await formBot.reply(chatId, msg.message_id, t('✖ Cancelled — nothing submitted.', '✖ 已取消 — 没有 submit。'));
     return true;
   }
   // While an order is open, an Excel is its FORM ANUGERAH (a newer one replaces it and everything is checked
   // again) and any other file is one more page of its kertas kerja — never a form for the bot to fill.
   if (file && p.kind !== 'logo') {
     if (isXlsx(msg.document)) {
-      if ((msg.document.file_size || 0) > MAX_FILE_BYTES) { await formBot.reply(chatId, msg.message_id, 'That file is too big for me (20 MB at most).'); return true; }
+      if ((msg.document.file_size || 0) > MAX_FILE_BYTES) { await formBot.reply(chatId, msg.message_id, t('❌ Too big (20 MB max).', '❌ 文件太大（最多 20 MB）。')); return true; }
       const replacing = !!s.excel;
       if (p.messageId) await formBot.dropButtons(chatId, p.messageId);
       await save(s, { excel: file, pending: null, answers: {}, subs: [], ok_words: [] });
-      if (replacing) await formBot.reply(chatId, msg.message_id, `📄 Using <b>${esc(file.name)}</b> for this order — checking it again.`);
+      if (replacing) await formBot.reply(chatId, msg.message_id, t(`📄 Using <b>${esc(file.name)}</b> — checking again.`, `📄 改用 <b>${esc(file.name)}</b> — 重新检查。`));
       await advance(s, salesman, aiAllowed);
       return true;
     }
-    if (p.kind === 'excel') { await formBot.reply(chatId, msg.message_id, 'That isn\'t an Excel (.xlsx) — please send the FORM ANUGERAH.'); return true; }
+    if (p.kind === 'excel') { await formBot.reply(chatId, msg.message_id, t('❌ Not an Excel (.xlsx) — send the FORM ANUGERAH.', '❌ 这不是 Excel (.xlsx) — 请发 FORM ANUGERAH。')); return true; }
     // an album's other pages: the page that found the question waiting collects them all (below)
     if (p.kind === 'busy' && msg.media_group_id) return true;
     const kk = [...s.kertas_kerja, file];
@@ -409,7 +419,7 @@ export async function handleOrderMessage(msg: Msg, aiAllowed: AiAllowed): Promis
     }
     const added = kk.slice(s.kertas_kerja.length);
     await save(s, { kertas_kerja: kk, kertas_asked: true, ...(p.kind === 'kertas' ? { pending: null } : msg.media_group_id ? { pending: p.kind === 'busy' ? null : p } : {}) });
-    await formBot.reply(chatId, msg.message_id, `📎 Kertas kerja added to this order: ${added.map((f) => `<b>${esc(f.name)}</b>`).join(', ')}`);
+    await formBot.reply(chatId, msg.message_id, `📎 ${t('Kertas kerja added', '已加 kertas kerja')}: ${added.map((f) => esc(f.name)).join(', ')}`);
     if (p.kind === 'kertas') {
       if (p.messageId) await formBot.dropButtons(chatId, p.messageId);
       await advance(s, salesman, aiAllowed);
@@ -429,33 +439,33 @@ export async function handleOrderMessage(msg: Msg, aiAllowed: AiAllowed): Promis
   }
   if (file) return false; // a file for something else: the form bot fills it as before
 
-  const t = text.trim();
-  if (!t) return false;
+  const typed = text.trim();
+  if (!typed) return false;
   if (p.kind === 'field') {
-    const r = readFieldAnswer(p.field, t, todayMy(), askedDay);
-    if ('error' in r) { await formBot.reply(chatId, msg.message_id, `⚠ ${esc(r.error)}`); return true; }
+    const r = readFieldAnswer(p.field, typed, todayMy(), askedDay, lang);
+    if ('error' in r) { await formBot.reply(chatId, msg.message_id, `⚠️ ${esc(r.error)}`); return true; }
     await save(s, { details: { ...s.details, [p.field]: r.value }, pending: null });
     await advance(s, salesman, aiAllowed);
     return true;
   }
   if (p.kind === 'school') {
-    await save(s, { details: { ...s.details, sekolah: t.toUpperCase() }, school: null, pending: null });
+    await save(s, { details: { ...s.details, sekolah: typed.toUpperCase() }, school: null, pending: null });
     await advance(s, salesman, aiAllowed);
     return true;
   }
   if (p.kind === 'plak') {
-    await save(s, { subs: [...s.subs.filter((x) => !(x.whole && norm(x.from) === norm(p.raw))), { from: p.raw, to: t.toUpperCase(), whole: true }], pending: null });
+    await save(s, { subs: [...s.subs.filter((x) => !(x.whole && norm(x.from) === norm(p.raw))), { from: p.raw, to: typed.toUpperCase(), whole: true }], pending: null });
     await advance(s, salesman, aiAllowed);
     return true;
   }
-  if (p.kind === 'kertas' && /^(no|none|tiada|tak ada|takde)$/i.test(t)) {
+  if (p.kind === 'kertas' && /^(no|none|tiada|tak ada|takde|没有|无)$/i.test(typed)) {
     await save(s, { kertas_asked: true, pending: null });
     await advance(s, salesman, aiAllowed);
     return true;
   }
   await formBot.reply(chatId, msg.message_id, p.kind === 'excel'
-    ? 'I\'m waiting for the FORM ANUGERAH Excel for this order (or type <b>cancel</b>).'
-    : p.kind === 'busy' ? 'One moment — I\'m still checking this order.' : 'Please answer with the buttons above (or type <b>cancel</b>).');
+    ? t('Waiting for the FORM ANUGERAH Excel (or type <b>cancel</b>).', '在等 FORM ANUGERAH 的 Excel（或打 <b>cancel</b>）。')
+    : p.kind === 'busy' ? t('One moment — still checking.', '请稍等 — 还在检查。') : t('Please tap a button above (or type <b>cancel</b>).', '请按上面的按钮（或打 <b>cancel</b>）。'));
   return true;
 }
 
@@ -465,12 +475,13 @@ export async function handleOrderButton(cb: Msg, aiAllowed: AiAllowed) {
   if (!m) return formBot.answerButton(cb.id);
   const { data } = await db.from('bot_order_sessions').select('*').eq('id', m[1]).maybeSingle();
   const s = data as Row | null;
-  if (!s || s.telegram_user_id !== Number(cb.from?.id)) return formBot.answerButton(cb.id, 'This isn\'t your order.');
-  if (s.state !== 'open') return formBot.answerButton(cb.id, s.state === 'submitted' ? `Already submitted — ${s.order_id}` : 'This order was cancelled.');
+  if (!s || s.telegram_user_id !== Number(cb.from?.id)) return formBot.answerButton(cb.id, 'Not your order. / 这不是你的单。');
+  const t = await T(s);
+  if (s.state !== 'open') return formBot.answerButton(cb.id, s.state === 'submitted' ? t(`Already submitted — ${s.order_id}`, `已经 submit 了 — ${s.order_id}`) : t('This order was cancelled.', '这张单已取消。'));
   const msgId = cb.message?.message_id;
-  if (!s.pending || s.pending.messageId !== msgId) return formBot.answerButton(cb.id, 'That question has been answered already.');
+  if (!s.pending || s.pending.messageId !== msgId) return formBot.answerButton(cb.id, t('Already answered.', '已经回答过了。'));
   const salesman = await salesmanOf(s.telegram_user_id);
-  if (!salesman) return formBot.answerButton(cb.id, 'Your Telegram is no longer linked to the website.');
+  if (!salesman) return formBot.answerButton(cb.id, t('Your Telegram is no longer linked.', '你的 Telegram 已经没有连接网站。'));
   await formBot.answerButton(cb.id);
   await formBot.dropButtons(s.chat_id, msgId);
   const a = m[2];
@@ -478,7 +489,7 @@ export async function handleOrderButton(cb: Msg, aiAllowed: AiAllowed) {
 
   if (a === 'cancel') {
     await save(s, { state: 'cancelled', pending: null });
-    return formBot.ask(s.chat_id, msgId, 'Cancelled — nothing was submitted.');
+    return formBot.ask(s.chat_id, msgId, t('✖ Cancelled — nothing submitted.', '✖ 已取消 — 没有 submit。'));
   }
   if (a === 'submit' && p.kind === 'confirm') return submit(s, salesman, aiAllowed);
   if (a.startsWith('terms:')) await save(s, { details: { ...s.details, terms: a.slice(6) as 'L/O' | 'Cash' }, pending: null });
@@ -489,7 +500,7 @@ export async function handleOrderButton(cb: Msg, aiAllowed: AiAllowed) {
     if (pick) await save(s, { school: pick, details: { ...s.details, sekolah: pick.sekolah }, pending: null });
   } else if (a.startsWith('q:') && p.kind === 'question') {
     const key = a.slice(2);
-    if (key === 'stop') return stopForWebsite(s, 'OK — stopped here.');
+    if (key === 'stop') return stopForWebsite(s, t('OK — stopped.', '好 — 已停。'));
     await save(s, { answers: { ...s.answers, [p.id]: key }, pending: null });
   } else if (a.startsWith('sp:') && p.kind === 'spell') {
     const [, idx, choice] = a.split(':');
@@ -506,7 +517,7 @@ export async function handleOrderButton(cb: Msg, aiAllowed: AiAllowed) {
       ? { subs: [...s.subs, { from: p.word, to: p.suggestion }], pending: null }
       : { ok_words: [...s.ok_words, { blockKey: p.blockKey, word: p.word }], pending: null });
   } else if (a.startsWith('dup:') && p.kind === 'dup') {
-    if (a === 'dup:no') return stopForWebsite(s, 'OK — not submitted. Check the existing order first.');
+    if (a === 'dup:no') return stopForWebsite(s, t('OK — not submitted. Check the existing order first.', '好 — 没有 submit。请先看看已有的那张单。'));
     await save(s, { answers: { ...s.answers, _dup: { matches: (s.answers._dupFound || []).map((id: string) => ({ id, reasons: ['same_teacher_function_date'] })), confirmedBy: `salesman ${salesman.name}`, confirmedAt: new Date().toISOString() } }, pending: null });
   } else return;
   return advance(s, salesman, aiAllowed);
@@ -548,17 +559,20 @@ async function submit(s: Row, salesman: { id: string; name: string }, aiAllowed:
   if (error) {
     console.error('bot_submit_order failed:', error);
     const st = /^INSUFFICIENT_STOCK:(.*):(\d+)$/.exec(error.message || '');
-    const why = st ? `Not enough stock for "${st[1]}" — only ${st[2]} can be ordered now.` : `The website didn't take the order: ${error.message}`;
-    return stopForWebsite(s, `⚠ Not submitted. ${esc(why)}`);
+    const t = await T(s);
+    const why = st ? t(`Not enough stock for "${st[1]}" — only ${st[2]} left.`, `「${st[1]}」库存不够 — 只剩 ${st[2]}。`) : t(`The website refused it: ${error.message}`, `网站没收这张单：${error.message}`);
+    return stopForWebsite(s, `⚠️ ${t('Not submitted.', '没有 submit。')} ${esc(why)}`);
   }
   await save(s, { state: 'submitted', order_id: orderId as string });
   const crystal = read.items.some((it: { jenisPlak: string }) => isCrystalCode(it.jenisPlak));
   const link = `${SITE_URL}/#/sales/orders/${encodeURIComponent(orderId as string)}`;
+  const t = await T(s);
+  const pcs = read.items.reduce((n: number, it: { qty: unknown }) => n + (Number(it.qty) || 0), 0);
   await formBot.ask(s.chat_id, null, [
-    `✅ <b>Submitted — ${esc(orderId)}</b>`,
-    `${esc(s.school?.sekolah)} · ${read.items.reduce((n: number, it: { qty: unknown }) => n + (Number(it.qty) || 0), 0)} pcs · RM ${Number(read.total).toFixed(2)}`,
-    `👉 <a href="${link}">Open ${esc(orderId)} on the website</a>`,
-    ...(crystal ? ['', `💎 Crystal artwork is <b>not confirmed</b> yet: open the order, check the <b>Crystal Preview</b>, then press <b>Confirm Artwork</b>.`] : []),
+    `✅ <b>${t('Submitted', '已 submit')} — ${esc(orderId)}</b>`,
+    `${esc(s.school?.sekolah)} · ${t(`${pcs} pcs`, `${pcs} 块`)} · RM ${Number(read.total).toFixed(2)}`,
+    `👉 <a href="${link}">${t('Open on the website', '在网站打开')}</a>`,
+    ...(crystal ? [t('💎 Crystal artwork not confirmed — check Crystal Preview, then Confirm Artwork.', '💎 Crystal 的图还没确认 — 打开订单看 Crystal Preview，再按 Confirm Artwork。')] : []),
   ].join('\n'));
 }
 

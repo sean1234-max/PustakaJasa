@@ -29,6 +29,8 @@ export type AssistantCtx = {
   // the staff's jobs on that file; each sends its own result to the group and says what it sent
   convertForm: (notes: string) => Promise<string>;
   compareFile: (orderId: string) => Promise<string>;
+  // ReviewAgent reminds the order's salesman in his own group (remind.ts)
+  remindSalesman: (orderId: string, note: string) => Promise<string>;
 };
 
 const nextDay = (day: string) => new Date(Date.parse(`${day}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
@@ -127,6 +129,18 @@ const TOOLS: Anthropic.Beta.BetaToolUnion[] = [
     input_schema: { type: 'object', additionalProperties: false, required: ['notes'], properties: { notes: { type: 'string', description: 'Sean\'s instructions for the form, e.g. "semua PKC 263", or ""' } } },
   },
   {
+    name: 'remind_salesman',
+    description: 'ReviewAgent: send the order\'s salesman a reminder in his own Telegram group (him mentioned, in his language, with the order link) — e.g. a Done Review order he hasn\'t approved. Use it when Sean says to remind / chase / tell the salesman.',
+    strict: true,
+    input_schema: {
+      type: 'object', additionalProperties: false, required: ['order_id', 'note'],
+      properties: {
+        order_id: { type: 'string', description: 'e.g. ORD-0327' },
+        note: { type: 'string', description: 'anything Sean asked to add, in his words; "" for the standard reminder' },
+      },
+    },
+  },
+  {
     name: 'compare_file_with_order',
     description: 'ReviewAgent: compare the file Sean sent with an order and send the differences to the group. Takes about a minute.',
     strict: true,
@@ -135,7 +149,7 @@ const TOOLS: Anthropic.Beta.BetaToolUnion[] = [
 ];
 
 const system = (today: string, fileName: string | null) => `You are the assistant of Sean, the boss of Pustaka Jasa / DOUBLE WIN, a Malaysian company that makes school award plaques, medals and crystals. You talk with him in his Telegram group "DOUBLE WIN PRODUCTION". Today is ${today} (Malaysia).
-You are the manager of two staff bots and hand them the jobs: ExcelFormAgent turns a teacher's kertas kerja into FORM ANUGERAH (convert_kertas_kerja); ReviewAgent compares a file with an order (compare_file_with_order) and changes an order's Shipment Date / Function Date / Remark (prepare_order_change, confirm_order_change). Say which staff you gave a job to.
+You are the manager of two staff bots and hand them the jobs: ExcelFormAgent turns a teacher's kertas kerja into FORM ANUGERAH (convert_kertas_kerja); ReviewAgent compares a file with an order (compare_file_with_order), reminds a salesman in his own group (remind_salesman) and changes an order's Shipment Date / Function Date / Remark (prepare_order_change, confirm_order_change). Say which staff you gave a job to.
 ${fileName ? `Sean sent a file with this message: "${fileName}". Unless he says to compare it with an order (or it already is a FORM ANUGERAH), hand it to ExcelFormAgent (convert_kertas_kerja) straight away — a file on its own means "convert this".` : 'No file came with this message; for convert / compare, ask Sean to send the file.'}
 Work like a good staff member:
 - Answer from the tools, never from memory or a guess. Order numbers look like ORD-0234.
@@ -143,7 +157,8 @@ Work like a good staff member:
 - Changing an order: only its Shipment Date, Function Date or Remark. First prepare_order_change and show Sean exactly what it becomes, then ask "确认？". Only when he says yes in his NEXT message, confirm_order_change. Never confirm in the same turn you prepared. Anything else (quantities, wording, Jenis Plak, prices): tell him to use Edit Order on the website.
 - Keep Sean's to-do list: add what he asks you to remember, tick off what he says is done, show it when he asks.
 - If something is unclear or you're not sure, ASK Sean a short question instead of guessing. If you see a problem (a late order, a missing invoice …), say it.
-- Reply in the language Sean writes in (usually Simplified Chinese; keep order numbers, school names, statuses and plaque wording as they are). Short and to the point, like a message to the boss. Plain text only — no Markdown, no HTML; "• " for lists.`;
+- Reply in Simplified Chinese (keep order numbers, school names, statuses and plaque wording as they are), unless Sean writes in another language.
+- Short (Sean, 2026-11-08: he wants to read less but still get the point): the answer first — the number, yes / no, or what you did — in one line. Then at most 5 lines; a longer list shows the top 5 and "还有 N 个". No greetings, no repeating his question, no explaining how you found it. Plain text only — no Markdown, no HTML; "• " for lists.`;
 
 const ok = (data: unknown) => JSON.stringify(data);
 
@@ -250,6 +265,7 @@ async function runTool(ctx: AssistantCtx, name: string, input: Record<string, un
   if (name === 'confirm_order_change') return ok(await applyEdit(db, String(input.request_id || ''), ctx.sentAt, ctx.who));
   if (name === 'ai_credit') return ok(await aiCredit(db, input.balance_usd as number | null, ctx.who));
   if (name === 'convert_kertas_kerja') return ok(ctx.fileName ? { result: await ctx.convertForm(String(input.notes || '')) } : { error: 'no file with this message — ask Sean to send it' });
+  if (name === 'remind_salesman') return ok({ result: await ctx.remindSalesman(String(input.order_id || ''), String(input.note || '')) });
   if (name === 'compare_file_with_order') return ok(ctx.fileName ? { result: await ctx.compareFile(String(input.order_id || '')) } : { error: 'no file with this message — ask Sean to send it' });
   return ok({ error: `unknown tool ${name}` });
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { teacherFiles, reportHtml } from './reviewReport.ts';
+import { teacherFiles, reportHtml, reviewQuestions, answerLabel, summaryHtml } from './reviewReport.ts';
 
 describe('teacherFiles', () => {
   it('the kertas kerja first, else the order file the teacher filled', () => {
@@ -12,18 +12,46 @@ describe('teacherFiles', () => {
   });
 });
 
-describe('reportHtml', () => {
-  it('numbers every question, groups them, mentions the salesman, asks for a reply', () => {
-    const html = reportHtml({ id: 'ORD-0300', sekolah: 'SK A & B' }, ['kk.pdf'], 'Mostly matches.', [
-      { kind: 'quantity', where: 'PKC 263', inFile: '50', inOrder: '45' },
-      { kind: 'wording', where: 'TOKOH SUKAN', inFile: 'TOKOH SUKAN LELAKI', inOrder: 'TOKOH SUKAN' },
-    ], [{ rule: 'R1', level: 'fix', text: '"JOHAN" should be the red line', sheet: 'UMUM', count: 3 }], '<a href="tg://user?id=1">ZY</a>');
-    expect(html).toContain('ORD-0300');
-    expect(html).toContain('SK A &amp; B');
-    expect(html.indexOf('Wording')).toBeLessThan(html.indexOf('Quantity'));
-    expect(html).toMatch(/1\. TOKOH SUKAN — kertas kerja: "TOKOH SUKAN LELAKI" · order: "TOKOH SUKAN"/);
-    expect(html).toMatch(/2\. PKC 263 — kertas kerja: "50" · order: "45"/);
-    expect(html).toMatch(/3\. "JOHAN" should be the red line \(3 plaques\)/);
-    expect(html).toContain('<a href="tg://user?id=1">ZY</a> please check with the teacher and <b>reply to this message</b>');
+describe('the review questions', () => {
+  const diffs = [
+    { kind: 'wording', where: 'TOKOH SUKAN', inFile: 'TOKOH SUKAN LELAKI', inOrder: 'TOKOH SUKAN' },
+    { kind: 'missing_in_order', where: 'PKC 263', inFile: 'ANUGERAH KHAS', inOrder: '' },
+  ];
+  const red = [{ rule: 'R1', level: 'fix', text: 'x', sheet: 'UMUM', count: 3, find: 'JOHAN' }];
+
+  it('one question each, numbered, with buttons — Chinese', () => {
+    const qs = reviewQuestions(diffs, red, 'zh');
+    expect(qs.map((q) => q.n)).toEqual([1, 2, 3]);
+    expect(qs[0].html).toContain('老师');
+    expect(qs[0].options.map((o) => o.key)).toEqual(['file', 'order', 'other']);
+    expect(qs[0].options[0].label).toBe('📄 老师的对');
+    expect(qs[1].options.map((o) => o.key)).toEqual(['add', 'skip', 'other']);
+    expect(qs[2].html).toContain('这个要红色吗？');
+    expect(qs[2].options.map((o) => o.label)).toEqual(['🔴 红色', '⚫ 黑色']);
+  });
+
+  it('English for Fida / Nazrin / Wendy', () => {
+    const qs = reviewQuestions(diffs, red, 'en');
+    expect(qs[0].options[0].label).toBe('📄 Teacher is right');
+    expect(qs[2].html).toContain('Should this be RED?');
+  });
+
+  it('the headline is short; the list is folded', () => {
+    const qs = reviewQuestions(diffs, red, 'zh');
+    const html = reportHtml({ id: 'ORD-0300', sekolah: 'SK A & B' }, qs, ['kk.pdf'], '<a href="tg://user?id=1">ZY</a>', 'zh');
+    const [first, second] = html.split('\n');
+    expect(first).toContain('ORD-0300');
+    expect(first).toContain('SK A &amp; B');
+    expect(second).toContain('有 3 个要和老师确认');
+    expect(html).toContain('<blockquote expandable>');
+  });
+
+  it('answers read back, and the summary lists them', () => {
+    const qs = reviewQuestions(diffs, red, 'zh');
+    expect(answerLabel(qs[0], { pick: 'file' }, 'zh')).toBe('📄 老师的对');
+    expect(answerLabel(qs[0], { pick: 'other', text: 'TOKOH SUKAN (L)' }, 'zh')).toBe('✏️ 都不对: 「TOKOH SUKAN (L)」');
+    const sum = summaryHtml({ id: 'ORD-0300', sekolah: 'SK A' }, qs, { 1: { pick: 'file' }, 2: { pick: 'skip' }, 3: { pick: 'red' } }, 'Keith', 'zh');
+    expect(sum).toContain('Keith 已全部回答');
+    expect(sum).toContain('3. 🔴 红色');
   });
 });

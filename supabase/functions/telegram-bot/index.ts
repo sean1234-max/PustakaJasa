@@ -25,7 +25,8 @@ import { db, SUPABASE_URL } from './db.ts';
 import { esc, telegramBot, MAX_FILE_BYTES } from './telegram.ts';
 import { fillForm, formBot, handleForm } from './form.ts';
 import { handleOrderButton } from './orderChat.ts';
-import { runReviewJob, handleSalesmanGroup } from './autoReview.ts';
+import { runReviewJob, handleSalesmanGroup, handleReviewButton, groupMoved } from './autoReview.ts';
+import { remindSalesman, runApprovalReminders } from './remind.ts';
 import { readFile, type FileContent } from './files.ts';
 import { askedDay, orderPlaquesText, proposeChanges, type Order } from './order.ts';
 import { readChanges, compareFile } from './ai.ts';
@@ -35,7 +36,8 @@ const CHAT_ID = Deno.env.get('TELEGRAM_CHAT_ID') ?? '';
 const SITE_URL = Deno.env.get('SITE_URL') ?? 'https://pustaka-jasa.vercel.app';
 const BOT_NAME = (Deno.env.get('TELEGRAM_BOT_USERNAME') ?? 'PjsbReviewAgent').toLowerCase();
 
-const bot = telegramBot(Deno.env.get('TELEGRAM_BOT_TOKEN') ?? '');
+// ReviewAgent: a salesman's group that became a supergroup is followed to its new id (autoReview.ts)
+const bot = telegramBot(Deno.env.get('TELEGRAM_BOT_TOKEN') ?? '', { onMigrate: groupMoved });
 const assistantBot = telegramBot(Deno.env.get('TELEGRAM_ASSISTANT_BOT_TOKEN') ?? '');
 const ASSISTANT_NAME = (Deno.env.get('TELEGRAM_ASSISTANT_BOT_USERNAME') ?? '').toLowerCase();
 type ChangeRequest = { orderId: string; shipmentDate: string | null; functionDate: string | null; remarkAdd: string | null };
@@ -248,6 +250,8 @@ async function handleAssistant(msg: Msg) {
       await assistantBot.sendDocument(msg.chat.id, msg.message_id, filled.buffer, filled.fileName, filled.caption);
       return `sent ${filled.fileName} (${filled.total} plaques) to the group${filled.notes.length ? `; questions to raise with Sean: ${filled.notes.join(' | ')}` : ''}`;
     },
+    // ReviewAgent posts the reminder in the salesman's own group (remind.ts)
+    remindSalesman: async (orderId, note) => JSON.stringify(await remindSalesman(db, bot, normOrderId(orderId) || orderId, note)),
     compareFile: async (orderId) => {
       const id = normOrderId(orderId);
       if (!id) return 'not an order number';
@@ -267,9 +271,12 @@ const JOB_KEY = JSON.parse(Deno.env.get('SUPABASE_SECRET_KEYS') ?? '{}')['defaul
 
 Deno.serve(async (req) => {
   const url = new URL(req.url);
-  if (url.searchParams.get('job') === 'review') {
+  const job = url.searchParams.get('job');
+  if (job === 'review' || job === 'approvals') {
     if (!JOB_KEY || req.headers.get('x-job-key') !== JOB_KEY) return new Response('forbidden', { status: 403 });
-    const work = runReviewJob(bot, aiAllowed).then((r) => console.log('auto review:', JSON.stringify(r))).catch((err) => console.error('auto review job failed:', err));
+    // ?job=approvals: remind salesmen to approve their Done Review orders (remind.ts)
+    const run = job === 'review' ? runReviewJob(bot, aiAllowed) : runApprovalReminders(db, bot);
+    const work = run.then((r) => console.log(`${job} job:`, JSON.stringify(r))).catch((err) => console.error(`${job} job failed:`, err));
     // @ts-ignore EdgeRuntime is provided by the Supabase Edge runtime
     if (typeof EdgeRuntime !== 'undefined') EdgeRuntime.waitUntil(work); else await work;
     return new Response('started', { status: 202 });
@@ -283,6 +290,13 @@ Deno.serve(async (req) => {
   }
   if (req.headers.get('X-Telegram-Bot-Api-Secret-Token') !== await which.webhookSecret()) return new Response('forbidden', { status: 403 });
   const update = await req.json().catch(() => null);
+  // the review bot's buttons: a salesman's answers to a review (autoReview.ts)
+  if (kind === 'review' && update?.callback_query) {
+    const work = handleReviewButton(update.callback_query, bot).catch((err) => console.error('telegram-bot (review button) failed:', err));
+    // @ts-ignore EdgeRuntime is provided by the Supabase Edge runtime
+    if (typeof EdgeRuntime !== 'undefined') EdgeRuntime.waitUntil(work); else await work;
+    return new Response('ok');
+  }
   // the form bot's buttons (the order chat's answers and Submit, orderChat.ts)
   if (isForm && update?.callback_query) {
     const cb = update.callback_query;
