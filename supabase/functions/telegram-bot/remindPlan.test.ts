@@ -6,15 +6,12 @@ const ago = (days: number) => new Date(NOW - days * 86_400_000).toISOString();
 const o = (id: string, reviewedDaysAgo: number | null, over = {}) => ({ id, status: 'Reviewing Order', reviewed_at: reviewedDaysAgo == null ? null : ago(reviewedDaysAgo), ...over });
 
 describe('dueReminders', () => {
-  it('reminds right after Done Review, once', () => {
+  it('reminds once after Done Review, never a second time', () => {
     const a = o('ORD-0327', 0.01);
-    expect(dueReminders([a], new Set(), NOW)).toEqual([{ id: 'ORD-0327', round: 1, key: reminderKey(a, 1) }]);
-    expect(dueReminders([a], new Set([reminderKey(a, 1)]), NOW)).toEqual([]);
-  });
-  it('a second time after 2 days, then never again', () => {
-    const a = o('ORD-0327', 2.1);
-    expect(dueReminders([a], new Set([reminderKey(a, 1)]), NOW)).toEqual([{ id: 'ORD-0327', round: 2, key: reminderKey(a, 2) }]);
-    expect(dueReminders([a], new Set([reminderKey(a, 1), reminderKey(a, 2)]), NOW)).toEqual([]);
+    expect(dueReminders([a], new Set(), NOW)).toEqual([{ id: 'ORD-0327', key: reminderKey(a) }]);
+    expect(dueReminders([a], new Set([reminderKey(a)]), NOW)).toEqual([]);
+    const old = o('ORD-0327', 3);
+    expect(dueReminders([old], new Set([reminderKey(old)]), NOW)).toEqual([]);
   });
   it('not reviewed, approved, cancelled, test orders, or long-waiting ones from before: nothing', () => {
     expect(dueReminders([
@@ -25,6 +22,6 @@ describe('dueReminders', () => {
   it('reviewed again after an edit: reminded again', () => {
     const before = o('ORD-0327', 3);
     const again = o('ORD-0327', 0.01);
-    expect(dueReminders([again], new Set([reminderKey(before, 1), reminderKey(before, 2)]), NOW)).toHaveLength(1);
+    expect(dueReminders([again], new Set([reminderKey(before)]), NOW)).toHaveLength(1);
   });
 });

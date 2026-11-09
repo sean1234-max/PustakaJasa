@@ -14,8 +14,7 @@ const esc = (t: unknown) => String(t ?? '').replace(/&/g, '&amp;').replace(/</g,
 
 type Sender = { ask: (chatId: number | string, replyTo: number | null, html: string) => Promise<number | null> };
 
-// `round` 2: the automatic second reminder (runApprovalReminders)
-export async function remindSalesman(db: SupabaseClient, bot: Sender, orderId: string, note: string, round = 1) {
+export async function remindSalesman(db: SupabaseClient, bot: Sender, orderId: string, note: string) {
   const { data: o } = await db.from('orders').select('id, sekolah, status, reviewed_at, salesman_id, sales').eq('id', orderId).maybeSingle();
   if (!o) return { error: `no order ${orderId}` };
   if (!o.salesman_id) return { error: `${orderId} has no salesman` };
@@ -27,7 +26,7 @@ export async function remindSalesman(db: SupabaseClient, bot: Sender, orderId: s
   const order = `<a href="${SITE_URL}/#/sales/orders/${encodeURIComponent(o.id)}">${esc(o.id)}</a> · ${esc(o.sekolah)}`;
   const waitingApproval = o.status === 'Reviewing Order' && o.reviewed_at;
   const html = [
-    `🔔 ${who} ${order}${round > 1 ? ` · ${t('2nd reminder', '第二次提醒')}` : ''}`,
+    `🔔 ${who} ${order}`,
     waitingApproval
       ? t('✅ Reviewed — please <b>approve</b> it on the website.', '✅ 已经 review 好了 — 请上网站 <b>approve</b>。')
       : t(`Status: ${esc(o.status)}`, `状态：${esc(o.status)}`),
@@ -39,15 +38,14 @@ export async function remindSalesman(db: SupabaseClient, bot: Sender, orderId: s
 
 const MAX_PER_RUN = 10;
 
-// Every Done Review order gets its salesman reminded at once, and again after 2 days if it still waits
-// (remindPlan.ts). Run with telegram-notify's 3-minute run (telegram-bot ?job=approvals). A salesman with no
+// Every Done Review order gets its salesman reminded once, right away (remindPlan.ts). Run with telegram-notify's 3-minute run (telegram-bot ?job=approvals). A salesman with no
 // group linked is skipped — Sean's own "still not approved" question (reports.ts) covers him.
 export async function runApprovalReminders(db: SupabaseClient, bot: Sender) {
   const { data: orders, error } = await db.from('orders').select('id, status, reviewed_at, cancelled_at')
     .eq('status', 'Reviewing Order').not('reviewed_at', 'is', null).is('cancelled_at', null);
   if (error) throw error;
   if (!orders?.length) return { reminded: 0 };
-  const keys = (orders).flatMap((o) => [1, 2].map((r) => `approve:${r}:${o.id}:${o.reviewed_at}`));
+  const keys = orders.map((o) => `approve:1:${o.id}:${o.reviewed_at}`);
   const { data: sentRows } = await db.from('telegram_sent').select('key').in('key', keys);
   const due = dueReminders(orders, new Set((sentRows || []).map((r) => r.key))).slice(0, MAX_PER_RUN);
   const results = [];
@@ -55,7 +53,7 @@ export async function runApprovalReminders(db: SupabaseClient, bot: Sender) {
     // marked first: a failure isn't retried every 3 minutes (Sean hears about a stuck order anyway)
     const { error: markError } = await db.from('telegram_sent').insert({ key: d.key });
     if (markError) continue; // another run took it
-    results.push({ ...d, ...(await remindSalesman(db, bot, d.id, '', d.round)) });
+    results.push({ ...d, ...(await remindSalesman(db, bot, d.id, '')) });
   }
   return { reminded: results.length, results };
 }
