@@ -29,7 +29,14 @@ const PHONE_RE = /^[0-9-]{7,}$/;
 
 export type Step =
   | { kind: 'school' } | { kind: 'field'; field: 'picName' | 'phone' | 'ketuaPanitia' | 'functionDate' | 'shipmentDate' | 'logoRemark'; why?: string }
-  | { kind: 'terms' } | { kind: 'schoolType' } | { kind: 'logo' } | { kind: 'excel' } | { kind: 'kertas' };
+  | { kind: 'terms' } | { kind: 'schoolType' } | { kind: 'logo' } | { kind: 'excel' } | { kind: 'kertas' }
+  | { kind: 'urgent'; days: number };
+
+// Urgent: shipping in fewer than 7 days, today counted (the website's urgentOrder.js URGENT_WINDOW_DAYS) —
+// placed Mon 10 Nov, Sun 16 Nov is the last urgent day, Mon 17 Nov isn't (Sean, 2026-11-10)
+export const URGENT_WINDOW_DAYS = 7;
+export const daysBetween = (from: string, to: string) => Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
+export const isUrgent = (today: string, shipmentDate: string) => !!shipmentDate && daysBetween(today, shipmentDate) < URGENT_WINDOW_DAYS;
 
 // What the order still needs before the FORM ANUGERAH is read, in the order Function Details asks it
 export function nextDetailStep(s: Session, today: string, lang: Lang = 'en'): Step | null {
@@ -43,7 +50,11 @@ export function nextDetailStep(s: Session, today: string, lang: Lang = 'en'): St
   const minDay = addDaysIso(today, FUNCTION_MIN_DAYS);
   if (!d.functionDate) return { kind: 'field', field: 'functionDate' };
   if (d.functionDate < minDay) return { kind: 'field', field: 'functionDate', why: t(`${showDay(d.functionDate)} is too soon — must be ${showDay(minDay)} or later.`, `${showDay(d.functionDate)} 太近了 — 要 ${showDay(minDay)} 或之后。`) };
-  if (d.shipmentDate && d.shipmentDate > d.functionDate) return { kind: 'field', field: 'shipmentDate', why: t(`Shipment Date (${showDay(d.shipmentDate)}) is after the Function Date (${showDay(d.functionDate)}).`, `Shipment Date（${showDay(d.shipmentDate)}）比 Function Date（${showDay(d.functionDate)}）晚。`) };
+  // Shipment Date (Sean, 2026-11-10): not before today, and the Function Date strictly after it
+  if (d.shipmentDate && d.shipmentDate < today) return { kind: 'field', field: 'shipmentDate', why: t(`Shipment Date ${showDay(d.shipmentDate)} has already passed — it can't be before today (${showDay(today)}).`, `Shipment Date ${showDay(d.shipmentDate)} 已经过了 — 不能早过今天（${showDay(today)}）。`) };
+  if (d.shipmentDate && d.functionDate <= d.shipmentDate) return { kind: 'field', field: 'functionDate', why: t(`The Function Date must be after the Shipment Date (${showDay(d.shipmentDate)}).`, `Function Date 一定要比 Shipment Date（${showDay(d.shipmentDate)}）晚。`) };
+  // shipping within the urgent window: the salesman confirms it is urgent (or changes the date)
+  if (isUrgent(today, d.shipmentDate) && s.answers?._urgentOk !== d.shipmentDate) return { kind: 'urgent', days: daysBetween(today, d.shipmentDate) };
   if (!d.schoolType) return { kind: 'schoolType' };
   if (d.schoolType === 'NOT_SK' && !d.logoUrl) return { kind: 'logo' };
   if (d.schoolType === 'NOT_SK' && !d.logoRemark?.trim()) return { kind: 'field', field: 'logoRemark' };
@@ -85,7 +96,7 @@ type Item = { jenisPlak: string; qty: string | number; harga: number; categoryKe
 
 // The order as it will go in, for the salesman to check before Submit (short: the point first, the
 // Jenis Plak list folded — Sean, 2026-11-08)
-export function summaryHtml(s: Session, items: Item[], total: number, remark: string, crystal: boolean, lang: Lang = 'en') {
+export function summaryHtml(s: Session, items: Item[], total: number, remark: string, crystal: boolean, lang: Lang = 'en', today = '') {
   const t = tr(lang);
   const d = s.details;
   const byPlak = new Map<string, { qty: number; harga: number }>();
@@ -102,6 +113,7 @@ export function summaryHtml(s: Session, items: Item[], total: number, remark: st
     `<b>${t(`${qty} pcs`, `${qty} 块`)} · ${money(total)}</b> · Function ${showDay(d.functionDate)}`,
     `${esc(d.picName)} · ${esc(d.phone)} · ${esc(d.terms)}${d.schoolType === 'NOT_SK' ? ` · ${t('own logo', '学校 logo')}` : ''}`,
     `📎 ${s.kertas_kerja.length ? t(`Excel + ${s.kertas_kerja.length} kertas kerja`, `Excel + ${s.kertas_kerja.length} 份 kertas kerja`) : t('Excel only (no kertas kerja)', '只有 Excel（没有 kertas kerja）')}`,
+    ...(today && isUrgent(today, d.shipmentDate) ? [t(`⚡ <b>URGENT</b> — ships ${showDay(d.shipmentDate)}`, `⚡ <b>URGENT</b> — ${showDay(d.shipmentDate)} 出货`)] : []),
     ...(crystal ? [t('💎 Crystal artwork: confirm it on the website after Submit.', '💎 Crystal 的图：Submit 后在网站确认。')] : []),
     folded([
       ...[...byPlak.entries()].map(([k, r]) => `${esc(k)}: ${r.qty} — ${money(r.harga)}`),

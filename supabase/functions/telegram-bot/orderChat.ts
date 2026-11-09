@@ -64,12 +64,40 @@ const norm = (s: unknown) => String(s ?? '').toUpperCase().replace(/\s+/g, ' ').
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // ------------------------------------------------------------------ sessions
-async function salesmanOf(telegramUserId: number) {
-  const { data: link } = await db.from('telegram_links').select('profile_id').eq('telegram_user_id', telegramUserId).maybeSingle();
-  if (!link) return null;
-  const { data: p } = await db.from('profiles').select('id, display_name, role, status').eq('id', link.profile_id).maybeSingle();
+async function salesmanById(profileId: string | null | undefined) {
+  if (!profileId) return null;
+  const { data: p } = await db.from('profiles').select('id, display_name, role, status').eq('id', profileId).maybeSingle();
   return p && p.role === 'salesman' && p.status === 'active' ? { id: p.id as string, name: (p.display_name as string) || 'Salesman' } : null;
 }
+
+async function salesmanOf(telegramUserId: number) {
+  const { data: link } = await db.from('telegram_links').select('profile_id').eq('telegram_user_id', telegramUserId).maybeSingle();
+  return salesmanById(link?.profile_id);
+}
+
+// Production's own groups (as form.ts): only their people may put an order in for a salesman
+const PRODUCTION_GROUPS = (Deno.env.get('FORM_BOT_GROUP_IDS') ?? Deno.env.get('TELEGRAM_CHAT_ID') ?? '').split(',').map((x) => x.trim()).filter(Boolean);
+
+// Whose order this is (Sean, 2026-11-10): the sender's own salesman account; or — Sean / Production in a
+// salesman's own group — that group's salesman (ReviewAgent's link, else the one linked salesman in it).
+// `onBehalf`: someone else is putting it in for him.
+async function orderSalesman(msg: Msg) {
+  const own = await salesmanOf(Number(msg.from?.id));
+  if (own) return { ...own, onBehalf: false };
+  if (msg.chat?.type === 'private' || !(await formBot.inAnyGroup(Number(msg.from?.id), PRODUCTION_GROUPS))) return null;
+  const { data: g } = await db.from('salesman_groups').select('profile_id').eq('chat_id', msg.chat.id).maybeSingle();
+  if (g) { const sm = await salesmanById(g.profile_id); if (sm) return { ...sm, onBehalf: true }; }
+  const { data: links } = await db.from('telegram_links').select('telegram_user_id, profile_id');
+  const here = [];
+  for (const l of links || []) {
+    if (Number(l.telegram_user_id) === Number(msg.from?.id)) continue;
+    if (await formBot.inAnyGroup(Number(l.telegram_user_id), [String(msg.chat.id)])) { const sm = await salesmanById(l.profile_id); if (sm) here.push(sm); }
+  }
+  return here.length === 1 ? { ...here[0], onBehalf: true } : null;
+}
+
+// Neither a salesman nor in his group: what to do (instead of a bare "connect Telegram")
+const NOT_A_SALESMAN = 'This Telegram isn\'t a salesman account — the salesman sends it himself, or Production sends it in his group. / 这个 Telegram 不是 salesman 帐号 — 请 salesman 自己发，或由 Production 在他的群里发。';
 
 async function openSession(chatId: number, userId: number): Promise<Row | null> {
   const since = new Date(Date.now() - SESSION_DAYS * 86_400_000).toISOString();
@@ -268,12 +296,17 @@ async function advance(s: Row, salesman: { id: string; name: string }, aiAllowed
   }
 
   const crystal = read.items.some((it: { jenisPlak: string }) => isCrystalCode(it.jenisPlak));
-  return ask(s, summaryHtml(s, read.items, read.total, read.remark, crystal, lang), [[btn(s, 'submit', '✅ Submit')]], { kind: 'confirm' });
+  return ask(s, summaryHtml(s, read.items, read.total, read.remark, crystal, lang, today), [[btn(s, 'submit', '✅ Submit')]], { kind: 'confirm' });
 }
 
 async function askStep(s: Row, step: Exclude<ReturnType<typeof nextDetailStep>, null | { kind: 'school' }>, t: ReturnType<typeof tr>) {
   if (step.kind === 'field') {
     return ask(s, `${step.why ? `⚠️ ${esc(step.why)}\n` : ''}${t(...FIELD_Q[step.field])}`, [], { kind: 'field', field: step.field });
+  }
+  if (step.kind === 'urgent') {
+    return ask(s, t(`⚡ Ships ${showDay(s.details.shipmentDate)} — in ${step.days} day(s). That makes it an <b>URGENT</b> order. Right?`,
+      `⚡ ${showDay(s.details.shipmentDate)} 出货 — ${step.days} 天内，这是 <b>URGENT</b> 订单。确定吗？`),
+    [[btn(s, 'urg:yes', t('⚡ Yes, urgent', '⚡ 是，urgent')), btn(s, 'urg:change', t('✏️ Change the date', '✏️ 改 Shipment Date'))]], { kind: 'urgent' });
   }
   if (step.kind === 'terms') return ask(s, '<b>Terms</b>?', [[btn(s, 'terms:L/O', 'L/O'), btn(s, 'terms:Cash', 'Cash')]], { kind: 'terms' });
   if (step.kind === 'schoolType') {
@@ -303,7 +336,11 @@ async function askSchool(s: Row): Promise<boolean> {
     await ask(s, t(`Which school is <b>${esc(name)}</b>?`, `<b>${esc(name)}</b> 是哪一间？`), rows.map((r, i) => [btn(s, `sch:${i}`, r.sekolah)]), { kind: 'school' });
     return true;
   }
-  await ask(s, t(`Can't find <b>${esc(name)}</b> — type part of the school name (e.g. TAMAN MUDA).`, `找不到 <b>${esc(name)}</b> — 请打学校名的一部分（例如 TAMAN MUDA）。`), [], { kind: 'school' });
+  // not on the website at all (Sean, 2026-11-10): Admin adds the school, then the list is sent again
+  await save(s, { state: 'cancelled', pending: null });
+  await formBot.ask(s.chat_id, null, t(
+    `❌ <b>${esc(name)}</b> isn't on the website. Please ask Admin to add the school, then send the list again.`,
+    `❌ 网站找不到 <b>${esc(name)}</b> 这间学校。请联系 admin 加这间学校，加好后再发一次清单。`));
   return true;
 }
 
@@ -354,9 +391,9 @@ export async function handleOrderMessage(msg: Msg, aiAllowed: AiAllowed): Promis
   await rememberAlbumFile(msg, !!list);
 
   if (list) {
-    const salesman = await salesmanOf(userId);
+    const salesman = await orderSalesman(msg);
     if (!salesman) {
-      await formBot.reply(chatId, msg.message_id, 'Connect Telegram on the website first (dashboard → Connect Telegram), then send me the 6-digit code. / 请先在网站按 Connect Telegram，再把 6 位数代码发给我。');
+      await formBot.reply(chatId, msg.message_id, NOT_A_SALESMAN);
       return true;
     }
     let { excel, kk } = await filesFor(msg);
@@ -371,7 +408,9 @@ export async function handleOrderMessage(msg: Msg, aiAllowed: AiAllowed): Promis
       details: list.fields, excel, kertas_kerja: kk, kertas_asked: kk.length > 0, media_group_id: msg.media_group_id ?? null,
     }).select('*').single();
     if (error) throw error;
-    await formBot.reply(chatId, msg.message_id, tr(await langOfProfile(db, salesman.id))(`📋 <b>${esc(list.fields.sekolah)}</b> — checking…`, `📋 <b>${esc(list.fields.sekolah)}</b> — 检查中…`));
+    await formBot.reply(chatId, msg.message_id, tr(await langOfProfile(db, salesman.id))(
+      `📋 <b>${esc(list.fields.sekolah)}</b>${salesman.onBehalf ? ` · for ${esc(salesman.name)}` : ''} — checking…`,
+      `📋 <b>${esc(list.fields.sekolah)}</b>${salesman.onBehalf ? ` · 代 ${esc(salesman.name)} 下单` : ''} — 检查中…`));
     await advance(data as Row, salesman, aiAllowed);
     return true;
   }
@@ -386,7 +425,7 @@ export async function handleOrderMessage(msg: Msg, aiAllowed: AiAllowed): Promis
 
   const s = await openSession(chatId, userId);
   if (!s) return false;
-  const salesman = await salesmanOf(userId);
+  const salesman = await salesmanById(s.profile_id);
   if (!salesman) return false;
   // no question waiting: the bot is still working on this order (e.g. collecting an album's pages)
   const p = s.pending || { kind: 'busy' };
@@ -492,7 +531,7 @@ export async function handleOrderButton(cb: Msg, aiAllowed: AiAllowed) {
   if (s.state !== 'open') return formBot.answerButton(cb.id, s.state === 'submitted' ? t(`Already submitted — ${s.order_id}`, `已经 submit 了 — ${s.order_id}`) : t('This order was cancelled.', '这张单已取消。'));
   const msgId = cb.message?.message_id;
   if (!s.pending || s.pending.messageId !== msgId) return formBot.answerButton(cb.id, t('Already answered.', '已经回答过了。'));
-  const salesman = await salesmanOf(s.telegram_user_id);
+  const salesman = await salesmanById(s.profile_id);
   if (!salesman) return formBot.answerButton(cb.id, t('Your Telegram is no longer linked.', '你的 Telegram 已经没有连接网站。'));
   await formBot.answerButton(cb.id);
   await formBot.dropButtons(s.chat_id, msgId);
@@ -504,7 +543,11 @@ export async function handleOrderButton(cb: Msg, aiAllowed: AiAllowed) {
     return formBot.ask(s.chat_id, msgId, t('✖ Cancelled — nothing submitted.', '✖ 已取消 — 没有 submit。'));
   }
   if (a === 'submit' && p.kind === 'confirm') return submit(s, salesman, aiAllowed);
-  if (a.startsWith('terms:')) await save(s, { details: { ...s.details, terms: a.slice(6) as 'L/O' | 'Cash' }, pending: null });
+  if (a === 'urg:yes' && p.kind === 'urgent') await save(s, { answers: { ...s.answers, _urgentOk: s.details.shipmentDate }, pending: null });
+  else if (a === 'urg:change' && p.kind === 'urgent') {
+    await save(s, { details: { ...s.details, shipmentDate: '' }, pending: null });
+    return ask(s, t(...FIELD_Q.shipmentDate), [], { kind: 'field', field: 'shipmentDate' });
+  } else if (a.startsWith('terms:')) await save(s, { details: { ...s.details, terms: a.slice(6) as 'L/O' | 'Cash' }, pending: null });
   else if (a.startsWith('type:')) await save(s, { details: { ...s.details, schoolType: a.slice(5) as 'SK' | 'NOT_SK' }, pending: null });
   else if (a === 'kk:none') await save(s, { kertas_asked: true, pending: null });
   else if (a.startsWith('sch:')) {
@@ -606,11 +649,11 @@ export function listPromptHtml(lang: 'en' | 'zh', known: { sekolah?: string; cik
 export async function startFromForm(msg: Msg, excel: FileRef, kertasKerja: FileRef[], known: { sekolah?: string; cikgu?: string } = {}) {
   const chatId = msg.chat.id;
   const userId = Number(msg.from?.id);
-  const salesman = await salesmanOf(userId);
+  const salesman = await orderSalesman(msg);
   const lang = salesman ? await langOfProfile(db, salesman.id) : 'zh';
   const promptId = await formBot.ask(chatId, msg.message_id, listPromptHtml(lang, known));
   if (!salesman) {
-    await formBot.ask(chatId, null, 'Connect Telegram on the website first (dashboard → Connect Telegram), then send me the 6-digit code. / 请先在网站按 Connect Telegram，再把 6 位数代码发给我。');
+    await formBot.ask(chatId, null, NOT_A_SALESMAN);
     return;
   }
   await db.from('bot_order_sessions').update({ state: 'cancelled' }).eq('chat_id', chatId).eq('telegram_user_id', userId).eq('state', 'open');
