@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { nextDetailStep, readFieldAnswer, orderRow, showDay, type Session } from './orderFlow.ts';
+import { nextDetailStep, readFieldAnswer, orderRow, showDay, isUrgent, type Session } from './orderFlow.ts';
 import { askedDay } from './order.ts';
 
 const TODAY = '2026-11-07';
@@ -27,7 +27,27 @@ describe('nextDetailStep', () => {
     expect(soon).toMatchObject({ field: 'functionDate' });
     expect((soon as { why: string }).why).toContain('10 Nov 2026');
     expect(nextDetailStep(base({ kertas_asked: true }, { functionDate: '2026-11-10', shipmentDate: '' }), TODAY)).toBeNull();
-    expect(nextDetailStep(base({}, { shipmentDate: '2026-11-25' }), TODAY)).toMatchObject({ field: 'shipmentDate' });
+    // the Function Date must come after the Shipment Date — on the same day isn't enough
+    expect(nextDetailStep(base({}, { shipmentDate: '2026-11-25' }), TODAY)).toMatchObject({ field: 'functionDate' });
+    expect(nextDetailStep(base({}, { shipmentDate: '2026-11-20' }), TODAY)).toMatchObject({ field: 'functionDate' });
+  });
+  it('a Shipment Date before today is asked again', () => {
+    const past = nextDetailStep(base({}, { shipmentDate: '2026-11-06' }), TODAY, 'zh');
+    expect(past).toMatchObject({ kind: 'field', field: 'shipmentDate' });
+    expect((past as { why: string }).why).toContain('不能早过今天');
+    expect(nextDetailStep(base({ kertas_asked: true }, { shipmentDate: '' }), TODAY)).toBeNull(); // none given: fine
+  });
+  it('urgent: under 7 days, today counted — 10 Nov → 16 Nov urgent, 17 Nov not', () => {
+    const on = '2026-11-10';
+    const order = (shipmentDate: string, answers = {}) => base({ kertas_asked: true, answers }, { shipmentDate, functionDate: '2026-11-25' });
+    expect(nextDetailStep(order('2026-11-16'), on)).toEqual({ kind: 'urgent', days: 6 });
+    expect(nextDetailStep(order('2026-11-10'), on)).toEqual({ kind: 'urgent', days: 0 });
+    expect(nextDetailStep(order('2026-11-17'), on)).toBeNull();
+    expect(isUrgent(on, '2026-11-16')).toBe(true);
+    expect(isUrgent(on, '2026-11-17')).toBe(false);
+    // confirmed for this date: not asked again; a new date is asked again
+    expect(nextDetailStep(order('2026-11-16', { _urgentOk: '2026-11-16' }), on)).toBeNull();
+    expect(nextDetailStep(order('2026-11-15', { _urgentOk: '2026-11-16' }), on)).toEqual({ kind: 'urgent', days: 5 });
   });
   it('a school with its own logo needs the logo and its remark', () => {
     expect(nextDetailStep(base({}, { schoolType: 'NOT_SK' }), TODAY)).toEqual({ kind: 'logo' });
