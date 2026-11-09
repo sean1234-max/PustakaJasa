@@ -26,7 +26,7 @@ import { SYSTEM_PROMPT, buildUserPrompt } from '../check-engraving-text/prompt.t
 import { ISSUES_TOOL_SCHEMA, validateIssues, type CheckLine } from '../check-engraving-text/schema.ts';
 import { nextDetailStep, readFieldAnswer, summaryHtml, orderRow, showDay, type Session, type FileRef } from './orderFlow.ts';
 import { tr, langOfProfile } from './i18n.ts';
-import { saleOption, formQty, formPreviewHtml, submitGoogleForm, formValuesText, dueDateProblem, readQty, FORM_ID, type FormValues } from './googleForm.ts';
+import { saleOption, SALE_OPTIONS, formQty, formPreviewHtml, submitGoogleForm, formValuesText, dueDateProblem, readQty, FORM_ID, type FormValues } from './googleForm.ts';
 import { matchSchool, schoolKey, type SchoolRow } from './schoolMatch.ts';
 // @ts-ignore a plain JS bundle
 import { readOrderForm, buildPlakTree, isCrystalCode, isCustomPlakCode, setCustomTypoWords, flattenPlakCatalog } from './order.bundle.js';
@@ -234,11 +234,18 @@ const FIELD_Q: Record<string, [string, string]> = {
 
 const DUE_Q: [string, string] = ['Google Form <b>DUE DATE</b>? (the Shipment Date too — e.g. 20/11/2026)', 'Google Form 的 <b>DUE DATE</b>？（也是 Shipment Date — 例如 20/11/2026）'];
 
+// The form's SALE options as buttons, three a row; typing one works too
+function askSale(s: Row, name: string, t: ReturnType<typeof tr>) {
+  const rows: [string, string][][] = [];
+  SALE_OPTIONS.forEach((o, i) => { if (i % 3 === 0) rows.push([]); rows[rows.length - 1].push(btn(s, `sale:${i}`, o)); });
+  return ask(s, t(`Google Form <b>SALE</b> has no "${esc(name)}" — which one? (tap, or type it)`, `Google Form 的 <b>SALE</b> 没有「${esc(name)}」— 选哪个？（按下面，或打出来）`), rows, { kind: 'sale' });
+}
+
 // What goes into the Google Form: ORDER DATE today, DUE DATE the Shipment Date, SALE his name as the form
 // lists it (none: not filled), the website's school name, QTY every plaque but selempang (or his own number)
 function formValues(s: Row, salesman: { name: string }, items: Item[]): FormValues {
   return {
-    orderDate: todayMy(), dueDate: s.details.shipmentDate || '', funcDate: s.details.functionDate, sale: saleOption(salesman.name),
+    orderDate: todayMy(), dueDate: s.details.shipmentDate || '', funcDate: s.details.functionDate, sale: s.answers._sale || saleOption(salesman.name),
     school: s.school?.sekolah || s.details.sekolah, remark: s.answers._remark || '', qty: Number(s.answers._formQty) || formQty(items),
   };
 }
@@ -325,11 +332,14 @@ async function advance(s: Row, salesman: { id: string; name: string }, aiAllowed
   if (!s.answers._remark) {
     return ask(s, t('<b>REMARK</b> for the Google Form?', 'Google Form 的 <b>REMARK</b>？'), [[btn(s, 'rm:SALES', 'SALES'), btn(s, 'rm:SUMBANGAN', 'SUMBANGAN')]], { kind: 'remark' });
   }
+  // a name the form's SALE doesn't list (Sean, 2026-11-10): the salesman picks it
+  if (!s.answers._sale && !saleOption(salesman.name)) return askSale(s, salesman.name, t);
   if (!s.details.shipmentDate) return ask(s, t(...DUE_Q), [], { kind: 'due' });
   if (!s.answers._formOk) {
     return ask(s, formPreviewHtml(formValues(s, salesman, read.items), lang), [
       [btn(s, 'fo:ok', t('✅ Right', '✅ 对'))],
       [btn(s, 'fo:due', t('✏️ Change DUE DATE', '✏️ 改 DUE DATE')), btn(s, 'fo:qty', t('✏️ Change QTY', '✏️ 改 QTY'))],
+      [btn(s, 'fo:sale', t('✏️ Change SALE', '✏️ 改 SALE'))],
     ], { kind: 'form' });
   }
 
@@ -576,6 +586,14 @@ export async function handleOrderMessage(msg: Msg, aiAllowed: AiAllowed): Promis
     await advance(s, salesman, aiAllowed);
     return true;
   }
+  if (p.kind === 'sale') {
+    const sale = saleOption(typed);
+    if (!sale) { await formBot.reply(chatId, msg.message_id, t(`⚠️ "${esc(typed)}" isn't a SALE option — tap one above.`, `⚠️「${esc(typed)}」不是 SALE 的选项 — 请按上面的。`)); return true; }
+    const { _formOk, ...answers } = s.answers;
+    await save(s, { answers: { ...answers, _sale: sale }, pending: null });
+    await advance(s, salesman, aiAllowed);
+    return true;
+  }
   if (p.kind === 'formqty') {
     const qty = readQty(typed);
     if (!qty) { await formBot.reply(chatId, msg.message_id, t('⚠️ Type a number, e.g. 24.', '⚠️ 请打数字，例如 24。')); return true; }
@@ -654,8 +672,14 @@ export async function handleOrderButton(cb: Msg, aiAllowed: AiAllowed) {
       await save(s, { school: pick, details: { ...s.details, sekolah: pick.sekolah }, pending: null });
     }
   } else if (a.startsWith('rm:') && p.kind === 'remark') await save(s, { answers: { ...s.answers, _remark: a.slice(3) }, pending: null });
-  else if (a.startsWith('fo:') && p.kind === 'form') {
+  else if (a.startsWith('sale:') && p.kind === 'sale') {
+    const sale = SALE_OPTIONS[Number(a.slice(5))];
+    if (!sale) return;
+    const { _formOk, ...answers } = s.answers;
+    await save(s, { answers: { ...answers, _sale: sale }, pending: null });
+  } else if (a.startsWith('fo:') && p.kind === 'form') {
     if (a === 'fo:due') return ask(s, t(...DUE_Q), [], { kind: 'due' });
+    if (a === 'fo:sale') return askSale(s, salesman.name, t);
     if (a === 'fo:qty') return ask(s, t('Google Form <b>QTY</b>? Type the number.', 'Google Form 的 <b>QTY</b>？请打数字。'), [], { kind: 'formqty' });
     await save(s, { answers: { ...s.answers, _formOk: true }, pending: null });
   } else if (a.startsWith('q:') && p.kind === 'question') {
