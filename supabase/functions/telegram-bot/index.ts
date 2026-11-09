@@ -26,7 +26,7 @@ import { esc, telegramBot, MAX_FILE_BYTES } from './telegram.ts';
 import { fillForm, formBot, handleForm } from './form.ts';
 import { handleOrderButton } from './orderChat.ts';
 import { runReviewJob, handleSalesmanGroup, handleReviewButton, groupMoved } from './autoReview.ts';
-import { remindSalesman } from './remind.ts';
+import { remindSalesman, runApprovalReminders } from './remind.ts';
 import { readFile, type FileContent } from './files.ts';
 import { askedDay, orderPlaquesText, proposeChanges, type Order } from './order.ts';
 import { readChanges, compareFile } from './ai.ts';
@@ -271,9 +271,12 @@ const JOB_KEY = JSON.parse(Deno.env.get('SUPABASE_SECRET_KEYS') ?? '{}')['defaul
 
 Deno.serve(async (req) => {
   const url = new URL(req.url);
-  if (url.searchParams.get('job') === 'review') {
+  const job = url.searchParams.get('job');
+  if (job === 'review' || job === 'approvals') {
     if (!JOB_KEY || req.headers.get('x-job-key') !== JOB_KEY) return new Response('forbidden', { status: 403 });
-    const work = runReviewJob(bot, aiAllowed).then((r) => console.log('auto review:', JSON.stringify(r))).catch((err) => console.error('auto review job failed:', err));
+    // ?job=approvals: remind salesmen to approve their Done Review orders (remind.ts)
+    const run = job === 'review' ? runReviewJob(bot, aiAllowed) : runApprovalReminders(db, bot);
+    const work = run.then((r) => console.log(`${job} job:`, JSON.stringify(r))).catch((err) => console.error(`${job} job failed:`, err));
     // @ts-ignore EdgeRuntime is provided by the Supabase Edge runtime
     if (typeof EdgeRuntime !== 'undefined') EdgeRuntime.waitUntil(work); else await work;
     return new Response('started', { status: 202 });
