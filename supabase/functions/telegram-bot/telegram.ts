@@ -87,14 +87,20 @@ export function telegramBot(token: string, opts: { onMigrate?: (oldId: number, n
     return sent ? { messageId: sent.message_id, fileId: sent.document?.file_id ?? '' } : null;
   }
 
+  // Telegram keeps a webhook's old settings when its URL is the same ("Webhook is already set") — buttons never
+  // arrived (Sean, 2026-11-10) — so the old one is removed first and set again with today's settings
   async function setWebhook(url: string) {
+    await fetch(`${api}/deleteWebhook`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ drop_pending_updates: false }) }).catch(() => {});
     const res = await fetch(`${api}/setWebhook`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       // buttons (callback_query): the form bot's order Submit / answers (Sean, 2026-11-07)
       body: JSON.stringify({ url, secret_token: await webhookSecret(), allowed_updates: ['message', 'callback_query'] }),
     });
-    return res.json();
+    const set = await res.json();
+    // what Telegram has now — `allowed_updates` must list callback_query for the buttons
+    const info = await (await fetch(`${api}/getWebhookInfo`)).json().catch(() => null);
+    return { ...set, allowed_updates: info?.result?.allowed_updates ?? null, last_error: info?.result?.last_error_message ?? null };
   }
 
   async function downloadFile(fileId: string): Promise<Uint8Array> {

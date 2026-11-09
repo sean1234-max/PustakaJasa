@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { nextDetailStep, readFieldAnswer, orderRow, showDay, isUrgent, type Session } from './orderFlow.ts';
+import { nextDetailStep, readFieldAnswer, orderRow, showDay, isUrgent, isSkSchool, type Session } from './orderFlow.ts';
 import { askedDay } from './order.ts';
 
 const TODAY = '2026-11-07';
@@ -16,7 +16,7 @@ describe('nextDetailStep', () => {
     expect(nextDetailStep(base({}, { picName: '' }), TODAY)).toEqual({ kind: 'field', field: 'picName' });
     expect(nextDetailStep(base({}, { phone: 'abc' }), TODAY)?.kind).toBe('field');
     expect(nextDetailStep(base({}, { terms: '' }), TODAY)).toEqual({ kind: 'terms' });
-    expect(nextDetailStep(base({}, { schoolType: '' }), TODAY)).toEqual({ kind: 'schoolType' });
+    expect(nextDetailStep(base({ school: { id: 's', sekolah: 'SJK(C) CHUNG HUA', schoolLanguage: 'SJKC' } }, { schoolType: '' }), TODAY)).toEqual({ kind: 'schoolType' });
     expect(nextDetailStep(base({ excel: null }), TODAY)).toEqual({ kind: 'excel' });
     expect(nextDetailStep(base(), TODAY)).toEqual({ kind: 'kertas' });
     expect(nextDetailStep(base({ kertas_asked: true }), TODAY)).toBeNull();
@@ -48,6 +48,15 @@ describe('nextDetailStep', () => {
     // confirmed for this date: not asked again; a new date is asked again
     expect(nextDetailStep(order('2026-11-16', { _urgentOk: '2026-11-16' }), on)).toBeNull();
     expect(nextDetailStep(order('2026-11-15', { _urgentOk: '2026-11-16' }), on)).toEqual({ kind: 'urgent', days: 5 });
+  });
+  it('an SK school takes the SK logo without asking; any other school is asked', () => {
+    const sk = base({ kertas_asked: true }, { schoolType: '' });
+    expect(nextDetailStep(sk, TODAY)).toBeNull();
+    const sjk = base({ kertas_asked: true, school: { id: 's', sekolah: 'SJK(C) CHUNG HUA', schoolLanguage: 'SJKC' } }, { schoolType: '' });
+    expect(nextDetailStep(sjk, TODAY)).toEqual({ kind: 'schoolType' });
+    const smk = base({ kertas_asked: true, school: { id: 's', sekolah: 'SMK SIJINJANG', schoolLanguage: 'SK' } }, { schoolType: '' });
+    expect(nextDetailStep(smk, TODAY)).toEqual({ kind: 'schoolType' });
+    expect(isSkSchool('SKPP 9(2)')).toBe(false);
   });
   it('a school with its own logo needs the logo and its remark', () => {
     expect(nextDetailStep(base({}, { schoolType: 'NOT_SK' }), TODAY)).toEqual({ kind: 'logo' });
