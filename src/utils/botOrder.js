@@ -8,7 +8,7 @@
 import { parseFormAnugerahExcel } from './excelImport';
 import { applyParsedImport, NEW_ORDER_IMPORT_FIELDS } from '../state/applyParsedImport';
 import { buildCategoryCartItems } from '../state/categoryCartItems';
-import { ACTIVE_CATEGORIES, isDynamicCategoryKey, resolveCategory, getStockStatus, otherPlakIncomplete } from '../data/catalog';
+import { ACTIVE_CATEGORIES, isDynamicCategoryKey, resolveCategory, getStockStatus, otherPlakIncomplete, flattenPlakCatalog, filterHiddenPlakCatalog } from '../data/catalog';
 import { buildInitialRowsByBlock, buildInitialColumnsByBlock, buildInitialPlakRows } from '../data/formDefaults';
 import { computeBlocks, noopUpdaters } from './computeBlocks';
 
@@ -69,6 +69,28 @@ export function engravingLines(st, catKeys) {
   return { lines, extras };
 }
 
+// Out of stock → what to offer instead (review rule J8, Sean 2026-11-10: "PK 261 / A → PK 262 / A"): codes
+// on sale with enough stock for `qty`, of the same family (the letters it starts with) — the same last part
+// (A / B / GOLD …) first, then the nearest model number. At most `max`.
+const familyOf = (code) => (/^[A-Z]+/i.exec(String(code).replace(/\s+/g, ''))?.[0] || '').toUpperCase();
+const lastPart = (code) => String(code).split('/').pop().trim().toUpperCase();
+const modelNo = (code) => Number(/\d+/.exec(String(code))?.[0] || NaN);
+export function stockAlternatives(code, qty, plakCatalog, max = 3) {
+  const family = familyOf(code);
+  if (!family) return [];
+  const want = lastPart(code);
+  const n = modelNo(code);
+  return flattenPlakCatalog(filterHiddenPlakCatalog(plakCatalog))
+    .filter((p) => p.code !== code && familyOf(p.code) === family && !/^OTHER/i.test(p.code))
+    .map((p) => ({ code: p.code, status: getStockStatus(p.code, plakCatalog) }))
+    .filter((p) => !p.status || p.status.maxOrderable >= qty)
+    .sort((a, b) => (lastPart(b.code) === want) - (lastPart(a.code) === want)
+      || (Math.abs(modelNo(a.code) - n) || 0) - (Math.abs(modelNo(b.code) - n) || 0)
+      || a.code.localeCompare(b.code))
+    .slice(0, max)
+    .map((p) => ({ code: p.code, left: p.status ? p.status.maxOrderable : null }));
+}
+
 // A short, stable id for a question (the same note read again is the same question)
 export function questionId(kind, text) {
   let h = 0;
@@ -79,7 +101,7 @@ export function questionId(kind, text) {
 /**
  * buffer: the FORM ANUGERAH (.xlsx). ctx: { plakCatalog, schoolLanguage, salesman: { id, name },
  *   details: { picName, phone, funcSelected (Date), remark }, subs, answers: { [questionId]: optionKey },
- *   okWords: [{ blockKey, word }] }
+ *   okWords: [{ blockKey, word }], swaps: [{ from, to }] (out of stock → in stock), lang: 'zh' | 'en' }
  * -> { error } | { items, total, questions, stop, problems, remark, details, lines, categories }
  *   questions: still to ask, in order (kind plak | choice | note | typo | extra); stop: an answer said
  *   "I'll do it on the website"; problems: what the chat can't fix (the order can't go in from here).
@@ -137,6 +159,15 @@ export function readOrderForm(buffer, ctx) {
     if (!have.includes(word.toUpperCase())) st = { ...st, lineValues: { ...st.lineValues, [key]: [...have, word.toUpperCase()].join(',') } };
   });
 
+  // Jenis Plak swapped for one in stock (the salesman's choice in the chat): every row of the draft that has the
+  // old code gets the new one — the price follows from the catalog — and the Remark says so for Production
+  if (ctx.swaps?.length) {
+    const subs = ctx.swaps.map((w) => ({ from: w.from, to: w.to, whole: true }));
+    st = { ...st, plakRows: substitute(st.plakRows, subs), rowsByBlock: substitute(st.rowsByBlock, subs) };
+    const notes = ctx.swaps.map((w) => `${w.from} → ${w.to} (out of stock / 缺货)`);
+    st = { ...st, remark: [st.remark, ...notes.filter((x) => !String(st.remark || '').includes(x))].filter(Boolean).join('\n') };
+  }
+
   // Add All to Cart (AppState.jsx addAllToCart): every engaged category, a category's error stops it
   const dynamicCats = Object.keys(st.visibleBlocksByCategory || {}).filter(isDynamicCategoryKey).map(resolveCategory).filter(Boolean);
   const items = [];
@@ -154,7 +185,8 @@ export function readOrderForm(buffer, ctx) {
     }
     items.push(...built.items);
   });
-  if (engaged.length === 0 && !questions.some((q) => q.kind === 'plak')) problems.push('Nothing in this FORM ANUGERAH could be read as an order.');
+  const zh = ctx.lang !== 'en';
+  if (engaged.length === 0 && !questions.some((q) => q.kind === 'plak')) problems.push(zh ? '这份 FORM ANUGERAH 里读不到任何订单。' : 'Nothing in this FORM ANUGERAH could be read as an order.');
 
   // The website's own word-list typo check (typoCheck.js — blocking at Add to Cart unless the right word is
   // picked under it): one question per flagged word; the answer is a fix (subs) or a kept word (okWords)
@@ -180,13 +212,18 @@ export function readOrderForm(buffer, ctx) {
 
   // Cart's own checks: OTHER with no name / price, more than the stock allows
   items.filter((it) => otherPlakIncomplete(it.jenisPlak, it.unitPrice)).forEach((it) => {
-    problems.push(`"${it.jenisPlak}" (${resolveCategory(it.categoryKey)?.label || it.categoryKey}) needs its name and price.`);
+    const where = resolveCategory(it.categoryKey)?.label || it.categoryKey;
+    problems.push(zh ? `「${it.jenisPlak}」（${where}）没有名字或价钱。` : `"${it.jenisPlak}" (${where}) needs its name and price.`);
   });
+  // not enough stock: a question — swap it for one in stock (stockAlternatives) — not a dead end
   const byCode = new Map();
   items.forEach((it) => byCode.set(it.jenisPlak, (byCode.get(it.jenisPlak) || 0) + (Number(it.qty) || 0)));
   byCode.forEach((qty, code) => {
     const status = getStockStatus(code, ctx.plakCatalog);
-    if (status && qty > status.maxOrderable) problems.push(`Not enough stock for "${code}": ${qty} ordered, only ${status.maxOrderable} can be ordered now.`);
+    if (status && qty > status.maxOrderable) {
+      questions.push({ id: questionId('stock', code), kind: 'stock', code, qty, left: status.maxOrderable, options: stockAlternatives(code, qty, ctx.plakCatalog),
+        text: zh ? `${code} 库存不够（订 ${qty}，只剩 ${status.maxOrderable}）。换成哪个？` : `${code} — not enough stock (${qty} ordered, ${status.maxOrderable} left). Swap it for?` });
+    }
   });
 
   const total = items.reduce((s, it) => s + (Number(it.harga) || 0), 0);
