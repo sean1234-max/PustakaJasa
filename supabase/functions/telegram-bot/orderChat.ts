@@ -7,8 +7,10 @@
 //   3. reads the Excel exactly as the website does (order.bundle.js — botOrder.js) and asks what the
 //      website would ask on screen: a Jenis Plak the catalog can't place, the import's cross-check
 //      questions and notes, UMUM lines, the spelling check, a possible duplicate order;
-//   4. shows the order with [✅ Submit] [✖ Cancel]; Submit puts it in as the salesman (bot_submit_order,
-//      0118) and answers "✅ Submitted — ORD-xxxx" with its link.
+//   4. asks the Google Form's REMARK (SALES / SUMBANGAN) and shows what goes into the salesmen's Google Form
+//      (googleForm.ts) to confirm, DUE DATE and QTY changeable;
+//   5. shows the order with [✅ Submit] [✖ Cancel]; Submit puts it in as the salesman (bot_submit_order,
+//      0118), fills the Google Form, and answers "✅ Submitted — ORD-xxxx" with its link.
 // What the chat can't fix (stock, an OTHER with no price, a category the form leaves incomplete) stops it:
 // the salesman fixes the Excel and sends it again, or opens the order on the website.
 // Sessions: bot_order_sessions. Buttons: callback data "o:<session id>:<answer>".
@@ -24,6 +26,8 @@ import { SYSTEM_PROMPT, buildUserPrompt } from '../check-engraving-text/prompt.t
 import { ISSUES_TOOL_SCHEMA, validateIssues, type CheckLine } from '../check-engraving-text/schema.ts';
 import { nextDetailStep, readFieldAnswer, summaryHtml, orderRow, showDay, type Session, type FileRef } from './orderFlow.ts';
 import { tr, langOfProfile } from './i18n.ts';
+import { saleOption, formQty, formPreviewHtml, submitGoogleForm, formValuesText, dueDateProblem, readQty, FORM_ID, type FormValues } from './googleForm.ts';
+import { matchSchool, schoolKey, type SchoolRow } from './schoolMatch.ts';
 // @ts-ignore a plain JS bundle
 import { readOrderForm, buildPlakTree, isCrystalCode, isCustomPlakCode, setCustomTypoWords, flattenPlakCatalog } from './order.bundle.js';
 
@@ -228,6 +232,17 @@ const FIELD_Q: Record<string, [string, string]> = {
   logoRemark: ['Describe the <b>logo</b> (Remark).', '<b>Logo</b> 说明（Remark）？'],
 };
 
+const DUE_Q: [string, string] = ['Google Form <b>DUE DATE</b>? (the Shipment Date too — e.g. 20/11/2026)', 'Google Form 的 <b>DUE DATE</b>？（也是 Shipment Date — 例如 20/11/2026）'];
+
+// What goes into the Google Form: ORDER DATE today, DUE DATE the Shipment Date, SALE his name as the form
+// lists it (none: not filled), the website's school name, QTY every plaque but selempang (or his own number)
+function formValues(s: Row, salesman: { name: string }, items: Item[]): FormValues {
+  return {
+    orderDate: todayMy(), dueDate: s.details.shipmentDate || '', funcDate: s.details.functionDate, sale: saleOption(salesman.name),
+    school: s.school?.sekolah || s.details.sekolah, remark: s.answers._remark || '', qty: Number(s.answers._formQty) || formQty(items),
+  };
+}
+
 // The next thing the order needs, asked; or the summary with Submit
 async function advance(s: Row, salesman: { id: string; name: string }, aiAllowed: AiAllowed): Promise<void> {
   const today = todayMy();
@@ -306,6 +321,18 @@ async function advance(s: Row, salesman: { id: string; name: string }, aiAllowed
     await save(s, { answers: { ...s.answers, _dup: 'none' } });
   }
 
+  // the Google Form (Sean, 2026-11-10): its REMARK, a DUE DATE (the Shipment Date), then its values checked
+  if (!s.answers._remark) {
+    return ask(s, t('<b>REMARK</b> for the Google Form?', 'Google Form 的 <b>REMARK</b>？'), [[btn(s, 'rm:SALES', 'SALES'), btn(s, 'rm:SUMBANGAN', 'SUMBANGAN')]], { kind: 'remark' });
+  }
+  if (!s.details.shipmentDate) return ask(s, t(...DUE_Q), [], { kind: 'due' });
+  if (!s.answers._formOk) {
+    return ask(s, formPreviewHtml(formValues(s, salesman, read.items), lang), [
+      [btn(s, 'fo:ok', t('✅ Right', '✅ 对'))],
+      [btn(s, 'fo:due', t('✏️ Change DUE DATE', '✏️ 改 DUE DATE')), btn(s, 'fo:qty', t('✏️ Change QTY', '✏️ 改 QTY'))],
+    ], { kind: 'form' });
+  }
+
   const crystal = read.items.some((it: { jenisPlak: string }) => isCrystalCode(it.jenisPlak));
   return ask(s, summaryHtml(s, read.items, read.total, read.remark, crystal, lang, today), [[btn(s, 'submit', '✅ Submit')]], { kind: 'confirm' });
 }
@@ -329,25 +356,56 @@ async function askStep(s: Row, step: Exclude<ReturnType<typeof nextDetailStep>, 
     [[btn(s, 'kk:none', t('No kertas kerja', '没有 kertas kerja'))]], { kind: 'kertas' });
 }
 
-// true when it asked; false when one school matched and was taken
+// Every school on the website (the active teacher accounts), kept a minute
+let schoolsCache: { at: number; rows: SchoolRow[] } | null = null;
+async function allSchools() {
+  if (schoolsCache && Date.now() - schoolsCache.at < 60_000) return schoolsCache.rows;
+  const rows: SchoolRow[] = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await db.from('profiles').select('id, sekolah, school_language').eq('role', 'teacher').eq('status', 'active')
+      .not('sekolah', 'is', null).order('sekolah').range(from, from + 999);
+    if (error) throw error;
+    rows.push(...(data || []));
+    if (!data || data.length < 1000) break;
+  }
+  schoolsCache = { at: Date.now(), rows };
+  return rows;
+}
+
+const schoolOf = (r: SchoolRow) => ({ id: r.id, sekolah: r.sekolah, schoolLanguage: r.school_language || 'SK' });
+
+// A school picked for a short form: remembered, next time it is taken without asking
+async function rememberAlias(typed: string, profileId: string, by: string) {
+  const key = schoolKey(typed);
+  if (!key) return;
+  const { error } = await db.from('school_aliases').upsert({ alias_key: key, profile_id: profileId, created_by: by });
+  if (error) console.error('school alias not saved:', error);
+}
+
+// The school the salesman typed (schoolMatch.ts): the same name, a short form picked before, a name containing
+// it, else the closest few as buttons with [None of these]. true when it asked; false when one was taken.
 async function askSchool(s: Row): Promise<boolean> {
   const t = await T(s);
   const name = s.details.sekolah;
-  const { data } = await db.from('profiles').select('id, sekolah, school_language').eq('role', 'teacher').eq('status', 'active')
-    .ilike('sekolah', `%${name.replace(/[%_]/g, '')}%`).order('sekolah').limit(8);
-  const rows = data || [];
-  const exact = rows.filter((r) => norm(r.sekolah) === norm(name));
-  const pick = exact.length === 1 ? exact[0] : rows.length === 1 ? rows[0] : null;
-  if (pick) {
-    await save(s, { school: { id: pick.id, sekolah: pick.sekolah, schoolLanguage: pick.school_language || 'SK' }, details: { ...s.details, sekolah: pick.sekolah } });
-    return false;
-  }
-  if (rows.length) {
-    await save(s, { answers: { ...s.answers, _schools: rows.map((r) => ({ id: r.id, sekolah: r.sekolah, schoolLanguage: r.school_language || 'SK' })) } });
-    await ask(s, t(`Which school is <b>${esc(name)}</b>?`, `<b>${esc(name)}</b> 是哪一间？`), rows.map((r, i) => [btn(s, `sch:${i}`, r.sekolah)]), { kind: 'school' });
+  const schools = await allSchools();
+  const take = async (r: SchoolRow) => { await save(s, { school: schoolOf(r), details: { ...s.details, sekolah: r.sekolah } }); return false; };
+  const found = matchSchool(name, schools);
+  if ('pick' in found) return take(found.pick);
+  const { data: alias } = await db.from('school_aliases').select('profile_id').eq('alias_key', schoolKey(name)).maybeSingle();
+  const known = alias && schools.find((r) => r.id === alias.profile_id);
+  if (known) return take(known);
+  if (found.choices.length) {
+    await save(s, { answers: { ...s.answers, _schoolTyped: name, _schools: found.choices.map(schoolOf) } });
+    await ask(s, t(`Which school is <b>${esc(name)}</b>?`, `<b>${esc(name)}</b> 是哪一间？`),
+      [...found.choices.map((r, i) => [btn(s, `sch:${i}`, r.sekolah)]), [btn(s, 'sch:none', t('None of these', '都不是'))]], { kind: 'school' });
     return true;
   }
-  // not on the website at all (Sean, 2026-11-10): Admin adds the school, then the list is sent again
+  return notOnWebsite(s, name);
+}
+
+// not on the website at all (Sean, 2026-11-10): Admin adds the school, then the list is sent again
+async function notOnWebsite(s: Row, name: string) {
+  const t = await T(s);
   await save(s, { state: 'cancelled', pending: null });
   await formBot.ask(s.chat_id, null, t(
     `❌ <b>${esc(name)}</b> isn't on the website. Please ask Admin to add the school, then send the list again.`,
@@ -508,6 +566,24 @@ export async function handleOrderMessage(msg: Msg, aiAllowed: AiAllowed): Promis
     await advance(s, salesman, aiAllowed);
     return true;
   }
+  if (p.kind === 'due') {
+    const day = askedDay(typed, todayMy());
+    const why = day ? dueDateProblem(day, todayMy(), s.details.functionDate, lang) : t('Can\'t read that date — e.g. 20/11/2026.', '看不懂这个日期 — 例如 20/11/2026。');
+    if (why) { await formBot.reply(chatId, msg.message_id, `⚠️ ${esc(why)}`); return true; }
+    // the order's Shipment Date too (Sean, 2026-11-10); a new date may be urgent, asked again in advance
+    const { _formOk, ...answers } = s.answers;
+    await save(s, { details: { ...s.details, shipmentDate: day }, answers, pending: null });
+    await advance(s, salesman, aiAllowed);
+    return true;
+  }
+  if (p.kind === 'formqty') {
+    const qty = readQty(typed);
+    if (!qty) { await formBot.reply(chatId, msg.message_id, t('⚠️ Type a number, e.g. 24.', '⚠️ 请打数字，例如 24。')); return true; }
+    const { _formOk, ...answers } = s.answers;
+    await save(s, { answers: { ...answers, _formQty: qty }, pending: null });
+    await advance(s, salesman, aiAllowed);
+    return true;
+  }
   if (p.kind === 'school') {
     await save(s, { details: { ...s.details, sekolah: typed.toUpperCase() }, school: null, pending: null });
     await advance(s, salesman, aiAllowed);
@@ -570,9 +646,18 @@ export async function handleOrderButton(cb: Msg, aiAllowed: AiAllowed) {
   } else if (a.startsWith('terms:')) await save(s, { details: { ...s.details, terms: a.slice(6) as 'L/O' | 'Cash' }, pending: null });
   else if (a.startsWith('type:')) await save(s, { details: { ...s.details, schoolType: a.slice(5) as 'SK' | 'NOT_SK' }, pending: null });
   else if (a === 'kk:none') await save(s, { kertas_asked: true, pending: null });
+  else if (a === 'sch:none' && p.kind === 'school') return notOnWebsite(s, s.answers._schoolTyped || s.details.sekolah);
   else if (a.startsWith('sch:')) {
     const pick = (s.answers._schools || [])[Number(a.slice(4))];
-    if (pick) await save(s, { school: pick, details: { ...s.details, sekolah: pick.sekolah }, pending: null });
+    if (pick) {
+      if (s.answers._schoolTyped) await rememberAlias(s.answers._schoolTyped, pick.id, salesman.id);
+      await save(s, { school: pick, details: { ...s.details, sekolah: pick.sekolah }, pending: null });
+    }
+  } else if (a.startsWith('rm:') && p.kind === 'remark') await save(s, { answers: { ...s.answers, _remark: a.slice(3) }, pending: null });
+  else if (a.startsWith('fo:') && p.kind === 'form') {
+    if (a === 'fo:due') return ask(s, t(...DUE_Q), [], { kind: 'due' });
+    if (a === 'fo:qty') return ask(s, t('Google Form <b>QTY</b>? Type the number.', 'Google Form 的 <b>QTY</b>？请打数字。'), [], { kind: 'formqty' });
+    await save(s, { answers: { ...s.answers, _formOk: true }, pending: null });
   } else if (a.startsWith('q:') && p.kind === 'question') {
     const key = a.slice(2);
     if (key === 'stop') return stopForWebsite(s, t('OK — stopped.', '好 — 已停。'));
@@ -647,10 +732,19 @@ async function submit(s: Row, salesman: { id: string; name: string }, aiAllowed:
   const link = `${SITE_URL}/#/sales/orders/${encodeURIComponent(orderId as string)}`;
   const t = await T(s);
   const pcs = read.items.reduce((n: number, it: { qty: unknown }) => n + (Number(it.qty) || 0), 0);
+  // then the Google Form (googleForm.ts); the order is in whatever happens to it
+  const v = formValues(s, salesman, read.items);
+  const formUrl = `https://docs.google.com/forms/d/e/${FORM_ID}/viewform`;
+  const filled = v.sale ? await submitGoogleForm(v) : false;
+  await save(s, { answers: { ...s.answers, _googleForm: !v.sale ? 'no_sale' : filled ? 'filled' : 'failed' } });
+  const formLine = filled ? t('📝 Google Form filled too.', '📝 Google Form 也填好了。')
+    : !v.sale ? t(`📝 SALE has no "${esc(salesman.name)}" — fill the <a href="${formUrl}">Google Form</a> by hand.`, `📝 SALE 选项里没有 ${esc(salesman.name)} — <a href="${formUrl}">Google Form</a> 请手动填。`)
+    : `${t('⚠️ Google Form not filled — please fill it by hand', '⚠️ Google Form 没填到，请手动填')}: <a href="${formUrl}">Google Form</a>\n<pre>${esc(formValuesText(v))}</pre>`;
   await formBot.ask(s.chat_id, null, [
     `✅ <b>${t('Order submitted successfully', '订单已成功 submit')} · ${esc(orderId)}</b>`,
     `${esc(s.school?.sekolah)} · ${t(`${pcs} pcs`, `${pcs} 块`)} · RM ${Number(read.total).toFixed(2)}`,
     `👉 <a href="${link}">${t('Open on the website', '在网站打开')}</a>`,
+    formLine,
     ...(crystal ? [t('💎 Crystal artwork not confirmed — check Crystal Preview, then Confirm Artwork.', '💎 Crystal 的图还没确认 — 打开订单看 Crystal Preview，再按 Confirm Artwork。')] : []),
   ].join('\n'));
 }
