@@ -50,6 +50,13 @@ export function telegramBot(token: string) {
       body: JSON.stringify({ callback_query_id: callbackId, text: note.slice(0, 190) }),
     }).catch(() => {});
   }
+  // A message's text changed in place (its buttons go)
+  async function editText(chatId: number | string, messageId: number, html: string) {
+    await fetch(`${api}/editMessageText`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, message_id: messageId, text: html.slice(0, MAX_MESSAGE_CHARS), parse_mode: 'HTML', disable_web_page_preview: true }),
+    }).catch(() => {});
+  }
   async function dropButtons(chatId: number | string, messageId: number) {
     await fetch(`${api}/editMessageReplyMarkup`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -102,5 +109,5 @@ export function telegramBot(token: string) {
     return res.ok ? (res.result as { user: { id: number; is_bot: boolean } }[]).filter((m) => !m.user.is_bot).map((m) => m.user.id) : [];
   }
 
-  return { webhookSecret, reply, ask, answerButton, dropButtons, sendDocument, setWebhook, downloadFile, inAnyGroup, adminIds };
+  return { webhookSecret, reply, ask, answerButton, editText, dropButtons, sendDocument, setWebhook, downloadFile, inAnyGroup, adminIds };
 }

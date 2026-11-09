@@ -3,6 +3,7 @@
 // insert. The chat itself is orderChat.ts.
 
 import type { DraftFields } from './orderDraft.ts';
+import { tr, folded, type Lang } from './i18n.ts';
 
 export type Details = DraftFields & {
   schoolType?: 'SK' | 'NOT_SK' | '';
@@ -31,17 +32,18 @@ export type Step =
   | { kind: 'terms' } | { kind: 'schoolType' } | { kind: 'logo' } | { kind: 'excel' } | { kind: 'kertas' };
 
 // What the order still needs before the FORM ANUGERAH is read, in the order Function Details asks it
-export function nextDetailStep(s: Session, today: string): Step | null {
+export function nextDetailStep(s: Session, today: string, lang: Lang = 'en'): Step | null {
+  const t = tr(lang);
   const d = s.details;
   if (!s.school) return { kind: 'school' };
   if (!d.picName?.trim()) return { kind: 'field', field: 'picName' };
-  if (!PHONE_RE.test(d.phone || '')) return { kind: 'field', field: 'phone', ...(d.phone ? { why: `"${d.phone}" isn't a phone number.` } : {}) };
+  if (!PHONE_RE.test(d.phone || '')) return { kind: 'field', field: 'phone', ...(d.phone ? { why: t(`"${d.phone}" isn't a phone number.`, `「${d.phone}」不是电话号码。`) } : {}) };
   if (!d.ketuaPanitia?.trim()) return { kind: 'field', field: 'ketuaPanitia' };
   if (!d.terms) return { kind: 'terms' };
   const minDay = addDaysIso(today, FUNCTION_MIN_DAYS);
   if (!d.functionDate) return { kind: 'field', field: 'functionDate' };
-  if (d.functionDate < minDay) return { kind: 'field', field: 'functionDate', why: `${showDay(d.functionDate)} is too soon — the Function Date must be ${showDay(minDay)} or later.` };
-  if (d.shipmentDate && d.shipmentDate > d.functionDate) return { kind: 'field', field: 'shipmentDate', why: `The Shipment Date (${showDay(d.shipmentDate)}) is after the Function Date (${showDay(d.functionDate)}).` };
+  if (d.functionDate < minDay) return { kind: 'field', field: 'functionDate', why: t(`${showDay(d.functionDate)} is too soon — must be ${showDay(minDay)} or later.`, `${showDay(d.functionDate)} 太近了 — 要 ${showDay(minDay)} 或之后。`) };
+  if (d.shipmentDate && d.shipmentDate > d.functionDate) return { kind: 'field', field: 'shipmentDate', why: t(`Shipment Date (${showDay(d.shipmentDate)}) is after the Function Date (${showDay(d.functionDate)}).`, `Shipment Date（${showDay(d.shipmentDate)}）比 Function Date（${showDay(d.functionDate)}）晚。`) };
   if (!d.schoolType) return { kind: 'schoolType' };
   if (d.schoolType === 'NOT_SK' && !d.logoUrl) return { kind: 'logo' };
   if (d.schoolType === 'NOT_SK' && !d.logoRemark?.trim()) return { kind: 'field', field: 'logoRemark' };
@@ -51,17 +53,18 @@ export function nextDetailStep(s: Session, today: string): Step | null {
 }
 
 // A typed answer to a field question -> the value to keep, or why it can't be used
-export function readFieldAnswer(field: string, text: string, today: string, askedDay: (t: string, today: string) => string): { value: string } | { error: string } {
+export function readFieldAnswer(field: string, text: string, today: string, askedDay: (t: string, today: string) => string, lang: Lang = 'en'): { value: string } | { error: string } {
+  const say = tr(lang);
   const t = String(text || '').trim();
-  if (!t) return { error: 'Please type it in.' };
+  if (!t) return { error: say('Please type it in.', '请打出来。') };
   if (field === 'phone') {
     const v = t.replace(/[^0-9-]/g, '');
-    return PHONE_RE.test(v) ? { value: v } : { error: 'That isn\'t a phone number — numbers and "-" only, e.g. 012-3456789.' };
+    return PHONE_RE.test(v) ? { value: v } : { error: say('Not a phone number — e.g. 012-3456789.', '不是电话号码 — 例如 012-3456789。') };
   }
   if (field === 'functionDate' || field === 'shipmentDate') {
-    if (field === 'shipmentDate' && /^(-|none|tiada|no)$/i.test(t)) return { value: '' };
+    if (field === 'shipmentDate' && /^(-|none|tiada|no|没有|无)$/i.test(t)) return { value: '' };
     const v = askedDay(t, today);
-    return v ? { value: v } : { error: 'I can\'t read that date — e.g. 23/11/2026.' };
+    return v ? { value: v } : { error: say('Can\'t read that date — e.g. 23/11/2026.', '看不懂这个日期 — 例如 23/11/2026。') };
   }
   return { value: t.toUpperCase() };
 }
@@ -80,8 +83,10 @@ const money = (n: number) => `RM ${n.toLocaleString('en-MY', { minimumFractionDi
 
 type Item = { jenisPlak: string; qty: string | number; harga: number; categoryKey: string; categoryLabel?: string };
 
-// The order as it will go in, for the salesman to check before Submit
-export function summaryHtml(s: Session, items: Item[], total: number, remark: string, crystal: boolean) {
+// The order as it will go in, for the salesman to check before Submit (short: the point first, the
+// Jenis Plak list folded — Sean, 2026-11-08)
+export function summaryHtml(s: Session, items: Item[], total: number, remark: string, crystal: boolean, lang: Lang = 'en') {
+  const t = tr(lang);
   const d = s.details;
   const byPlak = new Map<string, { qty: number; harga: number }>();
   items.forEach((it) => {
@@ -93,20 +98,18 @@ export function summaryHtml(s: Session, items: Item[], total: number, remark: st
   });
   const qty = [...byPlak.values()].reduce((n, r) => n + r.qty, 0);
   return [
-    '📋 <b>Please check the order</b>',
-    `<b>${esc(s.school?.sekolah)}</b>`,
-    `Cikgu: ${esc(d.picName)} / ${esc(d.phone)}`,
-    `Ketua Panitia: ${esc(d.ketuaPanitia)} · Terms: ${esc(d.terms)}`,
-    `Function Date: ${showDay(d.functionDate)}${d.shipmentDate ? ` · Shipment Date: ${showDay(d.shipmentDate)}` : ''}`,
-    `Logo: ${d.schoolType === 'NOT_SK' ? `Others — ${esc(d.logoRemark)}` : 'SK'}`,
-    '',
-    ...[...byPlak.entries()].map(([k, r]) => `• ${esc(k)}: ${r.qty} — ${money(r.harga)}`),
-    `<b>Total: ${qty} pcs — ${money(total)}</b>`,
-    ...(remark ? ['', `Remark: ${esc(remark)}`] : []),
-    '',
-    `Files: ${esc(s.excel?.name)}${s.kertas_kerja.length ? ` + kertas kerja: ${s.kertas_kerja.map((f) => esc(f.name)).join(', ')}` : ' (no kertas kerja)'}`,
-    ...(crystal ? ['💎 Has crystals — the artwork will be marked <b>not confirmed</b>; confirm it on the website after checking the Crystal Preview.'] : []),
-  ].join('\n');
+    `📋 <b>${esc(s.school?.sekolah)}</b>`,
+    `<b>${t(`${qty} pcs`, `${qty} 块`)} · ${money(total)}</b> · Function ${showDay(d.functionDate)}`,
+    `${esc(d.picName)} · ${esc(d.phone)} · ${esc(d.terms)}${d.schoolType === 'NOT_SK' ? ` · ${t('own logo', '学校 logo')}` : ''}`,
+    `📎 ${s.kertas_kerja.length ? t(`Excel + ${s.kertas_kerja.length} kertas kerja`, `Excel + ${s.kertas_kerja.length} 份 kertas kerja`) : t('Excel only (no kertas kerja)', '只有 Excel（没有 kertas kerja）')}`,
+    ...(crystal ? [t('💎 Crystal artwork: confirm it on the website after Submit.', '💎 Crystal 的图：Submit 后在网站确认。')] : []),
+    folded([
+      ...[...byPlak.entries()].map(([k, r]) => `${esc(k)}: ${r.qty} — ${money(r.harga)}`),
+      `Ketua Panitia: ${esc(d.ketuaPanitia)}${d.shipmentDate ? ` · Shipment ${showDay(d.shipmentDate)}` : ''}`,
+      ...(remark ? [`Remark: ${esc(remark)}`] : []),
+    ].join('\n')),
+    t('All correct? Tap Submit 👇', '都对的话，按 Submit 👇'),
+  ].filter(Boolean).join('\n');
 }
 
 // The orders row a New Order submit writes (AppState.jsx submitOrder + ordersApi.js toDbOrder), as the

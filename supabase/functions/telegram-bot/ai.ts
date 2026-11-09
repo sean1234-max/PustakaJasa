@@ -143,7 +143,17 @@ const FORM_SCHEMA = {
         },
       },
     },
-    questions: { type: 'array', items: { type: 'string' }, description: 'short notes for the salesman: anything unclear, guessed or left out' },
+    questions: {
+      type: 'array',
+      description: 'ONLY what the salesman must confirm with the teacher (unclear, guessed, a total that does not match, a colour not stated). Never what you simply did. Usually 0-5.',
+      items: {
+        type: 'object', additionalProperties: false, required: ['en', 'zh'],
+        properties: {
+          en: { type: 'string', description: 'the question in English, at most 15 words, starting with where (e.g. "Item 17: SEYUMAN → SENYUMAN?")' },
+          zh: { type: 'string', description: 'the same question in Simplified Chinese, at most 25 characters plus the plaque words as written (e.g. "第17项：SEYUMAN → SENYUMAN？")' },
+        },
+      },
+    },
   },
 } as const;
 
@@ -154,7 +164,7 @@ Each plaque is one of:
 - mp_subject: a subject award given per TAHUN, no class — award title, subject, tahun.
 - umum: everything else (ANUGERAH PELAJAR CEMERLANG, TOKOH, sports places, PBD, KEHADIRAN PENUH, LONJAKAN SAUJANA, …) — award / line3 / line4 as engraved.
 Sashes (selempang) are not plaques: list them in selempang — acara, warna (BIRU / HIJAU / KUNING / MERAH; blue / green / yellow / red; any other or no colour → "" and a question), qty.
-Rules: copy the wording exactly as the teacher wrote it (fix nothing but obvious spacing); one row per distinct wording with its quantity — count recipients / places when no number is given; never invent plaques, quantities or codes; a total that doesn't match the rows goes in questions; anything unclear goes in questions. Text after "Notes from the salesman" is the salesman's own instruction and wins. Call read_form exactly once.`;
+Rules: copy the wording exactly as the teacher wrote it (fix nothing but obvious spacing); one row per distinct wording with its quantity — count recipients / places when no number is given; never invent plaques, quantities or codes; a total that doesn't match the rows goes in questions; anything unclear goes in questions — short, one line each, in English and Chinese, only things the salesman has to ask the teacher (never "copied as written", "added to SELEMPANG" and the like). Text after "Notes from the salesman" is the salesman's own instruction and wins. Call read_form exactly once.`;
 
 export async function readForm(file: FileContent, fileName: string, notes: string) {
   const content: Anthropic.Beta.BetaContentBlockParam[] = [

@@ -143,7 +143,8 @@ Work like a good staff member:
 - Changing an order: only its Shipment Date, Function Date or Remark. First prepare_order_change and show Sean exactly what it becomes, then ask "确认？". Only when he says yes in his NEXT message, confirm_order_change. Never confirm in the same turn you prepared. Anything else (quantities, wording, Jenis Plak, prices): tell him to use Edit Order on the website.
 - Keep Sean's to-do list: add what he asks you to remember, tick off what he says is done, show it when he asks.
 - If something is unclear or you're not sure, ASK Sean a short question instead of guessing. If you see a problem (a late order, a missing invoice …), say it.
-- Reply in the language Sean writes in (usually Simplified Chinese; keep order numbers, school names, statuses and plaque wording as they are). Short and to the point, like a message to the boss. Plain text only — no Markdown, no HTML; "• " for lists.`;
+- Reply in Simplified Chinese (keep order numbers, school names, statuses and plaque wording as they are), unless Sean writes in another language.
+- Short (Sean, 2026-11-08: he wants to read less but still get the point): the answer first — the number, yes / no, or what you did — in one line. Then at most 5 lines; a longer list shows the top 5 and "还有 N 个". No greetings, no repeating his question, no explaining how you found it. Plain text only — no Markdown, no HTML; "• " for lists.`;
 
 const ok = (data: unknown) => JSON.stringify(data);
 

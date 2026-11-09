@@ -31,7 +31,10 @@ const DEFAULT_USD_TO_MYR = 4.3;
 
 const shiftDay = (day: string, days: number) => new Date(Date.parse(`${day}T00:00:00Z`) + days * MS_PER_DAY).toISOString().slice(0, 10);
 const myDay = (v: unknown) => (v ? new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kuala_Lumpur' }).format(new Date(String(v))) : '');
-const showDay = (day: string) => new Date(`${day}T00:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', timeZone: 'UTC' });
+// Sean's reports in Chinese, short — the numbers first, the lists folded (Sean, 2026-11-08)
+const WEEKDAY = ['日', '一', '二', '三', '四', '五', '六'];
+const showDay = (day: string) => { const d = new Date(`${day}T00:00:00Z`); return `${d.getUTCDate()}/${d.getUTCMonth() + 1}（${WEEKDAY[d.getUTCDay()]}）`; };
+const folded = (lines: string[]) => (lines.length ? `<blockquote expandable>${lines.join('\n')}</blockquote>` : '');
 const rm = (n: number) => `RM ${n.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const within = (time: string, w: { from: string; to: string }) => time >= w.from && time < w.to;
 const stage = (o: Row) => (o.status === 'Reviewing Order' && o.reviewed_at ? 'Done Review' : o.status);
@@ -91,20 +94,20 @@ async function usdToMyr(db: SupabaseClient) {
   return Number(data?.usd_to_myr) || DEFAULT_USD_TO_MYR;
 }
 export const money = (n: number, rate: number) => `$${n.toFixed(2)} (RM${(n * rate).toFixed(2)})`;
-const lastsFor = (left: number, perDay: number, rate: number) => (perDay > 0 ? ` — about ${Math.max(0, Math.floor(left / perDay))} day(s) at ${money(perDay, rate)}/day` : '');
+const lastsFor = (left: number, perDay: number, rate: number) => (perDay > 0 ? `，大约还够 ${Math.max(0, Math.floor(left / perDay))} 天（每天 ${money(perDay, rate)}）` : '');
 
 // Sean hears at once when the credit is gone (an AI call refused for it), and before, when it runs low
 async function creditAlerts(d: ReportDeps, today: string) {
   const sent: string[] = [];
   const { data: refused } = await d.db.rpc('ai_credit_errors_since', { since: new Date(Date.now() - CREDIT_ERROR_WINDOW_MS).toISOString() });
   if (Number(refused || 0) > 0 && !(await wasSent(d.db, `ai-out:${today}`))) {
-    await d.send('⚠️ <b>The AI credit has run out</b> — every AI feature (website and bots) has stopped.\nTop up at platform.claude.com → Add funds, then tell me the new balance (e.g. "我充值了，余额 $30").');
+    await d.send('⚠️ <b>AI 额度用完了</b> — 网站和 bot 的 AI 都停了。\n到 platform.claude.com → Add funds 充值，再告诉我余额（例如「我充值了，余额 $30」）。');
     sent.push(`ai-out:${today}`);
   }
   const c = await creditEstimate(d.db);
   if (c && creditIsLow(c) && !(await wasSent(d.db, `ai-low:${c.id}`))) {
     const rate = await usdToMyr(d.db);
-    await d.send(`🔋 <b>AI credit running low</b> — about ${money(c.left, rate)} left of the ${money(c.given, rate)} you gave me${lastsFor(c.left, await dailySpendUsd(d.db), rate)}.\nTop up at platform.claude.com → Add funds, then tell me the new balance.`);
+    await d.send(`🔋 <b>AI 额度快用完</b> — 剩大约 ${money(c.left, rate)}${lastsFor(c.left, await dailySpendUsd(d.db), rate)}。\n到 platform.claude.com → Add funds 充值，再告诉我余额。`);
     sent.push(`ai-low:${c.id}`);
   }
   await markSent(d.db, sent);
@@ -119,24 +122,24 @@ export function problemsOf(orders: Row[], today: string, now = Date.now()) {
     const ship = myDay(o.shipment_date);
     const name = (d: ReportDeps) => `${d.orderLink(o.id)} ${d.esc(o.sekolah)}${o.sales ? ` (${d.esc(o.sales)})` : ''}`;
     if (ship && ship < today) {
-      out.push({ key: `ask:late:${o.id}:${ship}`, text: (d) => `${name(d)} — Shipment Date was ${showDay(ship)} but it's still <b>${d.esc(stage(o))}</b>. Has it gone out? If yes, press Done on the website; if not, what's the new date?` });
+      out.push({ key: `ask:late:${o.id}:${ship}`, text: (d) => `${name(d)} — ${showDay(ship)} 应该出货，还在 <b>${d.esc(stage(o))}</b>。出了吗？出了就在网站按 Done，没出的话新日期是？` });
     } else if (ship && ship <= tomorrow && ['Reviewing Order', 'Salesman Approved'].includes(o.status)) {
-      out.push({ key: `ask:soon:${o.id}:${ship}`, text: (d) => `${name(d)} — ships ${ship === today ? 'TODAY' : 'tomorrow'} but is only <b>${d.esc(stage(o))}</b>. Can we make it, or should the date move?` });
+      out.push({ key: `ask:soon:${o.id}:${ship}`, text: (d) => `${name(d)} — ${ship === today ? '<b>今天</b>' : '明天'}出货，但还在 <b>${d.esc(stage(o))}</b>。赶得及吗？还是要改日期？` });
     } else if (o.status === 'Reviewing Order' && o.reviewed_at && now - Date.parse(o.reviewed_at) > STUCK_DONE_REVIEW_DAYS * MS_PER_DAY) {
       const days = Math.floor((now - Date.parse(o.reviewed_at)) / MS_PER_DAY);
-      out.push({ key: `ask:stuck:${o.id}`, text: (d) => `${name(d)} — Done Review ${days} days ago, the salesman still hasn't approved. Shall I remind them, or chase it yourself?` });
+      out.push({ key: `ask:stuck:${o.id}`, text: (d) => `${name(d)} — Done Review 已经 ${days} 天，salesman 还没 approve。要我提醒，还是你自己跟？` });
     }
   }
   return out;
 }
 
 function listLines(d: ReportDeps, rows: Row[], line: (o: Row) => string) {
-  return [...rows.slice(0, SHOWN).map(line), ...(rows.length > SHOWN ? [`… and ${rows.length - SHOWN} more`] : [])];
+  return [...rows.slice(0, SHOWN).map(line), ...(rows.length > SHOWN ? [`… 还有 ${rows.length - SHOWN} 张`] : [])];
 }
 
 function taskLines(d: ReportDeps, tasks: Row[], today: string) {
-  if (!tasks.length) return ['Nothing on your list.'];
-  return tasks.map((t) => `${t.id}. ${d.esc(t.text)}${t.due_date ? (t.due_date < today ? ` ❗ was due ${showDay(t.due_date)}` : t.due_date === today ? ' ⏰ today' : ` (by ${showDay(t.due_date)})`) : ''}`);
+  if (!tasks.length) return [];
+  return tasks.map((t) => `${t.id}. ${d.esc(t.text)}${t.due_date ? (t.due_date < today ? ` ❗ ${showDay(t.due_date)} 到期了` : t.due_date === today ? ' ⏰ 今天' : `（${showDay(t.due_date)} 前）`) : ''}`);
 }
 
 const shipLine = (d: ReportDeps) => (o: Row) => `• ${d.orderLink(o.id)} ${d.esc(o.sekolah)} — ${d.esc(stage(o))}${o.urgent ? ' 🔥' : ''}`;
@@ -147,23 +150,17 @@ async function morningReport(d: ReportDeps, today: string) {
   const by = (s: string) => orders.filter((o) => stage(o) === s).length;
   const shipsOn = (day: string) => orders.filter((o) => myDay(o.shipment_date) === day);
   const problems = problemsOf(orders, today);
+  const today0 = shipsOn(today), tomorrow0 = shipsOn(shiftDay(today, 1));
   const text = [
-    `🌅 <b>Good morning boss — ${showDay(today)}</b>`,
-    `Yesterday: ${placed.n} new order(s), ${rm(placed.total)}`,
-    '',
-    `⏳ To review: ${by('Reviewing Order')}`,
-    `✅ Done Review, waiting for the salesman: ${by('Done Review')}`,
-    `🧾 Salesman Approved, waiting for the invoice: ${by('Salesman Approved')}`,
-    `🏭 In Production: ${by('In Production')}`,
-    '',
-    `🚚 <b>Shipping today (${shipsOn(today).length})</b>`, ...listLines(d, shipsOn(today), shipLine(d)),
-    `🚚 <b>Shipping tomorrow (${shipsOn(shiftDay(today, 1)).length})</b>`, ...listLines(d, shipsOn(shiftDay(today, 1)), shipLine(d)),
-    ...(problems.length ? ['', `❗ <b>Need your answer (${problems.length})</b>`, ...problems.slice(0, SHOWN).map((p) => `• ${p.text(d)}`)] : []),
-    '',
-    '📝 <b>Your list</b>', ...taskLines(d, tasks, today),
-    '',
-    credit ? `🤖 AI credit: about ${money(credit.left, rate)} left${lastsFor(credit.left, perDay, rate)}${creditIsLow(credit) ? ' ❗' : ''}` : `🤖 AI credit: unknown — tell me the balance in the Claude Console (AI costs ${money(perDay, rate)}/day lately)`,
-  ].join('\n');
+    `🌅 <b>早安老板 · ${showDay(today)}</b>`,
+    `昨天 ${placed.n} 张新单 · ${rm(placed.total)}`,
+    `⏳ 待 review ${by('Reviewing Order')} · ✅ 等 salesman ${by('Done Review')} · 🧾 等 invoice ${by('Salesman Approved')} · 🏭 生产中 ${by('In Production')}`,
+    `🚚 今天出货 ${today0.length} · 明天 ${tomorrow0.length}`,
+    folded([...listLines(d, today0, shipLine(d)), ...(tomorrow0.length ? ['明天：', ...listLines(d, tomorrow0, shipLine(d))] : [])]),
+    ...(problems.length ? [`❗ <b>要你回答 ${problems.length} 个</b>`, ...problems.slice(0, 3).map((p) => `• ${p.text(d)}`), folded(problems.slice(3, SHOWN).map((p) => `• ${p.text(d)}`))] : []),
+    ...(tasks.length ? [`📝 待办 ${tasks.length} 件`, folded(taskLines(d, tasks, today))] : []),
+    credit ? `🤖 AI 额度：剩大约 ${money(credit.left, rate)}${creditIsLow(credit) ? ' ❗' : ''}` : `🤖 AI 额度：不知道余额 — 告诉我 Claude Console 的余额（最近每天 ${money(perDay, rate)}）`,
+  ].filter(Boolean).join('\n');
   await d.send(text);
   await markSent(d.db, problems.map((p) => p.key));
 }
@@ -181,19 +178,13 @@ async function eveningReport(d: ReportDeps, today: string) {
   ]);
   const tomorrowShips = orders.filter((o) => myDay(o.shipment_date) === shiftDay(today, 1));
   const text = [
-    `🌙 <b>Today's report — ${showDay(today)}</b>`,
-    `🆕 New orders: ${placed.n} (${rm(placed.total)})`,
-    `🔍 Reviewed: ${reviewed.n}`,
-    `🧾 Invoiced: ${invoiced.n}`,
-    `⌨️ Typed: ${typed.n}`,
-    `✅ Completed: ${completed.n}`,
-    '',
-    `📝 <b>Your list</b> — ${doneTasks.length} done today`,
-    ...doneTasks.map((t: Row) => `✔ ${d.esc(t.text)}`),
-    ...taskLines(d, tasks, today),
-    '',
-    `🚚 <b>Shipping tomorrow (${tomorrowShips.length})</b>`, ...listLines(d, tomorrowShips, shipLine(d)),
-  ].join('\n');
+    `🌙 <b>今日报告 · ${showDay(today)}</b>`,
+    `🆕 新单 ${placed.n}（${rm(placed.total)}）· 🔍 review ${reviewed.n} · 🧾 invoice ${invoiced.n} · ⌨️ typing ${typed.n} · ✅ 完成 ${completed.n}`,
+    `📝 待办：今天完成 ${doneTasks.length}，还有 ${tasks.length}`,
+    folded([...doneTasks.map((t: Row) => `✔ ${d.esc(t.text)}`), ...taskLines(d, tasks, today)]),
+    `🚚 明天出货 ${tomorrowShips.length}`,
+    folded(listLines(d, tomorrowShips, shipLine(d))),
+  ].filter(Boolean).join('\n');
   await d.send(text);
 }
 
@@ -202,7 +193,7 @@ async function askNewProblems(d: ReportDeps, today: string) {
   const fresh = [];
   for (const p of problemsOf(await openOrders(d.db), today)) if (!(await wasSent(d.db, p.key))) fresh.push(p);
   if (!fresh.length) return 0;
-  await d.send([`❓ <b>Boss, I need your answer on ${fresh.length} order(s)</b>`, ...fresh.slice(0, SHOWN).map((p) => `• ${p.text(d)}`), '', '<i>Reply to this message and tell me.</i>'].join('\n'));
+  await d.send([`❓ <b>老板，${fresh.length} 张单要你回答</b>`, ...fresh.slice(0, SHOWN).map((p) => `• ${p.text(d)}`), '<i>回复这则讯息告诉我。</i>'].join('\n'));
   await markSent(d.db, fresh.map((p) => p.key));
   return fresh.length;
 }
