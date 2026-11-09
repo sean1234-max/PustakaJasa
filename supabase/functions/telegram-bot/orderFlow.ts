@@ -13,7 +13,7 @@ export type FileRef = { fileId: string; name: string };
 export type School = { id: string; sekolah: string; schoolLanguage: string };
 export type Session = {
   id: string; details: Details; school: School | null; excel: FileRef | null; kertas_kerja: FileRef[];
-  kertas_asked: boolean; answers: Record<string, any>; subs: { from: string; to: string; whole?: boolean }[];
+  kertas_asked: boolean; answers: Record<string, any>; subs: { from: string; to: string; whole?: boolean; stock?: boolean }[];
   ok_words: { blockKey: string; word: string }[];
 };
 

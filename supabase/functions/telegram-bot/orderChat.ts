@@ -25,7 +25,7 @@ import { ISSUES_TOOL_SCHEMA, validateIssues, type CheckLine } from '../check-eng
 import { nextDetailStep, readFieldAnswer, summaryHtml, orderRow, showDay, type Session, type FileRef } from './orderFlow.ts';
 import { tr, langOfProfile } from './i18n.ts';
 // @ts-ignore a plain JS bundle
-import { readOrderForm, buildPlakTree, isCrystalCode, isCustomPlakCode, setCustomTypoWords } from './order.bundle.js';
+import { readOrderForm, buildPlakTree, isCrystalCode, isCustomPlakCode, setCustomTypoWords, flattenPlakCatalog } from './order.bundle.js';
 
 type Msg = Record<string, any>;
 type Item = { jenisPlak: string; qty: string | number; harga: number; categoryKey: string; categoryLabel?: string };
@@ -33,7 +33,8 @@ type Item = { jenisPlak: string; qty: string | number; harga: number; categoryKe
 type ReadResult = {
   error?: string; items: Item[]; total: number; stop: boolean; problems: string[]; remark: string;
   questions: {
-    id: string; kind: 'plak' | 'choice' | 'note' | 'typo' | 'extra'; text: string; raw?: string; options?: { key: string; label: string }[];
+    id: string; kind: 'plak' | 'choice' | 'note' | 'typo' | 'extra' | 'stock'; text: string; raw?: string; options?: any[];
+    code?: string; qty?: number; left?: number;
     blockKey?: string; word?: string; suggestion?: string;
   }[];
   lines: (CheckLine & { blockKey: string; where: string })[]; snapshot: Record<string, unknown>;
@@ -135,7 +136,9 @@ async function readOrder(s: Row, salesman: { id: string; name: string }) {
   return readOrderForm(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength), {
     plakCatalog: await plakCatalog(), schoolLanguage: s.school?.schoolLanguage || 'SK', salesman,
     details: { picName: s.details.picName, phone: s.details.phone, funcSelected: new Date(y, m - 1, d), remark: s.details.remark || '' },
-    subs: s.subs, answers: s.answers, okWords: s.ok_words,
+    // a code swapped for one in stock (the 'stock' question) is applied to the order, not to the file's words
+    subs: s.subs.filter((x) => !x.stock), swaps: s.subs.filter((x) => x.stock), answers: s.answers, okWords: s.ok_words,
+    lang: await langOfProfile(db, s.profile_id),
   }) as ReadResult;
 }
 
@@ -250,6 +253,14 @@ async function advance(s: Row, salesman: { id: string; name: string }, aiAllowed
     if (q.kind === 'plak') {
       const again = s.subs.some((x) => x.whole && norm(x.to) === norm(q.raw));
       return ask(s, `${again ? t('⚠️ Not in the catalog either.\n', '⚠️ 这个也不在目录里。\n') : ''}${t(`Jenis Plak <b>${esc(q.raw)}</b> isn't in the catalog — type the right code (e.g. PKC 263).`, `Jenis Plak <b>${esc(q.raw)}</b> 不在目录里 — 请打正确的代码（例如 PKC 263）。`)}`, [], { kind: 'plak', raw: q.raw });
+    }
+    if (q.kind === 'stock') {
+      // the codes in stock as buttons; "✏️ another code" to type one (Sean, 2026-11-10)
+      const opts = (q.options || []) as { code: string; left: number | null }[];
+      return ask(s, `⚠️ ${esc(q.text)}`, [
+        ...opts.map((o, i) => [btn(s, `sw:${i}`, `${o.code}${o.left != null ? t(` (${o.left} left)`, `（剩 ${o.left}）`) : ''}`)]),
+        [btn(s, 'sw:other', t('✏️ Another code', '✏️ 打别的代码'))],
+      ], { kind: 'stock', code: q.code, options: opts.map((o) => o.code) });
     }
     if (q.kind === 'typo') {
       return ask(s, `✏️ ${t('Typo?', '错字？')} <b>${esc(q.word)}</b> → <b>${esc(q.suggestion)}</b>\n${esc(q.text)}`,
@@ -502,6 +513,15 @@ export async function handleOrderMessage(msg: Msg, aiAllowed: AiAllowed): Promis
     await advance(s, salesman, aiAllowed);
     return true;
   }
+  if (p.kind === 'stockcode') {
+    // the code typed must be one the catalog sells (spaces / case ignored)
+    const key = (c: string) => c.replace(/\s+/g, '').toUpperCase();
+    const found = (flattenPlakCatalog(await plakCatalog()) as { code: string }[]).find((x) => key(x.code) === key(typed));
+    if (!found) { await formBot.reply(chatId, msg.message_id, t(`❌ <b>${esc(typed)}</b> isn't in the catalog — type it as on the website (e.g. PK 262 / A).`, `❌ 目录里没有 <b>${esc(typed)}</b> — 请照网站的写法打（例如 PK 262 / A）。`)); return true; }
+    await save(s, { subs: [...s.subs.filter((x) => !(x.stock && x.from === p.code)), { from: p.code, to: found.code, stock: true }], pending: null });
+    await advance(s, salesman, aiAllowed);
+    return true;
+  }
   if (p.kind === 'plak') {
     await save(s, { subs: [...s.subs.filter((x) => !(x.whole && norm(x.from) === norm(p.raw))), { from: p.raw, to: typed.toUpperCase(), whole: true }], pending: null });
     await advance(s, salesman, aiAllowed);
@@ -567,6 +587,10 @@ export async function handleOrderButton(cb: Msg, aiAllowed: AiAllowed) {
         pending: null,
       });
     }
+  } else if (a.startsWith('sw:') && p.kind === 'stock') {
+    if (a === 'sw:other') return ask(s, t(`Which code instead of <b>${esc(p.code)}</b>? Type it (e.g. PK 262 / A).`, `<b>${esc(p.code)}</b> 换成哪个代码？请打出来（例如 PK 262 / A）。`), [], { kind: 'stockcode', code: p.code });
+    const to = p.options?.[Number(a.slice(3))];
+    if (to) await save(s, { subs: [...s.subs.filter((x) => !(x.stock && x.from === p.code)), { from: p.code, to, stock: true }], pending: null });
   } else if (a.startsWith('ty:') && p.kind === 'typo') {
     await save(s, a === 'ty:use'
       ? { subs: [...s.subs, { from: p.word, to: p.suggestion }], pending: null }

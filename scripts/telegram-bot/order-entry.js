@@ -5,7 +5,7 @@
 //   npm run build:bot-bundle
 export { readOrderForm, questionId } from '../../src/utils/botOrder.js';
 export { buildPlakTree } from '../../src/utils/plakTree.js';
-export { standardUnitPrice, isCustomPlakCode } from '../../src/data/catalog.js';
+export { standardUnitPrice, isCustomPlakCode, flattenPlakCatalog } from '../../src/data/catalog.js';
 export { isCrystalCode } from '../../src/utils/exportCsv.js';
 // Production's own typo words (custom_typo_words), added to the word list as the website does
 export { setCustomTypoWords } from '../../src/utils/typoCheck.js';

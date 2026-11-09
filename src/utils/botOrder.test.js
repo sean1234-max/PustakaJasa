@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import { DOMParser, XMLSerializer } from '@xmldom/xmldom';
 import { fillOrderTemplate } from './templateExport';
-import { readOrderForm, substitute, questionId } from './botOrder';
+import { readOrderForm, substitute, questionId, stockAlternatives } from './botOrder';
 
 const catalog = [
   { id: 'a', code: 'PKC 263', price: 12 },
@@ -53,11 +53,34 @@ describe('readOrderForm', () => {
     expect(kept.items).toHaveLength(1);
   });
 
-  it('not enough stock is a problem the chat can\'t fix', async () => {
-    const low = [{ id: 'a', code: 'PKC 263', price: 12, stockQty: 2, stockBaseline: 100 }];
-    const buf = await form([{ heading: 'H', award: 'TOKOH AKADEMIK', line: 'LELAKI', eline2: '', code: 'PKC 263', qty: 50 }]);
-    const r = readOrderForm(buf, { plakCatalog: low, salesman, details: {} });
-    expect(r.problems.join(' ')).toMatch(/Not enough stock for "PKC 263"/);
+  it('not enough stock: asked, with codes in stock offered, and the swap goes through', async () => {
+    const tree = [
+      { id: 'a', code: 'PK 261', price: 10, children: [{ id: 'a1', code: 'A', price: 0, stockQty: 0, stockBaseline: 100 }, { id: 'a2', code: 'B', price: 0, stockQty: 50, stockBaseline: 100 }] },
+      { id: 'b', code: 'PK 262', price: 11, children: [{ id: 'b1', code: 'A', price: 0, stockQty: 120, stockBaseline: 200 }] },
+      { id: 'c', code: 'W038', price: 30, stockQty: 999, stockBaseline: 1000 },
+    ];
+    const buf = await form([{ heading: 'H', award: 'TOKOH AKADEMIK', line: 'LELAKI', eline2: '', code: 'PK 261 / A', qty: 5 }]);
+    const r = readOrderForm(buf, { plakCatalog: tree, salesman, details: {}, lang: 'zh' });
+    expect(r.problems).toEqual([]);
+    const q = r.questions.find((x) => x.kind === 'stock');
+    expect(q).toMatchObject({ code: 'PK 261 / A', qty: 5, left: 0 });
+    expect(q.text).toContain('库存不够');
+    // same last part (A) first, then the rest of the family; never another family
+    expect(q.options.map((o) => o.code)).toEqual(['PK 262 / A', 'PK 261 / B']);
+    const swapped = readOrderForm(buf, { plakCatalog: tree, salesman, details: {}, swaps: [{ from: 'PK 261 / A', to: 'PK 262 / A' }] });
+    expect(swapped.questions.filter((x) => x.kind === 'stock')).toEqual([]);
+    expect(swapped.items.map((it) => [it.jenisPlak, Number(it.qty), it.harga])).toEqual([['PK 262 / A', 5, 55]]);
+    expect(swapped.remark).toContain('PK 261 / A → PK 262 / A');
+  });
+
+  it('stockAlternatives: enough stock for the quantity only', () => {
+    const tree = [
+      { id: 'a', code: 'PK 261', children: [{ id: 'a1', code: 'A', stockQty: 0, stockBaseline: 10 }] },
+      { id: 'b', code: 'PK 262', children: [{ id: 'b1', code: 'A', stockQty: 3, stockBaseline: 10 }] },
+      { id: 'c', code: 'PK 263', children: [{ id: 'c1', code: 'A' }] },
+    ];
+    expect(stockAlternatives('PK 261 / A', 5, tree).map((o) => o.code)).toEqual(['PK 263 / A']);
+    expect(stockAlternatives('PK 261 / A', 2, tree).map((o) => o.code)).toEqual(['PK 262 / A', 'PK 263 / A']);
   });
 
   it('a file that isn\'t a FORM ANUGERAH', () => {
