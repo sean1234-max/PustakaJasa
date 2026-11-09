@@ -45,8 +45,7 @@ export function nextDetailStep(s: Session, today: string, lang: Lang = 'en'): St
   const d = s.details;
   if (!s.school) return { kind: 'school' };
   if (!d.picName?.trim()) return { kind: 'field', field: 'picName' };
-  if (!PHONE_RE.test(d.phone || '')) return { kind: 'field', field: 'phone', ...(d.phone ? { why: t(`"${d.phone}" isn't a phone number.`, `「${d.phone}」不是电话号码。`) } : {}) };
-  if (!d.ketuaPanitia?.trim()) return { kind: 'field', field: 'ketuaPanitia' };
+  // the phone and Ketua Panitia are taken as written, "-" or empty too — never asked (Sean, 2026-11-10)
   if (!d.terms) return { kind: 'terms' };
   const minDay = addDaysIso(today, FUNCTION_MIN_DAYS);
   if (!d.functionDate) return { kind: 'field', field: 'functionDate' };
@@ -139,7 +138,7 @@ export function orderRow(o: {
     total_amount: o.total, status: 'Reviewing Order', price_adjusted: false,
     sekolah: o.s.school!.sekolah, school_language: o.s.school!.schoolLanguage || 'SK',
     sales: o.salesman.name, salesman_id: o.salesman.id,
-    pic_name: d.picName, phone: d.phone, ketua_panitia: d.ketuaPanitia, terms: d.terms || null, remark: o.remark || null,
+    pic_name: d.picName, phone: d.phone?.trim() || '-', ketua_panitia: d.ketuaPanitia?.trim() || '-', terms: d.terms || null, remark: o.remark || null,
     shipment_date: storedDay(d.shipmentDate), function_date: storedDay(d.functionDate),
     logo_data_url: d.schoolType === 'NOT_SK' ? d.logoUrl || null : null,
     logo_file_name: d.schoolType === 'NOT_SK' ? d.logoName || 'logo.jpg' : null,
