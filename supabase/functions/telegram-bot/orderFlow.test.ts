@@ -14,7 +14,8 @@ describe('nextDetailStep', () => {
   it('asks in Function Details order, then the Excel, then the kertas kerja', () => {
     expect(nextDetailStep(base({ school: null }), TODAY)).toEqual({ kind: 'school' });
     expect(nextDetailStep(base({}, { picName: '' }), TODAY)).toEqual({ kind: 'field', field: 'picName' });
-    expect(nextDetailStep(base({}, { phone: 'abc' }), TODAY)?.kind).toBe('field');
+    // the phone and Ketua Panitia are never asked
+    expect(nextDetailStep(base({ kertas_asked: true }, { phone: '-', ketuaPanitia: '' }), TODAY)).toBeNull();
     expect(nextDetailStep(base({}, { terms: '' }), TODAY)).toEqual({ kind: 'terms' });
     expect(nextDetailStep(base({ school: { id: 's', sekolah: 'SJK(C) CHUNG HUA', schoolLanguage: 'SJKC' } }, { schoolType: '' }), TODAY)).toEqual({ kind: 'schoolType' });
     expect(nextDetailStep(base({ excel: null }), TODAY)).toEqual({ kind: 'excel' });
