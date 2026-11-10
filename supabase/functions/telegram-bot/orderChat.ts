@@ -111,6 +111,16 @@ async function openSession(chatId: number, userId: number): Promise<Row | null> 
   return (data as Row) || null;
 }
 
+// The order open in this chat, whoever started it — Production cancels it for the salesman (Sean, 2026-11-10:
+// his "cancel" in Fida's group did nothing, the order was hers)
+async function openSessionInChat(chatId: number): Promise<Row | null> {
+  const since = new Date(Date.now() - SESSION_DAYS * 86_400_000).toISOString();
+  const { data } = await db.from('bot_order_sessions').select('*').eq('chat_id', chatId)
+    .eq('state', 'open').gte('updated_at', since).order('updated_at', { ascending: false }).limit(1).maybeSingle();
+  return (data as Row) || null;
+}
+const isProduction = (telegramUserId: number) => formBot.inAnyGroup(telegramUserId, PRODUCTION_GROUPS);
+
 async function save(s: Row, patch: Partial<Row>) {
   Object.assign(s, patch);
   const { error } = await db.from('bot_order_sessions').update({ ...patch, updated_at: new Date().toISOString() }).eq('id', s.id);
@@ -493,7 +503,16 @@ export async function handleOrderMessage(msg: Msg, aiAllowed: AiAllowed): Promis
   }
 
   const s = await openSession(chatId, userId);
-  if (!s) return false;
+  if (!s) {
+    // Production typing cancel in a salesman's group: the order open there, whoever started it
+    if (!/^\s*(cancel|batal)\s*$/i.test(text) || fileOf(msg) || msg.chat?.type === 'private' || !(await isProduction(userId))) return false;
+    const theirs = await openSessionInChat(chatId);
+    if (!theirs) return false;
+    if (theirs.pending?.messageId) await formBot.dropButtons(chatId, theirs.pending.messageId);
+    await save(theirs, { state: 'cancelled', pending: null });
+    await formBot.reply(chatId, msg.message_id, (await T(theirs))('✖ Cancelled by Production — nothing submitted.', '✖ Production 已取消 — 没有 submit。'));
+    return true;
+  }
   const salesman = await salesmanById(s.profile_id);
   if (!salesman) return false;
   // no question waiting: the bot is still working on this order (e.g. collecting an album's pages)
@@ -629,7 +648,10 @@ export async function handleOrderButton(cb: Msg, aiAllowed: AiAllowed) {
   if (!m) return formBot.answerButton(cb.id);
   const { data } = await db.from('bot_order_sessions').select('*').eq('id', m[1]).maybeSingle();
   const s = data as Row | null;
-  if (!s || s.telegram_user_id !== Number(cb.from?.id)) return formBot.answerButton(cb.id, 'Not your order. / 这不是你的单。');
+  // another person's order: only Production may press its Cancel (Sean, 2026-11-10)
+  if (!s || (s.telegram_user_id !== Number(cb.from?.id) && !(m[2] === 'cancel' && await isProduction(Number(cb.from?.id))))) {
+    return formBot.answerButton(cb.id, 'Not your order. / 这不是你的单。');
+  }
   const t = await T(s);
   if (s.state !== 'open') return formBot.answerButton(cb.id, s.state === 'submitted' ? t(`Already submitted — ${s.order_id}`, `已经 submit 了 — ${s.order_id}`) : t('This order was cancelled.', '这张单已取消。'));
   const msgId = cb.message?.message_id;
