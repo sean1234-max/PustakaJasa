@@ -530,6 +530,21 @@ export default function NewOrderStep2() {
     runAddWithCheck(engagedKeys, addAllToCart);
   };
 
+  // Salesman Edit Order: ONE "Save Changes" (Sean, 2026-11-10) — the same as Add All to Cart, then the
+  // cart's Save Changes (Cart.jsx runs it on arrival: kertas kerja / crystal / stock checks included)
+  const handleSaveEdit = () => {
+    if (checking) return;
+    const engagedKeys = allCategories
+      .filter((c) => buildCategoryCartItems(draftForCheck, c.key).engaged)
+      .map((c) => c.key);
+    // a category that can't be added: addAllToCart shows why, nothing is saved
+    if (engagedKeys.some((k) => buildCategoryCartItems(draftForCheck, k).error)) { addAllToCart(); return; }
+    runAddWithCheck(engagedKeys, () => {
+      if (engagedKeys.length) addAllToCart();
+      navigate('/cart', { state: { autoSave: true } });
+    });
+  };
+
   const resolveIssue = (issue) => setPendingCheck((p) => (p ? { ...p, issues: p.issues.filter((x) => x !== issue) } : p));
   // "Use fix" — replace the first occurrence of `original` in every line
   // that has it. If the text changed since the check, that line is skipped.
@@ -841,6 +856,11 @@ export default function NewOrderStep2() {
           {state.cartToast && <span className="toast-inline">{state.cartToast}</span>}
           {!state.cartToast && checkOkToast && <span className="toast-inline">✓ Spelling OK</span>}
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+            {state.editOrderId ? (
+              <button type="button" className="btn btn-primary" onClick={handleSaveEdit} disabled={unansweredChoices.length > 0 || incompleteCategories.length > 0 || checking}>
+                {checking ? 'Checking…' : 'Save Changes'}
+              </button>
+            ) : (
             <div style={{ display: 'flex', gap: 8 }}>
               {state.category && (
                 <button type="button" className="btn btn-ghost" onClick={handleAddCategory} disabled={unansweredChoices.length > 0 || checking}>
@@ -853,8 +873,6 @@ export default function NewOrderStep2() {
                 {checking ? 'Checking…' : 'Add All to Cart'}
               </button>
             </div>
-            {state.editOrderId && state.cart.length > 0 && (
-              <button type="button" className="btn btn-secondary" onClick={() => navigate('/cart')}>Review &amp; Save ({state.cart.length} in cart) →</button>
             )}
             {unansweredChoices.length > 0 && (
               <span className="hint-text" style={{ margin: 0 }}>Answer the {unansweredChoices.length} question(s) above first.</span>

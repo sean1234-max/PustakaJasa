@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
 import { useAppState } from '../state/useAppState';
 import { formatDate, getStockStatus, resolveCategory, otherPlakIncomplete } from '../data/catalog';
@@ -166,6 +166,18 @@ export default function Cart() {
     if (found.length > 0) { setDupes({ found, artworkConfirmed }); return; }
     send(artworkConfirmed, null);
   };
+  // Edit Order's one "Save Changes" on the order page (NewOrderStep2 handleSaveEdit): the cart's own Save
+  // Changes runs once on arrival — whatever stops it (stock, OTHER, kertas kerja, crystal) shows here as usual
+  const location = useLocation();
+  const autoSaved = useRef(false);
+  const canSave = state.cart.length > 0 && !submitting && !stockViolation && !otherViolation && !dupes && !noOrderFile && !newFileNotAdded;
+  useEffect(() => {
+    if (!editing || !location.state?.autoSave || autoSaved.current) return;
+    autoSaved.current = true;
+    navigate(location.pathname, { replace: true, state: null });
+    if (canSave) (state.kertasKerjaFiles?.length ? startSubmit() : setAskKertasKerja(true));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing, location.state]);
   const submitter = state.role === 'salesman'
     ? `salesman ${state.assignedSalesmen.find((s) => s.id === state.userAuthId)?.name || ''}`.trim()
     : `teacher ${state.picName || ''}`.trim();
