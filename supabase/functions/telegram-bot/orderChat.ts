@@ -524,7 +524,6 @@ export async function handleOrderMessage(msg: Msg, aiAllowed: AiAllowed): Promis
       await advance(s, salesman, aiAllowed);
       return true;
     }
-    if (p.kind === 'excel') { await formBot.reply(chatId, msg.message_id, t('❌ Not an Excel (.xlsx) — send the FORM ANUGERAH.', '❌ 这不是 Excel (.xlsx) — 请发 FORM ANUGERAH。')); return true; }
     // an album's other pages: the page that found the question waiting collects them all (below)
     if (p.kind === 'busy' && msg.media_group_id) return true;
     const kk = [...s.kertas_kerja, file];
@@ -537,7 +536,12 @@ export async function handleOrderMessage(msg: Msg, aiAllowed: AiAllowed): Promis
     }
     const added = kk.slice(s.kertas_kerja.length);
     await save(s, { kertas_kerja: kk, kertas_asked: true, ...(p.kind === 'kertas' ? { pending: null } : msg.media_group_id ? { pending: p.kind === 'busy' ? null : p } : {}) });
-    await formBot.reply(chatId, msg.message_id, `📎 ${t('Kertas kerja added', '已加 kertas kerja')}: ${added.map((f) => esc(f.name)).join(', ')}`);
+    // still waiting for the corrected Excel: say so with it (Fida's PDF was turned away as "Not an Excel",
+    // 2026-11-10 — it was the order's kertas kerja)
+    const stillExcel = p.kind === 'excel'
+      ? `\n${t('Still waiting for the corrected FORM ANUGERAH Excel — or type <b>cancel</b> if this file is for another order.', '还在等改好的 FORM ANUGERAH Excel — 如果这个文件是别的单，请打 <b>cancel</b>。')}`
+      : '';
+    await formBot.reply(chatId, msg.message_id, `📎 ${t('Kertas kerja added', '已加 kertas kerja')}: ${added.map((f) => esc(f.name)).join(', ')}${stillExcel}`);
     if (p.kind === 'kertas') {
       if (p.messageId) await formBot.dropButtons(chatId, p.messageId);
       await advance(s, salesman, aiAllowed);
@@ -556,6 +560,9 @@ export async function handleOrderMessage(msg: Msg, aiAllowed: AiAllowed): Promis
     return true;
   }
   if (file) return false; // a file for something else: the form bot fills it as before
+  // waiting for an Excel, no typed answer is needed: a group's own chatter (not a reply to the bot) is
+  // left alone (Fida answering Sean got "Waiting for the FORM ANUGERAH Excel", 2026-11-10)
+  if (p.kind === 'excel' && msg.chat?.type !== 'private' && msg.reply_to_message?.from?.is_bot !== true) return false;
 
   const typed = text.trim();
   if (!typed) return false;
