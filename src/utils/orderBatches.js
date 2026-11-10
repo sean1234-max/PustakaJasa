@@ -276,6 +276,24 @@ export function applyPriceDrafts(items, drafts) {
   };
 }
 
+// An order Production edits once it is In Production (Sean, 2026-11-10) is already invoiced: every Jenis
+// Plak it had keeps the price it was billed at (Adjust Prices included); only a new Jenis Plak takes the
+// price list's. harga follows the new qty.
+export function keepPrices(beforeItems, afterItems) {
+  const billed = new Map();
+  (beforeItems || []).forEach((it) => {
+    if (it.jenisPlak && !billed.has(it.jenisPlak)) billed.set(it.jenisPlak, it);
+  });
+  return (afterItems || []).map((it) => {
+    const was = billed.get(it.jenisPlak);
+    if (!was || was.unitPrice == null || was.unitPrice === it.unitPrice) return it;
+    return {
+      ...it, unitPrice: was.unitPrice, harga: was.unitPrice * (Number(it.qty) || 0),
+      ...(was.originalUnitPrice != null ? { originalUnitPrice: was.originalUnitPrice } : {}),
+    };
+  });
+}
+
 // How an edit changes stock: per-Jenis-Plak quantity before → after, as
 // what to take from stock (`deduct`) and what to give back (`restore`) —
 // the { full_path, qty } shape deductPlakStock / restorePlakStock take.

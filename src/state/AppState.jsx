@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import {
-  CATEGORIES, ACTIVE_CATEGORIES, formatDate, standardUnitPrice, getCategorySubjects, isReviewed, isAddonInFlight, toMalaysiaDay,
+  CATEGORIES, ACTIVE_CATEGORIES, formatDate, standardUnitPrice, getCategorySubjects, isReviewed, isAddonInFlight, canProductionEdit, toMalaysiaDay,
   resolveCategory, categoriesUsedByItems, isDynamicCategoryKey, malaysiaToday, malaysiaDayIso,
 } from '../data/catalog';
 import { buildInitialRowsByBlock, buildInitialColumnsByBlock, buildInitialPlakRows } from '../data/formDefaults';
@@ -37,7 +37,7 @@ import { syncUrgentOrderToSheet, highlightUrgentKitDoc } from '../lib/urgentShee
 import { isUrgentShipment, urgentSheetAction, SHIPMENT_EDITABLE_STATUSES } from '../utils/urgentOrder';
 import { fetchCustomTypoWords } from '../lib/typoWordsApi';
 import { setCustomTypoWords } from '../utils/typoCheck';
-import { normalizeSplitQty, stockDiff, applyPriceDrafts, withOrderOwnSettings, invoiceGroupStatus } from '../utils/orderBatches';
+import { normalizeSplitQty, stockDiff, keepPrices, applyPriceDrafts, withOrderOwnSettings, invoiceGroupStatus } from '../utils/orderBatches';
 import { needsKiv, kivParts, hasPlakPart, kivInProduction, crystalWithPlak, isCrystalCode } from '../utils/exportCsv';
 import { kivOnlyGroupsDone } from '../utils/productionCards';
 
@@ -2696,8 +2696,8 @@ export function AppStateProvider({ children }) {
   const saveProductionEdit = useCallback(async (orderId, { addOn = false } = {}) => {
     const st = stateRef.current;
     const order = st.orders.find((o) => o.id === orderId);
-    if (addOn ? !isAddonInFlight(order) : (!order || order.status !== 'Reviewing Order')) {
-      return { ok: false, message: addOn ? 'This order has no add-on waiting for review.' : 'Only an order that is still being reviewed can be edited here.' };
+    if (addOn ? !isAddonInFlight(order) : !canProductionEdit(order)) {
+      return { ok: false, message: addOn ? 'This order has no add-on waiting for review.' : 'Only an order being reviewed or In Production can be edited here.' };
     }
     const f = PROD_EXCEL_IMPORT_FIELDS;
     const draft = {
@@ -2712,8 +2712,11 @@ export function AppStateProvider({ children }) {
       if (built.items) items.push(...built.items);
     }
     if (items.length === 0) return { ok: false, message: 'Nothing to save — the order would have no plaques left.' };
-    const totalAmount = items.reduce((sum, it) => sum + it.harga, 0);
     const before = addOn ? order.pendingAddonItems : order.items;
+    // In Production it is already invoiced: the prices it was billed at stay
+    const inProduction = !addOn && order.status === 'In Production';
+    if (inProduction) items.splice(0, items.length, ...keepPrices(before, items));
+    const totalAmount = items.reduce((sum, it) => sum + it.harga, 0);
     const { deduct, restore } = stockDiff(before, items);
     const realStock = !isTestOrderId(order.id);
     try {
@@ -2727,7 +2730,8 @@ export function AppStateProvider({ children }) {
     const fields = addOn
       ? { pendingAddonItems: withImportFile(items, addonFile), pendingAddonStatus: 'pending' }
       : {
-        items, totalAmount, priceAdjusted: false,
+        items, totalAmount,
+        priceAdjusted: inProduction ? items.some((it) => it.unitPrice !== standardUnitPrice(it.jenisPlak, st.plakCatalog)) : false,
         correctedImportFilePath: null, correctedImportFileName: null, correctedImportUploadedAt: null,
       };
     try {
