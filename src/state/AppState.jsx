@@ -4,6 +4,7 @@ import {
   resolveCategory, categoriesUsedByItems, isDynamicCategoryKey, malaysiaToday, malaysiaDayIso,
 } from '../data/catalog';
 import { buildInitialRowsByBlock, buildInitialColumnsByBlock, buildInitialPlakRows } from '../data/formDefaults';
+import { addonPrefill, diffAddonItems } from '../utils/addonDiff';
 import {
   computeBlocks, buildDraftFromOrder,
 } from '../utils/computeBlocks';
@@ -387,6 +388,8 @@ function initialState() {
     draftRestoredToast: '',
 
     addOnOrderId: null,
+    // the order so far (original + earlier Tambahan) the Add On page opened with; null = blank page (Excel upload)
+    addOnBaseItems: null,
     addOnCart: [],
     addOnImportFilePath: null, addOnImportFileName: null,
     addOnCategory: null,
@@ -836,14 +839,28 @@ export function AppStateProvider({ children }) {
       const cats = allCategories
         ? [...ACTIVE_CATEGORIES, ...[...new Set(dynamicKeys)].map(resolveCategory).filter(Boolean)]
         : [resolveCategory(st.addOnCategory)].filter(Boolean);
+      // Opened with the order so far: its own wording was already accepted, so a typo hint doesn't
+      // block, and the page stays as typed (only what grew goes to the cart).
+      const base = st.addOnBaseItems;
       const allItems = [];
+      const builtKeys = new Set();
       for (const cat of cats) {
-        const { engaged, error, items } = buildCategoryCartItems(view, cat.key);
+        const { engaged, error, items } = buildCategoryCartItems(view, cat.key, { allowTypos: !!base });
         if (!engaged && allCategories) continue;
         if (error) return { ...st, addOnCategory: cat.key, cartToast: `${cat.label}: ${error}` };
         if (!items || items.length === 0) continue;
         allItems.push(...items);
-        view = { ...view, ...resetCategoryFields(cat.key, view, 'addOnVisibleBlocksByCategory') };
+        builtKeys.add(cat.key);
+        if (!base) view = { ...view, ...resetCategoryFields(cat.key, view, 'addOnVisibleBlocksByCategory') };
+      }
+      if (base) {
+        const { items, errors } = diffAddonItems(base, allItems);
+        if (errors.length) return { ...st, cartToast: errors[0] };
+        const cart = [...st.addOnCart.filter((ci) => !builtKeys.has(ci.categoryKey)), ...withImportFile(items, st.addOnImportFilePath)];
+        return {
+          ...st, addOnCart: cart,
+          cartToast: items.length ? `Tambahan: ${items.reduce((n, it) => n + (Number(it.qty) || 0), 0)} plaque(s) added to cart.` : 'Nothing added yet — raise a QTY or add a new row first.',
+        };
       }
       if (allItems.length === 0) return { ...st, cartToast: 'No filled Jenis Plak rows to add.' };
       const touchedKeys = new Set(allItems.map((it) => it.categoryKey));
@@ -1506,14 +1523,35 @@ export function AppStateProvider({ children }) {
     return { ok: true, id: order.id };
   }, [patch, flashToast]);
 
+  // Add On opens with the order so far — the original plus every earlier Tambahan (Sean, 2026-11-10):
+  // raise a QTY or add a row; Add to Cart keeps only what grew (addonDiff.js).
   const openAddOn = useCallback((ord) => {
-    patch((st) => ({
-      addOnOrderId: ord.id, addOnCategory: null, addOnCart: [], addOnImportFilePath: null, addOnImportFileName: null, addOnKertasKerja: [],
+    patch((st) => {
+      const p = addonPrefill(ord, st.orders.filter((o) => o.parentOrderId === ord.id), ord.schoolLanguage || st.schoolLanguage);
+      return {
+        addOnOrderId: ord.id, addOnCategory: p.category, addOnCart: [], addOnImportFilePath: null, addOnImportFileName: null, addOnKertasKerja: [],
+        addOnBaseItems: p.baseItems,
+        addOnLineValues: p.lineValues, addOnMatrixValues: p.matrixValues,
+        addOnRowsByBlock: p.rowsByBlock, addOnColumnsByBlock: p.columnsByBlock, addOnPlakRows: p.plakRows,
+        addOnNextRowId: p.nextId, addOnNextPlakRowId: p.nextId, addOnNextColumnId: p.nextId, addOnVisibleBlocksByCategory: p.visibleBlocksByCategory,
+      };
+    });
+  }, [patch]);
+
+  // An uploaded Tambahan Excel holds only the add-on: the page goes blank first, and everything in
+  // the file is the Tambahan (no comparing with the order).
+  const clearAddOnPrefill = useCallback(() => {
+    const st = stateRef.current;
+    const blank = {
+      ...st, addOnBaseItems: null, addOnCart: [], addOnCategory: null,
       addOnLineValues: {}, addOnMatrixValues: {},
       addOnRowsByBlock: buildInitialRowsByBlock(st.schoolLanguage), addOnColumnsByBlock: buildInitialColumnsByBlock(), addOnPlakRows: buildInitialPlakRows(),
       addOnNextRowId: 1000, addOnNextPlakRowId: 1000, addOnNextColumnId: 1000, addOnVisibleBlocksByCategory: {},
-    }));
-  }, [patch]);
+    };
+    setState(blank);
+    stateRef.current = blank;
+    return blank;
+  }, []);
 
   // Teacher submits an add-on for Sales review — unlike the old
   // commitAddOn (which merged straight into `items`/`totalAmount`, no
@@ -3010,7 +3048,7 @@ export function AppStateProvider({ children }) {
     resetCurrentCategory, startNewOrder, addToCart, addAllToCart, removeFromCart, editCartCategory, restoreCartToDraft, submitOrder, checkDuplicateOrders, reorderOrder, openEditOrder, saveEditedOrder,
     importFormAnugerahExcel, importFormAnugerahExcelInto, convertImportToForm, readSkippedSheetsWithAi,
     openAmend, updateAmend,
-    openAddOn, addOnAddToCart, removeFromAddOnCart, submitPendingAddOn, cancelPendingAddOn, rejectAddOn, approveAddOn, approveOrder, setInvoiceId, approveAndSetInvoiceId,
+    openAddOn, clearAddOnPrefill, addOnAddToCart, removeFromAddOnCart, submitPendingAddOn, cancelPendingAddOn, rejectAddOn, approveAddOn, approveOrder, setInvoiceId, approveAndSetInvoiceId,
     setJenisPlakInvoiceGroup, renameInvoiceNumber,
     retryUrgentSheetSync, updateShipmentAndUrgency, updateOrderDetails,
     cancelOrder,

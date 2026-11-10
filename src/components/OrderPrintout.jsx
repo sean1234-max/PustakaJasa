@@ -5,6 +5,7 @@ import { groupItemsByBatch } from '../utils/orderBatches';
 import { splitOrderCategories } from '../utils/exportCsv';
 import { reconstructBlocksForCategory } from '../utils/computeBlocks';
 import RemarkText from './RemarkText';
+import { useAppState } from '../state/useAppState';
 
 const READONLY = { lines: false, rowDesc: false, rowQty: false, addRemoveRows: false, matrix: false, jenisPlak: false };
 
@@ -139,9 +140,21 @@ const itemsTable = (priceTable, items) => ({
   totalHarga: items.reduce((sum, it) => sum + (Number(it.harga) || 0), 0),
 });
 
+// Every earlier Tambahan of the same original prints between the original and this one, each in its
+// own TAMBAHAN section (Sean, 2026-11-10), and counts in the GRAND TOTAL.
+function earlierTambahans(orders, original, order) {
+  const mine = order.parentOrderId ? String(order.createdAt || '') : null;
+  return orders
+    .filter((o) => o.parentOrderId === original.id && o.status !== 'Cancelled' && o.id !== order.id)
+    .filter((o) => mine === null || String(o.createdAt || '') < mine)
+    .sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
+}
+
 function TambahanPrintout({ order, invoiceId, printedAt, urgent, stamp, showSales, showRemark, priceTable, catBlockGroups, original }) {
+  const { state } = useAppState();
   const originalTable = itemsTable(priceTable, original.items || []);
-  const grandTotal = (Number(originalTable.totalHarga) || 0) + (Number(priceTable.totalHarga) || 0);
+  const earlier = earlierTambahans(state.orders || [], original, order).map((t) => ({ id: t.id, table: itemsTable(priceTable, t.items || []) }));
+  const grandTotal = [originalTable, ...earlier.map((e) => e.table), priceTable].reduce((sum, t) => sum + (Number(t.totalHarga) || 0), 0);
   return (
     <div className="print-only">
       <div className="print-summary-section">
@@ -149,15 +162,24 @@ function TambahanPrintout({ order, invoiceId, printedAt, urgent, stamp, showSale
         <div className="card-kicker" style={{ marginTop: 'var(--space-6)' }}>Original Order ({original.id}) — Jenis Plak / Price per Unit / QTY / Harga</div>
         <PriceTable editable={false} priceDrafts={{}} setPrice={() => {}} showSelempangLines {...originalTable} />
       </div>
+      {earlier.map((e) => (
+        <div key={e.id}>
+          <div className="print-tambahan-banner">TAMBAHAN ({e.id})</div>
+          <div className="print-summary-section">
+            <div className="card-kicker" style={{ marginTop: 'var(--space-3)' }}>Tambahan — Jenis Plak / Price per Unit / QTY / Harga</div>
+            <PriceTable editable={false} priceDrafts={{}} setPrice={() => {}} showSelempangLines {...e.table} />
+          </div>
+        </div>
+      ))}
       <div className="print-tambahan-banner">TAMBAHAN ({order.id})</div>
       <div className="print-summary-section">
         <div className="card-kicker" style={{ marginTop: 'var(--space-3)' }}>Tambahan — Jenis Plak / Price per Unit / QTY / Harga</div>
         <PriceTable editable={false} priceDrafts={{}} setPrice={() => {}} showSelempangLines {...priceTable} />
       </div>
       <p style={{ marginTop: 'var(--space-6)', fontSize: 14 }}>
-        <strong>GRAND TOTAL (Original Order + Tambahan): RM {grandTotal.toFixed(2)}</strong>
+        <strong>GRAND TOTAL (Original Order + Tambahan{earlier.length ? ` ×${earlier.length + 1}` : ''}): RM {grandTotal.toFixed(2)}</strong>
       </p>
-      {/* page 1: details, both price tables, the total; Order Details from page 2 (Sean, 2026-10-17) */}
+      {/* page 1: details, the price tables, the total; Order Details from page 2 (Sean, 2026-10-17) */}
       <PrintDetails groups={catBlockGroups} title="Order Details — Tambahan" />
     </div>
   );

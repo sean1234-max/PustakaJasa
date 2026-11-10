@@ -9,6 +9,8 @@ export function addonRepeatsOrder(addonItems, orderItems) {
   const addon = addonItems || [];
   const order = orderItems || [];
   if (!addon.length || !order.length) return null;
+  // made by comparing with the order (addonDiff.js): it can't be the order again
+  if (addon.every((it) => it.addonDiff)) return null;
   const left = new Map();
   order.forEach((it) => left.set(sig(it), (left.get(sig(it)) || 0) + 1));
   let matched = 0;

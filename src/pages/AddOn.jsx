@@ -26,7 +26,7 @@ const ADDON_IMPORT_FIELDS = { ...DRAFT_FIELDS, category: 'addOnCategory', import
 const EDITABLE = { lines: true, rowDesc: true, rowQty: true, addRemoveRows: true, matrix: true, jenisPlak: true };
 
 export default function AddOn() {
-  const { state, patch, importFormAnugerahExcelInto, addOnAddToCart } = useAppState();
+  const { state, patch, importFormAnugerahExcelInto, addOnAddToCart, clearAddOnPrefill } = useAppState();
   const navigate = useNavigate();
   const order = state.orders.find((o) => o.id === state.addOnOrderId);
 
@@ -46,6 +46,8 @@ export default function AddOn() {
     }
     setImporting(true);
     setImportResult(null);
+    // the file is only the Tambahan: the order-so-far page goes blank first
+    if (state.addOnBaseItems) clearAddOnPrefill();
     let result;
     try {
       result = await importFormAnugerahExcelInto(file, ADDON_IMPORT_FIELDS);
@@ -133,6 +135,13 @@ export default function AddOn() {
         </div>
 
         <KertasKerjaUpload stateKey="addOnKertasKerja" />
+
+        {state.addOnBaseItems && (
+          <p className="hint-text" style={{ maxWidth: 640, margin: '0 auto var(--space-6)', textAlign: 'center', fontWeight: 600 }}>
+            The order so far is shown below{order.id ? ` (${order.id} + every Tambahan)` : ''}. Raise a QTY or add a new row — only what you add becomes the Tambahan
+            (e.g. BAHASA MELAYU 10 → 14 = Tambahan of 4). The order&apos;s own wording and QTY can&apos;t be changed or lowered here.
+          </p>
+        )}
 
         <div className="card-kicker">Jenis Anugerah (Category)</div>
         <div style={{ margin: 'var(--space-3) 0 var(--space-8)' }}>
