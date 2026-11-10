@@ -15,9 +15,9 @@
 import { DOMParser, XMLSerializer } from 'npm:@xmldom/xmldom@0.9.12';
 import { esc, MAX_FILE_BYTES } from './telegram.ts';
 import { formBot } from './formBot.ts';
-import { handleOrderMessage, startFromForm } from './orderChat.ts';
+import { groupSalesman, handleOrderMessage, startFromForm } from './orderChat.ts';
 import * as XLSX from 'npm:xlsx@0.18.5';
-import { tr, folded, topLines, langOfTelegramUser, type Lang } from './i18n.ts';
+import { tr, folded, topLines, langOfProfile, langOfTelegramUser, type Lang } from './i18n.ts';
 import { readFile, type FileContent } from './files.ts';
 import { readForm } from './ai.ts';
 import { db } from './db.ts';
@@ -80,6 +80,14 @@ async function allowed(msg: Msg) {
   return false;
 }
 
+// The language to answer a file in: the sender's own (a salesman); Sean / Production sending one in a
+// salesman's group get that salesman's (Fida's group was answered in Chinese, 2026-11-10)
+async function replyLang(msg: Msg): Promise<Lang> {
+  const { data: link } = await db.from('telegram_links').select('profile_id').eq('telegram_user_id', Number(msg.from?.id)).maybeSingle();
+  if (link?.profile_id || msg.chat?.type === 'private') return langOfProfile(db, link?.profile_id);
+  return langOfProfile(db, (await groupSalesman(msg.chat.id, Number(msg.from?.id)))?.id);
+}
+
 export async function handleForm(msg: Msg, aiAllowed: () => Promise<unknown>) {
   const chatId = msg.chat.id;
   const inGroup = msg.chat?.type !== 'private';
@@ -99,7 +107,7 @@ export async function handleForm(msg: Msg, aiAllowed: () => Promise<unknown>) {
   // the Production group is the review bot's (@PjsbReviewAgent compares files there); this bot is in it
   // only to check who may use it (Sean 2026-11-05: it filled a form for a compare request)
   if (inGroup && GROUPS.includes(String(chatId))) return;
-  const lang = await langOfTelegramUser(db, Number(msg.from?.id));
+  const lang = await replyLang(msg);
   const t = tr(lang);
   const say = (html: string) => formBot.reply(chatId, msg.message_id, html);
   if (!(await allowed(msg))) return say('Sorry, this bot is only for Pustaka Jasa salesmen. / 这个 bot 只给 Pustaka Jasa 的 salesman 用。');

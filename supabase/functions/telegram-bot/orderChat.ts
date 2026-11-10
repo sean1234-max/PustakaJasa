@@ -90,15 +90,22 @@ async function orderSalesman(msg: Msg) {
   const own = await salesmanOf(Number(msg.from?.id));
   if (own) return { ...own, onBehalf: false };
   if (msg.chat?.type === 'private' || !(await formBot.inAnyGroup(Number(msg.from?.id), PRODUCTION_GROUPS))) return null;
-  const { data: g } = await db.from('salesman_groups').select('profile_id').eq('chat_id', msg.chat.id).maybeSingle();
-  if (g) { const sm = await salesmanById(g.profile_id); if (sm) return { ...sm, onBehalf: true }; }
+  const sm = await groupSalesman(msg.chat.id, Number(msg.from?.id));
+  return sm ? { ...sm, onBehalf: true } : null;
+}
+
+// The salesman whose own group this chat is: ReviewAgent's link, else the one linked salesman in it (not
+// `exceptUserId`, the person writing). Also the language Sean's messages there are answered in (form.ts).
+export async function groupSalesman(chatId: number, exceptUserId: number) {
+  const { data: g } = await db.from('salesman_groups').select('profile_id').eq('chat_id', chatId).maybeSingle();
+  if (g) { const sm = await salesmanById(g.profile_id); if (sm) return sm; }
   const { data: links } = await db.from('telegram_links').select('telegram_user_id, profile_id');
   const here = [];
   for (const l of links || []) {
-    if (Number(l.telegram_user_id) === Number(msg.from?.id)) continue;
-    if (await formBot.inAnyGroup(Number(l.telegram_user_id), [String(msg.chat.id)])) { const sm = await salesmanById(l.profile_id); if (sm) here.push(sm); }
+    if (Number(l.telegram_user_id) === exceptUserId) continue;
+    if (await formBot.inAnyGroup(Number(l.telegram_user_id), [String(chatId)])) { const sm = await salesmanById(l.profile_id); if (sm) here.push(sm); }
   }
-  return here.length === 1 ? { ...here[0], onBehalf: true } : null;
+  return here.length === 1 ? here[0] : null;
 }
 
 // Neither a salesman nor in his group: what to do (instead of a bare "connect Telegram")
