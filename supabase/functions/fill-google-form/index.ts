@@ -6,6 +6,7 @@
 // a filled order is never posted twice.
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { findDuplicate, readResponses, WEBSITE_MARK } from './masterList.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const PUBLISHABLE_KEY = JSON.parse(Deno.env.get('SUPABASE_PUBLISHABLE_KEYS')!)['default'];
@@ -22,7 +23,7 @@ const SALE_OPTIONS = ['ADAM', 'AINA', 'BONG', 'CY', 'JOEY', 'GSF', 'FIDA', 'FOO'
   'WENDY', 'LAWRENCE', 'KEITH', 'SHOPEE', 'PUSTAKA BERJAYA', 'EHSAN DIDIK', 'ALL INSAN', 'J&E', 'BNN', 'CHAN N NGOI', 'PEMBEKAL SAHABAT ABADI',
   'CASH', 'EDUPRO ENTERPRISE', 'G&L MARKETING', 'Z&C MARKETING', 'GSBC', 'JK ENTERPRISE', 'FKY', 'GUOH STATIONERY', 'ONN'];
 const REMARK = 'SALES';
-const DONE = ['filled', 'bot', 'no_sale']; // never tried again
+const DONE = ['filled', 'bot', 'no_sale', 'duplicate']; // never tried again
 
 const norm = (s: unknown) => String(s ?? '').toUpperCase().replace(/[^A-Z0-9&]/g, '');
 function saleOption(name: string | null | undefined): string | null {
@@ -90,12 +91,25 @@ Deno.serve(async (req) => {
 
   const values = {
     orderDate: myDay(new Date().toISOString()), dueDate: myDay(base.shipment_date), funcDate: myDay(base.function_date),
-    sale: saleOption(base.sales), school: base.sekolah || '', remark: REMARK, qty: formQty(order.items),
+    sale: saleOption(base.sales), school: `${base.sekolah || ''} ${WEBSITE_MARK}`.trim(), remark: REMARK, qty: formQty(order.items),
   };
   let status: string;
   if (!values.sale) status = 'no_sale';
   else if (!values.dueDate || !values.funcDate) status = 'no_due_date'; // tried again when he approves
   else {
+    // already filled by hand (same school + QTY)? then not again. Unreadable sheet: not posted, tried again later.
+    let dup = null;
+    try {
+      dup = findDuplicate(await readResponses(), base.sekolah || '', values.qty);
+    } catch (err) {
+      console.error('MASTER LIST not readable, form not posted:', err);
+      await admin.from('google_form_fills').upsert({ order_id: orderId, status: 'failed', qty: values.qty, filled_at: new Date().toISOString() });
+      return json({ status: 'failed', values });
+    }
+    if (dup) {
+      await admin.from('google_form_fills').upsert({ order_id: orderId, status: 'duplicate', qty: values.qty, filled_at: new Date().toISOString() });
+      return json({ status: 'duplicate', duplicate: dup, values });
+    }
     const body = new URLSearchParams();
     for (const [k, entry] of Object.entries(ENTRY)) body.set(entry, String(values[k as keyof typeof values] ?? ''));
     body.set('fvv', '1');

@@ -18,6 +18,7 @@ export function googleFormNote(res) {
   if (!res) return '';
   if (res.status === 'filled') return '📝 Google Form filled too.';
   if (res.status === 'no_due_date') return '📝 Google Form waits for the Shipment Date — it is filled when you approve the order.';
+  if (res.status === 'duplicate') return `📝 Already in the Google Form (row ${res.duplicate?.row}: ${res.duplicate?.school}, QTY ${res.duplicate?.qty}) — not filled again.`;
   if (res.status === 'no_sale') return '📝 Your name is not a SALE option in the Google Form — please fill it by hand.';
   if (res.status === 'failed' || res.status === 'error') return '⚠️ Google Form not filled — please fill it by hand.';
   return '';
