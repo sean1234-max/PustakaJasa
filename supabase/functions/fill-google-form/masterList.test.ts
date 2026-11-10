@@ -22,3 +22,12 @@ Deno.test('rows older than 60 days are ignored', () => {
   const old = [serial(2026, 8, 1), '', '', '', 'ADAM', 'SK KLANG', 'SALES', 20];
   assertEquals(findDuplicate([old], 'SK KLANG', 20, NOW), null);
 });
+
+Deno.test('a hand-typed name with extra words or the long form is the same school', () => {
+  assertEquals(findDuplicate([row(10, 'Sk Hulu kelang kokurikulum', 153)], 'SK HULU KELANG', 153, NOW)?.row, 2);
+  assertEquals(findDuplicate([row(10, 'Sekolah Kebangsaan Taman Pelangi', 5)], 'SK TAMAN PELANGI SEMENYIH', 5, NOW)?.row, 2);
+});
+
+Deno.test('a different school with the same QTY is not a duplicate', () => {
+  assertEquals(findDuplicate([row(10, 'SK HULU LANGAT', 153)], 'SK HULU KELANG', 153, NOW), null);
+});

@@ -14,7 +14,17 @@ const SHEETS_EPOCH_MS = Date.UTC(1899, 11, 30); // a Sheets date serial counts d
 export type ResponseRow = (string | number)[]; // A Timestamp, B ORDER DATE, C DUE, D FUNC, E SALE, F SCHOOL, G REMARK, H QTY
 export type Duplicate = { row: number; school: string; qty: number };
 
-const schoolKey = (s: unknown) => String(s ?? '').toUpperCase().replace(/\(W\)\s*$/, '').replace(/[^A-Z0-9]/g, '');
+// Hand-typed names differ ("Sk Hulu kelang kokurikulum" for SK HULU KELANG, Sean 2026-11-10): long forms are
+// shortened, and one name containing the other counts as the same school.
+const LONG_FORMS: [RegExp, string][] = [
+  [/SEKOLAH JENIS KEBANGSAAN \(?C(INA)?\)?/g, 'SJKC'], [/SEKOLAH JENIS KEBANGSAAN \(?T(AMIL)?\)?/g, 'SJKT'],
+  [/SEKOLAH MENENGAH KEBANGSAAN/g, 'SMK'], [/SEKOLAH KEBANGSAAN/g, 'SK'],
+];
+const MIN_KEY = 6; // shorter than "SKXXXX" is too vague to match inside another name
+const schoolKey = (s: unknown) => LONG_FORMS
+  .reduce((n, [re, short]) => n.replace(re, short), String(s ?? '').toUpperCase().replace(/\(W\)\s*$/, '').replace(/\s+/g, ' '))
+  .replace(/[^A-Z0-9]/g, '');
+const sameSchool = (a: string, b: string) => a === b || (a.length >= MIN_KEY && b.length >= MIN_KEY && (a.includes(b) || b.includes(a)));
 
 // The first recent hand-filled row for this school and QTY (row = its sheet row number), else null
 export function findDuplicate(rows: ResponseRow[], school: string, qty: number, now = Date.now()): Duplicate | null {
@@ -25,7 +35,7 @@ export function findDuplicate(rows: ResponseRow[], school: string, qty: number, 
     if (String(rowSchool ?? '').trim().toUpperCase().endsWith(WEBSITE_MARK)) continue;
     const at = typeof stamp === 'number' ? SHEETS_EPOCH_MS + stamp * 86_400_000 : NaN;
     if (!Number.isNaN(at) && at < since) continue;
-    if (schoolKey(rowSchool) === key && Number(rowQty) === qty) return { row: i + 2, school: String(rowSchool), qty };
+    if (Number(rowQty) === qty && sameSchool(schoolKey(rowSchool), key)) return { row: i + 2, school: String(rowSchool), qty };
   }
   return null;
 }
