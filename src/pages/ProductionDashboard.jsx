@@ -397,6 +397,12 @@ export default function ProductionDashboard() {
                     <button type="button" className="btn btn-ghost" style={{ flex: 1 }} onClick={() => navigate(`/production/orders/${ord.id}${isKivCard ? '?part=kiv' : ord.invoiceId ? `?invoice=${encodeURIComponent(ord.invoiceId)}` : ''}`)}>
                       View Order
                     </button>
+                    {/* fix the order while typing (Sean, 2026-11-10) — the whole order, not a KIV card's part */}
+                    {!isKivCard && (
+                      <button type="button" className="btn btn-ghost" style={{ flex: 1 }} onClick={() => navigate(`/production/orders/${ord.id}/edit`)}>
+                        Edit Order
+                      </button>
+                    )}
                     <ConfirmButton
                       label="Done Typing" style={{ flex: 1 }}
                       question="Finished typing? It moves to In Production, ready to print."

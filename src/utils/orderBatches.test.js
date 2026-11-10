@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getOrderInvoiceSlices, getInvoiceItems, normalizeSplitQty, stockDiff, applyPriceDrafts, sortMedalColours, withOrderOwnSettings } from './orderBatches';
+import { getOrderInvoiceSlices, getInvoiceItems, normalizeSplitQty, stockDiff, keepPrices, applyPriceDrafts, sortMedalColours, withOrderOwnSettings } from './orderBatches';
 
 describe('getOrderInvoiceSlices', () => {
   it('un-split order: one slice, using the order\'s own invoiceId/totalAmount/status unchanged, totalQty summed from items', () => {
@@ -283,6 +283,25 @@ describe('getOrderInvoiceSlices — a split made before the invoice follows the 
   it('a group stamped Salesman Approved moves with the order; one marked Completed keeps its own', () => {
     expect(getOrderInvoiceSlices(order, null).map((s) => [s.invoiceId, s.status])).toEqual([
       ['DWI-26100898', 'In Production'], ['DWI-26100897', 'In Production'], ['DWI-26100896', 'Completed'],
+    ]);
+  });
+});
+
+describe('keepPrices — an In Production edit keeps the billed prices', () => {
+  it('a Jenis Plak it had keeps its price (harga follows the new qty); a new one keeps the price list', () => {
+    const before = [
+      { id: 1, jenisPlak: 'PKC 263', qty: 10, unitPrice: 13, harga: 130, originalUnitPrice: 12 },
+      { id: 2, jenisPlak: 'PK 262 / A', qty: 5, unitPrice: 10, harga: 50 },
+    ];
+    const after = [
+      { id: 1, jenisPlak: 'PKC 263', qty: 12, unitPrice: 12, harga: 144 },
+      { id: 3, jenisPlak: 'PKF 266', qty: 2, unitPrice: 10, harga: 20 },
+      { id: 4, jenisPlak: 'PK 262 / A', qty: 5, unitPrice: 10, harga: 50 },
+    ];
+    expect(keepPrices(before, after)).toEqual([
+      { id: 1, jenisPlak: 'PKC 263', qty: 12, unitPrice: 13, harga: 156, originalUnitPrice: 12 },
+      { id: 3, jenisPlak: 'PKF 266', qty: 2, unitPrice: 10, harga: 20 },
+      { id: 4, jenisPlak: 'PK 262 / A', qty: 5, unitPrice: 10, harga: 50 },
     ]);
   });
 });

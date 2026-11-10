@@ -1084,6 +1084,9 @@ export const isReviewed = (order) => !!order?.reviewedAt;
 // An add-on still on its way in: submitted ('pending', waiting for
 // Production's review) or reviewed ('reviewed', waiting for the salesman to
 // approve) — 0085. Its stock is already deducted while in flight.
+// Production can Edit Order while reviewing it and — Sean, 2026-11-10 — once it is In Production (Typing
+// included): Save makes it the order everything else follows (Typing CSV / AI file, invoice total).
+export const canProductionEdit = (order) => order?.status === 'Reviewing Order' || order?.status === 'In Production';
 export const isAddonInFlight = (order) => order?.pendingAddonStatus === 'pending' || order?.pendingAddonStatus === 'reviewed';
 export const addonStageText = (order) => (order?.pendingAddonStatus === 'reviewed'
   ? 'Add-on reviewed by Production — waiting for Sales approval.'

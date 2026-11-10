@@ -4,7 +4,7 @@ import Nav from '../components/Nav';
 import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import { useAppState } from '../state/useAppState';
-import { ACTIVE_CATEGORIES, filterHiddenPlakCatalog, isDynamicCategoryKey, resolveCategory, isAddonInFlight, standardUnitPrice } from '../data/catalog';
+import { ACTIVE_CATEGORIES, filterHiddenPlakCatalog, isDynamicCategoryKey, resolveCategory, isAddonInFlight, canProductionEdit, standardUnitPrice } from '../data/catalog';
 import { computeBlocks } from '../utils/computeBlocks';
 import { createDraftUpdaters } from '../utils/draftUpdaters';
 import { buildCategoryCartItems } from '../state/categoryCartItems';
@@ -22,7 +22,8 @@ const DRAFT_FIELDS = {
 };
 const EDITABLE = { lines: true, rowDesc: true, rowQty: true, addRemoveRows: true, matrix: true, jenisPlak: true };
 
-// Production fixes an order while reviewing it (status 'Reviewing Order'):
+// Production fixes an order while reviewing it (status 'Reviewing Order') or — Sean, 2026-11-10 — once it
+// is In Production (Typing included; its billed prices are kept, see keepPrices):
 // the same form a teacher fills, every field editable — or filled from a
 // corrected copy of the teacher's Excel. Save rebuilds the order's lines,
 // quantities, prices, total and stock (AppState's saveProductionEdit).
@@ -81,12 +82,12 @@ export default function ProductionEditOrder() {
   if (!order) return null;
   const back = () => navigate(`/production/orders/${order.id}`);
 
-  if (addOn ? !isAddonInFlight(order) : order.status !== 'Reviewing Order') {
+  if (addOn ? !isAddonInFlight(order) : !canProductionEdit(order)) {
     return (
       <div className="screen-wrap">
         <Nav />
         <div className="card elev-md">
-          <p className="hint-text">{addOn ? `${order.id} has no add-on waiting for review` : `${order.id} is no longer being reviewed (${order.status})`} — it can’t be edited here.</p>
+          <p className="hint-text">{addOn ? `${order.id} has no add-on waiting for review` : `${order.id} is ${order.status} — it can only be edited while being reviewed or In Production`} — it can’t be edited here.</p>
           <button type="button" className="btn btn-ghost" onClick={back}>← Back to the order</button>
         </div>
       </div>
@@ -119,6 +120,7 @@ export default function ProductionEditOrder() {
     }
   };
 
+  const inProduction = !addOn && order.status === 'In Production';
   const handleSave = async () => {
     if (busy) return;
     setBusy(true);
@@ -134,6 +136,13 @@ export default function ProductionEditOrder() {
       <div className="card elev-md">
         <div className="card-kicker">{addOn ? 'Edit Tambahan (Add-On)' : 'Edit Order'} — {order.id}</div>
         <div className="card-title" style={{ marginBottom: 'var(--space-2)' }}>{order.sekolah || 'Fix this order'}</div>
+        {inProduction && (
+          <p className="hint-text" style={{ margin: '0 0 var(--space-3)', fontWeight: 600, color: '#8a6d00' }}>
+            This order is already In Production{order.typedAt ? ' and its typing is marked done' : ''}. After Save, Typing, the CSV / AI file and the
+            invoice total all follow this new version{order.typedAt ? ' — generate the AI file again if it was already made' : ''}.
+            Prices stay as billed; only a new Jenis Plak takes the price-list price.
+          </p>
+        )}
         <p className="hint-text" style={{ margin: '0 0 var(--space-4)' }}>
           Change anything — wording, line order, quantities, Jenis Plak — then Save. Prices use the website price list;
           the total and stock follow automatically, and the teacher, salesman and Store Admin see the new version straight away.
@@ -150,7 +159,7 @@ export default function ProductionEditOrder() {
         {message && (
           <p className="hint-text" style={{ color: message.ok ? undefined : '#b0392e', fontWeight: 600 }}>{message.text}</p>
         )}
-        {((addOn ? order.pendingAddonItems : order.items) || []).some((it) => it.unitPrice !== standardUnitPrice(it.jenisPlak, state.plakCatalog)) && (
+        {!inProduction && ((addOn ? order.pendingAddonItems : order.items) || []).some((it) => it.unitPrice !== standardUnitPrice(it.jenisPlak, state.plakCatalog)) && (
           <p className="hint-text" style={{ color: '#b0392e', fontWeight: 600 }}>
             Some prices were changed by hand (Adjust Prices). Saving here resets every price to the website price list — adjust them again afterwards.
           </p>

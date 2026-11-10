@@ -532,6 +532,16 @@ export default function ProductionOrderDetail() {
             {priceEditor === 'order' && <ProductionPriceEditor order={order} />}
           </div>
         )}
+        {/* In Production — Typing included (Sean, 2026-11-10): Production can still fix the order; Save makes it
+            the version Typing, the CSV / AI file and the invoice follow. */}
+        {order.status === 'In Production' && (
+          <div className="confirm-panel" style={{ marginBottom: 'var(--space-4)' }}>
+            <p className="hint-text" style={{ margin: '0 0 var(--space-3)', fontWeight: 600 }}>
+              Something to fix? Edit Order, then Save — everything follows the new version.
+            </p>
+            <button type="button" className="btn btn-secondary" onClick={() => navigate(`/production/orders/${order.id}/edit`)}>Edit Order</button>
+          </div>
+        )}
         {/* A submitted add-on (Tambahan) — reviewed like the order itself:
             Edit Order (download / upload its Excel there), then Done Review. */}
         {isAddonInFlight(order) && (
