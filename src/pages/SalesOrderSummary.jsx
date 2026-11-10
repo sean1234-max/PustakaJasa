@@ -18,6 +18,7 @@ import CrystalPreview from '../components/CrystalPreview';
 import PlakPreview from '../components/PlakPreview';
 import SalesmanEditedTag from '../components/SalesmanEditedTag';
 import ShipmentConfirmModal from '../components/ShipmentConfirmModal';
+import GoogleFormSchoolModal from '../components/GoogleFormSchoolModal';
 import { getOrderChangeStamp } from '../utils/orderStamp';
 import { addonRepeatsOrder, addonRepeatMessage } from '../utils/addonCheck';
 import { isUrgentShipment } from '../utils/urgentOrder';
@@ -229,6 +230,7 @@ export default function SalesOrderSummary() {
   // Approve asks first, full screen, whether the Shipment Date is right (Sean, 2026-10-22):
   // CONFIRM approves, NOT CONFIRM goes back to the date picker.
   const [askShipment, setAskShipment] = useState(false);
+  const [googleFormFor, setGoogleFormFor] = useState(null); // order id whose Google Form school name is asked
   const handleApprove = () => {
     if (busy) return;
     if (shipmentDate && functionDateDraft
@@ -261,9 +263,10 @@ export default function SalesOrderSummary() {
     overrides.salesmanDelivery = salesmanDeliveryDraft;
     overrides.remark = remarkDraft.trim();
     setBusy(true);
-    await approveOrder(order.id, updatedItems, overrides);
+    const res = await approveOrder(order.id, updatedItems, overrides);
     setBusy(false);
     setAskShipment(false);
+    if (res?.googleForm) setGoogleFormFor(order.id);
     // On success order.status flips locally and this page re-renders
     // read-only; on failure the error toast (state.updateToast) shows.
   };
@@ -273,8 +276,9 @@ export default function SalesOrderSummary() {
     const repeat = addonRepeatsOrder(addOnRows, order.items);
     if (repeat && !window.confirm(addonRepeatMessage(order.id, repeat))) return;
     setBusy(true);
-    await approveAddOn(order.id, addOnRows.map((r) => ({ ...r })));
+    const res = await approveAddOn(order.id, addOnRows.map((r) => ({ ...r })));
     setBusy(false);
+    if (res?.newId) setGoogleFormFor(res.newId);
   };
 
   const handleRejectAddOn = async () => {
@@ -538,6 +542,7 @@ export default function SalesOrderSummary() {
                     onConfirm={approveNow} onNotConfirm={notConfirmShipment}
                   />
                 )}
+                <GoogleFormSchoolModal orderId={googleFormFor} school={order.sekolah || ''} onDone={() => setGoogleFormFor(null)} />
                 {awaitingReview && <button type="button" className="btn btn-primary" disabled>Waiting for Production review</button>}
                 {!reviewing && <button type="button" className="btn btn-primary" onClick={handlePrint}>Print Order</button>}
               </div>

@@ -21,7 +21,6 @@ import { draftPlaques } from '../utils/draftForm';
 import { buildCategoryCartItems } from './categoryCartItems';
 import { applyParsedImport, NEW_ORDER_IMPORT_FIELDS } from './applyParsedImport';
 import { AppStateContext } from './AppStateContext';
-import { fillGoogleForm, googleFormNote } from '../lib/googleFormApi';
 import { saveCrystalDraft, clearCrystalDraft } from '../lib/crystalDraft';
 import {
   fetchOrders, fetchOrderById, markArtworkManual, saveProductionNote, saveSalesmanPrinted, insertOrder, updateOrder, approveAddonAsOrder, nextOrderSeq, fetchAllSalesmen, reassignOrderSalesman,
@@ -373,7 +372,6 @@ function initialState() {
     orders: [],
     ordersLoaded: false,
     lastOrderId: '',
-    lastGoogleForm: null, // the salesman's Google Form fill for lastOrderId (googleFormApi.js)
     updateToast: '',
     productionToast: '',
     // Google Sheets sync failure messages for urgent orders, keyed by order
@@ -1261,9 +1259,7 @@ export function AppStateProvider({ children }) {
       patch({ cartToast: message });
       return null;
     }
-    patch((latest) => ({ lastOrderId: newId, lastGoogleForm: null, orders: [newOrder, ...latest.orders], cart: [], cartToast: '', step2ImportStatus: null, step2ChoiceAnswers: {}, step2UploadedFiles: [], kertasKerjaFiles: [] }));
-    // the salesman's own order also goes into the Google Form (Success shows how it went)
-    if (bySalesman) fillGoogleForm(newId).then((res) => patch({ lastGoogleForm: { orderId: newId, ...res } }));
+    patch((latest) => ({ lastOrderId: newId, orders: [newOrder, ...latest.orders], cart: [], cartToast: '', step2ImportStatus: null, step2ChoiceAnswers: {}, step2UploadedFiles: [], kertasKerjaFiles: [] }));
     // crystal changes the teacher made before submitting (Cart → Edit Crystal): onto the order now
     if (st.cart.some((ci) => isCrystalCode(ci.jenisPlak))) saveCrystalDraft(newId).catch((err) => console.error('Order saved, but its crystal changes were not:', err));
     // who confirmed the artwork is stamped by the database (0089) — read it back for the order page
@@ -1990,8 +1986,6 @@ export function AppStateProvider({ children }) {
     // urgent like its original (same Shipment Date): its own row in the urgent Sheet
     if (child?.urgent) resyncUrgentSheet(child);
     flashToast('updateToast', `Add-on approved — the Tambahan is now order ${newId}.`);
-    // the Tambahan's QTY into the Google Form, under the original's school and dates
-    fillGoogleForm(newId).then((res) => { const note = googleFormNote(res); if (note) flashToast('updateToast', note); });
     return { ok: true, newId };
   }, [patch, flashToast, resyncUrgentSheet]);
 
@@ -2046,11 +2040,8 @@ export function AppStateProvider({ children }) {
     patch((latest) => ({
       orders: latest.orders.map((o) => (o.id === orderId ? { ...o, ...fields } : o)),
     }));
-    // a salesman's own order the Google Form couldn't take at Submit (no Shipment Date yet); filled ones are skipped
-    if (priorOrder.createdBySalesman) {
-      fillGoogleForm(orderId).then((res) => { const note = !res.already && googleFormNote(res); if (note) flashToast('updateToast', note); });
-    }
-    return { ok: true };
+    // the Google Form is filled from the page's popup (GoogleFormSchoolModal), with the salesman's own words
+    return { ok: true, googleForm: !!priorOrder.createdBySalesman };
   }, [patch, flashToast]);
 
   // One-time Google Sheets sync for urgent orders (see urgentOrder.js) —

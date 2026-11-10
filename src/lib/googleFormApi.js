@@ -3,9 +3,10 @@ import { supabase } from './supabaseClient';
 // The salesmen's Google Form (supabase/functions/fill-google-form, Sean 2026-11-10): filled for an order a
 // salesman submits on the website, as the Telegram bot already does for its own. Never throws — the order is in
 // whatever happens to the form. Resolves to { status, values?, formUrl? }.
-export async function fillGoogleForm(orderId) {
+// `note`: the salesman's words after the school, "SK HULU KELANG (W) - <note>" (Sean, 2026-11-10)
+export async function fillGoogleForm(orderId, note = '') {
   try {
-    const { data, error } = await supabase.functions.invoke('fill-google-form', { body: { orderId } });
+    const { data, error } = await supabase.functions.invoke('fill-google-form', { body: { orderId, note } });
     if (error || !data) return { status: 'error' };
     return data;
   } catch {

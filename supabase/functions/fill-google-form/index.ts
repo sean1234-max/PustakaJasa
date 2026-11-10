@@ -23,6 +23,7 @@ const SALE_OPTIONS = ['ADAM', 'AINA', 'BONG', 'CY', 'JOEY', 'GSF', 'FIDA', 'FOO'
   'WENDY', 'LAWRENCE', 'KEITH', 'SHOPEE', 'PUSTAKA BERJAYA', 'EHSAN DIDIK', 'ALL INSAN', 'J&E', 'BNN', 'CHAN N NGOI', 'PEMBEKAL SAHABAT ABADI',
   'CASH', 'EDUPRO ENTERPRISE', 'G&L MARKETING', 'Z&C MARKETING', 'GSBC', 'JK ENTERPRISE', 'FKY', 'GUOH STATIONERY', 'ONN'];
 const REMARK = 'SALES';
+const MAX_NOTE = 60;
 const DONE = ['filled', 'bot', 'no_sale', 'duplicate']; // never tried again
 
 const norm = (s: unknown) => String(s ?? '').toUpperCase().replace(/[^A-Z0-9&]/g, '');
@@ -64,7 +65,12 @@ Deno.serve(async (req) => {
   if (profile?.role !== 'salesman' || profile?.status !== 'active') return json({ status: 'not_salesman' });
 
   let orderId = '';
-  try { orderId = String((await req.json()).orderId || ''); } catch { /* no body */ }
+  let note = ''; // the salesman's words after "<school> (W) -" (GoogleFormSchoolModal)
+  try {
+    const body = await req.json();
+    orderId = String(body.orderId || '');
+    note = String(body.note || '').replace(/[\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, MAX_NOTE);
+  } catch { /* no body */ }
   if (!/^ORD-\d+$/.test(orderId)) return json({ error: 'Bad orderId.' }, 400);
 
   const { data: done } = await admin.from('google_form_fills').select('status').eq('order_id', orderId).maybeSingle();
@@ -91,7 +97,7 @@ Deno.serve(async (req) => {
 
   const values = {
     orderDate: myDay(new Date().toISOString()), dueDate: myDay(base.shipment_date), funcDate: myDay(base.function_date),
-    sale: saleOption(base.sales), school: `${base.sekolah || ''} ${WEBSITE_MARK}`.trim(), remark: REMARK, qty: formQty(order.items),
+    sale: saleOption(base.sales), school: [`${base.sekolah || ''} ${WEBSITE_MARK}`.trim(), note].filter(Boolean).join(' - '), remark: REMARK, qty: formQty(order.items),
   };
   let status: string;
   if (!values.sale) status = 'no_sale';
