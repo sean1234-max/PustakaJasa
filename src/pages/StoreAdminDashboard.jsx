@@ -31,7 +31,8 @@ const EMPTY_ORDERS = [];
 // isn't listed.
 const TABS = [
   { key: 'approved', label: 'Salesman Approved', match: (o) => !o.invoiceId && o.status !== 'Reviewing Order' && o.status !== 'Cancelled' },
-  { key: 'awaiting', label: 'Waiting for Salesman Approval', match: (o) => o.status === 'Reviewing Order' && !!o.reviewedAt },
+  // a Tambahan is approved by its salesman straight into production, never invoiced here (0124)
+  { key: 'awaiting', label: 'Waiting for Salesman Approval', match: (o) => o.status === 'Reviewing Order' && !!o.reviewedAt && !o.parentOrderId },
   { key: 'invoiced', label: 'Invoiced', match: (o) => !!o.invoiceId },
 ];
 

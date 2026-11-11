@@ -241,6 +241,26 @@ export async function approveAddonAsOrder(orderId, items, priceAdjusted) {
   return data;
 }
 
+// A Tambahan is its own order from submit (0124, Sean 2026-11-11): the next order number (never the
+// original's), parent_order_id = the original, Reviewing Order. shipmentDate: stored form or null
+// (the original's). Returns the new order's id.
+export async function submitTambahan(orderId, items, shipmentDate, kertasKerja) {
+  const { data, error } = await supabase.rpc('submit_tambahan', {
+    p_order_id: orderId, p_items: items, p_shipment_date: shipmentDate || null, p_kertas_kerja: kertasKerja || null,
+  });
+  if (error) throw error;
+  return data;
+}
+
+// The salesman approves a reviewed Tambahan (0124): prices + { shipment_date, function_date, remark,
+// salesman_delivery }, straight to In Production (no invoice).
+export async function approveTambahan(orderId, items, priceAdjusted, fields) {
+  const { error } = await supabase.rpc('approve_tambahan', {
+    p_order_id: orderId, p_items: items, p_price_adjusted: priceAdjusted, p_fields: fields,
+  });
+  if (error) throw error;
+}
+
 // The salesman's own Printed mark on a Salesman Approved card (0115); null clears it. Its own write.
 export async function saveSalesmanPrinted(id, at) {
   const { error } = await supabase.from('orders').update({ salesman_printed_at: at }).eq('id', id);

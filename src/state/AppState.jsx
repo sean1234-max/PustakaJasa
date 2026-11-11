@@ -23,7 +23,7 @@ import { applyParsedImport, NEW_ORDER_IMPORT_FIELDS } from './applyParsedImport'
 import { AppStateContext } from './AppStateContext';
 import { saveCrystalDraft, clearCrystalDraft } from '../lib/crystalDraft';
 import {
-  fetchOrders, fetchOrderById, markArtworkManual, saveProductionNote, saveSalesmanPrinted, insertOrder, updateOrder, approveAddonAsOrder, nextOrderSeq, fetchAllSalesmen, reassignOrderSalesman,
+  fetchOrders, fetchOrderById, markArtworkManual, saveProductionNote, saveSalesmanPrinted, insertOrder, updateOrder, approveAddonAsOrder, submitTambahan, approveTambahan, nextOrderSeq, fetchAllSalesmen, reassignOrderSalesman,
   findPossibleDuplicates,
 } from '../lib/ordersApi';
 import {
@@ -1574,7 +1574,6 @@ export function AppStateProvider({ children }) {
   // shipmentDate ("YYYY-MM-DD", salesman only — 0098): the Tambahan's own Shipment Date; '' = the order's.
   const submitPendingAddOn = useCallback(async ({ shipmentDate = '' } = {}) => {
     const st = stateRef.current;
-    const addOnOrder = st.orders.find((o) => o.id === st.addOnOrderId);
     // Exactly what was added to the add-on cart (addOnAddToCart). An item
     // added before its Excel finished uploading gets the upload now, so
     // Production can still download it.
@@ -1586,54 +1585,43 @@ export function AppStateProvider({ children }) {
       return false;
     }
 
-    const order = addOnOrder;
+    // Its own order from submit (0124, Sean 2026-11-11): the next order number, parent_order_id = this
+    // order, Reviewing Order → Production's Done Review → the salesman approves → In Production.
     const isTestOrder = isTestOrderId(st.addOnOrderId);
-    const pendingAddonShipmentDate = /^\d{4}-\d\d-\d\d$/.test(shipmentDate) ? `${shipmentDate}T00:00:00+08:00` : null;
-    // A still-'pending' add-on being overwritten by this fresh submission
-    // already had its own stock deducted once (below, on its own earlier
-    // call) — restore that first so resubmitting can never leave the
-    // earlier batch's deduction stranded on top of the new one. A
-    // 'rejected' add-on was already restored when it was rejected (see
-    // rejectAddOn), so this only fires for 'pending'. Skipped for the test
-    // account's own orders — their stock was never touched to begin with.
-    if (!isTestOrder && isAddonInFlight(order) && order.pendingAddonItems?.length) {
-      try {
-        await restorePlakStock(order.pendingAddonItems.map((it) => ({ full_path: it.jenisPlak, qty: it.qty })));
-      } catch (err) {
-        console.error('Failed to restore stock for the add-on being replaced:', err);
-      }
-    }
-
+    const stockItems = newItems.map((it) => ({ full_path: it.jenisPlak, qty: it.qty }));
     try {
-      if (!isTestOrder) await deductPlakStock(newItems.map((it) => ({ full_path: it.jenisPlak, qty: it.qty })));
+      if (!isTestOrder) await deductPlakStock(stockItems);
     } catch (err) {
       console.error('Stock deduction failed for Add On:', err);
       flashToast('updateToast', describeStockError(err, patch));
       return false;
     }
-
-    const pendingAddonKertasKerja = st.addOnKertasKerja?.length ? st.addOnKertasKerja : null;
+    const shipment = /^\d{4}-\d\d-\d\d$/.test(shipmentDate) ? `${shipmentDate}T00:00:00+08:00` : null;
+    const kertasKerja = st.addOnKertasKerja?.length ? st.addOnKertasKerja : null;
+    let newId;
     try {
-      await updateOrder(st.addOnOrderId, { pendingAddonItems: newItems, pendingAddonStatus: 'pending', pendingAddonRejectReason: null, pendingAddonShipmentDate, pendingAddonKertasKerja });
+      newId = await submitTambahan(st.addOnOrderId, newItems, shipment, kertasKerja);
     } catch (err) {
-      console.error('Failed to submit add-on to Supabase:', err);
+      console.error('Failed to submit the Tambahan to Supabase:', err);
       if (!isTestOrder) {
-        restorePlakStock(newItems.map((it) => ({ full_path: it.jenisPlak, qty: it.qty })))
-          .catch((restoreErr) => console.error('Failed to restore stock after a failed add-on submit:', restoreErr));
+        restorePlakStock(stockItems).catch((restoreErr) => console.error('Failed to restore stock after a failed Tambahan submit:', restoreErr));
       }
-      flashToast('updateToast', `Could not submit the add-on: ${err.message || 'unknown error'}. Please try again.`);
+      flashToast('updateToast', `Could not submit the Tambahan: ${err.message || 'unknown error'}. Please try again.`);
       return false;
     }
-
+    let child = null;
+    try {
+      child = await fetchOrderById(newId);
+    } catch (err) {
+      console.error('Tambahan submitted, but its order could not be loaded:', err);
+    }
     patch((latest) => ({
-      orders: latest.orders.map((o) => (
-        o.id === st.addOnOrderId ? { ...o, pendingAddonItems: newItems, pendingAddonStatus: 'pending', pendingAddonRejectReason: null, pendingAddonShipmentDate, pendingAddonKertasKerja } : o
-      )),
+      orders: child ? [child, ...latest.orders] : latest.orders,
       addOnCart: [],
       addOnKertasKerja: [],
     }));
-    flashToast('updateToast', 'Add-on submitted — Production will review it, then Sales approves it.');
-    return true;
+    flashToast('updateToast', `Tambahan submitted as order ${newId} — Production will review it, then Sales approves it.`);
+    return newId;
   }, [patch, flashToast]);
 
   // Teacher withdraws a pending or rejected add-on before/without Sales
@@ -2008,6 +1996,35 @@ export function AppStateProvider({ children }) {
   // per-item price, already folded into updatedItems) at the same moment
   // they approve — the only point before production where those dates are
   // still editable.
+  // The salesman approves a reviewed Tambahan (its own order since 0124) → In Production. `days` are the
+  // approval page's edits in stored form (shipmentDate, functionDate, remark, salesmanDelivery).
+  const approveTambahanOrder = useCallback(async (order, items, priceAdjusted, days) => {
+    const fields = {};
+    if (days.shipmentDate !== undefined) fields.shipment_date = days.shipmentDate;
+    if (days.functionDate !== undefined) fields.function_date = days.functionDate;
+    if (days.remark !== undefined) fields.remark = days.remark;
+    if (days.salesmanDelivery !== undefined) fields.salesman_delivery = !!days.salesmanDelivery;
+    try {
+      await approveTambahan(order.id, items, priceAdjusted, fields);
+    } catch (err) {
+      console.error('Failed to approve the Tambahan in Supabase:', err);
+      flashToast('updateToast', describeOrderWriteError(err, 'approve'));
+      return { ok: false };
+    }
+    let fresh = null;
+    try {
+      fresh = await fetchOrderById(order.id);
+    } catch (err) {
+      console.error('Tambahan approved, but it could not be reloaded:', err);
+    }
+    const next = fresh || { ...order, items, priceAdjusted, status: 'In Production' };
+    patch((latest) => ({ orders: latest.orders.map((o) => (o.id === order.id ? next : o)) }));
+    // urgent like its original (its own Shipment Date): its own row in the urgent Sheet
+    if (next.urgent) resyncUrgentSheet(next);
+    flashToast('updateToast', `Tambahan ${order.id} approved — it is now In Production.`);
+    return { ok: true, googleForm: true };
+  }, [patch, flashToast, resyncUrgentSheet]);
+
   const approveOrder = useCallback(async (orderId, updatedItems, overrides = {}) => {
     const st = stateRef.current;
     const priorOrder = st.orders.find((o) => o.id === orderId);
@@ -2035,6 +2052,8 @@ export function AppStateProvider({ children }) {
     // and it's never recomputed after this. overrides.shipmentDate is
     // absent only if Sales approved without touching the date picker, in
     // which case priorOrder.urgent (false from insert) just carries through.
+    // A Tambahan (0124): straight to In Production, no invoice — the database checks it and works out urgent
+    if (priorOrder.parentOrderId) return approveTambahanOrder(priorOrder, itemsWithOriginalPrice, priceAdjusted, storedDays(overrides));
     const urgent = overrides.shipmentDate ? isUrgentShipment(malaysiaToday(), overrides.shipmentDate) : priorOrder.urgent;
     const fields = { items: itemsWithOriginalPrice, totalAmount, priceAdjusted, status: 'Salesman Approved', ...storedDays(overrides), urgent };
     try {
@@ -2049,7 +2068,7 @@ export function AppStateProvider({ children }) {
     }));
     // the Google Form is filled from the page's popup (GoogleFormSchoolModal), with the salesman's own words
     return { ok: true, googleForm: !!priorOrder.createdBySalesman };
-  }, [patch, flashToast]);
+  }, [patch, flashToast, approveTambahanOrder]);
 
   // One-time Google Sheets sync for urgent orders (see urgentOrder.js) —
   // fired right after Store Admin saves the Invoice Number, from either

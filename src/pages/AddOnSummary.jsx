@@ -76,9 +76,10 @@ export default function AddOnSummary() {
     const repeat = addonRepeatsOrder(state.addOnCart, order?.items);
     if (repeat && !window.confirm(addonRepeatMessage(order.id, repeat))) return;
     setSubmitting(true);
-    const ok = await submitPendingAddOn({ shipmentDate: isSalesman ? shipDate : '' });
+    // the new Tambahan order's id (0124), or false
+    const newId = await submitPendingAddOn({ shipmentDate: isSalesman ? shipDate : '' });
     setSubmitting(false);
-    if (ok) navigate(state.role === 'salesman' ? `/sales/orders/${order.id}` : '/dashboard');
+    if (newId) navigate(state.role === 'salesman' ? `/sales/orders/${newId}` : '/dashboard');
   };
 
   if (!order) return null;
