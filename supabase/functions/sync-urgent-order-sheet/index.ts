@@ -57,6 +57,29 @@ function jsonResponse(body: unknown, status = 200) {
 // Function can't import from src/) — change both together.
 const URGENT_COMMISSION_RATE = 0.025;
 
+// An order Production keyed in for a salesman (0125, Sean 2026-11-11) — the salesman is charged 1.5% of the
+// order total. Its own tab in the same spreadsheet (made here the first time, with its header), one row per
+// order from its invoice on; removed when it's cancelled. Called with { orderId, sheet: 'keyin' }.
+const KEYIN_RATE = 0.015;
+const KEYIN_TAB = '1.5%';
+const KEYIN_HEADER = ['Order ID', 'Invoice', 'Amount', 'Salesman', 'School', 'Keyed in by', 'Date Placed', 'Synced At', '1.5%'];
+
+async function ensureKeyinTab(headers: Record<string, string>): Promise<boolean> {
+  const metaResp = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}?fields=sheets.properties(title)`, { headers });
+  if (!metaResp.ok) return false;
+  const titles = ((await metaResp.json()).sheets || []).map((sh: { properties: { title: string } }) => sh.properties.title);
+  if (titles.includes(KEYIN_TAB)) return true;
+  const addResp = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}:batchUpdate`, {
+    method: 'POST', headers, body: JSON.stringify({ requests: [{ addSheet: { properties: { title: KEYIN_TAB } } }] }),
+  });
+  if (!addResp.ok) { console.error('Adding the 1.5% tab failed:', addResp.status, await addResp.text()); return false; }
+  const headResp = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(`'${KEYIN_TAB}'!A1:I1`)}?valueInputOption=USER_ENTERED`, {
+    method: 'PUT', headers, body: JSON.stringify({ values: [KEYIN_HEADER] }),
+  });
+  if (!headResp.ok) console.error('Writing the 1.5% header failed:', headResp.status, await headResp.text());
+  return true;
+}
+
 // Dates arrive as stored ISO instants (a Malaysian midnight, e.g.
 // "2026-09-21T16:00:00.000Z" = 22 Sep); the Sheet gets "22 Sep 2026".
 // Anything that isn't a date (e.g. "TBD") is written as-is.
@@ -155,6 +178,7 @@ Deno.serve(async (req) => {
     return jsonResponse({ error: 'Invalid request body.' }, 400);
   }
   const orderId = typeof body.orderId === 'string' ? body.orderId : '';
+  const keyin = body.sheet === 'keyin';
   if (!orderId) return jsonResponse({ error: 'Order ID is required.' }, 400);
 
   // Everything written comes from the order itself, read as the CALLER (RLS):
@@ -162,18 +186,24 @@ Deno.serve(async (req) => {
   // figures in the Sheet that the order doesn't hold.
   const { data: order, error: orderError } = await callerClient
     .from('orders')
-    .select('id, invoice_id, total_amount, sales, sekolah, shipment_date, function_date, date_placed, urgent, parent_order_id')
+    .select('id, invoice_id, total_amount, sales, sekolah, shipment_date, function_date, date_placed, urgent, parent_order_id, status, created_by_production, placed_by:snapshot->>placedBy')
     .eq('id', orderId)
     .maybeSingle();
   if (orderError || !order) return jsonResponse({ error: 'Order not found.' }, 404);
   const amount = Number(order.total_amount) || 0;
   const commission = Math.round(amount * URGENT_COMMISSION_RATE * 100) / 100;
-  const row = [
-    // a Tambahan's own order (0091) has no invoice on the website — billed in AutoCount
-    order.id, order.invoice_id || (order.parent_order_id ? `TAMBAHAN ${order.parent_order_id}` : ''), amount, order.sales || '', order.sekolah || '',
-    malaysiaDay(order.shipment_date || ''), malaysiaDay(order.function_date || ''), order.date_placed || '',
-    malaysiaDateTime(new Date()), commission,
-  ];
+  const row = keyin
+    ? [order.id, order.invoice_id || '', amount, order.sales || '', order.sekolah || '', order.placed_by || '', order.date_placed || '',
+      malaysiaDateTime(new Date()), Math.round(amount * KEYIN_RATE * 100) / 100]
+    : [
+      // a Tambahan's own order (0091) has no invoice on the website — billed in AutoCount
+      order.id, order.invoice_id || (order.parent_order_id ? `TAMBAHAN ${order.parent_order_id}` : ''), amount, order.sales || '', order.sekolah || '',
+      malaysiaDay(order.shipment_date || ''), malaysiaDay(order.function_date || ''), order.date_placed || '',
+      malaysiaDateTime(new Date()), commission,
+    ];
+  const lastCol = keyin ? 'I' : 'J';
+  // its row stays while this holds, else it's removed
+  const keep = keyin ? !!order.created_by_production && !!order.invoice_id && order.status !== 'Cancelled' : !!order.urgent;
 
   let accessToken: string;
   try {
@@ -188,7 +218,11 @@ Deno.serve(async (req) => {
   // One row per order: its row is updated in place once it exists (an
   // add-on or amend changes the total and commission),
   // otherwise appended. The last row carrying this Order ID wins.
-  const tab = SHEET_RANGE.split('!')[0];
+  if (keyin && !(await ensureKeyinTab(headers))) {
+    return jsonResponse({ error: 'Could not open the 1.5% tab of the tracking sheet. Please try again.' }, 502);
+  }
+  const tab = keyin ? `'${KEYIN_TAB}'` : SHEET_RANGE.split('!')[0];
+  const refreshRed = () => (keyin ? Promise.resolve() : refreshKitDocHighlight(authHeader));
   const idsResp = await fetch(`${sheetsBase}/${encodeURIComponent(`${tab}!A:A`)}`, { headers });
   if (!idsResp.ok) {
     console.error('Google Sheets read failed:', idsResp.status, await idsResp.text());
@@ -200,10 +234,10 @@ Deno.serve(async (req) => {
 
   // No longer urgent: delete only the row(s) whose Order ID is exactly this
   // order's — bottom-up so earlier indexes stay valid. Nothing else moves.
-  if (!order.urgent) {
+  if (!keep) {
     const matches = ids.map((r, i) => (r[0] === order.id ? i : -1)).filter((i) => i >= 0).reverse();
     if (matches.length === 0) {
-      await refreshKitDocHighlight(authHeader);
+      await refreshRed();
       return jsonResponse({ ok: true, removed: 0 });
     }
     const tabTitle = tab.replace(/^'|'$/g, '').replace(/''/g, "'");
@@ -225,15 +259,15 @@ Deno.serve(async (req) => {
       console.error('Google Sheets row delete failed:', delResp.status, await delResp.text());
       return jsonResponse({ error: 'Could not remove the order from the tracking sheet. Please try again.' }, 502);
     }
-    await refreshKitDocHighlight(authHeader);
+    await refreshRed();
     return jsonResponse({ ok: true, removed: matches.length });
   }
 
   const writeResp = rowNumber
-    ? await fetch(`${sheetsBase}/${encodeURIComponent(`${tab}!A${rowNumber}:J${rowNumber}`)}?valueInputOption=USER_ENTERED`, {
+    ? await fetch(`${sheetsBase}/${encodeURIComponent(`${tab}!A${rowNumber}:${lastCol}${rowNumber}`)}?valueInputOption=USER_ENTERED`, {
       method: 'PUT', headers, body: JSON.stringify({ values: [row] }),
     })
-    : await fetch(`${sheetsBase}/${encodeURIComponent(`${tab}!A:J`)}:append?valueInputOption=USER_ENTERED`, {
+    : await fetch(`${sheetsBase}/${encodeURIComponent(`${tab}!A:${lastCol}`)}:append?valueInputOption=USER_ENTERED`, {
       method: 'POST', headers, body: JSON.stringify({ values: [row] }),
     });
   if (!writeResp.ok) {
@@ -241,6 +275,6 @@ Deno.serve(async (req) => {
     return jsonResponse({ error: 'Could not write to the tracking sheet. Please try again.' }, 502);
   }
 
-  await refreshKitDocHighlight(authHeader);
+  await refreshRed();
   return jsonResponse({ ok: true });
 });

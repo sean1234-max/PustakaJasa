@@ -33,7 +33,8 @@ const MAX_TOTAL_CHARS = 8000;
 const MAX_LINE_CHARS = 600;
 const RETENTION_DAYS = 90;
 
-const ALLOWED_ROLES = ['teacher', 'salesman', 'admin'];
+// production: keys in New Orders too (0125)
+const ALLOWED_ROLES = ['teacher', 'salesman', 'production', 'admin'];
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',

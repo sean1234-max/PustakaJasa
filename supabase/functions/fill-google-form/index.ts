@@ -76,7 +76,7 @@ Deno.serve(async (req) => {
   const { data: done } = await admin.from('google_form_fills').select('status').eq('order_id', orderId).maybeSingle();
   if (done && DONE.includes(done.status)) return json({ status: done.status, already: true });
 
-  const cols = 'id, sekolah, sales, shipment_date, function_date, items, created_by_salesman, parent_order_id, status';
+  const cols = 'id, sekolah, sales, shipment_date, function_date, items, created_by_salesman, created_by_production, parent_order_id, status';
   const { data: order } = await admin.from('orders').select(cols).eq('id', orderId).maybeSingle();
   if (!order || order.status === 'Cancelled') return json({ status: 'no_order' });
   // the bot's own orders fill the form themselves
@@ -85,13 +85,14 @@ Deno.serve(async (req) => {
     await admin.from('google_form_fills').upsert({ order_id: orderId, status: 'bot' });
     return json({ status: 'bot' });
   }
-  // an original: only one a salesman submitted himself (a teacher's order isn't filled); a Tambahan: any
+  // an original: only one a salesman submitted himself, or Production keyed in for him (0125) — a teacher's
+  // order isn't filled; a Tambahan: any
   let base = order;
   if (order.parent_order_id) {
     const { data: parent } = await admin.from('orders').select(cols).eq('id', order.parent_order_id).maybeSingle();
     if (!parent) return json({ status: 'no_order' });
     base = parent;
-  } else if (!order.created_by_salesman) {
+  } else if (!order.created_by_salesman && !order.created_by_production) {
     return json({ status: 'teacher_order' });
   }
 

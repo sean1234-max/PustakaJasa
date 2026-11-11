@@ -53,6 +53,7 @@ function toDbOrder(order) {
     snapshot: order.snapshot ?? null,
     created_by: order.createdBy ?? null,
     created_by_salesman: order.createdBySalesman ?? null,
+    created_by_production: order.createdByProduction ?? null,
     pending_addon_items: order.pendingAddonItems ?? null,
     pending_addon_status: order.pendingAddonStatus ?? null,
     pending_addon_reject_reason: order.pendingAddonRejectReason ?? null,
@@ -120,6 +121,7 @@ function fromDbOrder(row) {
     snapshot: row.snapshot,
     createdBy: row.created_by,
     createdBySalesman: row.created_by_salesman || null,
+    createdByProduction: row.created_by_production || null,
     pendingAddonItems: row.pending_addon_items || null,
     pendingAddonStatus: row.pending_addon_status || null,
     pendingAddonRejectReason: row.pending_addon_reject_reason || null,
@@ -172,7 +174,7 @@ const ORDER_LIST_COLUMNS = [
   'artwork_confirmed_by_role', 'parent_order_id', 'crystal_typed_at', 'duplicate_check',
   'kiv_filled_rows', 'pending_addon_shipment_date', 'artwork_manual',
   'production_note', 'salesman_printed_at', 'kertas_kerja_files', 'pending_addon_kertas_kerja',
-  'previous_import_files', 'salesman_edited_at', 'placed_by:snapshot->>placedBy',
+  'previous_import_files', 'salesman_edited_at', 'created_by_production', 'placed_by:snapshot->>placedBy',
 ].join(',');
 
 export async function fetchOrders(userId, role, { limit = 500 } = {}) {

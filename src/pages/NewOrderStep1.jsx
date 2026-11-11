@@ -7,6 +7,7 @@ import { useAppState } from '../state/useAppState';
 import { formatDate, addDays, toMalaysiaDay } from '../data/catalog';
 import { uploadLogo } from '../lib/storageApi';
 import { searchSchools, fetchOrderDraft, downloadDraftFile } from '../lib/ordersApi';
+import { picksSchool } from '../utils/keyin';
 
 const SCHOOL_SEARCH_DELAY_MS = 250;
 
@@ -64,7 +65,8 @@ function SchoolSearch({ value, picked, onPick }) {
 
 export default function NewOrderStep1() {
   const { state, patch, today, refreshAssignedSalesman, pickActingSchool, startNewOrder } = useAppState();
-  const isSalesman = state.role === 'salesman';
+  const isSalesman = picksSchool(state.role); // a salesman, or Production keying it in (0125)
+  const isProduction = state.role === 'production';
   // Salesman Edit Order (openEditOrder): this submitted order's details; school and salesman stay as they are
   const editing = !!state.editOrderId;
   const editOrder = editing ? state.orders.find((o) => o.id === state.editOrderId) : null;
@@ -152,6 +154,10 @@ export default function NewOrderStep1() {
   const handleNext = () => {
     if (!editing && isSalesman && !state.actingSchoolId) {
       patch({ stepError: 'Please pick the school from the list.' });
+      return;
+    }
+    if (!editing && isProduction && !state.selectedSalesmanId) {
+      patch({ stepError: 'Please pick the salesman from the list.' });
       return;
     }
     if (!state.sekolah.trim()) {
@@ -258,6 +264,22 @@ export default function NewOrderStep1() {
               <input className="input" id="sales" disabled readOnly value={state.sales} />
             ) : !state.assignedSalesmanLoaded ? (
               <input className="input" id="sales" disabled readOnly value="Loading..." />
+            ) : isProduction ? (
+              // type a few letters ("AD") and the browser lists the matching salesmen (ADAM); picked = exact name
+              <>
+                <input
+                  className="input" id="sales" list="sales-options" placeholder="Type the salesman's name..." autoComplete="off"
+                  value={state.sales}
+                  onChange={(e) => {
+                    const typed = e.target.value;
+                    const chosen = state.assignedSalesmen.find((s) => (s.name || '').trim().toLowerCase() === typed.trim().toLowerCase());
+                    patch({ sales: chosen ? chosen.name : typed, selectedSalesmanId: chosen?.id || '' });
+                  }}
+                />
+                <datalist id="sales-options">
+                  {state.assignedSalesmen.map((s) => <option key={s.id} value={s.name || ''} />)}
+                </datalist>
+              </>
             ) : state.assignedSalesmen.length > 1 ? (
               <select
                 className="input"

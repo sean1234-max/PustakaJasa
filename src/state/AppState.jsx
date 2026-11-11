@@ -36,6 +36,7 @@ import { uploadOrderImportFile, getOrderImportUrl } from '../lib/storageApi';
 import { withImportFile, tagImportFiles, orderImportFields, editedOrderFiles } from '../utils/importFiles';
 import { syncUrgentOrderToSheet, highlightUrgentKitDoc } from '../lib/urgentSheetApi';
 import { isUrgentShipment, urgentSheetAction, SHIPMENT_EDITABLE_STATUSES } from '../utils/urgentOrder';
+import { picksSchool } from '../utils/keyin';
 import { fetchCustomTypoWords } from '../lib/typoWordsApi';
 import { setCustomTypoWords } from '../utils/typoCheck';
 import { normalizeSplitQty, stockDiff, keepPrices, applyPriceDrafts, withOrderOwnSettings, invoiceGroupStatus } from '../utils/orderBatches';
@@ -528,7 +529,7 @@ export function AppStateProvider({ children }) {
             await supabase.auth.signOut();
             if (!cancelled) patch({ loginError: 'This account has been deactivated. Please contact your administrator.' });
           } else {
-            patch({ role: profile.role, sekolah: profile.sekolah || '', schoolLanguage: profile.school_language || 'SK', userAuthId: session.user.id, isSalesManager: !!profile.is_sales_manager, isStoreAdminManager: !!profile.is_store_admin_manager, isProductionManager: !!profile.is_production_manager });
+            patch({ role: profile.role, sekolah: profile.sekolah || '', schoolLanguage: profile.school_language || 'SK', userAuthId: session.user.id, isSalesManager: !!profile.is_sales_manager, isStoreAdminManager: !!profile.is_store_admin_manager, isProductionManager: !!profile.is_production_manager, userDisplayName: profile.display_name || '' });
           }
         } else if (!cancelled && profileError) {
           // Still failing after retries — rather than silently bouncing to
@@ -613,7 +614,7 @@ export function AppStateProvider({ children }) {
   // trusting a stale value carried over from login.
   const refreshAssignedSalesman = useCallback(async () => {
     const st = stateRef.current;
-    if (!['teacher', 'salesman'].includes(st.role) || !st.userAuthId) return;
+    if (!['teacher', 'salesman', 'production'].includes(st.role) || !st.userAuthId) return;
     try {
       // A salesman's own New Order (on a school's behalf) is always theirs.
       const all = await fetchAllSalesmen();
@@ -704,7 +705,7 @@ export function AppStateProvider({ children }) {
       patch({ loginError: 'This account has been deactivated. Please contact your administrator.' });
       return null;
     }
-    patch({ role: profile.role, sekolah: profile.sekolah || '', schoolLanguage: profile.school_language || 'SK', userAuthId: data.user.id, isSalesManager: !!profile.is_sales_manager, isStoreAdminManager: !!profile.is_store_admin_manager, isProductionManager: !!profile.is_production_manager, loginError: '', userId: '', password: '' });
+    patch({ role: profile.role, sekolah: profile.sekolah || '', schoolLanguage: profile.school_language || 'SK', userAuthId: data.user.id, isSalesManager: !!profile.is_sales_manager, isStoreAdminManager: !!profile.is_store_admin_manager, isProductionManager: !!profile.is_production_manager, userDisplayName: profile.display_name || '', loginError: '', userId: '', password: '' });
     return profile.role;
   }, [patch]);
 
@@ -744,8 +745,8 @@ export function AppStateProvider({ children }) {
       nextRowId: 1000, nextPlakRowId: 1000, nextColumnId: 1000, visibleBlocksByCategory: {},
 
       cart: [], cartToast: '', editOrderId: null,
-      // A salesman picks the school fresh for every New Order.
-      ...(st.role === 'salesman' ? { sekolah: '', actingSchoolId: null } : {}),
+      // A salesman (or Production keying in) picks the school fresh for every New Order.
+      ...(picksSchool(st.role) ? { sekolah: '', actingSchoolId: null } : {}),
     }));
   }, [patch]);
 
@@ -1155,7 +1156,7 @@ export function AppStateProvider({ children }) {
   // the check itself fails (it only warns; it must never stop an order).
   const checkDuplicateOrders = useCallback(async () => {
     const st = stateRef.current;
-    const schoolId = st.role === 'salesman' ? st.actingSchoolId : st.userAuthId;
+    const schoolId = picksSchool(st.role) ? st.actingSchoolId : st.userAuthId;
     if (!schoolId) return [];
     try {
       const hashes = orderImportFields(st).importFiles.map((f) => f.hash).filter(Boolean);
@@ -1176,7 +1177,7 @@ export function AppStateProvider({ children }) {
     // assignment set — this check just avoids burning an order number (see
     // next_order_seq below) on a submission that can never succeed, and
     // gives a clearer message than a raw RLS-violation error would.
-    if (st.role === 'salesman' && !st.actingSchoolId) {
+    if (picksSchool(st.role) && !st.actingSchoolId) {
       patch({ cartToast: 'Please pick the school on Function Details first.' });
       return null;
     }
@@ -1212,15 +1213,19 @@ export function AppStateProvider({ children }) {
       columnsByBlock: JSON.parse(JSON.stringify(st.columnsByBlock)),
       // Who typed it in, by name — kept even if the order is later reassigned.
       ...(st.role === 'salesman' ? { placedBy: selectedSalesman.name } : {}),
+      ...(st.role === 'production' ? { placedBy: st.userDisplayName || 'Production' } : {}),
     };
     // A salesman's New Order belongs to the school they picked (Step 1):
     // that school's account owns it, the salesman is recorded as its maker.
     const bySalesman = st.role === 'salesman';
+    // Production keying it in (0125): the school owns it too; the chosen salesman is charged 1.5% (keyin sheet)
+    const byProduction = st.role === 'production';
     const newOrder = {
       id: newId, invoiceId: null, datePlaced: formatDate(malaysiaToday()), deliveryDate: 'TBD',
       totalAmount: totalAmt, status: 'Reviewing Order', priceAdjusted: false,
-      createdBy: bySalesman ? st.actingSchoolId : st.userAuthId,
+      createdBy: bySalesman || byProduction ? st.actingSchoolId : st.userAuthId,
       createdBySalesman: bySalesman ? st.userAuthId : null,
+      createdByProduction: byProduction ? st.userAuthId : null,
       salesmanId: selectedSalesman.id,
       sekolah: st.sekolah, schoolLanguage: st.schoolLanguage, sales: selectedSalesman.name, picName: st.picName, phone: st.phone, ketuaPanitia: st.ketuaPanitia, terms: st.terms, remark: st.remark,
       ...storedDays({ shipmentDate: st.shipmentDateSelected, functionDate: st.funcSelected }),
@@ -1387,13 +1392,24 @@ export function AppStateProvider({ children }) {
   // An urgent order already in the Google Sheet whose total just changed
   // (amend / add-on / Production edit): refresh its row so the amount and
   // 2.5% commission there stay current. Fire-and-forget, like the first sync.
+  // An order Production keyed in (0125): its row in the Sheet's "1.5%" tab, from its invoice on — refreshed
+  // when its total changes, removed when it's cancelled (the function decides from the saved order).
+  const syncKeyinSheet = useCallback((order) => {
+    if (!order?.createdByProduction || !order.invoiceId) return;
+    syncUrgentOrderToSheet({ orderId: order.id, sheet: 'keyin' }).catch((err) => {
+      console.error('1.5% Sheet sync failed:', err);
+      patch((latest) => ({ sheetSyncErrors: { ...latest.sheetSyncErrors, [order.id]: `1.5% sheet: ${err.message}` } }));
+    });
+  }, [patch]);
+
   const resyncUrgentSheet = useCallback((order) => {
+    syncKeyinSheet(order);
     if (!order?.urgent || !order.urgentSheetSyncedAt) return;
     syncUrgentOrderToSheet({ orderId: order.id }).catch((err) => {
       console.error('Urgent-order Sheet refresh failed:', err);
       patch((latest) => ({ sheetSyncErrors: { ...latest.sheetSyncErrors, [order.id]: err.message } }));
     });
-  }, [patch]);
+  }, [patch, syncKeyinSheet]);
 
   const updateAmend = useCallback(async () => {
     const st = stateRef.current;
@@ -1735,6 +1751,7 @@ export function AppStateProvider({ children }) {
     }));
     // a cancelled order is no longer urgent: its KIT DOC row loses the red
     if (order.urgent) highlightUrgentKitDoc();
+    syncKeyinSheet({ ...order, ...cancelFields });
 
     // Stock restore is best-effort AFTER the cancel is committed. A failure
     // here leaves the order correctly cancelled but the stock not yet
@@ -1759,7 +1776,7 @@ export function AppStateProvider({ children }) {
 
     flashToast('updateToast', 'Order cancelled and stock returned.');
     return { ok: true, message: 'Order cancelled and stock returned.' };
-  }, [patch, flashToast]);
+  }, [patch, flashToast, syncKeyinSheet]);
 
   // Hands an order to a different salesman — for when the teacher picked
   // the wrong one on submit (any salesman can be chosen freely, see
@@ -2067,7 +2084,7 @@ export function AppStateProvider({ children }) {
       orders: latest.orders.map((o) => (o.id === orderId ? { ...o, ...fields } : o)),
     }));
     // the Google Form is filled from the page's popup (GoogleFormSchoolModal), with the salesman's own words
-    return { ok: true, googleForm: !!priorOrder.createdBySalesman };
+    return { ok: true, googleForm: !!(priorOrder.createdBySalesman || priorOrder.createdByProduction) };
   }, [patch, flashToast, approveTambahanOrder]);
 
   // One-time Google Sheets sync for urgent orders (see urgentOrder.js) —
@@ -2197,8 +2214,9 @@ export function AppStateProvider({ children }) {
     if (urgent && !order.urgentSheetSyncedAt) {
       attemptUrgentSheetSync({ ...order, invoiceId: normalized, urgent });
     }
+    syncKeyinSheet({ ...order, invoiceId: normalized });
     return { ok: true };
-  }, [patch, flashToast, attemptUrgentSheetSync]);
+  }, [patch, flashToast, attemptUrgentSheetSync, syncKeyinSheet]);
 
   // Store Admin: splits an order across a second (or third, ...) invoice
   // number by moving `jenisPlakList` into a group billed under `invoiceId`
@@ -2442,8 +2460,9 @@ export function AppStateProvider({ children }) {
     if (urgent && !order.urgentSheetSyncedAt) {
       attemptUrgentSheetSync({ ...order, ...fields });
     }
+    syncKeyinSheet({ ...order, ...fields });
     return { ok: true };
-  }, [patch, flashToast, attemptUrgentSheetSync]);
+  }, [patch, flashToast, attemptUrgentSheetSync, syncKeyinSheet]);
 
   // Stamps the actual moment a Teacher/Salesman print action happened —
   // not the order's creation date — so "Order Printed" on the printout

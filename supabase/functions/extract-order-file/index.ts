@@ -33,7 +33,8 @@ const PRICE_OUT_PER_MTOK = Number(Deno.env.get('EXTRACT_PRICE_OUT_USD') ?? '15')
 const MAX_SHEETS_TEXT_CHARS = 200_000;   // ~50k tokens of input — a real order file is far smaller
 const RAW_RESPONSE_CAP = 200_000;        // chars kept in ai_extraction_runs.raw_response
 
-const ALLOWED_ROLES = ['teacher', 'salesman', 'admin'];
+// production: keys in New Orders too (0125)
+const ALLOWED_ROLES = ['teacher', 'salesman', 'production', 'admin'];
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',

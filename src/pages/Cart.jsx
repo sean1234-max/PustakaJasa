@@ -180,6 +180,7 @@ export default function Cart() {
   }, [editing, location.state]);
   const submitter = state.role === 'salesman'
     ? `salesman ${state.assignedSalesmen.find((s) => s.id === state.userAuthId)?.name || ''}`.trim()
+    : state.role === 'production' ? `production ${state.userDisplayName || ''}`.trim()
     : `teacher ${state.picName || ''}`.trim();
   const goAhead = () => {
     const matches = dupes.found.map((d) => ({ id: d.id, reasons: d.reasons }));

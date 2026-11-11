@@ -6,6 +6,8 @@ import RequireRole from './components/RequireRole';
 // A salesman can also place a New Order on a school's behalf (0081), and
 // use Update Details / Add On (0085).
 const NEW_ORDER_ROLES = ['teacher', 'salesman'];
+// Production keys in a New Order for a salesman / teacher (0125); Edit / Add On / Amend stay as they were
+const KEYIN_ROLES = [...NEW_ORDER_ROLES, 'production'];
 import Login from './pages/Login';
 import NewOrderStep1 from './pages/NewOrderStep1';
 import NewOrderStep2 from './pages/NewOrderStep2';
@@ -57,10 +59,10 @@ function AppRoutes() {
       <Route path="/" element={<Navigate to="/login" replace />} />
       <Route path="/login" element={<Login />} />
 
-      <Route path="/order/step1" element={<RequireRole role={NEW_ORDER_ROLES}><NewOrderStep1 /></RequireRole>} />
-      <Route path="/order/step2" element={<RequireRole role={NEW_ORDER_ROLES}><NewOrderStep2 /></RequireRole>} />
-      <Route path="/cart" element={<RequireRole role={NEW_ORDER_ROLES}><Cart /></RequireRole>} />
-      <Route path="/success" element={<RequireRole role={NEW_ORDER_ROLES}><Success /></RequireRole>} />
+      <Route path="/order/step1" element={<RequireRole role={KEYIN_ROLES}><NewOrderStep1 /></RequireRole>} />
+      <Route path="/order/step2" element={<RequireRole role={KEYIN_ROLES}><NewOrderStep2 /></RequireRole>} />
+      <Route path="/cart" element={<RequireRole role={KEYIN_ROLES}><Cart /></RequireRole>} />
+      <Route path="/success" element={<RequireRole role={KEYIN_ROLES}><Success /></RequireRole>} />
       <Route path="/dashboard" element={<RequireRole role="teacher"><Dashboard /></RequireRole>} />
       <Route path="/orders/:id" element={<RequireRole role="teacher"><OrderDetails /></RequireRole>} />
       <Route path="/amend/:id" element={<RequireRole role={NEW_ORDER_ROLES}><Amend /></RequireRole>} />

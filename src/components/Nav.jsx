@@ -44,6 +44,8 @@ export default function Nav() {
       <nav className="nav">
         <span className="nav-brand">Production Portal</span>
         <Link to="/production/dashboard" aria-current={ordersActive ? 'page' : undefined}>Orders</Link>
+        {/* keys in an order for a salesman / teacher (0125) */}
+        <Link to="/order/step1" onClick={startNewOrder} aria-current={pathname.startsWith('/order') ? 'page' : undefined}>New Order</Link>
         <Link to="/production/catalog" aria-current={pathname === '/production/catalog' ? 'page' : undefined}>Catalog</Link>
         {state.isProductionManager && (
           <Link to="/production/team" aria-current={pathname === '/production/team' ? 'page' : undefined}>Team</Link>
@@ -51,6 +53,7 @@ export default function Nav() {
         {state.isProductionManager && (
           <Link to="/production/review-log" aria-current={pathname === '/production/review-log' ? 'page' : undefined}>Review Log</Link>
         )}
+        {cartLink}
         <button type="button" className="nav-logout" onClick={handleLogout}>Log Out</button>
       </nav>
     );
