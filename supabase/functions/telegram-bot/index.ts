@@ -274,6 +274,8 @@ Deno.serve(async (req) => {
   const job = url.searchParams.get('job');
   if (job === 'review' || job === 'approvals') {
     if (!JOB_KEY || req.headers.get('x-job-key') !== JOB_KEY) return new Response('forbidden', { status: 403 });
+    // Sean 2026-11-11: auto review off to save AI cost (nobody read its questions); delete the secret to turn it back on
+    if (job === 'review' && Deno.env.get('AUTO_REVIEW_DISABLED') === '1') return new Response('off', { status: 200 });
     // ?job=approvals: remind salesmen to approve their Done Review orders (remind.ts)
     const run = job === 'review' ? runReviewJob(bot, aiAllowed) : runApprovalReminders(db, bot);
     const work = run.then((r) => console.log(`${job} job:`, JSON.stringify(r))).catch((err) => console.error(`${job} job failed:`, err));
