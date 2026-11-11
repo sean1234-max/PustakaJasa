@@ -90,6 +90,15 @@ describe('buildCsvRows — PBD (per-recipient, Nama Kelas split)', () => {
     }, { 'PBD::0::TAHUN 4::main': [{ id: 1, desc: 'AMANAH', qty: '1' }] });
     expect(buildCsvRows({ schoolLanguage: 'SK', items: [it] }, 'PBD', [it]).rows.map((r) => r[3])).toEqual(['TAHUN 4 AMANAH']);
   });
+
+  // ORD-0162 (Sean, 2026-11-11): the sample reads "KELAS 1 ARENA" — every plaque gets KELAS, as TAHUN does
+  it('writes KELAS on every class when the sample says "KELAS 1 ARENA"', () => {
+    const it = sampled('KELAS 1 ARENA', {
+      [customMatrixLabelKey('PBD', 100)]: 'TAHUN 2',
+      [matrixCellKey('PBD', 'custom-100', 'KUANTITI')]: '3',
+    }, { 'PBD::0::TAHUN 2::main': [{ id: 1, desc: 'EXORA', qty: '2' }] });
+    expect(buildCsvRows({ schoolLanguage: 'SK', items: [it] }, 'PBD', [it]).rows.map((r) => r[3])).toEqual(['KELAS 2 EXORA', 'KELAS 2 EXORA', 'KELAS 2']);
+  });
 });
 
 describe('CSV column remap — reference-sample lines -> CSV columns', () => {

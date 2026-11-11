@@ -516,12 +516,14 @@ function buildPbdRows(item, cat, header, year, positionPart1, schoolLanguage) {
   // starting with its year ("5 ASPIRASI", "TAHUN 5 AZAM") is engraved as written.
   const sampleLine = (classIn2b ? line2b : getLine(item, 3)).replace(/[()]/g, '').trim();
   const includeTahunWord = !sampleLine || /\bTAHUN\b/i.test(sampleLine);
+  // "KELAS 1 ARENA" (ORD-0162, Sean 2026-11-11): KELAS in front of every year, as TAHUN
+  const kelasWord = /^KELAS\s*[1-6]\b/i.test(sampleLine);
   const emitForLevel = (label, rowKey) => {
     if (!label) return;
     const total = Number(matrix[matrixCellKey(cat.key, rowKey, col)]) || 0;
     if (total <= 0) return;
     const m = label.match(/TAHUN\s*([1-6])/i);
-    const tahunPrefix = m ? (includeTahunWord ? `TAHUN ${m[1]}` : m[1]) : label;
+    const tahunPrefix = !m ? label : kelasWord ? `KELAS ${m[1]}` : includeTahunWord ? `TAHUN ${m[1]}` : m[1];
     const hasOwnYear = (desc) => !!m && new RegExp(`^(TAHUN\\s*)?${m[1]}\\b`, 'i').test(desc);
     const list = (breakdown[`${item.categoryKey}::${item.blockIdx}::${label}::main`] || [])
       .filter((r) => (r.desc || '').trim());
