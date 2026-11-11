@@ -62,8 +62,15 @@ const storedDays = (fields) => Object.fromEntries(
 // orderable>' when a line would breach the reserve floor — turns that into
 // the "contact your salesman" message the teacher actually needs, falling
 // back to the raw error for anything else (unknown code, connection issue).
-function describeStockError(err) {
+// `patch` given: a stock refusal reloads the Jenis Plak catalog — a tab open for days still had a code that
+// has since been hidden (Sean, 2026-11-11: PK 261 / A), so the picker and Cart catch up right away.
+function describeStockError(err, patch) {
   const m = /^INSUFFICIENT_STOCK:(.*):(\d+)$/.exec(err?.message || '');
+  if (m && patch) {
+    fetchPlakCatalog()
+      .then((plakCatalog) => patch({ plakCatalog }))
+      .catch((e) => console.error('Failed to reload the catalog after a stock refusal:', e));
+  }
   if (m) return `Not enough stock for "${m[1]}" — only ${m[2]} left available to order. Please lower the quantity or contact your salesman.`;
   return `Could not check stock: ${err?.message || 'unknown error'}. Please try again.`;
 }
@@ -1235,7 +1242,7 @@ export function AppStateProvider({ children }) {
       if (!isTestAccount) await deductPlakStock(st.cart.map((ci) => ({ full_path: ci.jenisPlak, qty: ci.qty })));
     } catch (err) {
       console.error('Stock deduction failed for New Order:', err);
-      patch({ cartToast: describeStockError(err) });
+      patch({ cartToast: describeStockError(err, patch) });
       return null;
     }
 
@@ -1426,7 +1433,7 @@ export function AppStateProvider({ children }) {
       if (realStock) await deductPlakStock(deduct);
     } catch (err) {
       console.error('Failed to take stock for an amend:', err);
-      flashToast('updateToast', describeStockError(err));
+      flashToast('updateToast', describeStockError(err, patch));
       return { ok: false };
     }
     try {
@@ -1494,7 +1501,7 @@ export function AppStateProvider({ children }) {
       if (realStock) await deductPlakStock(deduct);
     } catch (err) {
       console.error('Failed to take stock for a salesman edit:', err);
-      patch({ cartToast: describeStockError(err) });
+      patch({ cartToast: describeStockError(err, patch) });
       return { ok: false };
     }
     try {
@@ -1601,7 +1608,7 @@ export function AppStateProvider({ children }) {
       if (!isTestOrder) await deductPlakStock(newItems.map((it) => ({ full_path: it.jenisPlak, qty: it.qty })));
     } catch (err) {
       console.error('Stock deduction failed for Add On:', err);
-      flashToast('updateToast', describeStockError(err));
+      flashToast('updateToast', describeStockError(err, patch));
       return false;
     }
 
@@ -1889,7 +1896,7 @@ export function AppStateProvider({ children }) {
       if (realStock) await deductPlakStock(deduct);
     } catch (err) {
       console.error('Failed to take stock for a corrected Excel:', err);
-      return { ok: false, message: describeStockError(err) };
+      return { ok: false, message: describeStockError(err, patch) };
     }
     const correctedFields = {
       correctedImportFilePath: uploaded.path, correctedImportFileName: uploaded.name,
@@ -2762,7 +2769,7 @@ export function AppStateProvider({ children }) {
       if (realStock) await deductPlakStock(deduct);
     } catch (err) {
       console.error('Failed to take stock for a Production edit:', err);
-      return { ok: false, message: describeStockError(err) };
+      return { ok: false, message: describeStockError(err, patch) };
     }
     // An edited add-on keeps pointing at the Excel it came from.
     const addonFile = addOn ? (order.pendingAddonItems || []).find((it) => it.importFile)?.importFile : null;
