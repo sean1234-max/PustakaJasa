@@ -63,6 +63,41 @@ function SchoolSearch({ value, picked, onPick }) {
   );
 }
 
+// Production keying in (0125): the salesman picked the same way as the school above — type a few letters
+// ("AD"), pick ADAM from the list. Matched here from every salesman (already loaded), no server search.
+function SalesmanSearch({ salesmen, value, picked, onPick }) {
+  const [text, setText] = useState(value);
+  const [open, setOpen] = useState(false);
+  const q = text.trim().toLowerCase();
+  const matches = q ? salesmen.filter((s) => (s.name || '').toLowerCase().includes(q)) : [];
+  return (
+    <div style={{ position: 'relative' }}>
+      <input
+        className="input" id="sales" placeholder="Type to search, e.g. AD" autoComplete="off"
+        value={text}
+        onChange={(e) => { setText(e.target.value); setOpen(true); if (picked) onPick(null); }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+      />
+      {open && q && (
+        <div className="card elev-md" style={{ position: 'absolute', zIndex: 20, left: 0, right: 0, marginTop: 4, padding: 0, maxHeight: 260, overflowY: 'auto' }}>
+          {matches.length === 0 && <p className="hint-text" style={{ margin: 'var(--space-2) var(--space-3)' }}>No salesman found.</p>}
+          {matches.map((m) => (
+            <button
+              key={m.id} type="button" className="btn btn-ghost"
+              style={{ display: 'block', width: '100%', textAlign: 'left', borderRadius: 0 }}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => { setText(m.name || ''); setOpen(false); onPick(m); }}
+            >
+              {m.name || 'Unnamed salesman'}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function NewOrderStep1() {
   const { state, patch, today, refreshAssignedSalesman, pickActingSchool, startNewOrder } = useAppState();
   const isSalesman = picksSchool(state.role); // a salesman, or Production keying it in (0125)
@@ -265,21 +300,10 @@ export default function NewOrderStep1() {
             ) : !state.assignedSalesmanLoaded ? (
               <input className="input" id="sales" disabled readOnly value="Loading..." />
             ) : isProduction ? (
-              // type a few letters ("AD") and the browser lists the matching salesmen (ADAM); picked = exact name
-              <>
-                <input
-                  className="input" id="sales" list="sales-options" placeholder="Type the salesman's name..." autoComplete="off"
-                  value={state.sales}
-                  onChange={(e) => {
-                    const typed = e.target.value;
-                    const chosen = state.assignedSalesmen.find((s) => (s.name || '').trim().toLowerCase() === typed.trim().toLowerCase());
-                    patch({ sales: chosen ? chosen.name : typed, selectedSalesmanId: chosen?.id || '' });
-                  }}
-                />
-                <datalist id="sales-options">
-                  {state.assignedSalesmen.map((s) => <option key={s.id} value={s.name || ''} />)}
-                </datalist>
-              </>
+              <SalesmanSearch
+                salesmen={state.assignedSalesmen} value={state.sales} picked={!!state.selectedSalesmanId}
+                onPick={(m) => patch({ selectedSalesmanId: m?.id || '', sales: m?.name || '' })}
+              />
             ) : state.assignedSalesmen.length > 1 ? (
               <select
                 className="input"
