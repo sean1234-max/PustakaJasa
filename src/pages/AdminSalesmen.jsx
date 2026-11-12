@@ -4,6 +4,10 @@ import AdminLayout from '../components/AdminLayout';
 import { useAppState } from '../state/useAppState';
 import { fetchAllProfiles, createAccount, logAdminAction } from '../lib/adminApi';
 import { loadWithRetry } from '../lib/loadWithRetry';
+import { formatRM } from '../data/catalog';
+
+// Sean's testing salesman accounts — left off this list (Sean, 2026-11-12); still under Users
+const TEST_SALESMAN_EMAILS = ['seanng@pjsb.com', 'limzhiyi@pjsb.com'];
 
 const EMPTY_FORM = { displayName: '', email: '', password: '' };
 const inputClass = 'w-full px-3 py-2 border border-outline-variant rounded-lg bg-surface-bright focus:ring-2 focus:ring-primary focus:border-primary text-body-md text-on-surface outline-none transition-all';
@@ -45,7 +49,7 @@ export default function AdminSalesmen() {
     return () => clearTimeout(t);
   }, [toast]);
 
-  const salesmen = (profiles || []).filter((p) => p.role === 'salesman');
+  const salesmen = (profiles || []).filter((p) => p.role === 'salesman' && !TEST_SALESMAN_EMAILS.includes((p.email || '').toLowerCase()));
 
   const filtered = salesmen.filter((s) => {
     const q = search.trim().toLowerCase();
@@ -164,6 +168,7 @@ export default function AdminSalesmen() {
                   <th className="py-4 px-6 text-label-bold text-on-surface-variant uppercase tracking-wider">Email</th>
                   <th className="py-4 px-6 text-label-bold text-on-surface-variant uppercase tracking-wider">Status</th>
                   <th className="py-4 px-6 text-label-bold text-on-surface-variant uppercase tracking-wider">Total Orders</th>
+                  <th className="py-4 px-6 text-label-bold text-on-surface-variant uppercase tracking-wider">Total Sales</th>
                   <th className="py-4 px-6 text-label-bold text-on-surface-variant uppercase tracking-wider">Pending</th>
                   <th className="py-4 px-6 text-label-bold text-on-surface-variant uppercase tracking-wider">Completed</th>
                   <th className="py-4 px-6 text-label-bold text-on-surface-variant uppercase tracking-wider text-right">Actions</th>
@@ -174,6 +179,8 @@ export default function AdminSalesmen() {
                   const salesmanOrders = (state.orders || []).filter((o) => o.salesmanId === s.id);
                   const pending = salesmanOrders.filter((o) => o.status === 'Reviewing Order').length;
                   const completed = salesmanOrders.filter((o) => o.status === 'Completed').length;
+                  // every order's amount but Cancelled ones, as Admin Orders' total (Sean, 2026-11-12)
+                  const totalSales = salesmanOrders.filter((o) => o.status !== 'Cancelled').reduce((sum, o) => sum + (Number(o.totalAmount) || 0), 0);
                   return (
                     <tr key={s.id} className="hover:bg-surface-container-low transition-colors">
                       <td className="py-4 px-6 text-headline-sm text-primary">
@@ -185,6 +192,7 @@ export default function AdminSalesmen() {
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-label-bold font-semibold bg-primary-container/15 text-primary">{s.status}</span>
                       </td>
                       <td className="py-4 px-6 text-body-md text-on-surface">{salesmanOrders.length}</td>
+                      <td className="py-4 px-6 text-body-md text-on-surface whitespace-nowrap">{formatRM(totalSales)}</td>
                       <td className="py-4 px-6 text-body-md text-on-surface">{pending}</td>
                       <td className="py-4 px-6 text-body-md text-on-surface">{completed}</td>
                       <td className="py-4 px-6 text-right">

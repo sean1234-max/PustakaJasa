@@ -1113,6 +1113,9 @@ export function invoiceDate(order, invoiceId = order?.invoiceId) {
   return d && !Number.isNaN(d.getTime()) ? d : null;
 }
 
+// RM 1,234.50 — Admin's order totals
+export const formatRM = (n) => `RM ${(Number(n) || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
 export function invoiceLabel(order, invoiceId = order?.invoiceId) {
   if (!invoiceId) return invoiceId;
   const d = invoiceDate(order, invoiceId);

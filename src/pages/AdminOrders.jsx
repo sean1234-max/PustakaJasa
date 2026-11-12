@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import AdminLayout from '../components/AdminLayout';
 import { useAppState } from '../state/useAppState';
-import { ORDER_STATUSES, statusPillStyle, malaysiaToday, invoiceLabel } from '../data/catalog';
+import { ORDER_STATUSES, statusPillStyle, malaysiaToday, invoiceLabel, formatRM } from '../data/catalog';
 import { matchesOrderSearch } from '../utils/orderSearch';
 import { useSessionState, useRestoreScroll } from '../utils/useSessionState';
 
@@ -28,7 +28,6 @@ function startOfDay(d) {
 
 // 1% of the order amounts (Sean, 2026-10-13) — cancelled orders left out.
 const SUMMARY_RATE = 0.01;
-const formatRM = (n) => `RM ${n.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 function StatTile({ label, value, strong = false }) {
   return (
