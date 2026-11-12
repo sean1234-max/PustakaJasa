@@ -7,7 +7,8 @@
 // the caller is actually an admin. The client's own claim of being an
 // admin is never trusted. The production manager (profiles.is_production_
 // manager, 0080) may also call it — for one thing only: creating another
-// production account.
+// production account. An active salesman may call it to create School (teacher) accounts only — Bulk Add
+// Schools on the Sales dashboard (Sean 2026-11-12); his audit row is written here (audit_log RLS is admin-only).
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
@@ -57,7 +58,8 @@ Deno.serve(async (req) => {
   const isAdmin = !profileError && callerProfile?.role === 'admin';
   const isProductionManager = !profileError && callerProfile?.role === 'production'
     && callerProfile?.is_production_manager === true && callerProfile?.status === 'active';
-  if (!isAdmin && !isProductionManager) {
+  const isSalesman = !profileError && callerProfile?.role === 'salesman' && callerProfile?.status === 'active';
+  if (!isAdmin && !isProductionManager && !isSalesman) {
     return jsonResponse({ error: 'Only admins can do this.' }, 403);
   }
 
@@ -67,8 +69,11 @@ Deno.serve(async (req) => {
   } catch {
     return jsonResponse({ error: 'Invalid request body.' }, 400);
   }
-  if (!isAdmin && !(body.action === 'create' && body.role === 'production')) {
+  if (!isAdmin && isProductionManager && !(body.action === 'create' && body.role === 'production')) {
     return jsonResponse({ error: 'The production manager can only create production accounts.' }, 403);
+  }
+  if (!isAdmin && !isProductionManager && !(body.action === 'create' && body.role === 'teacher')) {
+    return jsonResponse({ error: 'A salesman can only create school accounts.' }, 403);
   }
 
   if (body.action === 'create') {
@@ -82,6 +87,9 @@ Deno.serve(async (req) => {
 
     if (!email || !password || !role) {
       return jsonResponse({ error: 'Email, password, and role are required.' }, 400);
+    }
+    if (role === 'teacher' && !sekolah?.trim()) {
+      return jsonResponse({ error: 'School name is required.' }, 400);
     }
     if (!VALID_ROLES.includes(role)) {
       return jsonResponse({ error: 'Invalid role.' }, 400);
@@ -113,6 +121,14 @@ Deno.serve(async (req) => {
       // found for this account" and be invisible to Admin's user list.
       await adminClient.auth.admin.deleteUser(created.user.id);
       return jsonResponse({ error: 'Unable to create the account. Please try again.' }, 500);
+    }
+
+    if (!isAdmin && !isProductionManager) {
+      const { error: auditError } = await adminClient.from('audit_log').insert({
+        admin_id: user.id, action: 'Salesman bulk-created a school account', target_table: 'profiles',
+        target_id: created.user.id, after: { sekolah, email },
+      });
+      if (auditError) console.error('Failed to write audit log entry:', auditError);
     }
 
     return jsonResponse({ id: created.user.id });

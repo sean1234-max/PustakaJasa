@@ -11,6 +11,7 @@ import AddOnTag from '../components/AddOnTag';
 import { nearestFirst } from '../utils/urgentOrder';
 import TelegramConnect from '../components/TelegramConnect';
 import ConfirmButton from '../components/ConfirmButton';
+import BulkAddSchoolsForm from '../components/BulkAddSchoolsForm';
 import { countReservedPlaques, isCrystalCode } from '../utils/exportCsv';
 import { useSessionState, useRestoreScroll } from '../utils/useSessionState';
 
@@ -35,6 +36,7 @@ export default function SalesDashboard() {
   const viewKey = `SalesDashboard:${state.userAuthId || ''}`;
   useRestoreScroll(viewKey);
   const [artworkErr, setArtworkErr] = useState({});
+  const [showBulkSchools, setShowBulkSchools] = useState(false);
   const navigate = useNavigate();
   const [filter, setFilter] = useSessionState(`${viewKey}:filter`, FILTERS[0].status);
   // A Sales Manager's `state.orders` already contains every salesman's
@@ -93,8 +95,13 @@ export default function SalesDashboard() {
               : 'Review incoming orders from every school — check Jenis Plak, quantities, and price per unit before approving.'}
           </p>
         </div>
-        <TelegramConnect />
+        <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+          <button type="button" className="btn btn-ghost" onClick={() => setShowBulkSchools((v) => !v)}>Bulk Add Schools</button>
+          <TelegramConnect />
+        </div>
       </div>
+
+      {showBulkSchools && <BulkAddSchoolsForm onClose={() => setShowBulkSchools(false)} />}
 
       {isManager && (
         <div className="field" style={{ maxWidth: 320, marginBottom: 'var(--space-4)' }}>
