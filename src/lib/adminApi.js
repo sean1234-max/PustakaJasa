@@ -13,6 +13,15 @@ export async function fetchAllProfiles() {
   return data;
 }
 
+// Each salesman's order totals summed in the database (0126): { [salesmanId]: { totalOrders, totalSales, pending, completed } }
+export async function fetchSalesmanOrderTotals() {
+  const { data, error } = await supabase.rpc('salesman_order_totals');
+  if (error) throw error;
+  return Object.fromEntries((data || []).map((r) => [r.salesman_id, {
+    totalOrders: r.total_orders, totalSales: Number(r.total_sales) || 0, pending: r.pending, completed: r.completed,
+  }]));
+}
+
 export async function updateProfile(id, patch) {
   const { error } = await supabase.from('profiles').update(patch).eq('id', id);
   if (error) throw error;

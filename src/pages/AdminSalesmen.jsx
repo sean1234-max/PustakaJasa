@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import AdminLayout from '../components/AdminLayout';
 import { useAppState } from '../state/useAppState';
-import { fetchAllProfiles, createAccount, logAdminAction } from '../lib/adminApi';
+import { fetchAllProfiles, createAccount, logAdminAction, fetchSalesmanOrderTotals } from '../lib/adminApi';
 import { loadWithRetry } from '../lib/loadWithRetry';
 import { formatRM } from '../data/catalog';
 
@@ -10,6 +10,19 @@ import { formatRM } from '../data/catalog';
 const TEST_SALESMAN_EMAILS = ['seanng@pjsb.com', 'limzhiyi@pjsb.com'];
 
 const EMPTY_FORM = { displayName: '', email: '', password: '' };
+// the totals (and so the ranking) are fetched again this often while the page is open, and on coming back to the tab
+const TOTALS_REFRESH_MS = 30000;
+
+// From the orders already loaded — only until the database totals arrive (or if they fail)
+function totalsFromOrders(orders, salesmanId) {
+  const own = (orders || []).filter((o) => o.salesmanId === salesmanId);
+  return {
+    totalOrders: own.length,
+    totalSales: own.filter((o) => o.status !== 'Cancelled').reduce((sum, o) => sum + (Number(o.totalAmount) || 0), 0),
+    pending: own.filter((o) => o.status === 'Reviewing Order').length,
+    completed: own.filter((o) => o.status === 'Completed').length,
+  };
+}
 const inputClass = 'w-full px-3 py-2 border border-outline-variant rounded-lg bg-surface-bright focus:ring-2 focus:ring-primary focus:border-primary text-body-md text-on-surface outline-none transition-all';
 
 function Field({ label, htmlFor, children }) {
@@ -33,6 +46,22 @@ export default function AdminSalesmen() {
   const [toast, setToast] = useState('');
 
   const [loadError, setLoadError] = useState('');
+  const [totals, setTotals] = useState(null);
+
+  // live ranking (Sean, 2026-11-12): summed in the database every TOTALS_REFRESH_MS and when the tab is shown again
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = () => {
+      fetchSalesmanOrderTotals()
+        .then((t) => { if (!cancelled) setTotals(t); })
+        .catch((err) => console.error('Failed to load salesman totals:', err));
+    };
+    refresh();
+    const timer = setInterval(refresh, TOTALS_REFRESH_MS);
+    const onVisible = () => { if (document.visibilityState === 'visible') refresh(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { cancelled = true; clearInterval(timer); document.removeEventListener('visibilitychange', onVisible); };
+  }, []);
 
   const load = () => {
     setLoadError('');
@@ -51,11 +80,16 @@ export default function AdminSalesmen() {
 
   const salesmen = (profiles || []).filter((p) => p.role === 'salesman' && !TEST_SALESMAN_EMAILS.includes((p.email || '').toLowerCase()));
 
-  const filtered = salesmen.filter((s) => {
-    const q = search.trim().toLowerCase();
-    if (!q) return true;
-    return [s.display_name, s.email].some((v) => (v || '').toLowerCase().includes(q));
-  });
+  const totalsOf = (id) => (totals ? (totals[id] || { totalOrders: 0, totalSales: 0, pending: 0, completed: 0 }) : totalsFromOrders(state.orders, id));
+  // most sales first, then by name
+  const filtered = salesmen
+    .filter((s) => {
+      const q = search.trim().toLowerCase();
+      if (!q) return true;
+      return [s.display_name, s.email].some((v) => (v || '').toLowerCase().includes(q));
+    })
+    .map((s) => ({ ...s, totals: totalsOf(s.id) }))
+    .sort((a, b) => b.totals.totalSales - a.totals.totalSales || (a.display_name || '').localeCompare(b.display_name || ''));
 
   const handleCreate = async (e) => {
     e.preventDefault();
@@ -176,11 +210,7 @@ export default function AdminSalesmen() {
               </thead>
               <tbody className="divide-y divide-outline-variant">
                 {filtered.map((s) => {
-                  const salesmanOrders = (state.orders || []).filter((o) => o.salesmanId === s.id);
-                  const pending = salesmanOrders.filter((o) => o.status === 'Reviewing Order').length;
-                  const completed = salesmanOrders.filter((o) => o.status === 'Completed').length;
-                  // every order's amount but Cancelled ones, as Admin Orders' total (Sean, 2026-11-12)
-                  const totalSales = salesmanOrders.filter((o) => o.status !== 'Cancelled').reduce((sum, o) => sum + (Number(o.totalAmount) || 0), 0);
+                  const { totalOrders, totalSales, pending, completed } = s.totals;
                   return (
                     <tr key={s.id} className="hover:bg-surface-container-low transition-colors">
                       <td className="py-4 px-6 text-headline-sm text-primary">
@@ -191,7 +221,7 @@ export default function AdminSalesmen() {
                       <td className="py-4 px-6">
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-label-bold font-semibold bg-primary-container/15 text-primary">{s.status}</span>
                       </td>
-                      <td className="py-4 px-6 text-body-md text-on-surface">{salesmanOrders.length}</td>
+                      <td className="py-4 px-6 text-body-md text-on-surface">{totalOrders}</td>
                       <td className="py-4 px-6 text-body-md text-on-surface whitespace-nowrap">{formatRM(totalSales)}</td>
                       <td className="py-4 px-6 text-body-md text-on-surface">{pending}</td>
                       <td className="py-4 px-6 text-body-md text-on-surface">{completed}</td>
