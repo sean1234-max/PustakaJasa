@@ -609,6 +609,18 @@ describe('UMUM (万能) — import → cart → CSV', () => {
     expect(rows[0][CSV_COLUMNS.indexOf('position_black')]).toBe('');
   });
 
+  it('a row with the Reference Sample\'s words on one line takes its line breaks; other words stay as typed (ORD-0273)', () => {
+    const parsed = parse({ 'UMUM (万能)': umum({ red: '2', rows: [
+      [null, null, 'JOHAN TAHUN 4', null, 1, 'PKC 263'],
+      [null, null, 'NAIB JOHAN', null, 1, 'PKC 263'],
+      [null, null, null, null, 1, 'PKC 263'],
+    ] }) }).categorized.UMUM[0];
+    const section = { ...parsed, lines: { ...parsed.lines, 2: 'JOHAN\nTAHUN 4' } };
+    const res = buildCategoryCartItems(toDraft('UMUM', section), 'UMUM');
+    const { rows } = buildCsvRows({ schoolLanguage: 'SK', items: res.items }, 'UMUM', res.items);
+    expect(rows.map((r) => r[CSV_COLUMNS.indexOf('position')])).toEqual(['JOHAN\nTAHUN 4', 'NAIB JOHAN', 'JOHAN\nTAHUN 4']);
+  });
+
   it('MERAH lines that don\'t touch: the last one is the red line, as before', () => {
     const section = parse({ 'UMUM (万能)': umum({ red: '0,2', rows: [[null, null, null, null, 1, 'PKC 263']] }) }).categorized.UMUM[0];
     expect(section.lines.umumRed).toBe('2');

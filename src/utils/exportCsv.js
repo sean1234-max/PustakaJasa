@@ -29,6 +29,8 @@ function umumFieldLists(item) {
   return Object.fromEntries(Object.entries(fields).map(([slot, f]) => [slot, [f]]));
 }
 
+const flatWords = (t) => String(t || '').replace(/\s+/g, ' ').trim();
+
 // One CSV row per plaque: each line is the row's own text (blank = the
 // CONTOH line, "-" = left off this plaque); lines landing on the same field
 // join with a line break (a two-line title / position).
@@ -43,7 +45,9 @@ function buildUmumRows(item) {
     UMUM_SLOTS.forEach((s) => {
       if (!fields[s]) return;
       const own = String(r[`l${s}`] || '').trim();
-      const text = own === '-' ? '' : (own || contoh[s]);
+      // the CONTOH's words typed on one line take the CONTOH's line breaks (ORD-0273, Sean 2026-11-12)
+      const asContoh = !own.includes('\n') && flatWords(own) === flatWords(contoh[s]);
+      const text = own === '-' ? '' : (own && !asContoh ? own : contoh[s]);
       if (text) out[fields[s]].push(text);
     });
     const row = [out.event_header.join('\n'), '', out.position.join('\n'), out.event_line_1.join('\n'), out.event_line_2.join('\n')];
