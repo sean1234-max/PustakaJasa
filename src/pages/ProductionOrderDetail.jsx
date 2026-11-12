@@ -670,10 +670,11 @@ export default function ProductionOrderDetail() {
               <p key={note} className="hint-text" style={{ color: '#b45309', marginTop: 'var(--space-2)' }}>{note}</p>
             ))}
             {/* Reviewing a Tambahan: only its own crystals, nothing to confirm or make yet (as SalesOrderSummary).
-                An order still in KIV & ARTWORK can Open in Illustrator however it was opened (Sean, 2026-11-11, ORD-0308). */}
+                An order still in KIV & ARTWORK can Open in Illustrator however it was opened (Sean, 2026-11-11, ORD-0308);
+                a confirmed crystal can, whatever card or status the order is on (Sean, 2026-11-12, ORD-0210 Completed). */}
             {addonView
               ? <CrystalPreview order={effectiveOrder} role="production" selected={pickedCrystal} showArtwork={false} canMake={false} />
-              : <CrystalPreview order={order} role="production" selected={pickedCrystal} canMake={kivCardView || fromKiv || needsKiv(order) || !kivParts(order).includes('CRYSTAL')} makeUnconfirmed={kivCardView || fromKiv || needsKiv(order)} makeAi={crystalMakeAi} makeAiFolder={buildCombinedCsvFilename(order).replace(/\.csv$/i, '')} makeAiSchool={schoolFolderFor(order.sekolah)} onMakeAiSent={() => crystalSent.current?.()} />}
+              : <CrystalPreview order={order} role="production" selected={pickedCrystal} makeUnconfirmed={kivCardView || fromKiv || needsKiv(order)} makeAi={crystalMakeAi} makeAiFolder={buildCombinedCsvFilename(order).replace(/\.csv$/i, '')} makeAiSchool={schoolFolderFor(order.sekolah)} onMakeAiSent={() => crystalSent.current?.()} />}
             <PlakPreview order={addonView ? effectiveOrder : order} />
 
             {selempangBlocks.length > 0 && (
