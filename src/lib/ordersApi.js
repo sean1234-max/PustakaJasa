@@ -74,6 +74,8 @@ function toDbOrder(order) {
     salesman_delivery: !!order.salesmanDelivery,
     // only "confirmed or not" is sent; the database stamps who and when (0089)
     artwork_confirmed_at: order.artworkConfirmedAt ?? null,
+    // kept only with that first confirmation (0102 stamp triggers)
+    artwork_manual: !!order.artworkManual,
   };
 }
 
@@ -276,7 +278,7 @@ export async function saveProductionNote(id, note) {
 }
 
 // Manual crystal artwork (0102): confirmed for Production, drawn by a designer.
-// Its own write, so toDbOrder's inserts never send the column.
+// The salesman's Manual button on a submitted order; Production's is sent with the insert (toDbOrder).
 export async function markArtworkManual(id) {
   const { error } = await supabase.from('orders')
     .update({ artwork_confirmed_at: new Date().toISOString(), artwork_manual: true }).eq('id', id);

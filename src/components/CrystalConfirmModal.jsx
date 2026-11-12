@@ -3,9 +3,10 @@
 // Esc = Cancel). "Yes, Artwork Confirmed" asks once more — the crystals go to Production
 // as they are (Sean, 2026-10-16) — and only "Yes, send to Production" submits.
 // onLater (salesman only): submit now, confirm the artwork later on the order's Summary page.
+// onManual (Production only, Sean 2026-11-12): submit now as Manual — a designer draws the crystal (0102).
 import { useEffect, useRef, useState } from 'react';
 
-export default function CrystalConfirmModal({ open, busy, onYes, onLater = null, onEdit, onCancel }) {
+export default function CrystalConfirmModal({ open, busy, onYes, onLater = null, onManual = null, onEdit, onCancel }) {
   const ref = useRef(null);
   const [doubleCheck, setDoubleCheck] = useState(false);
   useEffect(() => {
@@ -44,6 +45,11 @@ export default function CrystalConfirmModal({ open, busy, onYes, onLater = null,
             {onLater && (
               <button type="button" className="btn btn-secondary" disabled={busy} onClick={onLater}>
                 {busy ? 'Submitting…' : 'Not yet — submit, confirm artwork later'}
+              </button>
+            )}
+            {onManual && (
+              <button type="button" className="btn btn-secondary" disabled={busy} onClick={onManual}>
+                {busy ? 'Submitting…' : 'Submit — artwork Manual (designer draws it)'}
               </button>
             )}
             <button type="button" className="btn btn-secondary" onClick={onEdit}>No, Edit Crystal</button>

@@ -127,9 +127,10 @@ export default function Cart() {
   const [askKertasKerja, setAskKertasKerja] = useState(false);
   const startSubmit = () => (hasCrystal ? setCrystalModal(true) : handleSubmit());
   const [crystalBusy, setCrystalBusy] = useState(false);
-  const confirmCrystals = async (artworkConfirmed = true) => {
+  // artwork: true = confirmed, false = later (salesman), 'manual' = a designer draws it (Production)
+  const confirmCrystals = async (artwork = true) => {
     setCrystalBusy(true);
-    await handleSubmit(artworkConfirmed);
+    await handleSubmit(artwork);
     setCrystalBusy(false);
     setCrystalModal(false);
   };
@@ -142,29 +143,30 @@ export default function Cart() {
     setCrystalModal(false);
   };
 
-  const send = async (artworkConfirmed, duplicateCheck) => {
+  const send = async (artwork, duplicateCheck) => {
+    const artworkOpts = { artworkConfirmed: artwork === true, artworkManual: artwork === 'manual' };
     setSubmitting(true);
     if (editing) {
-      const res = await saveEditedOrder({ artworkConfirmed });
+      const res = await saveEditedOrder(artworkOpts);
       setSubmitting(false);
       if (res.ok) navigate(`/sales/orders/${res.id}`);
       return;
     }
-    const id = await submitOrder({ artworkConfirmed, duplicateCheck });
+    const id = await submitOrder({ ...artworkOpts, duplicateCheck });
     setSubmitting(false);
     if (id) navigate('/success');
   };
   // The school's look-alike orders first (0094): if any, the person submitting
   // has to say it's a separate order before it goes.
-  const handleSubmit = async (artworkConfirmed = false) => {
+  const handleSubmit = async (artwork = false) => {
     if (state.cart.length === 0 || submitting || stockViolation || otherViolation || noOrderFile || newFileNotAdded) return;
     // an edited order is the same order, not a look-alike of one
-    if (editing) { send(artworkConfirmed, null); return; }
+    if (editing) { send(artwork, null); return; }
     setSubmitting(true);
     const found = await checkDuplicateOrders();
     setSubmitting(false);
-    if (found.length > 0) { setDupes({ found, artworkConfirmed }); return; }
-    send(artworkConfirmed, null);
+    if (found.length > 0) { setDupes({ found, artwork }); return; }
+    send(artwork, null);
   };
   // Edit Order's one "Save Changes" on the order page (NewOrderStep2 handleSaveEdit): the cart's own Save
   // Changes runs once on arrival — whatever stops it (stock, OTHER, kertas kerja, crystal) shows here as usual
@@ -185,7 +187,7 @@ export default function Cart() {
   const goAhead = () => {
     const matches = dupes.found.map((d) => ({ id: d.id, reasons: d.reasons }));
     setDupes(null);
-    send(dupes.artworkConfirmed, { matches, confirmedBy: submitter, confirmedAt: new Date().toISOString() });
+    send(dupes.artwork, { matches, confirmedBy: submitter, confirmedAt: new Date().toISOString() });
   };
 
   return (
@@ -341,7 +343,9 @@ export default function Cart() {
         />
         <CrystalConfirmModal
           open={crystalModal} busy={crystalBusy}
-          onYes={() => confirmCrystals(true)} onLater={isSalesman ? () => confirmCrystals(false) : null} onEdit={editCrystals} onCancel={() => setCrystalModal(false)}
+          onYes={() => confirmCrystals(true)} onLater={isSalesman ? () => confirmCrystals(false) : null}
+          onManual={state.role === 'production' ? () => confirmCrystals('manual') : null}
+          onEdit={editCrystals} onCancel={() => setCrystalModal(false)}
         />
       </div>
     </div>

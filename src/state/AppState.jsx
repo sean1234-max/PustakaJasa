@@ -1168,8 +1168,9 @@ export function AppStateProvider({ children }) {
   }, []);
 
   // artworkConfirmed: the Yes to "crystal artwork checked?" at submit (Cart, crystal orders only)
+  // artworkManual: Production's "Submit — artwork Manual" (Sean, 2026-11-12) — confirmed, drawn by a designer (0102)
   // duplicateCheck: the look-alike orders the Cart showed and who went ahead anyway.
-  const submitOrder = useCallback(async ({ artworkConfirmed = false, duplicateCheck = null } = {}) => {
+  const submitOrder = useCallback(async ({ artworkConfirmed = false, artworkManual = false, duplicateCheck = null } = {}) => {
     const st = stateRef.current;
     const selectedSalesman = st.assignedSalesmen.find((s) => s.id === st.selectedSalesmanId);
     // The backend (supabase/migrations/0025_allow_multiple_salesmen_per_school.sql)
@@ -1234,7 +1235,8 @@ export function AppStateProvider({ children }) {
       kertasKerjaFiles: st.kertasKerjaFiles || [],
       duplicateCheck,
       snapshot, items: st.cart.map((ci) => ({ ...ci })),
-      artworkConfirmedAt: artworkConfirmed ? new Date().toISOString() : null,
+      artworkConfirmedAt: artworkConfirmed || artworkManual ? new Date().toISOString() : null,
+      artworkManual,
     };
 
     // Deducted before the insert so a stock failure never creates an order
@@ -1275,7 +1277,7 @@ export function AppStateProvider({ children }) {
     // crystal changes the teacher made before submitting (Cart → Edit Crystal): onto the order now
     if (st.cart.some((ci) => isCrystalCode(ci.jenisPlak))) saveCrystalDraft(newId).catch((err) => console.error('Order saved, but its crystal changes were not:', err));
     // who confirmed the artwork is stamped by the database (0089) — read it back for the order page
-    if (artworkConfirmed) {
+    if (artworkConfirmed || artworkManual) {
       fetchOrderById(newId)
         .then((saved) => saved && patch((latest) => ({ orders: latest.orders.map((o) => (o.id === newId ? saved : o)) })))
         .catch((err) => console.error('Order saved, but could not reload it:', err));
@@ -1473,7 +1475,7 @@ export function AppStateProvider({ children }) {
   // still 'Reviewing Order', Production's review not done. A new order file replaces the order's files;
   // they — and Production's Corrected Excel, which would otherwise still stand in for the order — move to
   // previousImportFiles: kept, never read again. Stock follows the difference, like an amend.
-  const saveEditedOrder = useCallback(async ({ artworkConfirmed = false } = {}) => {
+  const saveEditedOrder = useCallback(async ({ artworkConfirmed = false, artworkManual = false } = {}) => {
     const st = stateRef.current;
     const orderId = st.editOrderId;
     let order;
@@ -1507,7 +1509,9 @@ export function AppStateProvider({ children }) {
       ...(order.correctedImportFilePath ? { correctedImportFilePath: null, correctedImportFileName: null, correctedImportUploadedAt: null } : {}),
       // the artwork question was asked again (Cart); a Later leaves it unconfirmed
       ...(hasCrystal && artworkConfirmed && !order.artworkConfirmedAt ? { artworkConfirmedAt: now } : {}),
-      ...(hasCrystal && !artworkConfirmed ? { artworkConfirmedAt: null } : {}),
+      // Production's Manual: kept only with the first confirmation (0102 stamp trigger)
+      ...(hasCrystal && artworkManual && !order.artworkConfirmedAt ? { artworkConfirmedAt: now, artworkManual: true } : {}),
+      ...(hasCrystal && !artworkConfirmed && !artworkManual ? { artworkConfirmedAt: null } : {}),
       salesmanEditedAt: now,
     };
 
