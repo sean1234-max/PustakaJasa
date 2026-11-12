@@ -144,6 +144,16 @@ describe('findTemplates (POST /templates)', async () => {
       'VB / C / BLUE': null,
     });
   });
+  it('any HM… / Hanging Medal code, any case, is the round medal file (Sean, 2026-11-12)', () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'tpl-'));
+    writeFileSync(path.join(dir, 'E CUT 0 - MEDAL (SUKAN) -SALES.ai'), '');
+    expect(findTemplates(dir, ['HM-7026 / GOLD', 'hm 5026', 'Hanging Medal', 'HMX-1'])).toEqual({
+      'HM-7026 / GOLD': 'E CUT 0 - MEDAL (SUKAN) -SALES.ai',
+      'hm 5026': 'E CUT 0 - MEDAL (SUKAN) -SALES.ai',
+      'Hanging Medal': 'E CUT 0 - MEDAL (SUKAN) -SALES.ai',
+      'HMX-1': null,
+    });
+  });
 });
 
 describe('parseRunReport', () => {

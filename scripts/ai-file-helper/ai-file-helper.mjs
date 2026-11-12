@@ -176,6 +176,9 @@ function csvCells(line) {
   out.push(cur);
   return out;
 }
+// SEAN.jsx isHangingMedalCode: HM… / HANGING MEDAL, any case -> the round medal file, after product_mapping.csv (Sean, 2026-11-12)
+const HANGING_MEDAL_FILE = 'E CUT 0 - MEDAL (SUKAN) -SALES.ai';
+export const isHangingMedalCode = (code) => /^\s*HM([^A-Z]|$)/i.test(String(code || '')) || /HANGING\s*MEDAL/i.test(String(code || ''));
 export function findTemplates(folder, codes) {
   const files = existsSync(folder) ? readdirSync(folder).filter((n) => /\.ai$/i.test(n)) : [];
   const mapping = new Map();
@@ -192,6 +195,7 @@ export function findTemplates(folder, codes) {
     if (byBase) return [code, byBase];
     const mapped = mapping.get(squash(code));
     if (mapped && files.includes(mapped)) return [code, mapped];
+    if (isHangingMedalCode(code) && files.includes(HANGING_MEDAL_FILE)) return [code, HANGING_MEDAL_FILE];
     const n = eCutNumber(code);
     const byNumber = n !== null && files.find((f) => eCutNumber(f) === n);
     if (byNumber) return [code, byNumber];
