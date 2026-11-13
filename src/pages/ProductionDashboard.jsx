@@ -40,12 +40,15 @@ const main = (o) => o._part === 'main';
 // One card of an order done while its other card is still being made (Sean, 2026-10-17): the
 // plaques Done (plakDoneAt) or the KIV card Done (kivProductionDoneAt) — that card is Completed.
 const partDone = (o) => o.status === 'In Production' && (main(o) ? !!o._primarySlice && !!o.plakDoneAt : !!o.kivProductionDoneAt);
+// A Tambahan order (0124, parentOrderId) under review goes on Add-On Review, ordinary orders on
+// Reviewing Order (Sean, 2026-11-13).
+const reviewingTambahan = (o) => main(o) && o.status === 'Reviewing Order' && !!o.parentOrderId;
 const TABS = [
-  { key: 'reviewing', label: 'Reviewing Order', match: (o) => main(o) && o.status === 'Reviewing Order' },
-  // A submitted add-on (0085) — one card per order (its first invoice slice),
-  // whatever the order's own status. Like Reviewing Order, it stays here
-  // after Done Review until the salesman approves it.
-  { key: 'addon', label: 'Add-On Review', match: (o) => main(o) && o._primarySlice && isAddonInFlight(o) },
+  { key: 'reviewing', label: 'Reviewing Order', match: (o) => main(o) && o.status === 'Reviewing Order' && !o.parentOrderId },
+  // A Tambahan order, or an old-style add-on still pending on its order (0085) — one card per
+  // order (its first invoice slice). Like Reviewing Order, it stays here after Done Review until
+  // the salesman approves it.
+  { key: 'addon', label: 'Add-On Review', match: (o) => reviewingTambahan(o) || (main(o) && o._primarySlice && isAddonInFlight(o)) },
   { key: 'approved', label: 'Salesman Approved', match: (o) => main(o) && o.status === 'Salesman Approved' },
   // A KIV card is here only for plaques named after typing (kivInTyping); a crystal card
   // stays in KIV & ARTWORK even once confirmed (Sean, 2026-10-30).
@@ -268,8 +271,9 @@ export default function ProductionDashboard() {
         {filteredOrders.map((ord) => {
           const stamp = getOrderChangeStamp(ord);
           const cardTab = cardTabOf(ord);
-          // Add-On Review: the card is the Tambahan alone — its own qty, amount, Shipment Date (Sean, 2026-10-17)
-          const addonCard = cardTab === 'addon';
+          // Add-On Review of an old-style pending add-on: the card is the Tambahan alone — its own qty,
+          // amount, Shipment Date (Sean, 2026-10-17). A Tambahan order is reviewed like any order.
+          const addonCard = cardTab === 'addon' && !ord.parentOrderId;
           const addonItems = addonCard ? ord.pendingAddonItems || [] : [];
           const shownQty = addonCard ? addonItems.reduce((n, it) => n + (Number(it.qty) || 0), 0) : ord.totalQty;
           const shownAmount = addonCard ? addonItems.reduce((n, it) => n + (Number(it.harga) || 0), 0) : ord.totalAmount;
@@ -311,7 +315,7 @@ export default function ProductionDashboard() {
                   {ord.status === 'Reviewing Order' && ord.reviewedAt && (
                     <span className="status-pill" style={{ background: '#dcefe3', color: '#2f6b4f' }}>✓ Review Done</span>
                   )}
-                  {cardTab === 'addon' && (ord.pendingAddonStatus === 'reviewed'
+                  {addonCard && (ord.pendingAddonStatus === 'reviewed'
                     ? <span className="status-pill" style={{ background: '#dcefe3', color: '#2f6b4f' }}>✓ Review Done — waiting for Sales</span>
                     : <span className="status-pill" style={{ background: '#fff4ce', color: '#8a6d00' }}>Tambahan — needs review</span>)}
                 </div>
@@ -364,7 +368,7 @@ export default function ProductionDashboard() {
               {cardTab === 'active' && <ProductionNote key={ord.id} order={ord} />}
 
               <div className="order-card-actions" style={cardTab === 'active' || cardTab === 'typing' || cardTab === 'reviewing' || cardTab === 'addon' || cardTab === 'kiv' ? { display: 'flex', gap: 'var(--space-2)' } : undefined}>
-                {cardTab === 'reviewing' && (
+                {(cardTab === 'reviewing' || (cardTab === 'addon' && !addonCard)) && (
                   <>
                     <button type="button" className="btn btn-ghost" style={{ flex: 1 }} onClick={() => navigate(`/production/orders/${ord.id}`)}>
                       View Order
@@ -378,7 +382,7 @@ export default function ProductionDashboard() {
                     )}
                   </>
                 )}
-                {cardTab === 'addon' && (
+                {addonCard && (
                   <>
                     <button type="button" className="btn btn-ghost" style={{ flex: 1 }} onClick={() => navigate(`/production/orders/${ord.id}?addon=1`)}>
                       View Order
