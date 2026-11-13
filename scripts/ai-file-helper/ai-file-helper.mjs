@@ -110,6 +110,32 @@ function asQuote(str) {
   return `"${String(str).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
 }
 
+// Which Illustrator gets the run (Sean, 2026-11-13). Every version shares the bundle id
+// com.adobe.illustrator, and macOS sends that to the NEWEST installed one — Generate kept
+// opening Illustrator 2027 next to the 2026 Sean works in. Now: the only one open → that one;
+// both open, or none → 2026; 2026 not installed → null (the bundle id, macOS picks).
+const MAC_PREFERRED_ILLUSTRATOR = '/Applications/Adobe Illustrator 2026/Adobe Illustrator.app';
+const ILLUSTRATOR_EXE = /^(\/.*\/Adobe Illustrator[^/]*\.app)\/Contents\/MacOS\/Adobe Illustrator$/;
+// psOutput: `ps -axo comm=` (one executable path per line) → the running Illustrator .app paths
+export function runningIllustratorApps(psOutput) {
+  const apps = String(psOutput || '').split('\n').map((l) => l.trim().match(ILLUSTRATOR_EXE)).filter(Boolean).map((m) => m[1]);
+  return [...new Set(apps)];
+}
+export function pickMacIllustrator(runningApps, preferredInstalled, preferred = MAC_PREFERRED_ILLUSTRATOR) {
+  if (runningApps.length === 1) return runningApps[0];
+  return preferredInstalled ? preferred : null;
+}
+async function macIllustratorTarget() {
+  let running = [];
+  try {
+    running = runningIllustratorApps((await execFileAsync('ps', ['-axo', 'comm='], { maxBuffer: 10 * 1024 * 1024 })).stdout);
+  } catch (err) {
+    console.error('[ai-file-helper] could not list running apps, using the 2026 / bundle-id fallback:', err.message);
+  }
+  const app = pickMacIllustrator(running, existsSync(MAC_PREFERRED_ILLUSTRATOR));
+  return app ? `application ${asQuote(app)}` : 'application id "com.adobe.illustrator"';
+}
+
 // macOS: AppleScript `do javascript`. Launches Illustrator if needed. The
 // explicit timeout matters: an AppleEvent otherwise gives up after 2
 // minutes, and a big order plus the name popup can take longer than that.
@@ -117,11 +143,12 @@ function asQuote(str) {
 // machine still races Illustrator's startup.
 async function runOnMac(scriptPath) {
   const appleScriptPath = scriptPath.replace(/\.jsx$/, '.applescript');
+  const target = await macIllustratorTarget();
   writeFileSync(appleScriptPath, [
     `set scriptPath to ${asQuote(scriptPath)}`,
     'set scriptCode to read (POSIX file scriptPath) as «class utf8»',
     'with timeout of 3600 seconds',
-    '  tell application id "com.adobe.illustrator"',
+    `  tell ${target}`,
     '    if it is not running then',
     '      launch',
     '      delay 8',

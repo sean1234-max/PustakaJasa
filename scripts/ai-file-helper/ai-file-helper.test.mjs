@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isAllowedRequest, sanitizeFolderName, findTemplates, parseRunReport, PORT } from './ai-file-helper.mjs';
+import { isAllowedRequest, sanitizeFolderName, findTemplates, parseRunReport, PORT, runningIllustratorApps, pickMacIllustrator } from './ai-file-helper.mjs';
 
 describe('isAllowedRequest', () => {
   const host = `127.0.0.1:${PORT}`;
@@ -194,5 +194,29 @@ describe('a stand medal goes by its BASE (Sean, 2026-10-23)', async () => {
       'OTHER - SM13214/BASE A': 'E CUT 8 - STAND MEDAL BASE A.ai',
       'OTHER - X BASE B': 'E CUT 9 - STAND MEDAL BASE B.ai',
     });
+  });
+});
+
+describe('which Illustrator a Mac run goes to', () => {
+  const v26 = '/Applications/Adobe Illustrator 2026/Adobe Illustrator.app';
+  const v27 = '/Applications/Adobe Illustrator 2027/Adobe Illustrator.app';
+  const ps = [
+    '/sbin/launchd',
+    `${v26}/Contents/MacOS/Adobe Illustrator`,
+    `${v27}/Contents/MacOS/Adobe Illustrator`,
+    `${v27}/Contents/MacOS/Adobe Illustrator`,
+    `${v26}/Contents/Frameworks/Helper.app/Contents/MacOS/Adobe Illustrator Helper`,
+  ].join('\n');
+
+  it('reads the running Illustrator apps from ps, once each, helpers ignored', () => {
+    expect(runningIllustratorApps(ps)).toEqual([v26, v27]);
+    expect(runningIllustratorApps('')).toEqual([]);
+  });
+
+  it('uses the only one open, else 2026, else lets macOS pick', () => {
+    expect(pickMacIllustrator([v27], true, v26)).toBe(v27);
+    expect(pickMacIllustrator([v26, v27], true, v26)).toBe(v26);
+    expect(pickMacIllustrator([], true, v26)).toBe(v26);
+    expect(pickMacIllustrator([], false, v26)).toBe(null);
   });
 });
