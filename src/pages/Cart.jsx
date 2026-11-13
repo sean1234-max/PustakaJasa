@@ -104,8 +104,10 @@ export default function Cart() {
   }, [groupedCartRowsByPlak, selempangQty, state.plakCatalog, editOrder]);
   // An OTHER with no name ("OTHER" read from a file) or no price can't be submitted (Sean, 2026-10-22).
   const otherViolation = state.cart.find((ci) => otherPlakIncomplete(ci.jenisPlak, ci.unitPrice));
-  // The order file (FORM ANUGERAH / WORDING / PDF) must be uploaded; the kertas kerja is optional (Sean, 2026-11-05).
-  const noOrderFile = orderImportFields(state).importFiles.length === 0 && !(editOrder && orderImportFiles(editOrder).length > 0);
+  // A kertas kerja alone isn't an order: with one attached, the order file (FORM ANUGERAH / WORDING / PDF)
+  // must be uploaded too (Sean, 2026-11-05); an order typed on the website without one submits (2026-11-13).
+  const noOrderFile = (state.kertasKerjaFiles?.length || 0) > 0
+    && orderImportFields(state).importFiles.length === 0 && !(editOrder && orderImportFiles(editOrder).length > 0);
   // Edit Order: a newer order file was uploaded but nothing read from it is in the cart yet — saving now
   // would pair the new file with the old plaques
   const newFileNotAdded = editing && (state.importFiles || []).length > 0

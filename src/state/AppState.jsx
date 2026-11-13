@@ -40,7 +40,7 @@ import { picksSchool } from '../utils/keyin';
 import { fetchCustomTypoWords } from '../lib/typoWordsApi';
 import { setCustomTypoWords } from '../utils/typoCheck';
 import { normalizeSplitQty, stockDiff, keepPrices, applyPriceDrafts, withOrderOwnSettings, invoiceGroupStatus } from '../utils/orderBatches';
-import { needsKiv, kivParts, hasPlakPart, kivInProduction, crystalWithPlak, isCrystalCode } from '../utils/exportCsv';
+import { needsKiv, kivParts, hasPlakPart, kivInProduction, crystalWithPlak, isCrystalCode, skipsTyping } from '../utils/exportCsv';
 import { kivOnlyGroupsDone } from '../utils/productionCards';
 
 // Malaysia's "today" (catalog.js's malaysiaToday — the project always runs
@@ -2708,7 +2708,8 @@ export function AppStateProvider({ children }) {
       flashProductionToast('Waiting for Store Admin to assign an Invoice Number before this can be marked done.');
       return;
     }
-    if (!slice.typedAt) {
+    // an order of hand-made OTHERs only never goes to Typing (a813fc0) — nothing to wait for (ORD-0355)
+    if (!slice.typedAt && !skipsTyping(order)) {
       flashProductionToast('Click Done Typing first — this order’s AI file isn’t typed yet.');
       return;
     }
