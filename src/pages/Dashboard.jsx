@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
+import DraftRestoredNote from '../components/DraftRestoredNote';
 import { useAppState } from '../state/useAppState';
 import { STATUS_STAGES, statusPillStyle, isReviewed, isAddonInFlight, addonStageText, invoiceLabel, invoiceSource } from '../data/catalog';
 import { getOrderInvoiceSlices } from '../utils/orderBatches';
@@ -65,12 +66,7 @@ export default function Dashboard() {
           {state.updateToast}
         </div>
       )}
-      {state.draftRestoredToast && (
-        <div className="update-toast">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
-          {state.draftRestoredToast} <button type="button" className="btn btn-ghost" style={{ marginLeft: 'var(--space-2)' }} onClick={() => navigate('/order/step1')}>Resume</button>
-        </div>
-      )}
+      <DraftRestoredNote resume />
 
       <div className="tabs" style={{ marginBottom: 'var(--space-4)' }}>
         {FILTERS.map((f) => {

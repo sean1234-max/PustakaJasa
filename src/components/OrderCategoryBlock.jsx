@@ -3,6 +3,7 @@ import PlakPicker from './PlakPicker';
 import SelempangBlock from './SelempangBlock';
 import { getStockStatus, MALAY_ORDINALS } from '../data/catalog';
 import { isReservedName, hasKivWord } from '../utils/exportCsv';
+import { useColumnWidths, useFillHandle } from './listTableTools';
 
 const TAHUN_OPTIONS = ['TAHUN 1', 'TAHUN 2', 'TAHUN 3', 'TAHUN 4', 'TAHUN 5', 'TAHUN 6'];
 
@@ -36,6 +37,56 @@ function handleRefLineAltEnter(e, onChange) {
   const start = el.selectionStart ?? el.value.length;
   const end = el.selectionEnd ?? el.value.length;
   onChange(`${el.value.slice(0, start)}\n${el.value.slice(end)}`);
+}
+
+// A list-table text cell: plain Enter adds nothing (an Excel habit — it would put a stray line on the
+// plaque), Alt+Enter adds a line break.
+function handleCellKeyDown(e, onChange) {
+  if (e.key === 'Enter' && !e.altKey && !e.nativeEvent.isComposing) { e.preventDefault(); return; }
+  handleRefLineAltEnter(e, onChange);
+}
+
+// One cell copied from Excel arrives with a line break at the end — dropped, so the plaque gets no
+// empty extra line.
+function handleCellPaste(e, onChange) {
+  const text = e.clipboardData?.getData('text/plain') || '';
+  if (!/[\r\n]$/.test(text)) return;
+  e.preventDefault();
+  const el = e.target;
+  const start = el.selectionStart ?? el.value.length;
+  const end = el.selectionEnd ?? el.value.length;
+  onChange(`${el.value.slice(0, start)}${text.replace(/[\r\n]+$/, '').replace(/\r\n?/g, '\n')}${el.value.slice(end)}`);
+}
+
+// A list-table header cell whose right edge drags to resize the column (double-click: fit its text).
+function ResizableTh({ col, colW, style, children }) {
+  return (
+    <th data-col={col} className="resizable-th" style={{ ...style, width: colW.widthOf(col) ?? style?.width }}>
+      {children}
+      <span
+        className="col-grip"
+        aria-hidden="true"
+        title="Drag to resize · double-click to fit"
+        onPointerDown={(e) => colW.startResize(e, col)}
+        onDoubleClick={(e) => colW.autoFit(e, col)}
+      />
+    </th>
+  );
+}
+
+// The list table's columns, left to right — the same order its header renders them.
+function listColumnKeys(blk, editable) {
+  const tokoh = (place) => (blk.tokohFieldCols || []).filter((f) => f.place === place).map((f) => f.key);
+  return [
+    ...(blk.hideDescColumn ? [] : ['desc']),
+    ...(blk.extraRefColumns || []).map((col) => col.key),
+    ...tokoh('beforeQty'),
+    'qty',
+    ...(blk.plakPerRow ? ['jenisPlak'] : []),
+    ...tokoh('afterPlak'),
+    ...(blk.plakPerRow ? ['harga'] : []),
+    ...(editable.addRemoveRows ? ['remove'] : []),
+  ];
 }
 
 // Renders one category "block": reference sample + numbered lines, the
@@ -122,12 +173,14 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
   // Reference Sample or Jenis Plak — so it's rendered by its own component.
   // Kept behind OrderCategoryBlock so every screen that already maps over
   // category blocks picks it up without a per-page branch.
+  const listRows = hideEmptyRows ? blk.rows.filter((row) => Number(row.qty) > 0) : blk.rows;
+  const colW = useColumnWidths(listColumnKeys(blk, editable));
+  const fill = useFillHandle(listRows);
   if (blk.selempang) {
     return <SelempangBlock blk={blk} editable={editable} hideEmptyRows={hideEmptyRows} />;
   }
 
   const matrixRows = hideEmptyRows ? blk.matrixRows.filter((row) => row.rowTotal > 0) : blk.matrixRows;
-  const listRows = hideEmptyRows ? blk.rows.filter((row) => Number(row.qty) > 0) : blk.rows;
   // TOKOH_SHEET's per-row metadata columns (catalog.js's TOKOH_ROW_FIELDS):
   // NAMA MURID / GAMBAR before the QTY column, DESIGN after JENIS PLAK —
   // matching the source sheet's own column order.
@@ -154,7 +207,39 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
         </select>
       );
     }
-    return <input className="input" placeholder={f.placeholder} value={f.value} onChange={(e) => f.onChange(e.target.value)} />;
+    // a <textarea> like an Excel cell (Sean, 2026-11-14): grows with its text, Alt+Enter = new line
+    return (
+      <textarea
+        className="input cell-textarea"
+        rows={Math.max(1, String(f.value || '').split('\n').length)}
+        placeholder={f.placeholder}
+        value={f.value}
+        onChange={(e) => f.onChange(e.target.value)}
+        onKeyDown={(e) => handleCellKeyDown(e, f.onChange)}
+        onPaste={(e) => handleCellPaste(e, f.onChange)}
+      />
+    );
+  };
+  // Which list-table columns the fill handle may copy into (the same rights as typing in them).
+  const canFill = (key) => (key === 'qty' ? !!editable.rowQty : key === 'jenisPlak' ? !!editable.jenisPlak : !!editable.rowDesc);
+  // A list-table cell; an editable one shows Excel's fill handle once clicked into (listTableTools).
+  const fillTd = (row, idx, key, content, readOnly = false) => {
+    const on = canFill(key) && !readOnly;
+    return (
+      <td key={key} className={on && fill.inDrag(key, idx) ? 'fill-target' : undefined} onFocus={on ? () => fill.focus(row.id, key) : undefined}>
+        <div className="fill-cell">
+          {content}
+          {on && fill.isActive(row.id, key) && (
+            <span
+              className="fill-handle"
+              title="Drag down to copy · double-click: copy to the last row"
+              onPointerDown={(e) => fill.startDrag(e, key, idx)}
+              onDoubleClick={() => fill.fillToEnd(key, idx)}
+            />
+          )}
+        </div>
+      </td>
+    );
   };
   // Dynamic-matrix columns are teacher-added and can end up unused (added,
   // then never filled in) — hide those on print the same way empty subject
@@ -1234,44 +1319,51 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
         </div>
       ) : (
         <div>
-          <table className="table">
+          {/* not in a scrolling .table-wrap: that would clip the Jenis Plak dropdown of the last rows */}
+          <table className="table list-table" style={colW.tableStyle}>
             <thead>
               <tr>
-                {!blk.hideDescColumn && <th>{blk.descColumnLabel || 'Description'}</th>}
-                {blk.extraRefColumns.map((col) => <th key={col.key}>{col.label}</th>)}
-                {tokohBefore.map((f) => <th key={f.key}>{f.label}</th>)}
-                <th style={{ width: blk.plakPerRow ? 90 : 140, textAlign: blk.plakPerRow ? 'center' : undefined }}>{blk.qtyColHeader}</th>
-                {blk.plakPerRow && <th>Jenis Plak</th>}
-                {tokohAfter.map((f) => <th key={f.key}>{f.label}</th>)}
-                {blk.plakPerRow && <th style={{ width: 110, textAlign: 'center' }}>Harga</th>}
-                {editable.addRemoveRows && <th style={{ width: 48 }} />}
+                {!blk.hideDescColumn && <ResizableTh col="desc" colW={colW}>{blk.descColumnLabel || 'Description'}</ResizableTh>}
+                {blk.extraRefColumns.map((col) => <ResizableTh key={col.key} col={col.key} colW={colW}>{col.label}</ResizableTh>)}
+                {tokohBefore.map((f) => <ResizableTh key={f.key} col={f.key} colW={colW}>{f.label}</ResizableTh>)}
+                <ResizableTh col="qty" colW={colW} style={{ width: blk.plakPerRow ? 90 : 140, textAlign: blk.plakPerRow ? 'center' : undefined }}>{blk.qtyColHeader}</ResizableTh>
+                {blk.plakPerRow && (
+                  <ResizableTh col="jenisPlak" colW={colW}>
+                    Jenis Plak
+                    {canFill('jenisPlak') && listRows.length > 1 && (
+                      <button type="button" className="btn-link fill-blanks-btn" title="Copy the first Jenis Plak into every row that has none" onClick={() => fill.fillBlanks('jenisPlak')}>Fill empty ↓</button>
+                    )}
+                  </ResizableTh>
+                )}
+                {tokohAfter.map((f) => <ResizableTh key={f.key} col={f.key} colW={colW}>{f.label}</ResizableTh>)}
+                {blk.plakPerRow && <ResizableTh col="harga" colW={colW} style={{ width: 110, textAlign: 'center' }}>Harga</ResizableTh>}
+                {editable.addRemoveRows && <ResizableTh col="remove" colW={colW} style={{ width: 48 }} />}
               </tr>
             </thead>
             <tbody>
-              {listRows.map((row) => (
+              {listRows.map((row, idx) => (
                 <tr
                   key={row.id}
+                  data-row-idx={idx}
                   className={flashKivRows && hasKivWord([row.desc, ...row.extraRefValues.map((rv) => rv.value), ...(row.tokohFields || []).map((f) => f.value)]) ? 'kiv-row-flash' : undefined}
                 >
-                  {!blk.hideDescColumn && (
-                    <td>
+                  {!blk.hideDescColumn && fillTd(row, idx, 'desc', (
+                    <>
                       {/* a <textarea>: a TOKOH name keeps its Alt+Enter lines when edited (an <input> drops
                           them — ORD-0127, Sean 2026-10-23) */}
                       {editable.rowDesc
                         ? <textarea className="input" rows={Math.max(1, String(row.desc || '').split('\n').length)} style={{ resize: 'vertical' }} placeholder="e.g. TAHUN 1" value={row.desc} onChange={(e) => row.setDesc(e.target.value)} />
                         : <span style={{ whiteSpace: 'pre-line' }}>{row.desc}</span>}
                       {row.typoHint && <TypoHint hint={row.typoHint} canChoose={editable.rowDesc} />}
-                    </td>
-                  )}
-                  {row.extraRefValues.map((rv) => (
-                    <td key={rv.key}>
-                      {editable.rowDesc
-                        ? <input className="input" value={rv.value} onChange={(e) => rv.onChange(e.target.value)} />
-                        : rv.value}
-                    </td>
+                    </>
                   ))}
-                  {(row.tokohFields || []).filter((f) => f.place === 'beforeQty').map((f) => (
-                    <td key={f.key}>
+                  {row.extraRefValues.map((rv) => fillTd(row, idx, rv.key, (
+                    editable.rowDesc
+                      ? <input className="input" value={rv.value} onChange={(e) => rv.onChange(e.target.value)} />
+                      : rv.value
+                  )))}
+                  {(row.tokohFields || []).filter((f) => f.place === 'beforeQty').map((f) => fillTd(row, idx, f.key, (
+                    <>
                       {renderTokohField(f, editable.rowDesc)}
                       {f.typoHint && <TypoHint hint={f.typoHint} canChoose={editable.rowDesc} />}
                       {f.extraLine && (
@@ -1280,9 +1372,9 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
                       {f.key === 'namaMurid' && isReservedName(f.value) && (
                         <div className="typo-hint">Stock booked. Fill in the name later to engrave it.</div>
                       )}
-                    </td>
-                  ))}
-                  <td>
+                    </>
+                  ), f.readOnly))}
+                  {fillTd(row, idx, 'qty', (
                     <input
                       className="input"
                       type="number"
@@ -1293,17 +1385,13 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
                       readOnly={!editable.rowQty}
                       onChange={editable.rowQty ? (e) => row.setQty(e.target.value) : undefined}
                     />
-                  </td>
-                  {blk.plakPerRow && (
-                    <td>
-                      {editable.jenisPlak
-                        ? <PlakPicker value={row.jenisPlak} onChange={row.setJenisPlak} catalog={plakOptions} />
-                        : (row.jenisPlak || '—')}
-                    </td>
-                  )}
-                  {(row.tokohFields || []).filter((f) => f.place === 'afterPlak').map((f) => (
-                    <td key={f.key}>{renderTokohField(f, editable.rowDesc)}</td>
                   ))}
+                  {blk.plakPerRow && fillTd(row, idx, 'jenisPlak', (
+                    editable.jenisPlak
+                      ? <PlakPicker value={row.jenisPlak} onChange={row.setJenisPlak} catalog={plakOptions} />
+                      : (row.jenisPlak || '—')
+                  ))}
+                  {(row.tokohFields || []).filter((f) => f.place === 'afterPlak').map((f) => fillTd(row, idx, f.key, renderTokohField(f, editable.rowDesc), f.readOnly))}
                   {blk.plakPerRow && (
                     <td style={{ textAlign: 'center' }} className="input-price">{row.hargaLabel}</td>
                   )}
@@ -1329,6 +1417,9 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
               </tr>
             </tbody>
           </table>
+          {colW.resized && (
+            <button type="button" className="btn-link dim" style={{ fontSize: 12 }} onClick={colW.reset}>Reset column widths</button>
+          )}
           {editable.addRemoveRows && blk.canAddRow && (
             <div className="row-actions">
               <button type="button" className="btn btn-secondary" onClick={blk.addRow}>+ Add Row</button>

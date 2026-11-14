@@ -37,6 +37,7 @@ import { withImportFile, tagImportFiles, orderImportFields, editedOrderFiles } f
 import { syncUrgentOrderToSheet, highlightUrgentKitDoc } from '../lib/urgentSheetApi';
 import { isUrgentShipment, urgentSheetAction, SHIPMENT_EDITABLE_STATUSES } from '../utils/urgentOrder';
 import { picksSchool } from '../utils/keyin';
+import { loadDraft, saveDraft, clearDraft, draftHasContent } from '../utils/draftPersistence';
 import { fetchCustomTypoWords } from '../lib/typoWordsApi';
 import { setCustomTypoWords } from '../utils/typoCheck';
 import { normalizeSplitQty, stockDiff, keepPrices, applyPriceDrafts, withOrderOwnSettings, invoiceGroupStatus } from '../utils/orderBatches';
@@ -303,6 +304,11 @@ const draftToAddOn = (view) => ({
   addOnVisibleBlocksByCategory: view.addOnVisibleBlocksByCategory,
 });
 
+// Coming back to the tab reloads the Jenis Plak catalog at most this often.
+const CATALOG_RELOAD_GAP_MS = 15000;
+// The New Order draft is written to this browser this long after the last change.
+const DRAFT_SAVE_DELAY_MS = 800;
+
 function initialState() {
   return {
     userId: '',
@@ -392,6 +398,9 @@ function initialState() {
     plakCatalogLoaded: false,
 
     draftRestoredToast: '',
+    // The New Order just went in (submitted, or an Edit Order saved) — what's left of its Function
+    // Details is not a draft to keep; startNewOrder clears it.
+    draftDone: false,
 
     addOnOrderId: null,
     // the order so far (original + earlier Tambahan) the Add On page opened with; null = blank page (Excel upload)
@@ -469,7 +478,6 @@ export function AppStateProvider({ children }) {
   const [state, setState] = useState(initialState);
   const toastTimer = useRef(null);
   const productionToastTimer = useRef(null);
-  const draftToastTimer = useRef(null);
   const stateRef = useRef(state);
   stateRef.current = state;
 
@@ -673,12 +681,35 @@ export function AppStateProvider({ children }) {
     return () => { cancelled = true; };
   }, [state.role]);
 
-  const initialDraftToastRef = useRef(state.draftRestoredToast);
+  // New Order draft kept across a refresh (draftPersistence.js, Sean 2026-11-14): brought back once
+  // per sign-in of the account, then written again a moment after every change.
+  const draftUserRef = useRef(null); // the account whose saved draft was already looked at
   useEffect(() => {
-    if (!initialDraftToastRef.current) return undefined;
-    draftToastTimer.current = setTimeout(() => patch({ draftRestoredToast: '' }), 4000);
-    return () => clearTimeout(draftToastTimer.current);
-  }, [patch]);
+    const uid = state.userAuthId;
+    if (!uid) { draftUserRef.current = null; return; }
+    if (draftUserRef.current === uid) return;
+    draftUserRef.current = uid;
+    const draft = loadDraft(uid);
+    if (!draftHasContent(draft)) return;
+    patch((st) => {
+      // something already typed in this tab wins over the saved copy
+      if (st.editOrderId || draftHasContent(st)) return {};
+      // a teacher's school comes with the account, not the draft
+      const kept = st.role === 'teacher' ? { ...draft, sekolah: st.sekolah, schoolLanguage: st.schoolLanguage } : draft;
+      return { ...kept, draftRestoredToast: 'Your unsubmitted order was brought back.' };
+    });
+  }, [state.userAuthId, patch]);
+  useEffect(() => {
+    const uid = state.userAuthId;
+    if (!uid || draftUserRef.current !== uid) return undefined; // not looked at yet: don't overwrite it
+    const timer = setTimeout(() => {
+      const st = stateRef.current;
+      // Edit Order works on a submitted order, not a draft (kept later, Sean); a submitted order is done
+      if (st.editOrderId || st.draftDone || !draftHasContent(st)) clearDraft(uid);
+      else saveDraft(uid, st);
+    }, DRAFT_SAVE_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [state]);
 
   // Returns the matched role on success (for the caller to route on), or
   // null on failure (and records the error for the Login screen to show).
@@ -744,7 +775,7 @@ export function AppStateProvider({ children }) {
       rowsByBlock: buildInitialRowsByBlock(st.schoolLanguage), columnsByBlock: buildInitialColumnsByBlock(), plakRows: buildInitialPlakRows(),
       nextRowId: 1000, nextPlakRowId: 1000, nextColumnId: 1000, visibleBlocksByCategory: {},
 
-      cart: [], cartToast: '', editOrderId: null,
+      cart: [], cartToast: '', editOrderId: null, draftDone: false, draftRestoredToast: '',
       // A salesman (or Production keying in) picks the school fresh for every New Order.
       ...(picksSchool(st.role) ? { sekolah: '', actingSchoolId: null } : {}),
     }));
@@ -1273,7 +1304,7 @@ export function AppStateProvider({ children }) {
       patch({ cartToast: message });
       return null;
     }
-    patch((latest) => ({ lastOrderId: newId, orders: [newOrder, ...latest.orders], cart: [], cartToast: '', step2ImportStatus: null, step2ChoiceAnswers: {}, step2UploadedFiles: [], kertasKerjaFiles: [] }));
+    patch((latest) => ({ lastOrderId: newId, orders: [newOrder, ...latest.orders], cart: [], cartToast: '', step2ImportStatus: null, step2ChoiceAnswers: {}, step2UploadedFiles: [], kertasKerjaFiles: [], draftDone: true, draftRestoredToast: '' }));
     // crystal changes the teacher made before submitting (Cart → Edit Crystal): onto the order now
     if (st.cart.some((ci) => isCrystalCode(ci.jenisPlak))) saveCrystalDraft(newId).catch((err) => console.error('Order saved, but its crystal changes were not:', err));
     // who confirmed the artwork is stamped by the database (0089) — read it back for the order page
@@ -1540,7 +1571,7 @@ export function AppStateProvider({ children }) {
     patch((latest) => ({
       orders: latest.orders.map((o) => (o.id === order.id ? (fresh || { ...o, ...fields }) : o)),
       editOrderId: null, cart: [], cartToast: '', importFilePath: null, importFileName: null, importFiles: [],
-      step2ImportStatus: null, step2ChoiceAnswers: {}, step2UploadedFiles: [], kertasKerjaFiles: [],
+      step2ImportStatus: null, step2ChoiceAnswers: {}, step2UploadedFiles: [], kertasKerjaFiles: [], draftDone: true,
     }));
     flashToast('updateToast', 'Order updated — Production will see the new version.');
     return { ok: true, id: order.id };
@@ -2942,6 +2973,25 @@ export function AppStateProvider({ children }) {
     }
   }, [patch]);
 
+  // The catalog changes under an open tab — Production unhides or adds a Jenis Plak while a teacher
+  // is mid-order (Sean, 2026-11-14). Reload it whenever the tab comes back into view (at most every
+  // CATALOG_RELOAD_GAP_MS), so nobody has to refresh the page to see it.
+  const catalogReloadedAt = useRef(0);
+  useEffect(() => {
+    if (!state.role) return undefined;
+    const onBack = () => {
+      if (document.visibilityState !== 'visible' || Date.now() - catalogReloadedAt.current < CATALOG_RELOAD_GAP_MS) return;
+      catalogReloadedAt.current = Date.now();
+      refreshPlakCatalog();
+    };
+    window.addEventListener('focus', onBack);
+    document.addEventListener('visibilitychange', onBack);
+    return () => {
+      window.removeEventListener('focus', onBack);
+      document.removeEventListener('visibilitychange', onBack);
+    };
+  }, [state.role, refreshPlakCatalog]);
+
   // parentId null adds a new top-level code; pass an existing node's id to
   // add a variant underneath it (e.g. a new color under an existing code).
   const addCatalogNode = useCallback(async (parentId, code, price, siblingCount) => {
@@ -3096,7 +3146,7 @@ export function AppStateProvider({ children }) {
     reassignSalesman,
     uploadCorrectedExcel, loadCorrectedExcelPreview,
     recordPrint,
-    ensureOrderLoaded,
+    ensureOrderLoaded, refreshPlakCatalog,
     markProductionDone,
     markTypingDone,
     updateReferenceOrder,

@@ -4,6 +4,9 @@ import AiBudgetBanner from './AiBudgetBanner';
 
 export default function Nav() {
   const { state, logout, startNewOrder } = useAppState();
+  // "New Order" starts afresh — except right after a refresh brought an unsubmitted order back
+  // (draftPersistence.js): then it opens that order; its note offers "Clear and start over".
+  const newOrderClick = state.draftRestoredToast ? undefined : startNewOrder;
   const { pathname } = useLocation();
   const navigate = useNavigate();
   // On an Add On page the trolley is that add-on's own cart.
@@ -31,7 +34,7 @@ export default function Nav() {
       <nav className="nav">
         <span className="nav-brand">{state.isSalesManager ? 'Sales Manager Portal' : 'Sales Portal'}</span>
         <Link to="/sales/dashboard" aria-current={pathname === '/sales/dashboard' ? 'page' : undefined}>Orders</Link>
-        <Link to="/order/step1" onClick={startNewOrder} aria-current={pathname.startsWith('/order') ? 'page' : undefined}>New Order</Link>
+        <Link to="/order/step1" onClick={newOrderClick} aria-current={pathname.startsWith('/order') ? 'page' : undefined}>New Order</Link>
         {cartLink}
         <button type="button" className="nav-logout" onClick={handleLogout}>Log Out</button>
       </nav>
@@ -45,7 +48,7 @@ export default function Nav() {
         <span className="nav-brand">Production Portal</span>
         <Link to="/production/dashboard" aria-current={ordersActive ? 'page' : undefined}>Orders</Link>
         {/* keys in an order for a salesman / teacher (0125) */}
-        <Link to="/order/step1" onClick={startNewOrder} aria-current={pathname.startsWith('/order') ? 'page' : undefined}>New Order</Link>
+        <Link to="/order/step1" onClick={newOrderClick} aria-current={pathname.startsWith('/order') ? 'page' : undefined}>New Order</Link>
         <Link to="/production/catalog" aria-current={pathname === '/production/catalog' ? 'page' : undefined}>Catalog</Link>
         {state.isProductionManager && (
           <Link to="/production/team" aria-current={pathname === '/production/team' ? 'page' : undefined}>Team</Link>
@@ -94,7 +97,7 @@ export default function Nav() {
   return (
     <nav className="nav">
       <span className="nav-brand">School Portal</span>
-      <Link to="/order/step1" onClick={startNewOrder} aria-current={pathname.startsWith('/order') ? 'page' : undefined}>New Order</Link>
+      <Link to="/order/step1" onClick={newOrderClick} aria-current={pathname.startsWith('/order') ? 'page' : undefined}>New Order</Link>
       <Link to="/dashboard" aria-current={pathname === '/dashboard' ? 'page' : undefined}>My Orders</Link>
       {cartLink}
       <button type="button" className="nav-logout" onClick={handleLogout}>Log Out</button>

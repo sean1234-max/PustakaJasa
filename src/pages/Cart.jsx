@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
+import DraftRestoredNote from '../components/DraftRestoredNote';
 import { useAppState } from '../state/useAppState';
 import { formatDate, getStockStatus, resolveCategory, otherPlakIncomplete } from '../data/catalog';
 import CrystalPreview, { crystalRowsOf } from '../components/CrystalPreview';
@@ -15,7 +16,7 @@ import { orderImportFields, orderImportFiles } from '../utils/importFiles';
 const isSelempangItem = (ci) => resolveCategory(ci.categoryKey)?.selempang;
 
 export default function Cart() {
-  const { state, patch, today, removeFromCart, editCartCategory, restoreCartToDraft, submitOrder, checkDuplicateOrders, saveEditedOrder, startNewOrder } = useAppState();
+  const { state, patch, today, removeFromCart, editCartCategory, restoreCartToDraft, submitOrder, checkDuplicateOrders, saveEditedOrder, startNewOrder, refreshPlakCatalog } = useAppState();
   // Salesman Edit Order: this cart is a submitted order's, saved back over it (saveEditedOrder)
   const editing = !!state.editOrderId;
   const editOrder = editing ? state.orders.find((o) => o.id === state.editOrderId) : null;
@@ -162,6 +163,7 @@ export default function Cart() {
   // has to say it's a separate order before it goes.
   const handleSubmit = async (artwork = false) => {
     if (state.cart.length === 0 || submitting || stockViolation || otherViolation || noOrderFile || newFileNotAdded) return;
+    refreshPlakCatalog(); // the latest Jenis Plak list (the server checks stock again on submit)
     // an edited order is the same order, not a look-alike of one
     if (editing) { send(artwork, null); return; }
     setSubmitting(true);
@@ -172,6 +174,8 @@ export default function Cart() {
   };
   // Edit Order's one "Save Changes" on the order page (NewOrderStep2 handleSaveEdit): the cart's own Save
   // Changes runs once on arrival — whatever stops it (stock, OTHER, kertas kerja, crystal) shows here as usual
+  // the latest Jenis Plak list on arrival — Production may have changed it while the order was typed
+  useEffect(() => { refreshPlakCatalog(); }, [refreshPlakCatalog]);
   const location = useLocation();
   const autoSaved = useRef(false);
   const canSave = state.cart.length > 0 && !submitting && !stockViolation && !otherViolation && !dupes && !noOrderFile && !newFileNotAdded;
@@ -195,6 +199,7 @@ export default function Cart() {
   return (
     <div className="screen-wrap">
       <Nav />
+      <DraftRestoredNote />
       <div className="card elev-md">
         <div className="card-kicker">{editing ? `Edit Order — ${state.editOrderId}` : 'Review Order'}</div>
         <div className="card-title" style={{ marginBottom: 'var(--space-6)' }}>Order Summary</div>
@@ -306,7 +311,7 @@ export default function Cart() {
           <textarea className="input" id="cartRemark" rows={3} placeholder="Any additional notes" value={state.remark} onChange={(e) => patch({ remark: e.target.value })} />
         </div>
 
-        {stockViolation && <StockViolationMessage violation={stockViolation} />}
+        {stockViolation && <StockViolationMessage violation={stockViolation} onReload={refreshPlakCatalog} />}
         {otherViolation && (
           <p className="hint-text" style={{ color: '#c0392b', fontWeight: 600 }}>
             &quot;{otherViolation.jenisPlak}&quot;{otherViolation.categoryLabel ? ` (${otherViolation.categoryLabel})` : ''} perlu nama dan harga — sila Edit kategori ini, pilih OTHER semula dan isi nama serta harga sebelum submit.

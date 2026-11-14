@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import Nav from '../components/Nav';
+import DraftRestoredNote from '../components/DraftRestoredNote';
 import DatePicker from '../components/DatePicker';
 import ImageDrop from '../components/ImageDrop';
 import { useAppState } from '../state/useAppState';
@@ -255,12 +256,7 @@ export default function NewOrderStep1() {
     <div className="screen-wrap">
       <Nav />
 
-      {state.draftRestoredToast && (
-        <div className="update-toast">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
-          {state.draftRestoredToast}
-        </div>
-      )}
+      <DraftRestoredNote />
 
       <div className="step-header">
         <div className="step step-active">

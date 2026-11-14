@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Nav from '../components/Nav';
+import DraftRestoredNote from '../components/DraftRestoredNote';
 import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import CrystalPreview from '../components/CrystalPreview';
@@ -31,7 +32,9 @@ const DRAFT_FIELDS = {
 const EDITABLE = { lines: true, rowDesc: true, rowQty: true, addRemoveRows: true, matrix: true, jenisPlak: true };
 
 export default function NewOrderStep2() {
-  const { state, patch, addToCart, addAllToCart, importFormAnugerahExcel, convertImportToForm, readSkippedSheetsWithAi } = useAppState();
+  const { state, patch, addToCart, addAllToCart, importFormAnugerahExcel, convertImportToForm, readSkippedSheetsWithAi, refreshPlakCatalog } = useAppState();
+  // the latest Jenis Plak list on arrival — Production may have changed it since login
+  useEffect(() => { refreshPlakCatalog(); }, [refreshPlakCatalog]);
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
   // The last import's result ({ ok, message, warnings }) and the answers to
@@ -516,6 +519,7 @@ export default function NewOrderStep2() {
 
   const handleAddCategory = () => {
     if (checking) return;
+    refreshPlakCatalog();
     // A category that isn't ready to add at all — let addToCart surface its
     // own toast, don't spend a check on it.
     if (buildCategoryCartItems(draftForCheck, state.category).error) { addToCart(); return; }
@@ -524,6 +528,7 @@ export default function NewOrderStep2() {
 
   const handleAddAll = () => {
     if (checking) return;
+    refreshPlakCatalog();
     const engagedKeys = allCategories
       .filter((c) => buildCategoryCartItems(draftForCheck, c.key).engaged)
       .map((c) => c.key);
@@ -584,6 +589,7 @@ export default function NewOrderStep2() {
   return (
     <div className="screen-wrap">
       <Nav />
+      <DraftRestoredNote />
 
       <div className="step-header">
         <div className="step step-done">
@@ -735,6 +741,7 @@ export default function NewOrderStep2() {
               ))}
             </ul>
             <div style={{ fontWeight: 400, marginTop: 4 }}>(Out of stock — please contact your Salesman. This order can&apos;t be submitted.)</div>
+            <button type="button" className="btn btn-secondary" style={{ marginTop: 'var(--space-2)' }} onClick={refreshPlakCatalog}>Reload Jenis Plak list</button>
           </div>
         )}
 

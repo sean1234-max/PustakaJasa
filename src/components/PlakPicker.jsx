@@ -1,16 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
 
-// Every leaf in the tree, paired with its full path (["MP393", "CRYSTAL",
-// "80-B"]) — used to search codes nested several levels deep, not just
-// top-level ones (see PlakPicker's deepMatches below).
-function collectLeaves(nodes, path = []) {
-  return nodes.flatMap((node) => {
-    const nextPath = [...path, node.code];
-    const hasChildren = Array.isArray(node.children) && node.children.length > 0;
-    if (!hasChildren) return [{ path: nextPath, node }];
-    return collectLeaves(node.children, nextPath);
-  });
-}
+import { searchLeaves } from '../utils/plakSearch';
+
+// Search results shown at most (type more to narrow).
+const MAX_RESULTS = 60;
 
 // Production's catch-all code for a design that isn't in the catalog at all
 // (discontinued, not yet added, or the teacher just doesn't see what they
@@ -86,9 +79,9 @@ function PlakMenuLevel({ nodes, path, onPick }) {
 // the (possibly nested) catalog tree — replaces a plain <select>, which
 // can't express "hover a code to reveal its variants" for codes like
 // SM-13187 that need a color then a base tier picked before a price is
-// known. Typing filters the top-level codes by prefix, same as the Sales
-// picker; the committed value only changes on an explicit leaf pick, so a
-// stray blur can't leave half-typed text sitting in the order.
+// known. Typing searches every code (searchLeaves) and Enter picks the
+// highlighted one; the committed value only changes on an explicit leaf
+// pick, so a stray blur can't leave half-typed text sitting in the order.
 export default function PlakPicker({ value, onChange, catalog }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState(value || '');
@@ -116,17 +109,27 @@ export default function PlakPicker({ value, onChange, catalog }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, value]);
 
-  const trimmedQuery = query.trim().toLowerCase();
-  const filtered = catalog.filter((node) => node.code.toLowerCase().startsWith(trimmedQuery));
-  // Codes nested several levels deep (e.g. CRYSTAL / 80-B / DESIGN 1) never
-  // match a top-level prefix search — surfaced separately here, matched
-  // against every segment of a leaf's own path (not just its own code,
-  // since an intermediate code like "80-B" isn't itself a leaf/selectable —
-  // matching it still needs to surface the leaves underneath it), so
-  // typing "80-B" finds every variant nested under it regardless of depth.
-  const deepMatches = trimmedQuery
-    ? collectLeaves(catalog).filter(({ path }) => path.length > 1 && path.some((seg) => seg.toLowerCase().includes(trimmedQuery)))
-    : [];
+  // Typing searches every code (searchLeaves: "628" finds "YK - 628"); the field as it was (its own
+  // value, or empty) shows the full tree to browse instead.
+  const searching = query.trim() !== '' && query !== (value || '');
+  const results = searching ? searchLeaves(catalog, query) : [];
+  // the highlighted result — Enter picks it, ↑ / ↓ move it (Sean, 2026-11-14)
+  const [active, setActive] = useState(0);
+  useEffect(() => { setActive(0); }, [query]);
+  const listRef = useRef(null);
+  useEffect(() => { listRef.current?.children[active]?.scrollIntoView({ block: 'nearest' }); }, [active]);
+
+  const onKeyDown = (e) => {
+    if (e.key === 'Escape') { closeMenu(); return; }
+    if (!open || !searching) { if (e.key === 'Enter') { closeMenu(); e.preventDefault(); } return; }
+    const shown = Math.min(results.length, MAX_RESULTS);
+    if (e.key === 'ArrowDown' && shown) { setActive((i) => (i + 1) % shown); e.preventDefault(); }
+    else if (e.key === 'ArrowUp' && shown) { setActive((i) => (i - 1 + shown) % shown); e.preventDefault(); }
+    else if (e.key === 'Enter') {
+      if (results[active]) handlePick(results[active].path);
+      e.preventDefault();
+    }
+  };
 
   const handlePick = (path) => {
     if (isOthersLeaf(path[path.length - 1])) {
@@ -157,12 +160,9 @@ export default function PlakPicker({ value, onChange, catalog }) {
         placeholder="— Select —"
         autoComplete="off"
         value={query}
-        onFocus={() => setOpen(true)}
+        onFocus={(e) => { setOpen(true); e.target.select(); }}
         onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && filtered.length === 1 && !filtered[0].children?.length) { handlePick([filtered[0].code]); e.preventDefault(); }
-          else if (e.key === 'Escape') closeMenu();
-        }}
+        onKeyDown={onKeyDown}
       />
       {open && othersMode && (
         <div className="plak-menu-root card elev-lg" style={{ padding: 'var(--space-3)', width: 280 }}>
@@ -198,23 +198,28 @@ export default function PlakPicker({ value, onChange, catalog }) {
           </div>
         </div>
       )}
-      {open && !othersMode && (
+      {open && !othersMode && !searching && (
         <div className="plak-menu-root card elev-lg">
-          {filtered.length === 0 && deepMatches.length === 0 && <div className="combo-empty">No match</div>}
-          <PlakMenuLevel nodes={filtered} path={[]} onPick={handlePick} />
-          {deepMatches.length > 0 && (
-            <div className="plak-menu-deep-matches">
-              <div className="combo-empty" style={{ padding: '6px 10px' }}>Matched variants</div>
-              {deepMatches.map(({ path, node }) => (
-                <div
-                  key={node.id ?? path.join('/')}
-                  className="plak-menu-item plak-menu-item-leaf"
-                  onClick={() => handlePick(path)}
-                >
-                  {path.join(' / ')}
-                </div>
-              ))}
-            </div>
+          <PlakMenuLevel nodes={catalog} path={[]} onPick={handlePick} />
+        </div>
+      )}
+      {open && !othersMode && searching && (
+        <div className="plak-menu-root card elev-lg">
+          {results.length === 0 && <div className="combo-empty">No match</div>}
+          <div className="plak-menu-results" ref={listRef}>
+            {results.slice(0, MAX_RESULTS).map(({ path, node }, i) => (
+              <div
+                key={node.id ?? path.join('/')}
+                className={`plak-menu-item plak-menu-item-leaf${i === active ? ' is-active' : ''}`}
+                onMouseEnter={() => setActive(i)}
+                onClick={() => handlePick(path)}
+              >
+                {path.join(' / ')}
+              </div>
+            ))}
+          </div>
+          {results.length > MAX_RESULTS && (
+            <div className="combo-empty">{results.length - MAX_RESULTS} more — type more to narrow</div>
           )}
         </div>
       )}

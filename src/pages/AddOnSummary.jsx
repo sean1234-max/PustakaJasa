@@ -47,7 +47,7 @@ function SummaryTable({ title, rows, totalQty, totalHarga, isOverStock = () => f
 }
 
 export default function AddOnSummary() {
-  const { state, submitPendingAddOn, removeFromAddOnCart } = useAppState();
+  const { state, submitPendingAddOn, removeFromAddOnCart, refreshPlakCatalog } = useAppState();
   const navigate = useNavigate();
   const [submitting, setSubmitting] = useState(false);
   // the salesman may give the Tambahan its own Shipment Date (Sean, 2026-10-17); blank = the order's
@@ -130,7 +130,7 @@ export default function AddOnSummary() {
           </tbody>
         </table>
 
-        {stockViolation && <StockViolationMessage violation={stockViolation} />}
+        {stockViolation && <StockViolationMessage violation={stockViolation} onReload={refreshPlakCatalog} />}
         {isSalesman && (
           <div className="field" style={{ maxWidth: 320, marginBottom: 'var(--space-4)' }}>
             <label htmlFor="addonShipDate">Shipment Date (Tambahan)</label>
