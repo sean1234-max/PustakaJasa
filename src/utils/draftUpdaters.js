@@ -478,10 +478,47 @@ export function createDraftUpdaters(patch, fields) {
     // plain onMatrix write with a fresh id — no separate row-list state to
     // keep in sync. Removing deletes every key under that row's id
     // (label + every column cell) in one pass.
-    onAddMatrixRow: (catKey) => patch((st) => ({
-      [matrixValues]: { ...st[matrixValues], [customMatrixLabelKey(catKey, st[nextRowId])]: '' },
-      [nextRowId]: st[nextRowId] + 1,
-    })),
+    // `seedSubjects` (PPKI / MP THP — subjectsFromImport, Sean 2026-11-16): the fixed subjects still on
+    // screen. Those categories show only their own rows once one exists, so the first "+ Add Row" turns each
+    // shown subject (and the quantities typed against it, `colKeys`) into its own row first — the list stays.
+    onAddMatrixRow: (catKey, seedSubjects = [], colKeys = []) => patch((st) => {
+      const values = { ...st[matrixValues] };
+      let id = st[nextRowId];
+      seedSubjects.forEach((subject) => {
+        values[customMatrixLabelKey(catKey, id)] = subject;
+        colKeys.forEach((col) => {
+          const from = matrixCellKey(catKey, subject, col);
+          if (values[from] !== undefined) {
+            values[matrixCellKey(catKey, `custom-${id}`, col)] = values[from];
+            delete values[from];
+          }
+        });
+        id += 1;
+      });
+      values[customMatrixLabelKey(catKey, id)] = '';
+      return { [matrixValues]: values, [nextRowId]: id + 1 };
+    }),
+    // "Make a copy" of a whole tab (Sean, 2026-11-16, like Excel's sheet copy): every value kept under
+    // `${fromKey}::` (Reference Sample lines, matrix cells, rows, columns, Jenis Plak) copied to `toKey` — a
+    // "<tab> (2)" dynamic category (catalog.js nextFreeCategoryKey) — and the copy's tab shown.
+    onCopyCategory: (fromKey, toKey) => patch((st) => {
+      const prefix = `${fromKey}::`;
+      const copyKeys = (obj) => {
+        const out = { ...(obj || {}) };
+        Object.keys(obj || {}).forEach((k) => {
+          if (k.startsWith(prefix)) out[`${toKey}::${k.slice(prefix.length)}`] = JSON.parse(JSON.stringify(obj[k]));
+        });
+        return out;
+      };
+      return {
+        [lineValues]: copyKeys(st[lineValues]),
+        [matrixValues]: copyKeys(st[matrixValues]),
+        [rowsByBlock]: copyKeys(st[rowsByBlock]),
+        [columnsByBlock]: copyKeys(st[columnsByBlock]),
+        [plakRows]: copyKeys(st[plakRows]),
+        [visibleBlocksByCategory]: { ...st[visibleBlocksByCategory], [toKey]: st[visibleBlocksByCategory]?.[fromKey] || 1 },
+      };
+    }),
     onMatrixRowRemove: (catKey, rowId) => patch((st) => {
       const prefix = `${catKey}::custom-${rowId}::`;
       const next = { ...st[matrixValues] };

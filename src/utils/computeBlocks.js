@@ -353,6 +353,7 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
     }
 
     let matrixRows = [], columns = [], colTotals = [], grandTotal = 0, rows = [], blockTotalQty = 0, levelBreakdown = null;
+    let matrixAddRow = () => updaters.onAddMatrixRow(catKey);
     let aliranPlakQty = null;
     let namaKelasRows = [], namaKelasCount = 0, tahunField = null, extraRefColumns = [];
 
@@ -388,6 +389,9 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
       matrixRows = useImportedSubjects
         ? []
         : getCategorySubjects(currentCat, schoolLanguage).map((subj) => buildMatrixRow(subj, subj, false));
+      // the fixed subjects on screen, kept by the first "+ Add Row" (draftUpdaters onAddMatrixRow)
+      const seedSubjects = currentCat.subjectsFromImport && !useImportedSubjects ? matrixRows.map((r) => r.subject) : [];
+      matrixAddRow = () => updaters.onAddMatrixRow(catKey, seedSubjects, columns.map((c) => c.colKey));
 
       // Teacher-added rows for a subject/award not on the fixed list above
       // (see OrderCategoryBlock's matrix "+ Add Row") — same cell shape, just
@@ -844,7 +848,7 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
       addColumn: () => updaters.onAddColumn(`${catKey}::${b}`),
       addColumnSameTahun: () => updaters.onAddColumnSameTahun(`${catKey}::${b}`),
       addNamaKelas: () => updaters.onAddNamaKelas(`${catKey}::${b}`),
-      addMatrixRow: () => updaters.onAddMatrixRow(catKey),
+      addMatrixRow: matrixAddRow,
       // Only the last currently-computed block can offer "Duplicate" (there's
       // nowhere further to duplicate into once every pre-allocated slot,
       // e.g. TAHUN 1-6 for OTHERS, is used) — see draftUpdaters.js's

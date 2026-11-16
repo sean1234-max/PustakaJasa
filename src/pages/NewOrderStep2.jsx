@@ -11,7 +11,7 @@ import { isCrystalCode } from '../utils/exportCsv';
 import { useAppState } from '../state/useAppState';
 import { buildCategoryCartItems } from '../state/categoryCartItems';
 import {
-  ACTIVE_CATEGORIES, filterHiddenPlakCatalog, getStockStatus, isDynamicCategoryKey, resolveCategory,
+  ACTIVE_CATEGORIES, filterHiddenPlakCatalog, getStockStatus, isDynamicCategoryKey, resolveCategory, nextFreeCategoryKey,
 } from '../data/catalog';
 import { computeBlocks, noopUpdaters } from '../utils/computeBlocks';
 import { createDraftUpdaters } from '../utils/draftUpdaters';
@@ -346,6 +346,14 @@ export default function NewOrderStep2() {
   };
 
   const updaters = useMemo(() => createDraftUpdaters(patch, DRAFT_FIELDS), [patch]);
+  // "Make a copy of this sheet" (Sean, 2026-11-16): the open tab copied to "<tab> (2)", which opens
+  const copyCurrentTab = () => {
+    const from = state.category;
+    const used = new Set([...allCategories.map((c) => c.key), ...(state.cart || []).map((ci) => ci.categoryKey)]);
+    const to = nextFreeCategoryKey(from, used);
+    updaters.onCopyCategory(from, to);
+    patch({ category: to });
+  };
 
   const { blocks: allBlocks } = useMemo(() => computeBlocks(
     state.category, state.lineValues, state.matrixValues, state.rowsByBlock, state.plakRows, state.columnsByBlock, updaters, state.plakCatalog, state.schoolLanguage,
@@ -700,6 +708,11 @@ export default function NewOrderStep2() {
         <div className="card-kicker">Jenis Anugerah (Category)</div>
         <div style={{ margin: 'var(--space-3) 0 var(--space-2)' }}>
           <CategoryTabs categories={allCategories} active={state.category} onSelect={(key) => patch({ category: key })} />
+          {state.category && (
+            <button type="button" className="btn btn-secondary" style={{ marginTop: 'var(--space-2)' }} onClick={copyCurrentTab} title="A new tab with everything on this one, to change">
+              Make a copy of this sheet
+            </button>
+          )}
         </div>
         <div style={{ marginBottom: 'var(--space-6)' }} />
 
