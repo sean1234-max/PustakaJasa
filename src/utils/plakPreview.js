@@ -114,6 +114,9 @@ const STEP = 0.5;
 const POSITION_ONE_LINE = 11;
 const POSITION_TWO_LINES = 9;
 const TROFI = { header: 12, line: 12, position: 16, position2: 14 };
+// SEAN.jsx HOUSE_TEXT_STYLE.position: tracking 75, black stroke 0.2pt (Sean, 2026-11-16) — change both
+const POSITION_TRACKING = 75;
+const POSITION_STROKE = 0.2;
 const HEADER_WORD_LIMIT = 5;
 const LINE_GAP = 2; // POSITION_LINE_GAP
 const POSITION_SPACE = 3; // POSITION_SPACE_PT
@@ -193,8 +196,8 @@ function fieldLayout(field, value, tpl, opts) {
   }
   if (field === 'position') {
     const font = FONTS.position;
-    const measureAt = (l, s) => measure(l, s, font, 50);
-    return { ...base, ...positionLines(value, maxW, measureAt, trofi), font, tracking: 50, stroke: 0.1 };
+    const measureAt = (l, s) => measure(l, s, font, POSITION_TRACKING);
+    return { ...base, ...positionLines(value, maxW, measureAt, trofi), font, tracking: POSITION_TRACKING, stroke: POSITION_STROKE };
   }
   const isHeader = field === 'event_header' || field === 'year';
   const font = isHeader ? FONTS.header : FONTS.line;
