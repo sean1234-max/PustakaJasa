@@ -7,7 +7,7 @@
 // until the salesman says to fill it anyway (`force`, Sean 2026-11-16) — only a 'duplicate' reopens that way.
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
-import { findDuplicate, readResponses, WEBSITE_MARK } from './masterList.ts';
+import { findDuplicate, findTypedRow, markTyped, readResponses, WEBSITE_MARK } from './masterList.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const PUBLISHABLE_KEY = JSON.parse(Deno.env.get('SUPABASE_PUBLISHABLE_KEYS')!)['default'];
@@ -54,6 +54,33 @@ const corsHeaders = {
 };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
+// The month as the MASTER LIST writes it: "NOV", in Malaysia
+const myMonth = () => new Intl.DateTimeFormat('en-US', { month: 'short', timeZone: 'Asia/Kuala_Lumpur' }).format(new Date()).toUpperCase();
+
+// Done Typing: the order's row (a Tambahan's: its original's school) with this invoice's QTY, I still empty
+// (findTypedRow) gets "<NAME> (<MON>)". -> { status: 'marked', row, school, text } | { status: 'not_found' | 'failed' }
+// deno-lint-ignore no-explicit-any
+async function markOrderTyped(admin: any, orderId: string, qty: number, name: string) {
+  if (!/^ORD-\d+$/.test(orderId) || !Number.isInteger(qty) || qty <= 0) return { status: 'failed', error: 'bad order or QTY' };
+  const { data: order } = await admin.from('orders').select('id, sekolah, parent_order_id').eq('id', orderId).maybeSingle();
+  if (!order) return { status: 'failed', error: 'no such order' };
+  let school = order.sekolah || '';
+  if (order.parent_order_id) {
+    const { data: parent } = await admin.from('orders').select('sekolah').eq('id', order.parent_order_id).maybeSingle();
+    school = parent?.sekolah || school;
+  }
+  const text = `${String(name).trim().toUpperCase()} (${myMonth()})`;
+  try {
+    const hit = findTypedRow(await readResponses(true), school, qty);
+    if (!hit) return { status: 'not_found', school, qty };
+    await markTyped(hit.row, text);
+    return { status: 'marked', row: hit.row, school: hit.school, qty, text };
+  } catch (err) {
+    console.error('MASTER LIST typed mark failed:', err);
+    return { status: 'failed', error: String((err as Error)?.message || err) };
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   const authHeader = req.headers.get('Authorization');
@@ -62,18 +89,21 @@ Deno.serve(async (req) => {
   const { data: { user } } = await caller.auth.getUser();
   if (!user) return json({ error: 'Not signed in.' }, 401);
   const admin = createClient(SUPABASE_URL, SECRET_KEY);
-  const { data: profile } = await admin.from('profiles').select('role, status').eq('id', user.id).single();
-  if (profile?.role !== 'salesman' || profile?.status !== 'active') return json({ status: 'not_salesman' });
+  const { data: profile } = await admin.from('profiles').select('role, status, display_name').eq('id', user.id).single();
+  let body: Record<string, unknown> = {};
+  try { body = await req.json(); } catch { /* no body */ }
 
-  let orderId = '';
-  let note = ''; // the salesman's words after "<school> (W) -" (GoogleFormSchoolModal)
-  let force = false; // "YES, FILL AGAIN" after a look-alike row was found
-  try {
-    const body = await req.json();
-    orderId = String(body.orderId || '');
-    force = body.force === true;
-    note = String(body.note || '').replace(/[\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, MAX_NOTE);
-  } catch { /* no body */ }
+  // Production's Done Typing (Sean, 2026-11-16): column I of the order's MASTER LIST row = "<NAME> (<MON>)"
+  if (body.action === 'typed') {
+    if (profile?.role !== 'production' || profile?.status !== 'active') return json({ status: 'not_production' });
+    return json(await markOrderTyped(admin, String(body.orderId || ''), Number(body.qty), profile.display_name || user.email || ''));
+  }
+
+  if (profile?.role !== 'salesman' || profile?.status !== 'active') return json({ status: 'not_salesman' });
+  const orderId = String(body.orderId || '');
+  const force = body.force === true; // "YES, FILL AGAIN" after a look-alike row was found
+  // the salesman's words after "<school> (W) -" (GoogleFormSchoolModal)
+  const note = String(body.note || '').replace(/[\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, MAX_NOTE);
   if (!/^ORD-\d+$/.test(orderId)) return json({ error: 'Bad orderId.' }, 400);
 
   const { data: done } = await admin.from('google_form_fills').select('status').eq('order_id', orderId).maybeSingle();

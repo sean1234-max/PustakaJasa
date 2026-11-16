@@ -28,3 +28,22 @@ export function googleFormNote(res) {
   if (res.status === 'failed' || res.status === 'error') return '⚠️ Google Form not filled — please fill it by hand.';
   return '';
 }
+
+// Production's Done Typing (Sean, 2026-11-16): the order's MASTER LIST row (same school, this invoice's QTY,
+// column I still empty) gets "<NAME> (<MON>)" in column I — fill-google-form's 'typed' action. Never throws.
+// Resolves to { status: 'marked' | 'not_found' | 'failed' | 'error', row?, school?, text? }.
+export async function markMasterListTyped(orderId, qty) {
+  try {
+    const { data, error } = await supabase.functions.invoke('fill-google-form', { body: { action: 'typed', orderId, qty } });
+    if (error || !data) return { status: 'error' };
+    return data;
+  } catch {
+    return { status: 'error' };
+  }
+}
+
+export function masterListTypedNote(res) {
+  if (res?.status === 'marked') return `📝 MASTER LIST row ${res.row} (${res.school}): ${res.text}`;
+  if (res?.status === 'not_found') return `⚠️ MASTER LIST: no untyped row for ${res.school}, QTY ${res.qty} — write column I by hand.`;
+  return '⚠️ MASTER LIST not updated — write column I by hand.';
+}

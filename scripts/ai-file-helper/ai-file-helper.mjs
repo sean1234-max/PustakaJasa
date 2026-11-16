@@ -8,6 +8,8 @@
 //   GET  /jobs/:id  -> that run's status/result
 //   POST /templates -> { codes } -> which template .ai SEAN.jsx would open for each Jenis Plak
 //                      (null = none, so that AI file would be missing — Production's check)
+//   POST /archive   -> { school, invoices, year } on Done Typing -> that order's folder / .ai files in the school's
+//                      NAS folder moved into its year folder (school-folder.mjs archiveToYear); returns { message }
 //   POST /crystal   -> { job, files } from the Crystal Preview / Crystal Studio -> the crystals
 //                      made in Illustrator from their original .ai (crystal-job.mjs), saved under
 //                      OUTPUT/CRYSTAL/<date time> - <school (order)>; returns jobId + folder
@@ -24,7 +26,7 @@ import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { checkCrystalJob, crystalOutDir, writeCrystalScript } from './crystal-job.mjs';
-import { copyToSchool, resolveSchoolDir } from './school-folder.mjs';
+import { archiveToYear, copyToSchool, resolveSchoolDir } from './school-folder.mjs';
 
 const execFileAsync = promisify(execFile);
 
@@ -34,7 +36,8 @@ export const PORT = 47821;
 // 4: POST /templates (Production's check before Generate AI File) + the operator's name sent with
 //    /generate, so Illustrator doesn't ask for it (Sean 2026-10-22)
 // 5: a finished job carries SEAN.jsx's run report (`report`) for the check after Generate
-const VERSION = 6;
+// 7: POST /archive — Done Typing moves the order's files into the school's year folder (Sean 2026-11-16)
+const VERSION = 7;
 const HELPER_DIR = path.dirname(fileURLToPath(import.meta.url));
 const TEMP_DIR = path.join(tmpdir(), 'pustakajasa-ai-helper');
 // crystals can carry pictures and .svg artwork (Crystal Studio), so more room than a CSV needs
@@ -416,6 +419,15 @@ function startServer() {
         const body = JSON.parse(await readBody(req));
         const codes = Array.isArray(body.codes) ? body.codes.filter((c) => typeof c === 'string').slice(0, 500) : [];
         send(200, { templates: findTemplates(resolveAiFileDir(), codes) });
+        return;
+      }
+      if (req.method === 'POST' && pathname === '/archive') {
+        const body = JSON.parse(await readBody(req));
+        const school = typeof body.school === 'string' ? body.school.slice(0, 200) : '';
+        const invoices = Array.isArray(body.invoices) ? body.invoices.filter((v) => typeof v === 'string').slice(0, 20) : [];
+        const year = /^\d{4}$/.test(String(body.year)) ? String(body.year) : '';
+        if (!school || !invoices.length || !year) { send(400, { error: 'school, invoices and year are required' }); return; }
+        send(200, { message: archiveToYear(school, invoices, resolveSchoolDir(HELPER_DIR), year) });
         return;
       }
       if (req.method === 'POST' && pathname === '/crystal') {

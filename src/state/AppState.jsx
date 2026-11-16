@@ -37,10 +37,13 @@ import { withImportFile, tagImportFiles, orderImportFields, editedOrderFiles } f
 import { syncUrgentOrderToSheet, highlightUrgentKitDoc } from '../lib/urgentSheetApi';
 import { isUrgentShipment, urgentSheetAction, SHIPMENT_EDITABLE_STATUSES } from '../utils/urgentOrder';
 import { picksSchool } from '../utils/keyin';
+import { markMasterListTyped, masterListTypedNote } from '../lib/googleFormApi';
+import { archiveOrderFiles } from '../lib/aiFileHelper';
+import { schoolFolderFor } from '../data/schoolFolders';
 import { loadDraft, saveDraft, clearDraft, draftHasContent } from '../utils/draftPersistence';
 import { fetchCustomTypoWords } from '../lib/typoWordsApi';
 import { setCustomTypoWords } from '../utils/typoCheck';
-import { normalizeSplitQty, stockDiff, keepPrices, applyPriceDrafts, withOrderOwnSettings, invoiceGroupStatus } from '../utils/orderBatches';
+import { normalizeSplitQty, stockDiff, keepPrices, applyPriceDrafts, withOrderOwnSettings, invoiceGroupStatus, getInvoiceItems } from '../utils/orderBatches';
 import { needsKiv, kivParts, hasPlakPart, kivInProduction, crystalWithPlak, isCrystalCode, skipsTyping } from '../utils/exportCsv';
 import { kivOnlyGroupsDone } from '../utils/productionCards';
 
@@ -2562,10 +2565,10 @@ export function AppStateProvider({ children }) {
     patch((st) => ({ orders: st.orders.map((o) => (o.id === order.id ? { ...o, ...next } : o)) }));
   }, [patch]);
 
-  const flashProductionToast = useCallback((message) => {
+  const flashProductionToast = useCallback((message, ms = 2500) => {
     patch({ productionToast: message });
     clearTimeout(productionToastTimer.current);
-    productionToastTimer.current = setTimeout(() => patch({ productionToast: '' }), 2500);
+    productionToastTimer.current = setTimeout(() => patch({ productionToast: '' }), ms);
   }, [patch]);
 
   // Production's Done Typing (0078): the AI file for this invoice is
@@ -2585,7 +2588,24 @@ export function AppStateProvider({ children }) {
     } catch (err) {
       console.error('Failed to mark typing done in Supabase:', err);
       flashProductionToast(describeOrderWriteError(err, 'update'));
+      return;
     }
+    // Done Typing's two follow-ups (Sean, 2026-11-16) — the order is typed whatever happens to them: the MASTER
+    // LIST row's column I ("SITI (NOV)") and the AI file into the school's year folder on the NAS. Per invoice:
+    // a split order's two Done Typing fill two rows.
+    const parent = order.parentOrderId ? stateRef.current.orders.find((o) => o.id === order.parentOrderId) : null;
+    const qty = getInvoiceItems(order, sliceInvoiceId)
+      .filter((it) => String(it.jenisPlak).toUpperCase() !== 'SELEMPANG')
+      .reduce((n, it) => n + (Number(it.qty) || 0), 0);
+    const invoice = sliceInvoiceId || order.invoiceId || parent?.invoiceId || '';
+    const year = malaysiaToday().getFullYear();
+    const [sheet, nas] = await Promise.all([
+      qty > 0 ? markMasterListTyped(order.id, qty) : Promise.resolve(null),
+      invoice
+        ? archiveOrderFiles(schoolFolderFor((parent || order).sekolah), [invoice], year)
+        : Promise.resolve(`📁 No invoice number yet — move the AI file into ${year} by hand.`),
+    ]);
+    flashProductionToast(['Typing done.', sheet ? masterListTypedNote(sheet) : '', nas].filter(Boolean).join('  ·  '), 12000);
   }, [writeSlice, flashProductionToast]);
 
   // KIV & ARTWORK (Sean, 2026-10-14) — an order's Reserved plaques and

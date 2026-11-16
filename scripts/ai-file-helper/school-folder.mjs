@@ -3,7 +3,7 @@
 // A copy: OUTPUT keeps its own. Only when exactly one school folder has the same name (compared
 // the way Crystal Studio matches school logos — schoolKey below); otherwise nothing is copied and
 // the message says so, never a guess.
-import { readdirSync, statSync, mkdirSync, copyFileSync, existsSync, readFileSync } from 'node:fs';
+import { readdirSync, statSync, mkdirSync, copyFileSync, existsSync, readFileSync, renameSync } from 'node:fs';
 import path from 'node:path';
 
 const DEFAULT_SCHOOL_DIR = process.platform === 'win32'
@@ -66,4 +66,36 @@ export function copyToSchool(src, school, root) {
   } catch (err) {
     return `Not copied to the school folder: ${err.message} — copy it by hand from OUTPUT.`;
   }
+}
+
+// Done Typing (Sean, 2026-11-16): the order's files in the school folder go into its year folder ("2026") —
+// a folder with the invoice number in its name ("(DWI-26110663) - SK KANCHONG DARAT") moves in whole, else each
+// .ai file with the invoice number in its name. Only what sits in the school folder itself (next to the year
+// folder); nothing moves when the school has no year folder, or the same name is already inside it.
+// -> a line for the page
+export function archiveToYear(school, invoices, root, year) {
+  const found = findSchoolFolder(root, school);
+  if (found.error) return `Not moved into ${year}: ${found.error}.`;
+  let entries;
+  try { entries = readdirSync(found.dir); } catch (err) { return `Not moved into ${year}: ${err.message}.`; }
+  const isDir = (n) => { try { return statSync(path.join(found.dir, n)).isDirectory(); } catch { return false; } };
+  const yearName = entries.find((n) => n.trim() === String(year) && isDir(n));
+  if (!yearName) return `${found.name} has no ${year} folder — its files stay where they are.`;
+  const yearDir = path.join(found.dir, yearName);
+  const lines = [];
+  for (const inv of [...new Set((invoices || []).map((v) => String(v || '').trim()).filter(Boolean))]) {
+    // the invoice number itself, not a longer one it starts ("DWI-2611066" in "DWI-26110663")
+    const re = new RegExp(`${inv.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?!\\d)`, 'i');
+    const hits = entries.filter((n) => n !== yearName && re.test(n));
+    const folders = hits.filter(isDir);
+    const picked = folders.length ? folders : hits.filter((n) => /\.ai$/i.test(n) && !isDir(n));
+    if (!picked.length) { lines.push(`${inv}: nothing in ${found.name} to move`); continue; }
+    const moved = [];
+    for (const n of picked) {
+      if (existsSync(path.join(yearDir, n))) { lines.push(`${n}: already in ${year}, left as it is`); continue; }
+      try { renameSync(path.join(found.dir, n), path.join(yearDir, n)); moved.push(n); } catch (err) { lines.push(`${n}: not moved (${err.message})`); }
+    }
+    if (moved.length) lines.push(`${inv}: moved into ${found.name}/${yearName} — ${moved.join(', ')}`);
+  }
+  return lines.join(' · ');
 }

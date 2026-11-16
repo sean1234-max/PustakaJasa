@@ -220,3 +220,45 @@ describe('which Illustrator a Mac run goes to', () => {
     expect(pickMacIllustrator([], false, v26)).toBe(null);
   });
 });
+
+describe('Done Typing moves the order into the school\'s year folder (Sean, 2026-11-16)', async () => {
+  const { archiveToYear } = await import('./school-folder.mjs');
+  const fs = await import('node:fs');
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const school = (files) => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pj-year-'));
+    const dir = path.join(root, 'SK KANCHONG DARAT');
+    fs.mkdirSync(dir, { recursive: true });
+    files.forEach((f) => (f.endsWith('/') ? fs.mkdirSync(path.join(dir, f), { recursive: true }) : fs.writeFileSync(path.join(dir, f), 'x')));
+    return { root, dir, list: (sub = '') => fs.readdirSync(path.join(dir, sub)).sort(), done: () => fs.rmSync(root, { recursive: true, force: true }) };
+  };
+
+  it('moves the whole (DWI-…) folder in, nothing else', () => {
+    const s = school(['2026/', '(DWI-26110663) - SK KANCHONG DARAT/', '(DWI-26110700) - SK KANCHONG DARAT/', 'LOGO.ai']);
+    expect(archiveToYear('SK KANCHONG DARAT', ['DWI-26110663'], s.root, '2026')).toMatch(/moved into SK KANCHONG DARAT\/2026/);
+    expect(s.list('2026')).toEqual(['(DWI-26110663) - SK KANCHONG DARAT']);
+    expect(s.list()).toEqual(['(DWI-26110700) - SK KANCHONG DARAT', '2026', 'LOGO.ai']);
+    s.done();
+  });
+
+  it('with no folder, moves only the .ai files with this invoice number', () => {
+    const s = school(['2026/', 'E CUT 5 (DWI-26110663) MAJLIS.ai', 'E CUT 5 (DWI-261106630) OTHER.ai', 'E CUT 4 (DWI-26110700) X.ai']);
+    archiveToYear('SK KANCHONG DARAT', ['DWI-26110663'], s.root, '2026');
+    expect(s.list('2026')).toEqual(['E CUT 5 (DWI-26110663) MAJLIS.ai']);
+    expect(s.list()).toEqual(['2026', 'E CUT 4 (DWI-26110700) X.ai', 'E CUT 5 (DWI-261106630) OTHER.ai']);
+    s.done();
+  });
+
+  it('moves nothing without a year folder, or when it is already inside', () => {
+    const s = school(['(DWI-26110663) - SK KANCHONG DARAT/']);
+    expect(archiveToYear('SK KANCHONG DARAT', ['DWI-26110663'], s.root, '2026')).toMatch(/has no 2026 folder/);
+    expect(s.list()).toEqual(['(DWI-26110663) - SK KANCHONG DARAT']);
+    s.done();
+    const t = school(['2026/(DWI-26110663) - SK KANCHONG DARAT/', '(DWI-26110663) - SK KANCHONG DARAT/']);
+    expect(archiveToYear('SK KANCHONG DARAT', ['DWI-26110663'], t.root, '2026')).toMatch(/already in 2026/);
+    expect(t.list()).toEqual(['(DWI-26110663) - SK KANCHONG DARAT', '2026']);
+    t.done();
+    expect(archiveToYear('SK NOWHERE', ['DWI-1'], t.root, '2026')).toMatch(/Not moved/);
+  });
+});

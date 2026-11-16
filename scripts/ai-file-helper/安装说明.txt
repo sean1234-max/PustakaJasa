@@ -72,3 +72,11 @@ Mac 右键 install-mac.command → 打开），装完：
 【移除】
 Windows：删掉 shell:startup 里的 pustakajasa-ai-helper.vbs，再到工作管理员结束 node.exe
 Mac：   launchctl unload ~/Library/LaunchAgents/com.pustakajasa.ai-file-helper.plist
+
+
+【2026-11-17 更新（版本 7）】每台 Production 电脑都要再装一次（Windows 双击 install-windows.bat，
+Mac 右键 install-mac.command → 打开），装完：
+  - Typing 页按 Done 时，这台电脑会把那张单在 NAS「SEKOLAH ORDER (SITI)\<学校>\」里的 AI file
+    搬进学校的 2026 资料夹：有「(DWI-…) - 学校」资料夹就整个搬，没有的话就搬 invoice 号码对得上的 .ai。
+    学校没有 2026 资料夹、或 2026 里已经有同名的，就不动。
+  - 网站更新上线后才会用到这个功能；之前装好也不会影响其他功能。

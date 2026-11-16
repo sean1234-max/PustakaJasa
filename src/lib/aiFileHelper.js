@@ -67,3 +67,23 @@ export async function getAiFileHelperJob(jobId) {
     return null;
   }
 }
+
+// Done Typing (helper v7, Sean 2026-11-16): the order's folder / .ai files in the school's NAS folder moved into its
+// year folder ("2026") by the helper on THIS computer. -> a line for the page; never throws.
+const ARCHIVE_HELPER_VERSION = 7;
+export async function archiveOrderFiles(school, invoices, year) {
+  const status = await getAiFileHelperStatus();
+  if (!status) return `📁 AI File helper not running on this computer — move the AI file into ${year} by hand.`;
+  if ((status.version || 0) < ARCHIVE_HELPER_VERSION) return `📁 This computer's AI File helper is too old (v${status.version || '?'}, needs v${ARCHIVE_HELPER_VERSION}) — move the AI file into ${year} by hand.`;
+  try {
+    const res = await fetch(`${HELPER_URL}/archive`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ school, invoices, year: String(year) }),
+    });
+    const body = await res.json().catch(() => ({}));
+    return `📁 ${body.message || body.error || `AI File helper returned ${res.status}`}`;
+  } catch {
+    return `📁 AI File helper didn't answer — move the AI file into ${year} by hand.`;
+  }
+}
