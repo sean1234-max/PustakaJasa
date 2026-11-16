@@ -17,7 +17,6 @@ const HINT_RE = /\(\s*(IKUT\b[^)]*|[^)]*SEPERTI DI BAWAH[^)]*)\)/i;             
 const AWARD_RE = /\b(ANUGERAH|TOKOH)\b/;                                             // C3 / B1
 // R1 (Sean, 2026-11-02): a rank takes the red line before ANUGERAH / TOKOH
 const RANK_RE = /\b(NAIB JOHAN|JOHAN|PERTAMA|KEDUA|KETIGA|TEMPAT \w+|JUARA \w+)\b/;
-const SUBJECT_RE = /\b(BAHASA \w+|MATEMATIK|SAINS|SEJARAH|PENDIDIKAN \w+|MUZIK|MORAL)\b/; // B1
 const NOT_A_LINE_RE = /^(-|\d{4})?$/;
 const MIN_REPEAT_LENGTH = 4;
 
@@ -47,8 +46,7 @@ export function checkPlaque(p, { umum, okWords = [] }) {
         : { rule: 'C3', level: 'fix', find: l, text: `"${l}" is on a black line — ANUGERAH… goes on row ② (red)` });
       return;
     }
-    const word = l.match(SUBJECT_RE)?.[0];
-    if (word) issues.push({ rule: 'B1', level: 'ask', word, text: `"${word}" is not red — ask the salesman if it should be MERAH` });
+    // a subject (BAHASA MELAYU …) on a black line is black — no longer asked (Sean, 2026-11-16)
   });
   [...red, ...black].forEach((l) => {
     if (NOT_A_LINE_RE.test(l) || l.length < MIN_REPEAT_LENGTH || l === header) return;

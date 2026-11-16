@@ -12,7 +12,7 @@
 - A1 ✏️ Excel 的 sheet 和网站的类别一一对上、数量也对；少了就补上
 
 ## B. Reference Sample
-- B1 💬 含 ANUGERAH…、PERTAMA / KEDUA / KETIGA、科目（BAHASA MELAYU、BAHASA INGGERIS…）的行没勾 MERAH → 问 salesman（做 AI sample 让老师选）
+- B1 💬 含 ANUGERAH…、PERTAMA / KEDUA / KETIGA 的行没勾 MERAH → 问 salesman（做 AI sample 让老师选）。科目（BAHASA MELAYU…）一律黑色，不问（2026-11-16）
   - 网站 AI Review：每个 sheet 一行，「Show red / black」并排显示红 / 黑两块牌子 → screenshot 给 salesman → 按 Use red / Keep black 存进这个 sheet 的 MERAH，之后不再问
 - B2 ✏️ Reference Sample 没填 → 自己补（salesman 常常不填）
 
@@ -63,7 +63,7 @@
 | 程序检查 | AI 判断 |
 |---|---|
 | A1 sheet 数量 | C1 / C3 哪个是活动名、哪个是奖项名 |
-| B1 关键字（ANUGERAH、PERTAMA…、科目）没勾 MERAH | F1 字典以外的错字 |
+| B1 关键字（ANUGERAH、PERTAMA…）没勾 MERAH | F1 字典以外的错字 |
 | C3 非 ORDER LAIN-LAIN 的 ① 出现 ANUGERAH | J2 标题要不要分两行 |
 | D1 TAJUK BESAR 的字在下面的行又出现、没放 "-" | J3 名称里的性别 |
 | E1 OTHER 没 code / 价钱 | J6 漏了学校名或年份 |

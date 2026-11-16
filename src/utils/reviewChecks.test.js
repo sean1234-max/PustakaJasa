@@ -32,8 +32,8 @@ describe('checkPlaque', () => {
     expect(issues[0].level).toBe('ask');
   });
 
-  it('asks about a subject that is not red (B1)', () => {
-    expect(rules(checkPlaque(plaque({ position: 'ANUGERAH CEMERLANG', line1: 'BAHASA MELAYU' }), { umum: false }))).toEqual(['B1']);
+  it('leaves a subject on a black line black, without asking (Sean, 2026-11-16)', () => {
+    expect(rules(checkPlaque(plaque({ position: 'ANUGERAH CEMERLANG', line1: 'BAHASA MELAYU' }), { umum: false }))).toEqual([]);
   });
 
   it('wants the rank red before ANUGERAH / TOKOH (R1)', () => {
@@ -95,15 +95,13 @@ describe('reviewOrder', () => {
     expect(issues[0]).toMatchObject({ rule: 'J1', count: 3 });
   });
 
-  it('asks about MERAH once per sheet, listing every word', () => {
+  it('asks nothing about the subjects of an MP THP sheet', () => {
     const issues = reviewOrder({ items: [item({ categoryLabel: 'MP THP 1' })] }, rowsOf([csv('ANUGERAH CEMERLANG', 'BAHASA MELAYU'), csv('ANUGERAH CEMERLANG', 'MATEMATIK')]));
-    expect(issues).toHaveLength(1);
-    expect(issues[0]).toMatchObject({ rule: 'B1', count: 2 });
-    expect(issues[0].text).toBe('Not red on MP THP 1: BAHASA MELAYU, MATEMATIK — ask the salesman if they should be MERAH');
+    expect(issues).toEqual([]);
   });
 
   it('lists fix issues before ask issues', () => {
-    const issues = reviewOrder({ items: [item()] }, rowsOf([csv('ANUGERAH CEMERLANG', 'BAHASA MELAYU'), csv('JOHAN', '(IKUT TAHUN)')]));
+    const issues = reviewOrder({ items: [item({ jenisPlak: 'OTHER', unitPrice: 0 })] }, rowsOf([csv('JOHAN', '(IKUT TAHUN)')]));
     expect(issues.map((i) => i.level)).toEqual(['fix', 'ask']);
   });
 });
