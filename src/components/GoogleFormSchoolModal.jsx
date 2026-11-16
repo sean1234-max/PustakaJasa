@@ -1,6 +1,8 @@
 // After a salesman approves an order or an add-on (Sean, 2026-11-10): the Google Form's school name is
 // "<school> (W) - <his words>". The part up to "-" is fixed; he types the rest, then SUBMIT fills the form
 // (fill-google-form). It can't be closed before SUBMIT — the form is only filled from here.
+// A look-alike row already in the MASTER LIST asks before filling it again (Sean, 2026-11-16): YES fills it
+// anyway, NO leaves it.
 // Same look as ShipmentConfirmModal (the browser's own modal <dialog>).
 import { useEffect, useRef, useState } from 'react';
 import { fillGoogleForm, googleFormNote } from '../lib/googleFormApi';
@@ -19,13 +21,15 @@ export default function GoogleFormSchoolModal({ orderId, school, onDone }) {
   if (!orderId) return null;
 
   const prefix = `${school} (W) -`;
-  const submit = async () => {
+  const submit = async (force = false) => {
     setBusy(true);
-    setRes(await fillGoogleForm(orderId, note.trim()));
+    setRes(await fillGoogleForm(orderId, note.trim(), force));
     setBusy(false);
   };
   const close = () => { ref.current?.close(); onDone(); };
   const byHand = res && ['failed', 'error', 'no_sale'].includes(res.status);
+  const lookAlike = res?.status === 'duplicate' && !res.declined;
+  const dup = res?.duplicate;
 
   return (
     <dialog ref={ref} className="crystal-confirm" aria-labelledby="googleFormTitle" onCancel={(e) => e.preventDefault()}>
@@ -43,7 +47,18 @@ export default function GoogleFormSchoolModal({ orderId, school, onDone }) {
             />
           </div>
           <div className="crystal-confirm-actions">
-            <button type="button" className="btn btn-primary" disabled={busy} onClick={submit}>{busy ? 'Submitting…' : 'SUBMIT'}</button>
+            <button type="button" className="btn btn-primary" disabled={busy} onClick={() => submit()}>{busy ? 'Submitting…' : 'SUBMIT'}</button>
+          </div>
+        </>
+      ) : lookAlike ? (
+        <>
+          <p className="crystal-confirm-text">
+            📝 The Google Form already has a row like this{dup ? ` (row ${dup.row}: ${dup.school}, QTY ${dup.qty})` : ''}.
+            <br />Fill it again?
+          </p>
+          <div className="crystal-confirm-actions">
+            <button type="button" className="btn btn-primary" disabled={busy} onClick={() => submit(true)}>{busy ? 'Submitting…' : 'YES, FILL AGAIN'}</button>
+            <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => setRes({ ...res, declined: true })}>NO</button>
           </div>
         </>
       ) : (

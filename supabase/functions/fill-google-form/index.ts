@@ -3,7 +3,8 @@
 // website after the salesman's Submit Order, again when he approves it (the Shipment Date may only be set then),
 // and when he approves an add-on (the Tambahan: the original's school / dates, its own QTY).
 // REMARK is always SALES; QTY every plaque but selempang. google_form_fills (0122) keeps one row per order, so
-// a filled order is never posted twice.
+// a filled order is never posted twice. A look-alike row already in the MASTER LIST stops the post ('duplicate')
+// until the salesman says to fill it anyway (`force`, Sean 2026-11-16) — only a 'duplicate' reopens that way.
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { findDuplicate, readResponses, WEBSITE_MARK } from './masterList.ts';
@@ -66,15 +67,18 @@ Deno.serve(async (req) => {
 
   let orderId = '';
   let note = ''; // the salesman's words after "<school> (W) -" (GoogleFormSchoolModal)
+  let force = false; // "YES, FILL AGAIN" after a look-alike row was found
   try {
     const body = await req.json();
     orderId = String(body.orderId || '');
+    force = body.force === true;
     note = String(body.note || '').replace(/[\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, MAX_NOTE);
   } catch { /* no body */ }
   if (!/^ORD-\d+$/.test(orderId)) return json({ error: 'Bad orderId.' }, 400);
 
   const { data: done } = await admin.from('google_form_fills').select('status').eq('order_id', orderId).maybeSingle();
-  if (done && DONE.includes(done.status)) return json({ status: done.status, already: true });
+  const refill = force && done?.status === 'duplicate';
+  if (done && DONE.includes(done.status) && !refill) return json({ status: done.status, already: true });
 
   const cols = 'id, sekolah, sales, shipment_date, function_date, items, created_by_salesman, created_by_production, parent_order_id, status';
   const { data: order } = await admin.from('orders').select(cols).eq('id', orderId).maybeSingle();
@@ -107,7 +111,7 @@ Deno.serve(async (req) => {
     // already filled by hand (same school + QTY)? then not again. Unreadable sheet: not posted, tried again later.
     let dup = null;
     try {
-      dup = findDuplicate(await readResponses(), base.sekolah || '', values.qty);
+      if (!refill) dup = findDuplicate(await readResponses(), base.sekolah || '', values.qty);
     } catch (err) {
       console.error('MASTER LIST not readable, form not posted:', err);
       await admin.from('google_form_fills').upsert({ order_id: orderId, status: 'failed', qty: values.qty, filled_at: new Date().toISOString() });
