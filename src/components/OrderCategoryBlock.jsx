@@ -3,7 +3,7 @@ import PlakPicker from './PlakPicker';
 import SelempangBlock from './SelempangBlock';
 import { getStockStatus, MALAY_ORDINALS } from '../data/catalog';
 import { isReservedName, hasKivWord } from '../utils/exportCsv';
-import { useColumnWidths, useFillHandle } from './listTableTools';
+import { useColumnWidths, useFillHandle, moveCellFocus } from './listTableTools';
 
 const TAHUN_OPTIONS = ['TAHUN 1', 'TAHUN 2', 'TAHUN 3', 'TAHUN 4', 'TAHUN 5', 'TAHUN 6'];
 
@@ -220,13 +220,22 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
       />
     );
   };
+  // Enter in a list-table field goes one row down, Shift+Enter one up (Excel; Sean, 2026-11-16). Alt+Enter stays
+  // a line break; the Jenis Plak picker moves by itself once it has picked (its onEnter).
+  const handleListEnter = (e) => {
+    if (e.key !== 'Enter' || e.altKey || e.nativeEvent.isComposing) return;
+    const el = e.target;
+    if (!/^(INPUT|TEXTAREA|SELECT)$/.test(el?.tagName || '') || el.closest('.plak-picker')) return;
+    e.preventDefault();
+    moveCellFocus(el, e.shiftKey);
+  };
   // Which list-table columns the fill handle may copy into (the same rights as typing in them).
   const canFill = (key) => (key === 'qty' ? !!editable.rowQty : key === 'jenisPlak' ? !!editable.jenisPlak : !!editable.rowDesc);
   // A list-table cell; an editable one shows Excel's fill handle once clicked into (listTableTools).
   const fillTd = (row, idx, key, content, readOnly = false) => {
     const on = canFill(key) && !readOnly;
     return (
-      <td key={key} className={on && fill.inDrag(key, idx) ? 'fill-target' : undefined} onFocus={on ? () => fill.focus(row.id, key) : undefined}>
+      <td key={key} data-col={key} className={on && fill.inDrag(key, idx) ? 'fill-target' : undefined} onFocus={on ? () => fill.focus(row.id, key) : undefined}>
         <div className="fill-cell">
           {content}
           {on && fill.isActive(row.id, key) && (
@@ -1320,7 +1329,7 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
       ) : (
         <div>
           {/* not in a scrolling .table-wrap: that would clip the Jenis Plak dropdown of the last rows */}
-          <table className="table list-table" style={colW.tableStyle}>
+          <table className="table list-table" style={colW.tableStyle} onKeyDown={handleListEnter}>
             <thead>
               <tr>
                 {!blk.hideDescColumn && <ResizableTh col="desc" colW={colW}>{blk.descColumnLabel || 'Description'}</ResizableTh>}
@@ -1352,7 +1361,7 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
                       {/* a <textarea>: a TOKOH name keeps its Alt+Enter lines when edited (an <input> drops
                           them — ORD-0127, Sean 2026-10-23) */}
                       {editable.rowDesc
-                        ? <textarea className="input" rows={Math.max(1, String(row.desc || '').split('\n').length)} style={{ resize: 'vertical' }} placeholder="e.g. TAHUN 1" value={row.desc} onChange={(e) => row.setDesc(e.target.value)} />
+                        ? <textarea className="input" rows={Math.max(1, String(row.desc || '').split('\n').length)} style={{ resize: 'vertical' }} placeholder="e.g. TAHUN 1" value={row.desc} onChange={(e) => row.setDesc(e.target.value)} onKeyDown={(e) => handleCellKeyDown(e, row.setDesc)} />
                         : <span style={{ whiteSpace: 'pre-line' }}>{row.desc}</span>}
                       {row.typoHint && <TypoHint hint={row.typoHint} canChoose={editable.rowDesc} />}
                     </>
@@ -1388,7 +1397,7 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
                   ))}
                   {blk.plakPerRow && fillTd(row, idx, 'jenisPlak', (
                     editable.jenisPlak
-                      ? <PlakPicker value={row.jenisPlak} onChange={row.setJenisPlak} catalog={plakOptions} />
+                      ? <PlakPicker value={row.jenisPlak} onChange={row.setJenisPlak} catalog={plakOptions} onEnter={moveCellFocus} />
                       : (row.jenisPlak || '—')
                   ))}
                   {(row.tokohFields || []).filter((f) => f.place === 'afterPlak').map((f) => fillTd(row, idx, f.key, renderTokohField(f, editable.rowDesc), f.readOnly))}

@@ -82,7 +82,9 @@ function PlakMenuLevel({ nodes, path, onPick }) {
 // known. Typing searches every code (searchLeaves) and Enter picks the
 // highlighted one; the committed value only changes on an explicit leaf
 // pick, so a stray blur can't leave half-typed text sitting in the order.
-export default function PlakPicker({ value, onChange, catalog }) {
+// `onEnter(input, up)` (optional): Enter finished here — a code picked, or the field left as it was — so a table
+// can move on to the next row (Excel, Sean 2026-11-16).
+export default function PlakPicker({ value, onChange, catalog, onEnter }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState(value || '');
   // Picking the OTHERS leaf (see isOthersLeaf above) doesn't commit
@@ -121,13 +123,20 @@ export default function PlakPicker({ value, onChange, catalog }) {
 
   const onKeyDown = (e) => {
     if (e.key === 'Escape') { closeMenu(); return; }
-    if (!open || !searching) { if (e.key === 'Enter') { closeMenu(); e.preventDefault(); } return; }
+    if (!open || !searching) {
+      if (e.key === 'Enter') { closeMenu(); e.preventDefault(); onEnter?.(e.currentTarget, e.shiftKey); }
+      return;
+    }
     const shown = Math.min(results.length, MAX_RESULTS);
     if (e.key === 'ArrowDown' && shown) { setActive((i) => (i + 1) % shown); e.preventDefault(); }
     else if (e.key === 'ArrowUp' && shown) { setActive((i) => (i - 1 + shown) % shown); e.preventDefault(); }
     else if (e.key === 'Enter') {
-      if (results[active]) handlePick(results[active].path);
       e.preventDefault();
+      const hit = results[active];
+      if (!hit) return; // nothing matches: stay here to fix the typing
+      handlePick(hit.path);
+      // OTHER opens its own description box here instead of finishing
+      if (!isOthersLeaf(hit.path[hit.path.length - 1])) onEnter?.(e.currentTarget, e.shiftKey);
     }
   };
 

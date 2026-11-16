@@ -151,3 +151,19 @@ export function useFillHandle(rows) {
     },
   };
 }
+
+// Excel's Enter (Sean, 2026-11-16): from a field in a list-table cell to the same column's field one row down
+// (`up`: one row up). Stays put on the last row. Each <td> carries data-col, each <tr> data-row-idx.
+export function moveCellFocus(fromEl, up = false) {
+  const td = fromEl?.closest?.('td[data-col]');
+  const tr = td?.closest('tr[data-row-idx]');
+  if (!td || !tr) return false;
+  const next = up ? tr.previousElementSibling : tr.nextElementSibling;
+  if (!next?.matches?.('tr[data-row-idx]')) return false;
+  const cell = next.querySelector(`td[data-col="${CSS.escape(td.dataset.col)}"]`);
+  const field = cell?.querySelector('textarea, input:not([type=checkbox]), select');
+  if (!field) return false;
+  field.focus();
+  if (typeof field.select === 'function') field.select();
+  return true;
+}
