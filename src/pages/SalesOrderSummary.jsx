@@ -201,6 +201,11 @@ export default function SalesOrderSummary() {
     return [...anugerah, ...selempang].map((cat) => ({ cat, blocks: reconstructBlocksForCategory(latestTambahan, cat.key, state.plakCatalog).blocks }));
   }, [latestTambahan, state.plakCatalog]);
 
+  // Approve asks first, full screen, whether the Shipment Date is right (Sean, 2026-10-22), then the Google
+  // Form's school name. Above the `!order` return: a refresh renders once before the order is loaded, and a
+  // hook after that return then threw and left the page blank (Sean, 2026-11-16).
+  const [askShipment, setAskShipment] = useState(false);
+  const [googleFormFor, setGoogleFormFor] = useState(null); // order id whose Google Form school name is asked
   if (!order) return null;
 
   // Only shown once Sales has approved (matches the same `editable` gate
@@ -229,8 +234,6 @@ export default function SalesOrderSummary() {
   // button takes its place where Approve was.
   // Approve asks first, full screen, whether the Shipment Date is right (Sean, 2026-10-22):
   // CONFIRM approves, NOT CONFIRM goes back to the date picker.
-  const [askShipment, setAskShipment] = useState(false);
-  const [googleFormFor, setGoogleFormFor] = useState(null); // order id whose Google Form school name is asked
   const handleApprove = () => {
     if (busy) return;
     if (shipmentDate && functionDateDraft
