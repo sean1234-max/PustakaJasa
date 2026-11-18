@@ -103,4 +103,21 @@ describe('plakPreview — one master template with a TEXT_AREA (SEAN.jsx 2026-11
     // Chinese keeps its font, not one-line Times
     expect(layoutPlaque({ event_header: '毕业典礼' }, master, { measure }).fields[0].font.family).toContain('KaiTi');
   });
+
+  it('lays a lone position out like a lone line: Times New Roman Bold, black, no rank colour (Sean 2026-11-18)', () => {
+    const red = { ...master, fields: { ...master.fields, position: { ...master.fields.position, color: '#e30613' }, event_header: { ...master.fields.event_header, color: '#e30613' } } };
+    const [johan] = layoutPlaque({ position: 'JOHAN' }, red, { measure }).fields;
+    expect(johan.field).toBe('position');
+    expect(johan.font.family).toContain('Times New Roman');
+    expect(johan.color).toBe('#000000');
+    expect(johan.size).toBe(24);
+    expect(layoutPlaque({ event_header: 'MAJLIS PERPISAHAN' }, red, { measure }).fields[0].color).toBe('#000000');
+    // with other lines the position keeps its rank colour
+    const two = layoutPlaque({ event_header: 'MAJLIS', position: 'JOHAN' }, red, { measure }).fields;
+    expect(two.find((f) => f.field === 'position').color).toBe('#d4a017');
+    // no TEXT_AREA: Times and black too, at the template's position size
+    const plain = layoutPlaque({ position: 'NAIB JOHAN' }, tpl, { measure }).fields[0];
+    expect(plain.font.family).toContain('Times New Roman');
+    expect(plain.color).toBe('#000000');
+  });
 });

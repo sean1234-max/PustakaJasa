@@ -212,7 +212,7 @@ function positionLines(text, maxW, measureAt, trofi, shortPos) {
 function fieldLayout(field, value, tpl, opts) {
   const { trofi, cjk, measure, rankColors, chineseFromT, lone, shortPos } = opts;
   const posFrame = () => {
-    const c = rankColors && rankColor(value);
+    const c = rankColors && field !== lone && rankColor(value);
     const rank = c && tpl.fields[`RANK_${c.toUpperCase()}`];
     return rank ? `RANK_${c.toUpperCase()}` : tpl.fields.position ? 'position' : null;
   };
@@ -220,7 +220,8 @@ function fieldLayout(field, value, tpl, opts) {
   if (!frameName) return null;
   const frame = tpl.fields[frameName];
   const maxW = frame.box[2] - frame.box[0];
-  const base = { field, frame, color: frame.color || '#000000', align: frame.justify || 'center' };
+  // a one-line plaque's line is black (SEAN.jsx, Sean 2026-11-18)
+  const base = { field, frame, color: field === lone ? '#000000' : frame.color || '#000000', align: frame.justify || 'center' };
   if (cjk) {
     const font = FONTS.cjk;
     const lines = value.split('\n');
@@ -229,7 +230,7 @@ function fieldLayout(field, value, tpl, opts) {
     return { ...base, lines, size, leading: size * 1.2, font };
   }
   if (field === 'position') {
-    const font = FONTS.position;
+    const font = field === lone ? FONTS.single : FONTS.position;
     const measureAt = (l, s) => measure(l, s, font, POSITION_TRACKING);
     return { ...base, ...positionLines(value, maxW, measureAt, trofi, shortPos), font, tracking: POSITION_TRACKING, stroke: POSITION_STROKE };
   }
@@ -285,9 +286,10 @@ export function layoutPlaque(row, tpl, { trofi = false, measure, rankColors = tr
 
 // ------------------------------------------------------------------ TEXT_AREA (SEAN.jsx fitStackInTextArea)
 // One-line plaque (SEAN.jsx loneLineField / SINGLE_LINE_*, Sean 2026-11-17/18): the only wording is the TAJUK,
-// line 1 or line 2, not Chinese — Times New Roman Bold, its box as wide as TEXT_AREA, leading size + 1, grown
-// 0.5pt at a time up to 24pt; one full line is also tried as two even lines, kept when ≥ 2pt bigger.
-const SINGLE_LINE_FIELDS = ['event_header', 'event_line_1', 'event_line_2'];
+// the position, line 1 or line 2, not Chinese — Times New Roman Bold, black (a position without its rank colour),
+// its box as wide as TEXT_AREA, leading size + 1, grown 0.5pt at a time up to 24pt; one full line is also tried as
+// two even lines, kept when ≥ 2pt bigger.
+const SINGLE_LINE_FIELDS = ['event_header', 'position', 'event_line_1', 'event_line_2'];
 const SINGLE_LINE_MAX_PT = 24;
 const SINGLE_LINE_TWO_GAIN_PT = 2;
 const SINGLE_LINE_INSET = 0.02;
@@ -340,7 +342,7 @@ function growLone(paras, size, width, height, measureAt, cap) {
 function loneInTextArea(it, area, measure) {
   const width = (area[2] - area[0]) * (1 - 2 * SINGLE_LINE_INSET);
   const height = area[1] - area[3];
-  const measureAt = (l, s) => measure(l, s, it.font);
+  const measureAt = (l, s) => measure(l, s, it.font, it.tracking || 0);
   const paras = it.lines;
   const start = wrap(paras, it.size, width, measureAt).length;
   let best = growLone(paras, it.size, width, height, measureAt, start < 3 ? start : Infinity);
@@ -372,7 +374,8 @@ function layoutInTextArea(laid, area, row, { measure, lone }) {
     items = items.map((it) => scaled(it, factor * 0.98));
   }
   const pos = items.findIndex((it) => it.field === 'position');
-  if (pos !== -1 && items[pos].lines.length === 1 && !isShortPosLine1Only(row)) {
+  // (a lone position has already grown, up to SINGLE_LINE_MAX_PT)
+  if (pos !== -1 && lone !== 'position' && items[pos].lines.length === 1 && !isShortPosLine1Only(row)) {
     const cap = headerPosOnly(row) ? HEADER_POS_ONLY_MAX_PT : Infinity;
     const frameW = items[pos].frame.box[2] - items[pos].frame.box[0];
     const start = items[pos].size;
