@@ -291,7 +291,9 @@ const SINGLE_LINE_FIELDS = ['event_header', 'event_line_1', 'event_line_2'];
 const SINGLE_LINE_MAX_PT = 24;
 const SINGLE_LINE_TWO_GAIN_PT = 2;
 const SINGLE_LINE_INSET = 0.02;
-const TEXT_GAP_RATIO = 0.4;
+// SEAN.jsx TEXT_AREA_GAP_PT (Sean 2026-11-18): each box its letters + 4pt above and below, boxes edge to edge
+const TEXT_AREA_GAP_PT = 8;
+const TEXT_AREA_FIT_TRIES = 4;
 const POSITION_GROW_MAX_PT = 6;
 const HEADER_POS_ONLY_MAX_PT = 15;
 const SHORT_POS_MAX_WORDS = 3;
@@ -350,8 +352,8 @@ function loneInTextArea(it, area, measure) {
   return { ...it, lines: best.lines, size: best.size, leading: best.size + 1, x: (area[0] + area[2]) / 2, align: 'center' };
 }
 
-// the lines top to bottom, the same gap (0.4 × the position's size) between every two (ink to ink), shrunk
-// together to fit TEXT_AREA, a one-line position grown into the room left, the stack centred on the anchor
+// the lines top to bottom, TEXT_AREA_GAP_PT between every two (ink to ink), shrunk together to fit TEXT_AREA
+// (again, as the gaps don't shrink), a one-line position grown into the room left, the stack centred on the anchor
 function layoutInTextArea(laid, area, row, { measure, lone }) {
   const areaW = area[2] - area[0];
   const areaH = area[1] - area[3];
@@ -361,11 +363,14 @@ function layoutInTextArea(laid, area, row, { measure, lone }) {
   };
   let items = laid.map((it) => ({ ...it, x: xOf(it) }));
   if (lone && items.length === 1) items = [loneInTextArea(items[0], area, measure)];
-  const gapOf = (list) => (list.find((it) => it.field === 'position') || list[0]).size * TEXT_GAP_RATIO;
-  const heightOf = (list) => list.reduce((h, it) => h + inkHeight(it), 0) + gapOf(list) * (list.length - 1);
+  const gap = TEXT_AREA_GAP_PT;
+  const heightOf = (list) => list.reduce((h, it) => h + inkHeight(it), 0) + gap * (list.length - 1);
   const widthOf = (list) => Math.max(...list.map((it) => inkWidth(it, measure)));
-  const factor = Math.min(areaH / heightOf(items), areaW / widthOf(items));
-  if (factor < 1) items = items.map((it) => scaled(it, factor * 0.98));
+  for (let t = 0; t < TEXT_AREA_FIT_TRIES; t++) {
+    const factor = Math.min(areaH / heightOf(items), areaW / widthOf(items));
+    if (factor >= 1) break;
+    items = items.map((it) => scaled(it, factor * 0.98));
+  }
   const pos = items.findIndex((it) => it.field === 'position');
   if (pos !== -1 && items[pos].lines.length === 1 && !isShortPosLine1Only(row)) {
     const cap = headerPosOnly(row) ? HEADER_POS_ONLY_MAX_PT : Infinity;
@@ -378,7 +383,6 @@ function layoutInTextArea(laid, area, row, { measure, lone }) {
     }
   }
   // y down from the stack's top, then the ink centred on the anchor (and across it)
-  const gap = gapOf(items);
   let top = 0;
   const placed = items.map((it) => {
     const first = top + it.size * CAP_HEIGHT;

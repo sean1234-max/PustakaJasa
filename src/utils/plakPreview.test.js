@@ -82,14 +82,12 @@ describe('plakPreview — one master template with a TEXT_AREA (SEAN.jsx 2026-11
     expect(fields.find((f) => f.field === 'event_line_2').font.family).toContain('KaiTi');
   });
 
-  it('stacks the lines with even gaps inside TEXT_AREA, centred on the anchor', () => {
+  it('stacks the lines 8pt apart (boxes = letters + 4pt, edge to edge) inside TEXT_AREA, centred on the anchor', () => {
     const row = { event_header: 'MAJLIS ANUGERAH', position: 'JOHAN', event_line_1: 'ALI', event_line_2: 'TAHUN 6' };
     const { fields } = layoutPlaque(row, master, { measure });
     const inks = fields.map(inkOf);
     const gaps = inks.slice(1).map(([t], i) => t - inks[i][1]);
-    gaps.forEach((g) => expect(g).toBeCloseTo(gaps[0], 5));
-    const pos = fields.find((f) => f.field === 'position');
-    expect(gaps[0]).toBeCloseTo(pos.size * 0.4, 5);
+    gaps.forEach((g) => expect(g).toBeCloseTo(8, 5));
     expect(inks[0][0] + inks[inks.length - 1][1]).toBeCloseTo(0, 5);
     expect(inks[inks.length - 1][1] - inks[0][0]).toBeLessThanOrEqual(50.01);
   });
