@@ -85,7 +85,7 @@ const GREY = ['NAIB JOHAN', '1ST RUNNER-UP', '1ST RUNNER UP', 'KEDUA', 'TEMPAT K
 const BROWN = ['KETIGA', 'TEMPAT KETIGA', '2ND RUNNER-UP', '2ND RUNNER UP', 'JUARA 3', 'JUARA KETIGA', 'KE-3', 'KE 3',
   'GANGSA', 'ANUGERAH GANGSA', 'BRONZE', '3RD PLACE', 'THIRD PLACE', '3RD', '季军', '第三名', '三等奖', '铜奖', '殿军',
   '第四名', '第五名', '第六名', '第七名', '第八名', '第九名', '第十名', '优秀奖', '优胜奖', 'KEEMPAT', 'KELIMA', 'KEENAM',
-  'KETUJUH', 'KELAPAN', 'KESEMBILAN', 'KESEPULUH', 'SAGU HATI', 'SAGUHATI', 'CONSOLATION PRIZE', '4TH', '5TH', '6TH',
+  'KETUJUH', 'KELAPAN', 'KESEMBILAN', 'KESEPULUH', 'SAGU HATI', 'SAGUHATI', 'CONSOLATION PRIZE', 'CONSOLATION', '4TH', '5TH', '6TH',
   '7TH', '8TH', '9TH', '10TH', ...Array.from({ length: 27 }, (_, i) => `KE-${i + 4}`),
   // 3RD … 9TH RUNNER UP (with or without "-"), as in SEAN.jsx (Sean, 2026-11-18)
   ...['3RD', '4TH', '5TH', '6TH', '7TH', '8TH', '9TH'].flatMap((n) => [`${n} RUNNER UP`, `${n} RUNNER-UP`])];
