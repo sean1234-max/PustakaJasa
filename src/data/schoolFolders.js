@@ -56,6 +56,7 @@ export const SCHOOL_FOLDERS = {
   "SMK BANDAR BARU SRI SENDAYAN": "SMK BANDAR BARU SRI SENDAYAN",
   "SMK JALAN REKO": "SMK JALAN REKO",
   "SRA AS-SIDDIQIN BTP": "SRA AS-SIDIQIN BDR TASIK PUTERI",
+  "KAFA SK PUTRAJAYA PRESINT 9 (1)": "KAFA SKPP 9 (1)",
 };
 
 const key = (s) => String(s || '').replace(/\s+/g, ' ').trim().toUpperCase();
