@@ -4,7 +4,7 @@
 // Keys: the order's school (Sekolah) as on the website; values: the folder name exactly.
 export const SCHOOL_FOLDERS = {
   "BANDAR UTAMA DAMANSARA": "SK BANDAR UTAMA DAMANSARA",
-  "SJK (C) CONNAUGHT 2": "SJKC TAMAN CONNAUGHT 2",
+  "SJK (C) CONNAUGHT 2": "SJKC CONNAUGHT2",
   "SJK (C) KUO MIN (SEREMBAN)": "SJKC KUO MIN",
   "SJK (C) PEI HUA": "SJKC PEI HUA SEREMBAN",
   "SJK (C) SAN MIN (SEREMBAN)": "SJKC SAN MIN",
