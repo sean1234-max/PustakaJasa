@@ -4,7 +4,7 @@
 // utils/plakPreview.js; templates: public/plak-preview (scripts/plak-preview). Crystals have their own.
 import { useEffect, useMemo, useState } from 'react';
 import { CSV_COLUMNS, buildCsvRows, getOrderJenisPlakGroups, isCrystalCode } from '../utils/exportCsv';
-import { FONTS, fileForCode, layoutPlaque, pickTemplate, templateNameFor } from '../utils/plakPreview';
+import { FONTS, fileForCode, layoutPlaque, templateFor } from '../utils/plakPreview';
 import { A4, jpegPagesToPdf } from '../utils/simplePdf';
 import { downloadBinaryFile } from '../utils/downloadBlob';
 
@@ -47,19 +47,19 @@ export function plakSamplesOf(order, manifest) {
     buildCsvRows(order, null, g.items).rows
       .map((r) => Object.fromEntries(CSV_COLUMNS.map((c, i) => [c, r[i] ?? ''])))
       .filter((row) => !row.invoice_gap && CSV_COLUMNS.slice(0, 5).some((c) => String(row[c]).trim()))
-      .forEach((row) => {
-        const name = pickTemplate(entry.templates, templateNameFor(row));
-        if (!name || seen.has(name)) return;
-        seen.add(name);
-        samples.push({ key: `${g.jenisPlak}::${name}`, jenisPlak: g.jenisPlak, entry, template: entry.templates[name], row });
+      .forEach((csvRow) => {
+        const picked = templateFor(entry, csvRow);
+        if (!picked || seen.has(picked.name)) return;
+        seen.add(picked.name);
+        samples.push({ key: `${g.jenisPlak}::${picked.name}`, jenisPlak: g.jenisPlak, entry, ...picked });
       });
   });
   return { samples, missing };
 }
 
 // one sample laid out: its words (pt, y down) and the box around the anchor and picture
-function sceneOf({ entry, template, row }) {
-  const { fields } = layoutPlaque(row, template, { trofi: /TROFI/i.test(entry.file), measure, rankColors: !!entry.picture.outline });
+function sceneOf({ entry, template, row, chineseFromT }) {
+  const { fields } = layoutPlaque(row, template, { trofi: /TROFI/i.test(entry.file), measure, rankColors: !!entry.picture.outline, chineseFromT });
   const [aw, ah] = template.anchor;
   const pic = entry.picture.box; // [l, t, r, b], y up
   // the layout group's own artwork (a trophy's frame pattern — Sean, 2026-11-02), over the picture
@@ -103,8 +103,8 @@ export function PlakRowPreview({ jenisPlak, row }) {
   useEffect(() => { let live = true; loadManifest().then((m) => { if (live) setManifest(m); }); return () => { live = false; }; }, []);
   const rowObj = useMemo(() => Object.fromEntries(CSV_COLUMNS.map((c, i) => [c, row[i] ?? ''])), [row]);
   const entry = manifest?.files.find((f) => f.file === fileForCode(jenisPlak, manifest));
-  const name = entry && pickTemplate(entry.templates, templateNameFor(rowObj));
-  if (entry && name && fontsReady) return <PlakSvg sample={{ entry, template: entry.templates[name], row: rowObj, jenisPlak }} />;
+  const picked = entry && templateFor(entry, rowObj);
+  if (picked && fontsReady) return <PlakSvg sample={{ entry, ...picked, jenisPlak }} />;
   const redPosition = rowObj.position_black !== '1';
   return (
     <div style={{ textAlign: 'center', padding: 'var(--space-2)', border: '1px solid #ddd', borderRadius: 4, background: '#fff' }}>
@@ -167,8 +167,8 @@ export async function plakPicturesPng(pictures, title) {
   const samples = pictures.map(({ label, jenisPlak, row }) => {
     const rowObj = Object.fromEntries(CSV_COLUMNS.map((c, i) => [c, row[i] ?? '']));
     const entry = manifest.files.find((f) => f.file === fileForCode(jenisPlak, manifest));
-    const name = entry && pickTemplate(entry.templates, templateNameFor(rowObj));
-    return name ? { entry, template: entry.templates[name], row: rowObj, jenisPlak: label } : null;
+    const picked = entry && templateFor(entry, rowObj);
+    return picked ? { entry, ...picked, jenisPlak: label } : null;
   });
   // no picture for the code (a crystal …): its lines as text on a white card, the red line in red
   const textCard = (i) => {

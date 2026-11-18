@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { withoutColour, fileForCode, templateNameFor, pickTemplate, rankColor, lineOrderFor, layoutPlaque } from './plakPreview';
+import { withoutColour, fileForCode, templateNameFor, pickTemplate, rankColor, lineOrderFor, layoutPlaque, templateFor } from './plakPreview';
 
 const manifest = {
   mapping: [['PK 261/C', 'E CUT 6 - PLAK C (020C, stand lamp FD 251).ai'], ['YK - 628', 'E TROFI H25-1, YK 628, YK 610.ai']],
@@ -28,7 +28,9 @@ describe('plakPreview — the same .ai and layout group as SEAN.jsx', () => {
     expect(templateNameFor({ event_header: 'MAJLIS', position: 'JOHAN', event_line_1: 'ALI' })).toBe('T_H_PC_L1');
     expect(templateNameFor({ position: '冠军' })).toBe('TC_PC');
     expect(pickTemplate({ T_H_PC_L1: {}, T_PC_L1: {} }, 'T_PC')).toBe('T_PC_L1');
-    expect(pickTemplate({ T_H_PC: {} }, 'TC_PC')).toBeNull();
+    // no TC_ group: made from the T_ twin (SEAN.jsx, 2026-11-17)
+    expect(pickTemplate({ T_H_PC: {} }, 'TC_PC')).toBe('T_H_PC');
+    expect(pickTemplate({ TC_PC_L1: {}, T_PC: {} }, 'TC_PC')).toBe('TC_PC_L1');
   });
 
   it('colours a position by a whole-line rank keyword', () => {
@@ -60,5 +62,47 @@ describe('plakPreview — the same .ai and layout group as SEAN.jsx', () => {
     const { fields } = layoutPlaque(row, tpl, { measure });
     expect(fields[0].lines).toEqual(['MAJLIS ANUGERAH KECEMERLANGAN SK TAMAN', 'SEROJA 2026']);
     expect(fields[1].lines).toEqual(['ANUGERAH', 'MURID CEMERLANG']);
+  });
+});
+
+describe('plakPreview — one master template with a TEXT_AREA (SEAN.jsx 2026-11-18)', () => {
+  const area = [-60, 25, 60, -25];
+  const master = { anchor: [167, 71], textArea: area, fields: { ...tpl.fields, event_line_2: { ...box(-20, -26), size: 7 }, year: box(15, 12) } };
+  const entry = { templates: { T_H_Y_PC_L1_L2: master } };
+  const inkOf = (f) => [f.baselines[0] - f.size * 0.72, f.baselines[f.baselines.length - 1]];
+
+  it('lays a lone line 2 out as line 1, a Chinese row on the T_ master', () => {
+    const lone = templateFor(entry, { event_line_2: 'ALI BIN ABU' });
+    expect(lone.row.event_line_1).toBe('ALI BIN ABU');
+    expect(lone.row.event_line_2).toBe('');
+    const zh = templateFor(entry, { position: '冠军', event_line_1: '陈大文', event_line_2: '三年级' });
+    expect(zh.name).toBe('T_H_Y_PC_L1_L2');
+    expect(zh.chineseFromT).toBe(true);
+    const { fields } = layoutPlaque(zh.row, master, { measure, chineseFromT: true });
+    expect(fields.find((f) => f.field === 'event_line_2').font.family).toContain('KaiTi');
+  });
+
+  it('stacks the lines with even gaps inside TEXT_AREA, centred on the anchor', () => {
+    const row = { event_header: 'MAJLIS ANUGERAH', position: 'JOHAN', event_line_1: 'ALI', event_line_2: 'TAHUN 6' };
+    const { fields } = layoutPlaque(row, master, { measure });
+    const inks = fields.map(inkOf);
+    const gaps = inks.slice(1).map(([t], i) => t - inks[i][1]);
+    gaps.forEach((g) => expect(g).toBeCloseTo(gaps[0], 5));
+    const pos = fields.find((f) => f.field === 'position');
+    expect(gaps[0]).toBeCloseTo(pos.size * 0.4, 5);
+    expect(inks[0][0] + inks[inks.length - 1][1]).toBeCloseTo(0, 5);
+    expect(inks[inks.length - 1][1] - inks[0][0]).toBeLessThanOrEqual(50.01);
+  });
+
+  it('grows a one-line plaque in Times New Roman Bold up to 24pt, a full line tried as two', () => {
+    const short = layoutPlaque({ event_header: 'TAHNIAH' }, master, { measure }).fields[0];
+    expect(short.font.family).toContain('Times New Roman');
+    expect(short.size).toBe(24);
+    expect(short.leading).toBe(25);
+    const long = layoutPlaque({ event_line_1: 'MAJLIS PERPISAHAN TAHUN ENAM 2026' }, master, { measure }).fields[0];
+    expect(long.lines).toHaveLength(2);
+    long.lines.forEach((l) => expect(measure(l, long.size)).toBeLessThanOrEqual(120 * 0.96 + 0.01));
+    // Chinese keeps its font, not one-line Times
+    expect(layoutPlaque({ event_header: '毕业典礼' }, master, { measure }).fields[0].font.family).toContain('KaiTi');
   });
 });

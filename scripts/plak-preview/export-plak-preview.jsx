@@ -21,6 +21,20 @@ function isTemplateName(name) {
     return true;
 }
 
+// as SEAN.jsx (2026-11-18): an OLD… group is put away (skipped with everything inside it); MASTER_TEMPLATE is
+// the file's T_H_Y_PC_L1_L2. TEXT_AREA: the rectangle the text stack is fitted in (never printed).
+function isOldGroup(item) { return /^OLD/i.test(String(item.name)); }
+function templateNameOf(item) { return item.name === "MASTER_TEMPLATE" ? "T_H_Y_PC_L1_L2" : item.name; }
+var TEXT_AREA = "TEXT_AREA";
+function findNamed(group, name) {
+    for (var i = 0; i < group.pageItems.length; i++) {
+        var it = group.pageItems[i];
+        if (it.name === name) return it;
+        if (it.typename === "GroupItem") { var inner = findNamed(it, name); if (inner) return inner; }
+    }
+    return null;
+}
+
 function json(v) {
     if (v === null || v === undefined) return "null";
     if (typeof v === "number") return isFinite(v) ? String(Math.round(v * 100) / 100) : "null";
@@ -69,16 +83,17 @@ function collectTextFrames(group, out) {
     for (var i = 0; i < group.pageItems.length; i++) {
         var it = group.pageItems[i];
         if (it.typename === "TextFrame" && FIELDS.hasOwnProperty(it.name) && !out[it.name]) out[it.name] = it;
-        else if (it.typename === "GroupItem") collectTextFrames(it, out);
+        else if (it.typename === "GroupItem" && !isOldGroup(it)) collectTextFrames(it, out);
     }
 }
 
 function collectTemplates(items, out) {
     for (var i = 0; i < items.length; i++) {
         var it = items[i];
-        if (it.typename !== "GroupItem") continue;
-        if (isTemplateName(it.name)) {
-            if (!out[it.name] && childNamed(it, ANCHOR)) out[it.name] = it;
+        if (it.typename !== "GroupItem" || isOldGroup(it)) continue;
+        var tname = templateNameOf(it);
+        if (isTemplateName(tname)) {
+            if (!out[tname] && childNamed(it, ANCHOR)) out[tname] = it;
         } else {
             collectTemplates(it.pageItems, out);
         }
@@ -93,7 +108,7 @@ function findBackground(items) {
             if (it.name === "BACKGROUND_1") return it;
             if (!first) first = it;
         }
-        if (it.typename === "GroupItem" && !isTemplateName(it.name)) {
+        if (it.typename === "GroupItem" && !isOldGroup(it) && !isTemplateName(templateNameOf(it))) {
             var inner = findBackground(it.pageItems);
             if (inner && (inner.name === "BACKGROUND_1" || !first)) {
                 if (inner.name === "BACKGROUND_1") return inner;
@@ -123,10 +138,14 @@ function readTemplate(group) {
             f.tracking = ca.tracking;
             f.color = colorHex(ca.fillColor);
             f.justify = justify(tf.textRange.paragraphAttributes.justification);
+            if (tf.kind === TextType.PATHTEXT) f.path = true; // a round medal's arc
         } catch (e) {}
         fields[name] = f;
     }
-    return { anchor: [ab[2] - ab[0], ab[1] - ab[3]], centre: [cx, cy], fields: fields };
+    var res = { anchor: [ab[2] - ab[0], ab[1] - ab[3]], centre: [cx, cy], fields: fields };
+    var area = findNamed(group, TEXT_AREA);
+    if (area) { var g = area.geometricBounds; res.textArea = [g[0] - cx, g[1] - cy, g[2] - cx, g[3] - cy]; }
+    return res;
 }
 
 // Copies `item` into a new RGB document of its own and saves it as a PNG at most MAX_PNG_PX wide; returns
@@ -176,7 +195,8 @@ function artOf(group) {
     var art = [];
     for (var i = 0; i < group.pageItems.length; i++) {
         var it = group.pageItems[i];
-        if (it.parent !== group || it.hidden || it.name === ANCHOR || it.typename === "TextFrame" || hasFieldText(it)) continue;
+        if (it.parent !== group || it.hidden || it.name === ANCHOR || it.name === TEXT_AREA || isOldGroup(it)
+            || it.typename === "TextFrame" || hasFieldText(it)) continue;
         art.push(it);
     }
     return art;

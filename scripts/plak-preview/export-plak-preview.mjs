@@ -4,6 +4,8 @@
 // runs export-plak-preview.jsx on the copies, then writes public/plak-preview/: templates.json (+ the
 // folder's product_mapping.csv as `mapping`, so the website picks the same .ai as SEAN.jsx) and one PNG
 // per .ai. Run it again after a template .ai changes or one is added, then push.
+// --only "E CUT 5" (repeatable): export just the .ai files whose name has that text and keep every other
+// file's entry in the current templates.json (a file being edited on the NAS stays as it was exported).
 // Illustrator must be open and not generating (the run opens and closes each copy, ~10 s per file).
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -14,7 +16,9 @@ import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const NAS = '/Volumes/Artwork/D O U B L E  W I N/#LOGO CUT/(EXCELL) MIMAKI CUTTING PLOT';
-const src = process.argv[2] || NAS;
+const args = process.argv.slice(2);
+const only = args.filter((a) => a.startsWith('--only=')).map((a) => a.slice('--only='.length).toUpperCase());
+const src = args.find((a) => !a.startsWith('--')) || NAS;
 const out = path.join(here, '../../public/plak-preview');
 const ILLUSTRATOR_TIMEOUT_S = 3600;
 
@@ -23,7 +27,9 @@ const work = mkdtempSync(path.join(process.env.TMPDIR || tmpdir(), 'plak-preview
 const copies = path.join(work, 'ai');
 const pngs = path.join(work, 'out');
 mkdirSync(copies);
-const aiFiles = readdirSync(src).filter((n) => /\.ai$/i.test(n) && !/backup|OUTPUT/i.test(n));
+const aiFiles = readdirSync(src).filter((n) => /\.ai$/i.test(n) && !/backup|OUTPUT/i.test(n)
+  && (!only.length || only.some((o) => n.toUpperCase().includes(o))));
+if (!aiFiles.length) throw new Error(`No .ai file in ${src} matches ${only.join(', ')}`);
 aiFiles.forEach((n) => copyFileSync(path.join(src, n), path.join(copies, n)));
 console.log(`Copied ${aiFiles.length} .ai file(s) from ${src}`);
 
@@ -60,11 +66,20 @@ const mapping = existsSync(mappingPath)
     .map((l) => cells(l).map((c) => c.trim())).filter(([code, file]) => code && file)
   : [];
 
-rmSync(out, { recursive: true, force: true });
-mkdirSync(out, { recursive: true });
+// --only: the other files' entries (and their pictures) as they are; the re-exported files' old pictures go
+const manifestPath = path.join(out, 'templates.json');
+const kept = only.length ? JSON.parse(readFileSync(manifestPath, 'utf8')).files.filter((f) => !aiFiles.includes(f.file)) : [];
+const pngsOf = (files) => new Set(files.flatMap((f) => [f.picture.png, ...Object.values(f.templates).map((t) => t.art?.png)]).filter(Boolean));
+if (only.length) {
+  const keptPngs = pngsOf(kept);
+  readdirSync(out).filter((n) => n.endsWith('.png') && !keptPngs.has(n)).forEach((n) => rmSync(path.join(out, n)));
+} else {
+  rmSync(out, { recursive: true, force: true });
+  mkdirSync(out, { recursive: true });
+}
 exported.files.forEach((f) => copyFileSync(path.join(pngs, f.picture.png), path.join(out, f.picture.png)));
 // each layout group's own artwork: the same picture (most groups of a file share one frame) kept once
-const byHash = new Map();
+const byHash = new Map([...pngsOf(kept)].map((n) => [createHash('sha1').update(readFileSync(path.join(out, n))).digest('hex'), n]));
 exported.files.forEach((f) => Object.values(f.templates).forEach((t) => {
   if (!t.art) return;
   const hash = createHash('sha1').update(readFileSync(path.join(pngs, t.art.png))).digest('hex');
@@ -74,6 +89,7 @@ exported.files.forEach((f) => Object.values(f.templates).forEach((t) => {
   }
   t.art.png = byHash.get(hash);
 }));
-writeFileSync(path.join(out, 'templates.json'), `${JSON.stringify({ exportedAt: new Date().toISOString(), mapping, files: exported.files })}\n`);
+const files = [...kept, ...exported.files].sort((a, b) => a.file.localeCompare(b.file));
+writeFileSync(manifestPath, `${JSON.stringify({ exportedAt: new Date().toISOString(), mapping, files })}\n`);
 rmSync(work, { recursive: true, force: true });
-console.log(`Wrote ${exported.files.length} file(s) and ${byHash.size} artwork picture(s) to ${out}`);
+console.log(`Wrote ${exported.files.length} file(s) (${kept.length} kept as they were) and ${byHash.size} artwork picture(s) to ${out}`);
