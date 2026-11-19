@@ -54,6 +54,22 @@ describe('plakPreview — the same .ai and layout group as SEAN.jsx', () => {
     expect(Math.abs(top + bottom)).toBeLessThan(0.01);
   });
 
+  it('lays a position of 3 words or fewer at 14pt, leading 15, on 1–2 lines; line 1 / line 2 4pt apart, others 8pt (Sean 2026-11-19, ORD-0457)', () => {
+    const wide = { ...tpl, fields: { ...tpl.fields, position: box(10, -8), event_line_2: box(-20, -26) } };
+    const row = { event_header: 'MAJLIS', position: 'TERBAIK MATA PELAJARAN', event_line_1: 'BAHASA INGGERIS', event_line_2: '1 CEMPAKA 10' };
+    const { fields } = layoutPlaque(row, wide, { measure });
+    const pos = fields.find((f) => f.field === 'position');
+    expect(pos).toMatchObject({ size: 14, leading: 15 });
+    expect(pos.lines).toHaveLength(2);
+    const ink = (f) => [f.baselines[0] - f.size * 0.72, f.baselines[f.baselines.length - 1]];
+    const gaps = fields.slice(1).map((f, i) => ink(f)[0] - ink(fields[i])[1]);
+    [8, 8, 4].forEach((g, i) => expect(gaps[i]).toBeCloseTo(g, 5));
+    expect(layoutPlaque({ event_header: 'MAJLIS', position: 'JOHAN' }, wide, { measure }).fields[1].size).toBe(14);
+    // 4 words keep the usual size; a trophy keeps its own
+    expect(layoutPlaque({ ...row, position: 'MURID CEMERLANG AKADEMIK TAHUN' }, wide, { measure }).fields[1].size).toBeLessThan(14);
+    expect(layoutPlaque({ event_header: 'MAJLIS', position: 'JOHAN' }, wide, { measure, trofi: true }).fields[1].size).toBe(16);
+  });
+
   it('keeps JOHAN red on a plaque with a background (no rank colours)', () => {
     const row = { event_header: 'MAJLIS', position: 'JOHAN' };
     const { fields } = layoutPlaque(row, tpl, { measure, rankColors: false });
@@ -85,12 +101,12 @@ describe('plakPreview — one master template with a TEXT_AREA (SEAN.jsx 2026-11
     expect(fields.find((f) => f.field === 'event_line_2').font.family).toContain('KaiTi');
   });
 
-  it('stacks the lines 8pt apart (boxes = letters + 4pt, edge to edge) inside TEXT_AREA, centred on the anchor', () => {
+  it('stacks the lines 8pt apart (boxes = letters + 4pt, edge to edge), line 1 / line 2 4pt, inside TEXT_AREA, centred on the anchor', () => {
     const row = { event_header: 'MAJLIS ANUGERAH', position: 'JOHAN', event_line_1: 'ALI', event_line_2: 'TAHUN 6' };
     const { fields } = layoutPlaque(row, master, { measure });
     const inks = fields.map(inkOf);
     const gaps = inks.slice(1).map(([t], i) => t - inks[i][1]);
-    gaps.forEach((g) => expect(g).toBeCloseTo(8, 5));
+    [8, 8, 4].forEach((g, i) => expect(gaps[i]).toBeCloseTo(g, 5));
     expect(inks[0][0] + inks[inks.length - 1][1]).toBeCloseTo(0, 5);
     expect(inks[inks.length - 1][1] - inks[0][0]).toBeLessThanOrEqual(50.01);
   });

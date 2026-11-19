@@ -144,8 +144,11 @@ const TROFI = { header: 12, line: 12, position: 16, position2: 14 };
 const POSITION_TRACKING = 75;
 const POSITION_STROKE = 0.2;
 const HEADER_WORD_LIMIT = 5;
-const LINE_GAP = 2; // POSITION_LINE_GAP
-const POSITION_SPACE = 3; // POSITION_SPACE_PT
+// SEAN.jsx: every box its letters + 4pt above and below, boxes edge to edge — 8pt ink to ink (Sean 2026-11-16/18);
+// event_line_1 and event_line_2 closer, 4pt (EVENT_LINE_INK_GAP_PT, Sean 2026-11-19)
+const LINE_INK_GAP_PT = 8;
+const EVENT_LINE_INK_GAP_PT = 4;
+const gapBetween = (up, down) => ([up.field, down.field].sort().join() === 'event_line_1,event_line_2' ? EVENT_LINE_INK_GAP_PT : LINE_INK_GAP_PT);
 const CAP_HEIGHT = 0.72; // the ink of a capital line, as a share of the font size
 const DEFAULT_ORDER = ['event_header', 'position', 'event_line_1', 'event_line_2'];
 const STACK = ['event_header', 'year', 'position', 'event_line_1', 'event_line_2'];
@@ -186,16 +189,13 @@ function fit(lines, size, maxW, measure, min = MIN_SIZE) {
   return s;
 }
 
-// SEAN.jsx applyShortPosLine1Only: position (≤ 3 words) + line 1 only — position 13pt, leading 14
-const SHORT_POS_SIZE = 13;
-const SHORT_POS_LEADING = 14;
+// SEAN.jsx applyShortPosLine1Only (Sean 2026-11-19): a position of ≤ 3 words with other lines — 14pt, leading 15,
+// on 1 or 2 lines, smaller only when it doesn't fit
+const SHORT_POS_SIZE = 14;
+const SHORT_POS_LEADING = 15;
 function positionLines(text, maxW, measureAt, trofi, shortPos) {
-  if (shortPos && !text.includes('\n')) {
-    const size = fit([text], SHORT_POS_SIZE, maxW, measureAt, 4);
-    return { lines: [text], size, leading: SHORT_POS_LEADING * size / SHORT_POS_SIZE };
-  }
-  const one = trofi ? TROFI.position : POSITION_ONE_LINE;
-  const two = trofi ? TROFI.position2 : POSITION_TWO_LINES;
+  const one = shortPos ? SHORT_POS_SIZE : trofi ? TROFI.position : POSITION_ONE_LINE;
+  const two = shortPos ? SHORT_POS_SIZE : trofi ? TROFI.position2 : POSITION_TWO_LINES;
   let lines = text.includes('\n') ? text.split('\n') : null;
   const anugerah = /^(ANUGERAH)(?![\s ]+KHAS\b)[\s ]+(\S+\s+\S[\s\S]*)$/i.exec(text);
   if (!lines && anugerah) lines = [anugerah[1], anugerah[2]];
@@ -205,7 +205,7 @@ function positionLines(text, maxW, measureAt, trofi, shortPos) {
     lines = pengawas ? ['PENGAWAS', pengawas[1]] : balanced(text, 2, (l) => measureAt(l, two)) || [text];
   }
   const size = fit(lines, lines.length === 1 ? one : two, maxW, measureAt, 4);
-  return { lines, size, leading: 12 * size / POSITION_ONE_LINE };
+  return { lines, size, leading: shortPos ? size + SHORT_POS_LEADING - SHORT_POS_SIZE : 12 * size / POSITION_ONE_LINE };
 }
 
 // one field's lines, font and size; null when the template has no frame for it
@@ -258,30 +258,29 @@ export function layoutPlaque(row, tpl, { trofi = false, measure, rankColors = tr
   const laid = lineOrderFor(row)
     .map((f) => [f, clean(row[f])])
     .filter(([, v]) => v)
-    .map(([f, v]) => fieldLayout(f, v, tpl, { trofi, cjk, measure, rankColors, chineseFromT, lone, shortPos: isShortPosLine1Only(row) }))
+    .map(([f, v]) => fieldLayout(f, v, tpl, { trofi, cjk, measure, rankColors, chineseFromT, lone, shortPos: !trofi && !roundMedal && isShortPos(row) }))
     .filter(Boolean);
   if (tpl.textArea && laid.length) return { fields: layoutInTextArea(laid, tpl.textArea, row, { measure, lone }) };
-  // stacked top to bottom with SEAN.jsx's gaps, each field a box of one leading per line with its capitals
-  // in the middle of each, then the ink of the whole stack centred on the anchor
-  let y = 0;
-  const placed = laid.map((it, i) => {
-    if (i > 0) {
-      const up = laid[i - 1].field;
-      let gap = up === 'event_line_1' && it.field === 'event_line_2' ? 0 : LINE_GAP;
-      if (up === 'position' || it.field === 'position') gap += POSITION_SPACE;
-      y += gap;
-    }
-    const baselines = it.lines.map((_, k) => y + k * it.leading + (it.leading + it.size * CAP_HEIGHT) / 2);
-    y += it.lines.length * it.leading;
-    const [l, , r] = it.frame.box;
-    const x = it.align === 'left' ? l : it.align === 'right' ? r : (l + r) / 2;
-    return { ...it, x, baselines };
+  if (!laid.length) return { fields: [] };
+  // stacked ink to ink with SEAN.jsx's gaps, the whole stack centred on the anchor
+  const { placed, height } = stackInk(laid.map((it) => ({ ...it, x: xOf(it) })));
+  return { fields: placed.map(({ frame: _frame, ...it }) => ({ ...it, baselines: it.baselines.map((b) => b - height / 2) })) };
+}
+
+const xOf = (it) => {
+  const [l, , r] = it.frame.box;
+  return it.align === 'left' ? l : it.align === 'right' ? r : (l + r) / 2;
+};
+// the lines top to bottom, gapBetween each two (ink to ink), y down from the stack's top -> { placed, height }
+function stackInk(items) {
+  let top = 0;
+  const placed = items.map((it, i) => {
+    if (i > 0) top += gapBetween(items[i - 1], it);
+    const first = top + it.size * CAP_HEIGHT;
+    top += inkHeight(it);
+    return { ...it, baselines: it.lines.map((_, k) => first + k * it.leading) };
   });
-  if (!placed.length) return { fields: [] };
-  const inkTop = placed[0].baselines[0] - placed[0].size * CAP_HEIGHT;
-  const last = placed[placed.length - 1];
-  const shift = -(inkTop + last.baselines[last.baselines.length - 1]) / 2;
-  return { fields: placed.map(({ frame: _frame, ...it }) => ({ ...it, baselines: it.baselines.map((b) => b + shift) })) };
+  return { placed, height: top };
 }
 
 // ------------------------------------------------------------------ TEXT_AREA (SEAN.jsx fitStackInTextArea)
@@ -293,8 +292,6 @@ const SINGLE_LINE_FIELDS = ['event_header', 'position', 'event_line_1', 'event_l
 const SINGLE_LINE_MAX_PT = 24;
 const SINGLE_LINE_TWO_GAIN_PT = 2;
 const SINGLE_LINE_INSET = 0.02;
-// SEAN.jsx TEXT_AREA_GAP_PT (Sean 2026-11-18): each box its letters + 4pt above and below, boxes edge to edge
-const TEXT_AREA_GAP_PT = 8;
 const TEXT_AREA_FIT_TRIES = 4;
 const POSITION_GROW_MAX_PT = 6;
 const HEADER_POS_ONLY_MAX_PT = 15;
@@ -306,9 +303,9 @@ function loneLineField(row) {
   return used.length === 1 && SINGLE_LINE_FIELDS.includes(used[0]) && !hasCjk(row[used[0]]) ? used[0] : null;
 }
 const onlyThese = (row, fields) => ALL_LINES.every((f) => fields.includes(f) || !filled(row, f));
-// SEAN.jsx isShortPosLine1Only: position (≤ 3 words) + line 1 only — the position never grows
-const isShortPosLine1Only = (row) => filled(row, 'position') && filled(row, 'event_line_1')
-  && onlyThese(row, ['position', 'event_line_1']) && words(clean(row.position)).length <= SHORT_POS_MAX_WORDS;
+// SEAN.jsx isShortPosLine1Only (Sean 2026-11-19): a position of ≤ 3 words with other lines — 14pt, never grown
+const isShortPos = (row) => filled(row, 'position') && !onlyThese(row, ['position'])
+  && clean(row.position).split(/[\s ]+/).length <= SHORT_POS_MAX_WORDS;
 // SEAN.jsx headerPosOnlyCap: TAJUK + position only — the position at most 15pt
 const headerPosOnly = (row) => filled(row, 'position') && filled(row, 'event_header') && onlyThese(row, ['position', 'event_header']);
 
@@ -354,19 +351,14 @@ function loneInTextArea(it, area, measure) {
   return { ...it, lines: best.lines, size: best.size, leading: best.size + 1, x: (area[0] + area[2]) / 2, align: 'center' };
 }
 
-// the lines top to bottom, TEXT_AREA_GAP_PT between every two (ink to ink), shrunk together to fit TEXT_AREA
+// the lines top to bottom, gapBetween each two (ink to ink), shrunk together to fit TEXT_AREA
 // (again, as the gaps don't shrink), a one-line position grown into the room left, the stack centred on the anchor
 function layoutInTextArea(laid, area, row, { measure, lone }) {
   const areaW = area[2] - area[0];
   const areaH = area[1] - area[3];
-  const xOf = (it) => {
-    const [l, , r] = it.frame.box;
-    return it.align === 'left' ? l : it.align === 'right' ? r : (l + r) / 2;
-  };
   let items = laid.map((it) => ({ ...it, x: xOf(it) }));
   if (lone && items.length === 1) items = [loneInTextArea(items[0], area, measure)];
-  const gap = TEXT_AREA_GAP_PT;
-  const heightOf = (list) => list.reduce((h, it) => h + inkHeight(it), 0) + gap * (list.length - 1);
+  const heightOf = (list) => stackInk(list).height;
   const widthOf = (list) => Math.max(...list.map((it) => inkWidth(it, measure)));
   for (let t = 0; t < TEXT_AREA_FIT_TRIES; t++) {
     const factor = Math.min(areaH / heightOf(items), areaW / widthOf(items));
@@ -375,7 +367,7 @@ function layoutInTextArea(laid, area, row, { measure, lone }) {
   }
   const pos = items.findIndex((it) => it.field === 'position');
   // (a lone position has already grown, up to SINGLE_LINE_MAX_PT)
-  if (pos !== -1 && lone !== 'position' && items[pos].lines.length === 1 && !isShortPosLine1Only(row)) {
+  if (pos !== -1 && lone !== 'position' && items[pos].lines.length === 1 && !isShortPos(row)) {
     const cap = headerPosOnly(row) ? HEADER_POS_ONLY_MAX_PT : Infinity;
     const frameW = items[pos].frame.box[2] - items[pos].frame.box[0];
     const start = items[pos].size;
@@ -386,13 +378,8 @@ function layoutInTextArea(laid, area, row, { measure, lone }) {
     }
   }
   // y down from the stack's top, then the ink centred on the anchor (and across it)
-  let top = 0;
-  const placed = items.map((it) => {
-    const first = top + it.size * CAP_HEIGHT;
-    top += inkHeight(it) + gap;
-    return { ...it, baselines: it.lines.map((_, k) => first + k * it.leading) };
-  });
-  const dy = -(top - gap) / 2;
+  const { placed, height } = stackInk(items);
+  const dy = -height / 2;
   const spans = placed.map((it) => {
     const w = inkWidth(it, measure);
     return it.align === 'left' ? [it.x, it.x + w] : it.align === 'right' ? [it.x - w, it.x] : [it.x - w / 2, it.x + w / 2];
