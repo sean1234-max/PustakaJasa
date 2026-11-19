@@ -2519,9 +2519,9 @@ export function AppStateProvider({ children }) {
       .catch((err) => console.error('Failed to save print timestamp to Supabase:', err));
   }, [patch]);
 
-  // fetchOrders() only pulls a bounded window of recent orders into
-  // `state.orders`. A detail page opened for an order outside that window
-  // (an old one, a deep link) would otherwise find nothing — this fetches
+  // fetchOrders() loads every order the account may see, but a detail page can
+  // still be opened before that list arrives or for one placed since (a deep
+  // link) — this fetches
   // that one order by id (RLS still applies) and merges it in, so every
   // existing `state.orders.find(...)` keeps working. No-op if it's already
   // loaded or the caller can't see it.

@@ -48,8 +48,7 @@ export default function SalesDashboard() {
   const [search, setSearch] = useSessionState(`${viewKey}:search`, '');
   // RLS already limits state.orders to this salesman's own orders (a Sales
   // Manager sees everyone's but edits only their own — isOwn below).
-  // ponytail: searches the loaded orders (fetchOrders' newest 500); add a
-  // server-side ilike search if a salesman ever has more than that.
+  // Searches the loaded orders — fetchOrders loads all of them.
   const searching = !!search.trim();
 
   // Before Production's Done Review: Edit Order (the whole order, Sean 2026-11-07); after approval: Add On only.

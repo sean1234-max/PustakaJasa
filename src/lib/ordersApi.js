@@ -151,11 +151,12 @@ function fromDbOrder(row) {
   };
 }
 
-// Fetches orders, newest first. `limit` bounds how many rows are pulled into
-// memory (AppState keeps the whole result in `state.orders`) — the default is
-// generous (covers years of a real shop's volume) but stops the list from
-// growing without limit. Any single order not in the loaded window can still
-// be opened: fetchOrderById + AppState.ensureOrderLoaded merge it in on demand.
+// Fetches EVERY order the account may see, newest first, however many there are (Sean,
+// 2026-11-19: the old newest-500 cap hid ORD-0037 and the In Production ORD-0030 / ORD-0056).
+// Supabase gives at most a set number of rows a request, so it pages until the exact count is in.
+// ponytail: the whole list loads at login (~20 KB an order: 562 ≈ 11 MB raw, 1–2 MB sent). At
+// ~2000 orders (about March 2027) make the list load only what the cards need and the full order
+// when it's opened — Sean's agreed step 2.
 //
 // The list leaves out `snapshot` (the whole New Order draft, ~90% of the table — 62 MB of 256
 // orders made every login wait, Sean 2026-11-04) and keeps only its `placedBy`. Every other
@@ -179,21 +180,34 @@ const ORDER_LIST_COLUMNS = [
   'previous_import_files', 'salesman_edited_at', 'created_by_production', 'placed_by:snapshot->>placedBy',
 ].join(',');
 
-export async function fetchOrders(userId, role, { limit = 500 } = {}) {
-  let query = supabase.from('orders').select(ORDER_LIST_COLUMNS)
-    .order('created_at', { ascending: false })
-    .limit(limit);
-  if (role === 'teacher' && userId) {
-    query = query.eq('created_by', userId);
+const ORDERS_PAGE_SIZE = 1000;
+
+export async function fetchOrders(userId, role) {
+  const page = (from) => {
+    let query = supabase.from('orders').select(ORDER_LIST_COLUMNS, { count: 'exact' });
+    if (role === 'teacher' && userId) {
+      query = query.eq('created_by', userId);
+    }
+    // salesman/store_admin/production/admin all get a plain select — RLS
+    // (supabase/migrations/0039_teacher_free_salesman_pick_invoicing_assign.sql,
+    // 0038_invoicing_can_approve.sql, 0047_rename_invoicing_role_to_store_admin.sql)
+    // already scopes exactly which rows come back for each of those roles, so
+    // no client-side filter is needed here.
+    return query.order('created_at', { ascending: false }).order('id', { ascending: false })
+      .range(from, from + ORDERS_PAGE_SIZE - 1);
+  };
+  let rows = [];
+  let total = Infinity;
+  while (rows.length < total) {
+    const { data, error, count } = await page(rows.length);
+    if (error) throw error;
+    if (!data.length) break;
+    rows = [...rows, ...data];
+    total = count ?? rows.length;
   }
-  // salesman/store_admin/production/admin all get a plain select — RLS
-  // (supabase/migrations/0039_teacher_free_salesman_pick_invoicing_assign.sql,
-  // 0038_invoicing_can_approve.sql, 0047_rename_invoicing_role_to_store_admin.sql)
-  // already scopes exactly which rows come back for each of those roles, so
-  // no client-side filter is needed here.
-  const { data, error } = await query;
-  if (error) throw error;
-  return data.map(({ placed_by, ...row }) => fromDbOrder({ ...row, snapshot: placed_by ? { placedBy: placed_by } : null }));
+  // an order placed between two pages pushes the next page down one row — keep each order once
+  const unique = [...new Map(rows.map((r) => [r.id, r])).values()];
+  return unique.map(({ placed_by, ...row }) => fromDbOrder({ ...row, snapshot: placed_by ? { placedBy: placed_by } : null }));
 }
 
 // One order by id — RLS still applies, so a user asking for an order they

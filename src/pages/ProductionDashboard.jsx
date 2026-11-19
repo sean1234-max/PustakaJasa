@@ -111,8 +111,7 @@ export default function ProductionDashboard() {
   const [cardTypeFilter, setCardTypeFilter] = useSessionState(`${viewKey}:cardTypeFilter`, '');
   // Search Order (Sean, 2026-10-15): Order ID, Invoice Number, school or salesman, across every
   // tab — the orders this account may see (RLS: the manager all, a team account its salesmen's).
-  // ponytail: searches the loaded orders (fetchOrders' newest 500); add a server-side ilike
-  // search once Production sees more than that.
+  // Searches the loaded orders — fetchOrders loads all of them.
   const [search, setSearch] = useSessionState(`${viewKey}:search`, '');
   const searching = !!search.trim();
 
