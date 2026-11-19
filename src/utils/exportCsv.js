@@ -1116,8 +1116,12 @@ export function buildOrderImportFilename(order, file = { path: order.importFileP
   return `${sanitizeFilenamePart(order.id || '')}-${school}${salesman ? `(${salesman})` : ''}${index > 0 ? `-${index + 1}` : ''}${ext}`;
 }
 
-export function buildCombinedCsvFilename(order, invoiceId = null) {
-  const invoice = sanitizeFilenamePart(invoiceId || order.invoiceId || order.id);
+// A Tambahan with no invoice of its own carries its parent's DWI and its own number — "(DWI-26110535 ORD-0457)":
+// SEAN.jsx prints INV:DWI-26110535 ORD-0457, and its OUTPUT folder / A3 / NAS copies never land on the parent's
+// (Sean, 2026-11-19). A parent without a DWI number keeps "(ORD-0457)" (SEAN.jsx reads only DWI numbers).
+export function buildCombinedCsvFilename(order, invoiceId = null, parentInvoiceId = null) {
+  const parentDwi = /^DWI/i.test(parentInvoiceId || '') ? `${parentInvoiceId} ${order.id}` : null;
+  const invoice = sanitizeFilenamePart(invoiceId || order.invoiceId || parentDwi || order.id);
   const school = sanitizeFilenamePart(order.sekolah || 'Combined');
   return `(${invoice}) - ${school}.csv`;
 }

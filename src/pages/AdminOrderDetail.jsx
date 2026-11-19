@@ -110,7 +110,7 @@ export default function AdminOrderDetail() {
   const handleExportCombined = () => {
     if (!combinedOk) return;
     const csv = rowsToCsv(combinedRows);
-    const filename = buildCombinedCsvFilename(order);
+    const filename = buildCombinedCsvFilename(order, null, state.orders.find((o) => o.id === order.parentOrderId)?.invoiceId);
     downloadTextFile(filename, csv);
     setExportNote(`Exported ${combinedRows.length} row(s) to ${filename}.`);
     clearTimeout(exportNoteTimer.current);

@@ -395,7 +395,7 @@ export default function ProductionOrderDetail() {
     ? rowsForInvoice(order, combineCsvRows(invoiceExport.filter(isPlak)), viewInvoiceId)
     : addInvoiceGaps(order, combineCsvRows(plakGroups));
   const combinedOk = invoicePlakGroups.length > 0 && invoicePlakGroups.every((g) => g.check.ok || isAllReserved(g)) && combinedRows.length > 0;
-  const combinedFilename = buildCombinedCsvFilename(order, invoiceExport ? viewInvoiceId : null);
+  const combinedFilename = buildCombinedCsvFilename(order, invoiceExport ? viewInvoiceId : null, originalOrder?.invoiceId);
   const handleExportCombined = () => {
     if (!combinedOk) return;
     const csv = rowsToCsv(combinedRows);
@@ -674,7 +674,7 @@ export default function ProductionOrderDetail() {
                 a confirmed crystal can, whatever card or status the order is on (Sean, 2026-11-12, ORD-0210 Completed). */}
             {addonView
               ? <CrystalPreview order={effectiveOrder} role="production" selected={pickedCrystal} showArtwork={false} canMake={false} />
-              : <CrystalPreview order={order} role="production" selected={pickedCrystal} makeUnconfirmed={kivCardView || fromKiv || needsKiv(order)} makeAi={crystalMakeAi} makeAiFolder={buildCombinedCsvFilename(order).replace(/\.csv$/i, '')} makeAiSchool={schoolFolderFor(order.sekolah)} onMakeAiSent={() => crystalSent.current?.()} />}
+              : <CrystalPreview order={order} role="production" selected={pickedCrystal} makeUnconfirmed={kivCardView || fromKiv || needsKiv(order)} makeAi={crystalMakeAi} makeAiFolder={buildCombinedCsvFilename(order, null, originalOrder?.invoiceId).replace(/\.csv$/i, '')} makeAiSchool={schoolFolderFor(order.sekolah)} onMakeAiSent={() => crystalSent.current?.()} />}
             <PlakPreview order={addonView ? effectiveOrder : order} />
 
             {selempangBlocks.length > 0 && (

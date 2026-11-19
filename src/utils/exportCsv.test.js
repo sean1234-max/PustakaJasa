@@ -422,6 +422,15 @@ describe('combineCsvRows — one file for every (category, Jenis Plak) group', (
   it('buildCombinedCsvFilename falls back to "Combined" when the order has no school name', () => {
     expect(buildCombinedCsvFilename({ ...order, sekolah: '' })).toBe('(DWI-1) - Combined.csv');
   });
+
+  it("buildCombinedCsvFilename: a Tambahan with no invoice carries its parent's DWI + its own number (Sean 2026-11-19, ORD-0457)", () => {
+    const tambahan = { id: 'ORD-0457', sekolah: 'SK JALAN 4', invoiceId: null, parentOrderId: 'ORD-0339' };
+    expect(buildCombinedCsvFilename(tambahan, null, 'DWI-26110535')).toBe('(DWI-26110535 ORD-0457) - SK JALAN 4.csv');
+    // its own invoice wins; a parent without a DWI number (SEAN.jsx can't read it) keeps the order number
+    expect(buildCombinedCsvFilename({ ...tambahan, invoiceId: 'DWI-2' }, null, 'DWI-26110535')).toBe('(DWI-2) - SK JALAN 4.csv');
+    expect(buildCombinedCsvFilename(tambahan, null, 'DO000421')).toBe('(ORD-0457) - SK JALAN 4.csv');
+    expect(buildCombinedCsvFilename(tambahan)).toBe('(ORD-0457) - SK JALAN 4.csv');
+  });
 });
 
 describe('rowsToCsv', () => {
