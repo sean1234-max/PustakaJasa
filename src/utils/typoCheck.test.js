@@ -78,3 +78,13 @@ describe('SRI (Sean, 2026-10-27)', () => {
     expect(findPossibleTypo('SEKOLAH KEBANGSAAN TAMAN SRI ANDALAS')).toBeFalsy();
   });
 });
+
+describe('DISIPLIN + medal colours (Sean, 2026-11-19, ORD-0567)', () => {
+  it('DISAPLIN / DISPLIN are typos of DISIPLIN', () => {
+    expect(findPossibleTypo('DISAPLIN TERBAIK')).toMatchObject({ clean: 'DISAPLIN', suggestion: 'DISIPLIN' });
+    expect(findPossibleTypo('DISPLIN TERBAIK')).toMatchObject({ suggestion: 'DISIPLIN' });
+  });
+  it('EMAS / PERAK / GANGSA are words, not a typo of KEMAS', () => {
+    ['EMAS', 'PERAK', 'GANGSA', 'BERPENAMPILAN KEMAS'].forEach((t) => expect(findPossibleTypo(t)).toBeNull());
+  });
+});

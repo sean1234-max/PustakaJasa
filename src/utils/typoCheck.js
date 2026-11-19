@@ -37,6 +37,8 @@ const EVENT_WORDS = [
   'BRIPS', 'MATA', 'PELAJARAN', 'PENDIDIKAN', 'KEDUDUKAN', 'KUANTITI',
   'KEMAS', // BERPENAMPILAN KEMAS — not KELAS (Sean, 2026-10-21)
   'SRI', // TAMAN SRI ANDALAS — not SERI (Sean, 2026-10-27)
+  // DISAPLIN TERBAIK reached ORD-0567 unflagged; EMAS was flagged as KEMAS (Sean, 2026-11-19)
+  'DISIPLIN', 'EMAS', 'PERAK', 'GANGSA',
 ];
 
 export const TYPO_CHECK_DICTIONARY = [...new Set([...SUBJECT_WORDS, ...EVENT_WORDS])];
