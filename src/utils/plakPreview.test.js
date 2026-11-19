@@ -37,6 +37,9 @@ describe('plakPreview — the same .ai and layout group as SEAN.jsx', () => {
     expect(rankColor('JOHAN')).toBe('yellow');
     expect(rankColor('NAIB JOHAN')).toBe('grey');
     expect(rankColor('ANUGERAH JOHAN SUKAN')).toBeNull();
+    // PLATINUM is yellow like EMAS (Sean, 2026-11-19)
+    expect(rankColor('ANUGERAH PLATINUM')).toBe('yellow');
+    expect(rankColor('PLATINUM')).toBe('yellow');
   });
 
   it('follows the line order from the Reference Sample', () => {

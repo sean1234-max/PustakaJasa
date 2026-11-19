@@ -101,7 +101,7 @@ export function templateFor(entry, rawRow) {
 
 // ------------------------------------------------------------------ position colour (SEAN.jsx getRankColor)
 const YELLOW = ['JOHAN', 'CHAMPION', '1ST PLACE', 'FIRST PLACE', 'PERTAMA', 'TEMPAT PERTAMA', 'JUARA 1', 'JUARA PERTAMA',
-  'GOLD', '1ST', 'THE CHAMPION', 'EMAS', 'ANUGERAH EMAS', '冠军', '第一名', '一等奖', '金奖'];
+  'GOLD', '1ST', 'THE CHAMPION', 'EMAS', 'ANUGERAH EMAS', 'PLATINUM', 'ANUGERAH PLATINUM', '冠军', '第一名', '一等奖', '金奖'];
 const GREY = ['NAIB JOHAN', '1ST RUNNER-UP', '1ST RUNNER UP', 'KEDUA', 'TEMPAT KEDUA', 'JUARA 2', 'JUARA KEDUA',
   'SILVER', '2ND PLACE', 'SECOND PLACE', '2ND', 'PERAK', 'ANUGERAH PERAK', '亚军', '第二名', '二等奖', '银奖'];
 const BROWN = ['KETIGA', 'TEMPAT KETIGA', '2ND RUNNER-UP', '2ND RUNNER UP', 'JUARA 3', 'JUARA KETIGA', 'KE-3', 'KE 3',
