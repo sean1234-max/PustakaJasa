@@ -148,6 +148,8 @@ function fromDbOrder(row) {
     productionNote: row.production_note || '',
     salesmanPrintedAt: row.salesman_printed_at || null,
     parentOrderId: row.parent_order_id || null,
+    // orders Tambahans oldest → newest (print lists every earlier one, Sales prints the latest)
+    createdAt: row.created_at || null,
   };
 }
 

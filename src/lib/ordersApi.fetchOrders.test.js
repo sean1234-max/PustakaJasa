@@ -52,6 +52,12 @@ describe('fetchOrders', () => {
     expect(calls).toHaveLength(1);
   });
 
+  it('keeps created_at as createdAt — the Tambahan print orders earlier Tambahans by it', async () => {
+    table = [{ id: 'ORD-0336', created_at: '2026-11-07T04:57:49.51884+00:00', parent_order_id: 'ORD-0269' }];
+    const [order] = await fetchOrders('u', 'production');
+    expect(order.createdAt).toBe('2026-11-07T04:57:49.51884+00:00');
+  });
+
   it("a teacher still gets only their own orders, all of them", async () => {
     table = makeRows(2001);
     const orders = await fetchOrders('t1', 'teacher');
