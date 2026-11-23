@@ -6,13 +6,16 @@
 // salesman at month-end.
 //
 // Only the order ID is taken from the request; every value is read from
-// the order as the caller (RLS). The Google call is a raw `fetch` with the
+// the order as the caller (RLS). The Google call is a raw `fetch` (googleFetch: timeout + tries) with the
 // service-account JWT signed by Deno's Web Crypto — no googleapis dependency.
+// pg_cron also calls it ({ action: 'retry' }, 0128): rows that never got written, or a cancelled order's.
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { googleFetch } from '../_shared/googleFetch.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const PUBLISHABLE_KEY = JSON.parse(Deno.env.get('SUPABASE_PUBLISHABLE_KEYS')!)['default'];
+const SECRET_KEY = JSON.parse(Deno.env.get('SUPABASE_SECRET_KEYS')!)['default'];
 
 // Google service-account credentials for the Sheets API — set via
 // `supabase secrets set`. The private key is a PEM; Deno env vars can't
@@ -67,15 +70,15 @@ const KEYIN_TAB = '1.5%';
 const KEYIN_HEADER = ['Order ID', 'Invoice', 'Amount', 'Salesman', 'School', 'Keyed in by', 'Date Placed', 'Synced At', '1.5%'];
 
 async function ensureKeyinTab(headers: Record<string, string>): Promise<boolean> {
-  const metaResp = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}?fields=sheets.properties(title)`, { headers });
+  const metaResp = await googleFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}?fields=sheets.properties(title)`, { headers });
   if (!metaResp.ok) return false;
   const titles = ((await metaResp.json()).sheets || []).map((sh: { properties: { title: string } }) => sh.properties.title);
   if (titles.includes(KEYIN_TAB)) return true;
-  const addResp = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}:batchUpdate`, {
+  const addResp = await googleFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}:batchUpdate`, {
     method: 'POST', headers, body: JSON.stringify({ requests: [{ addSheet: { properties: { title: KEYIN_TAB } } }] }),
-  });
+  }, false);
   if (!addResp.ok) { console.error('Adding the 1.5% tab failed:', addResp.status, await addResp.text()); return false; }
-  const headResp = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(`'${KEYIN_TAB}'!A1:I1`)}?valueInputOption=USER_ENTERED`, {
+  const headResp = await googleFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(`'${KEYIN_TAB}'!A1:I1`)}?valueInputOption=USER_ENTERED`, {
     method: 'PUT', headers, body: JSON.stringify({ values: [KEYIN_HEADER] }),
   });
   if (!headResp.ok) console.error('Writing the 1.5% header failed:', headResp.status, await headResp.text());
@@ -141,7 +144,7 @@ async function getGoogleAccessToken(): Promise<string> {
   const signature = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', key, new TextEncoder().encode(signingInput));
   const jwt = `${signingInput}.${base64url(new Uint8Array(signature))}`;
 
-  const tokenResp = await fetch('https://oauth2.googleapis.com/token', {
+  const tokenResp = await googleFetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
@@ -156,42 +159,32 @@ async function getGoogleAccessToken(): Promise<string> {
   return tokenBody.access_token as string;
 }
 
-Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+// pg_cron (0128) every 10 minutes: an urgent order whose row was never written (Google down, the tab closed
+// before the sync) is written now, and a cancelled one still marked as written has its row removed (Sean,
+// 2026-11-23 check: ORD-0417 / ORD-0464 missing, cancelled ORD-0240 / ORD-0381 still listed). Its
+// urgent_sheet_synced_at is set / cleared through set_urgent_sheet_synced — the only order write the guard
+// lets the secret key make. Orders of the last RETRY_WITHIN_DAYS, RETRY_PER_RUN of each kind per run.
+const RETRY_WITHIN_DAYS = 30;
+const RETRY_PER_RUN = 10;
+const RETRY_RUN_MS = 100_000;          // no new order after this (the function has ~150 s)
+const RETRY_QUIET_MS = 3 * 60_000;     // invoiced this recently: the website's own sync may still be running
 
-  if (!GOOGLE_CLIENT_EMAIL || !GOOGLE_PRIVATE_KEY_RAW || !SPREADSHEET_ID || !SHEET_RANGE) {
-    return jsonResponse({ error: 'Google Sheets sync is not configured yet. Contact an admin.' }, 500);
-  }
+type SyncResult = { status: number; body: Record<string, unknown> };
+// deno-lint-ignore no-explicit-any
+type Db = any;
 
-  const authHeader = req.headers.get('Authorization');
-  if (!authHeader) return jsonResponse({ error: 'Missing Authorization header.' }, 401);
-
-  const callerClient = createClient(SUPABASE_URL, PUBLISHABLE_KEY, {
-    global: { headers: { Authorization: authHeader } },
-  });
-
-  const { data: { user }, error: userError } = await callerClient.auth.getUser();
-  if (userError || !user) return jsonResponse({ error: 'Not authenticated.' }, 401);
-
-  let body: Record<string, unknown>;
-  try {
-    body = await req.json();
-  } catch {
-    return jsonResponse({ error: 'Invalid request body.' }, 400);
-  }
-  const orderId = typeof body.orderId === 'string' ? body.orderId : '';
-  const keyin = body.sheet === 'keyin';
-  if (!orderId) return jsonResponse({ error: 'Order ID is required.' }, 400);
-
-  // Everything written comes from the order itself, read as the CALLER (RLS):
-  // whoever can see the order may refresh its row, and nobody can put
-  // figures in the Sheet that the order doesn't hold.
-  const { data: order, error: orderError } = await callerClient
+// One order's row in the urgent tab — or, with `keyin`, the 1.5% tab: written / refreshed while the order
+// belongs there, removed when it doesn't. Every value comes from the saved order, read through `db`: the
+// caller's client from the website (RLS — whoever can see the order may refresh its row, and nobody can put
+// figures in the Sheet the order doesn't hold), the secret-key client from the cron retry.
+// `authHeader` (the website's caller) also refreshes KIT DOC's red rows; the cron leaves that to the next one.
+async function syncOrderRow(db: Db, orderId: string, keyin: boolean, authHeader: string | null): Promise<SyncResult> {
+  const { data: order, error: orderError } = await db
     .from('orders')
     .select('id, invoice_id, total_amount, sales, sekolah, shipment_date, function_date, date_placed, urgent, parent_order_id, status, created_by_production, placed_by:snapshot->>placedBy')
     .eq('id', orderId)
     .maybeSingle();
-  if (orderError || !order) return jsonResponse({ error: 'Order not found.' }, 404);
+  if (orderError || !order) return { status: 404, body: { error: 'Order not found.' } };
   const amount = Number(order.total_amount) || 0;
   const commission = Math.round(amount * URGENT_COMMISSION_RATE * 100) / 100;
   const row = keyin
@@ -204,15 +197,16 @@ Deno.serve(async (req) => {
       malaysiaDateTime(new Date()), commission,
     ];
   const lastCol = keyin ? 'I' : 'J';
-  // its row stays while this holds, else it's removed
-  const keep = keyin ? !!order.created_by_production && !!order.invoice_id && order.status !== 'Cancelled' && !order.urgent : !!order.urgent;
+  // its row stays while this holds, else it's removed (a cancelled order leaves both tabs)
+  const live = order.status !== 'Cancelled';
+  const keep = keyin ? !!order.created_by_production && !!order.invoice_id && live && !order.urgent : !!order.urgent && live;
 
   let accessToken: string;
   try {
     accessToken = await getGoogleAccessToken();
   } catch (err) {
     console.error('Google OAuth failed:', err);
-    return jsonResponse({ error: 'Could not authenticate with Google Sheets. Please try again.' }, 502);
+    return { status: 502, body: { error: 'Could not authenticate with Google Sheets. Please try again.' } };
   }
   const sheetsBase = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values`;
   const headers = { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' };
@@ -221,62 +215,139 @@ Deno.serve(async (req) => {
   // add-on or amend changes the total and commission),
   // otherwise appended. The last row carrying this Order ID wins.
   if (keyin && !(await ensureKeyinTab(headers))) {
-    return jsonResponse({ error: 'Could not open the 1.5% tab of the tracking sheet. Please try again.' }, 502);
+    return { status: 502, body: { error: 'Could not open the 1.5% tab of the tracking sheet. Please try again.' } };
   }
-  const tab = keyin ? `'${KEYIN_TAB}'` : SHEET_RANGE.split('!')[0];
-  const refreshRed = () => (keyin ? Promise.resolve() : refreshKitDocHighlight(authHeader));
-  const idsResp = await fetch(`${sheetsBase}/${encodeURIComponent(`${tab}!A:A`)}`, { headers });
+  const tab = keyin ? `'${KEYIN_TAB}'` : SHEET_RANGE!.split('!')[0];
+  const refreshRed = () => (keyin || !authHeader ? Promise.resolve() : refreshKitDocHighlight(authHeader));
+  const idsResp = await googleFetch(`${sheetsBase}/${encodeURIComponent(`${tab}!A:A`)}`, { headers });
   if (!idsResp.ok) {
     console.error('Google Sheets read failed:', idsResp.status, await idsResp.text());
-    return jsonResponse({ error: 'Could not read the tracking sheet. Please try again.' }, 502);
+    return { status: 502, body: { error: 'Could not read the tracking sheet. Please try again.' } };
   }
   const ids: string[][] = (await idsResp.json()).values || [];
   let rowNumber = 0;
   ids.forEach((r, i) => { if (r[0] === order.id) rowNumber = i + 1; });
 
-  // No longer urgent: delete only the row(s) whose Order ID is exactly this
+  // Not (or no longer) belonging here: delete only the row(s) whose Order ID is exactly this
   // order's — bottom-up so earlier indexes stay valid. Nothing else moves.
   if (!keep) {
     const matches = ids.map((r, i) => (r[0] === order.id ? i : -1)).filter((i) => i >= 0).reverse();
     if (matches.length === 0) {
       await refreshRed();
-      return jsonResponse({ ok: true, removed: 0 });
+      return { status: 200, body: { ok: true, removed: 0 } };
     }
     const tabTitle = tab.replace(/^'|'$/g, '').replace(/''/g, "'");
-    const metaResp = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}?fields=sheets.properties(sheetId,title)`, { headers });
+    const metaResp = await googleFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}?fields=sheets.properties(sheetId,title)`, { headers });
     if (!metaResp.ok) {
       console.error('Google Sheets metadata read failed:', metaResp.status, await metaResp.text());
-      return jsonResponse({ error: 'Could not read the tracking sheet. Please try again.' }, 502);
+      return { status: 502, body: { error: 'Could not read the tracking sheet. Please try again.' } };
     }
     const sheetId = ((await metaResp.json()).sheets || []).find((sh: { properties: { title: string } }) => sh.properties.title === tabTitle)?.properties.sheetId;
-    if (sheetId == null) return jsonResponse({ error: 'The tracking sheet tab was not found.' }, 502);
-    const delResp = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}:batchUpdate`, {
+    if (sheetId == null) return { status: 502, body: { error: 'The tracking sheet tab was not found.' } };
+    // not repeated after a timeout: deleting by row number twice would take the wrong row
+    const delResp = await googleFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}:batchUpdate`, {
       method: 'POST',
       headers,
       body: JSON.stringify({
         requests: matches.map((i) => ({ deleteDimension: { range: { sheetId, dimension: 'ROWS', startIndex: i, endIndex: i + 1 } } })),
       }),
-    });
+    }, false);
     if (!delResp.ok) {
       console.error('Google Sheets row delete failed:', delResp.status, await delResp.text());
-      return jsonResponse({ error: 'Could not remove the order from the tracking sheet. Please try again.' }, 502);
+      return { status: 502, body: { error: 'Could not remove the order from the tracking sheet. Please try again.' } };
     }
     await refreshRed();
-    return jsonResponse({ ok: true, removed: matches.length });
+    return { status: 200, body: { ok: true, removed: matches.length } };
   }
 
+  // an append is not repeated after a timeout (it may be in: a second row); an in-place write is
   const writeResp = rowNumber
-    ? await fetch(`${sheetsBase}/${encodeURIComponent(`${tab}!A${rowNumber}:${lastCol}${rowNumber}`)}?valueInputOption=USER_ENTERED`, {
+    ? await googleFetch(`${sheetsBase}/${encodeURIComponent(`${tab}!A${rowNumber}:${lastCol}${rowNumber}`)}?valueInputOption=USER_ENTERED`, {
       method: 'PUT', headers, body: JSON.stringify({ values: [row] }),
     })
-    : await fetch(`${sheetsBase}/${encodeURIComponent(`${tab}!A:${lastCol}`)}:append?valueInputOption=USER_ENTERED`, {
+    : await googleFetch(`${sheetsBase}/${encodeURIComponent(`${tab}!A:${lastCol}`)}:append?valueInputOption=USER_ENTERED`, {
       method: 'POST', headers, body: JSON.stringify({ values: [row] }),
-    });
+    }, false);
   if (!writeResp.ok) {
     console.error('Google Sheets write failed:', writeResp.status, await writeResp.text());
-    return jsonResponse({ error: 'Could not write to the tracking sheet. Please try again.' }, 502);
+    return { status: 502, body: { error: 'Could not write to the tracking sheet. Please try again.' } };
   }
 
   await refreshRed();
-  return jsonResponse({ ok: true });
+  return { status: 200, body: { ok: true } };
+}
+
+async function retryAll(admin: Db) {
+  const stopAt = Date.now() + RETRY_RUN_MS;
+  const since = new Date(Date.now() - RETRY_WITHIN_DAYS * 86_400_000).toISOString();
+  const quietBefore = Date.now() - RETRY_QUIET_MS;
+  const done: Record<string, string>[] = [];
+  const mark = async (id: string, synced: boolean) => {
+    const { error } = await admin.rpc('set_urgent_sheet_synced', { p_order_id: id, p_synced: synced });
+    if (error) console.error('set_urgent_sheet_synced failed:', id, error.message);
+  };
+  const run = async (id: string, kind: string, after: boolean) => {
+    try {
+      const r = await syncOrderRow(admin, id, false, null);
+      if (r.status === 200) await mark(id, after);
+      done.push({ order: id, kind, status: r.status === 200 ? 'ok' : String(r.body.error || r.status) });
+    } catch (err) {
+      done.push({ order: id, kind, status: String((err as Error)?.message || err) });
+    }
+  };
+
+  // urgent, invoiced (or a Tambahan in production — billed in AutoCount), its row never written
+  const { data: missing } = await admin.from('orders')
+    .select('id, invoice_id, parent_order_id, invoice_set_at, created_at')
+    .eq('urgent', true).is('urgent_sheet_synced_at', null).in('status', ['In Production', 'Completed'])
+    .gte('created_at', since).order('created_at').limit(50);
+  const due = (missing || []).filter((o: Record<string, string | null>) => (o.invoice_id || o.parent_order_id)
+    && new Date(o.invoice_set_at || o.created_at || 0).getTime() < quietBefore).slice(0, RETRY_PER_RUN);
+  for (const o of due) {
+    if (Date.now() > stopAt) break;
+    await run(o.id, 'write', true);
+  }
+  // cancelled, still marked as in the Sheet
+  const { data: cancelled } = await admin.from('orders').select('id')
+    .eq('status', 'Cancelled').not('urgent_sheet_synced_at', 'is', null).gte('created_at', since).limit(RETRY_PER_RUN);
+  for (const o of cancelled || []) {
+    if (Date.now() > stopAt) break;
+    await run(o.id, 'remove', false);
+  }
+  if (done.length) console.log('urgent retry:', JSON.stringify(done));
+  return { status: 'retried', done };
+}
+
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+
+  if (!GOOGLE_CLIENT_EMAIL || !GOOGLE_PRIVATE_KEY_RAW || !SPREADSHEET_ID || !SHEET_RANGE) {
+    return jsonResponse({ error: 'Google Sheets sync is not configured yet. Contact an admin.' }, 500);
+  }
+
+  let body: Record<string, unknown>;
+  try {
+    body = await req.json();
+  } catch {
+    return jsonResponse({ error: 'Invalid request body.' }, 400);
+  }
+  // the cron's run: works only from the saved orders, so it needs no caller
+  if (body.action === 'retry') return jsonResponse(await retryAll(createClient(SUPABASE_URL, SECRET_KEY)));
+
+  const authHeader = req.headers.get('Authorization');
+  if (!authHeader) return jsonResponse({ error: 'Missing Authorization header.' }, 401);
+
+  const callerClient = createClient(SUPABASE_URL, PUBLISHABLE_KEY, {
+    global: { headers: { Authorization: authHeader } },
+  });
+
+  const { data: { user }, error: userError } = await callerClient.auth.getUser();
+  if (userError || !user) return jsonResponse({ error: 'Not authenticated.' }, 401);
+
+  const orderId = typeof body.orderId === 'string' ? body.orderId : '';
+  const keyin = body.sheet === 'keyin';
+  if (!orderId) return jsonResponse({ error: 'Order ID is required.' }, 400);
+
+  const r = await syncOrderRow(callerClient, orderId, keyin, authHeader);
+  return jsonResponse(r.body, r.status);
 });

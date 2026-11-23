@@ -1789,7 +1789,8 @@ export function AppStateProvider({ children }) {
     }));
     // a cancelled order is no longer urgent: its KIT DOC row loses the red
     if (order.urgent) highlightUrgentKitDoc();
-    syncKeyinSheet({ ...order, ...cancelFields });
+    // and it leaves the urgent / 1.5% Sheet rows (Sean, 2026-11-23: cancelled ORD-0240 / ORD-0381 stayed listed)
+    resyncUrgentSheet({ ...order, ...cancelFields });
 
     // Stock restore is best-effort AFTER the cancel is committed. A failure
     // here leaves the order correctly cancelled but the stock not yet
@@ -1814,7 +1815,7 @@ export function AppStateProvider({ children }) {
 
     flashToast('updateToast', 'Order cancelled and stock returned.');
     return { ok: true, message: 'Order cancelled and stock returned.' };
-  }, [patch, flashToast, syncKeyinSheet]);
+  }, [patch, flashToast, resyncUrgentSheet]);
 
   // Hands an order to a different salesman — for when the teacher picked
   // the wrong one on submit (any salesman can be chosen freely, see
@@ -2388,8 +2389,10 @@ export function AppStateProvider({ children }) {
       orders: latest.orders.map((o) => (o.id === orderId ? { ...o, ...fields } : o)),
     }));
     flashToast('productionToast', `Invoice number changed to ${normalized}.`);
+    // the Sheet rows show the main invoice number (Sean, 2026-11-23: five rows kept the old one)
+    if (isMain) resyncUrgentSheet({ ...order, ...fields });
     return { ok: true, invoiceId: normalized };
-  }, [patch, flashToast]);
+  }, [patch, flashToast, resyncUrgentSheet]);
 
   // Store Admin: approves a reviewed, still-"Reviewing Order" order (or a Salesman Approved one) and
   // assigns its Invoice Number in the same action — for orders a Salesman
