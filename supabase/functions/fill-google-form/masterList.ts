@@ -60,7 +60,30 @@ export function findTypedRow(rows: ResponseRow[], school: string, qty: number, n
   return null;
 }
 
-const base64url = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+// Google's Sheets / Forms answer 503 or hang now and then (2026-11-23 morning: a 503, then a 2½-minute hang that
+// lost ORD-0572's column I). Each call gets GOOGLE_TIMEOUT_MS and GOOGLE_TRIES tries on a 429 / 5xx or a dead
+// line. `safeToRepeat` false (the Form post): a call that timed out may still have gone through, so only one
+// Google refused (429 / 5xx) is sent again. What still fails is kept and tried again later (index.ts retryAll).
+const GOOGLE_TIMEOUT_MS = 20_000;
+const GOOGLE_TRIES = 3;
+const GOOGLE_BACKOFF_MS = [1_000, 4_000];
+const retryable = (status: number) => status === 429 || status >= 500;
+export async function googleFetch(url: string, init: RequestInit = {}, safeToRepeat = true,
+  deps = { fetch: (u: string, i: RequestInit) => fetch(u, i), sleep: (ms: number) => new Promise((r) => setTimeout(r, ms)) }): Promise<Response> {
+  for (let attempt = 1; ; attempt++) {
+    const last = attempt >= GOOGLE_TRIES;
+    try {
+      const res = await deps.fetch(url, { ...init, signal: AbortSignal.timeout(GOOGLE_TIMEOUT_MS) });
+      if (last || !retryable(res.status)) return res;
+      await res.body?.cancel();
+    } catch (err) {
+      if (last || !safeToRepeat) throw err;
+    }
+    await deps.sleep(GOOGLE_BACKOFF_MS[attempt - 1] ?? 4_000);
+  }
+}
+
+const base64url = (bytes: Uint8Array) =>btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const b64json = (o: unknown) => base64url(new TextEncoder().encode(JSON.stringify(o)));
 
 const READ_SCOPE = 'https://www.googleapis.com/auth/spreadsheets.readonly';
@@ -75,7 +98,7 @@ async function accessToken(scope = READ_SCOPE): Promise<string> {
   const der = Uint8Array.from(atob(pem.replace(/-----[A-Z ]+-----/g, '').replace(/\s+/g, '')), (c) => c.charCodeAt(0));
   const key = await crypto.subtle.importKey('pkcs8', der, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign']);
   const sig = new Uint8Array(await crypto.subtle.sign('RSASSA-PKCS1-v1_5', key, new TextEncoder().encode(input)));
-  const res = await fetch('https://oauth2.googleapis.com/token', {
+  const res = await googleFetch('https://oauth2.googleapis.com/token', {
     method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion: `${input}.${base64url(sig)}` }),
   });
@@ -90,7 +113,7 @@ export async function readResponses(withTyped = false): Promise<ResponseRow[]> {
   const range = withTyped ? `'${RESPONSES_SHEET}'!A2:I` : RESPONSES_RANGE;
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${MASTER_LIST_ID}/values/${encodeURIComponent(range)}`
     + '?valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=SERIAL_NUMBER';
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${await accessToken()}` } });
+  const res = await googleFetch(url, { headers: { Authorization: `Bearer ${await accessToken()}` } });
   if (!res.ok) throw new Error(`MASTER LIST read: ${res.status} ${await res.text()}`);
   return (await res.json()).values ?? [];
 }
@@ -102,17 +125,17 @@ export async function markTyped(row: number, text: string): Promise<void> {
   const api = `https://sheets.googleapis.com/v4/spreadsheets/${MASTER_LIST_ID}`;
   const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
   const cell = `'${RESPONSES_SHEET}'!I${row}`;
-  const put = await fetch(`${api}/values/${encodeURIComponent(cell)}?valueInputOption=RAW`, {
+  const put = await googleFetch(`${api}/values/${encodeURIComponent(cell)}?valueInputOption=RAW`, {
     method: 'PUT', headers, body: JSON.stringify({ range: cell, values: [[text]] }),
   });
   if (!put.ok) throw new Error(`MASTER LIST write: ${put.status} ${await put.text()}`);
-  const meta = await fetch(`${api}?fields=sheets.properties(sheetId,title)`, { headers });
+  const meta = await googleFetch(`${api}?fields=sheets.properties(sheetId,title)`, { headers });
   if (!meta.ok) throw new Error(`MASTER LIST sheets: ${meta.status} ${await meta.text()}`);
   const sheetId = ((await meta.json()).sheets ?? []).find((sh: { properties: { title: string } }) => sh.properties.title === RESPONSES_SHEET)?.properties.sheetId;
   if (sheetId === undefined) throw new Error(`no "${RESPONSES_SHEET}" sheet`);
   const range = { sheetId, startRowIndex: row - 1, endRowIndex: row, startColumnIndex: TYPED_COL, endColumnIndex: TYPED_COL + 1 };
   const solid = { style: 'SOLID' };
-  const fmt = await fetch(`${api}:batchUpdate`, {
+  const fmt = await googleFetch(`${api}:batchUpdate`, {
     method: 'POST', headers, body: JSON.stringify({ requests: [
       { updateBorders: { range, top: solid, bottom: solid, left: solid, right: solid } },
       { repeatCell: { range, cell: { userEnteredFormat: { horizontalAlignment: 'CENTER', verticalAlignment: 'MIDDLE' } }, fields: 'userEnteredFormat(horizontalAlignment,verticalAlignment)' } },

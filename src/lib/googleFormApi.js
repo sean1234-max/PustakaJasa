@@ -25,7 +25,10 @@ export function googleFormNote(res) {
     return `📝 Already in the Google Form${where} — not filled again.`;
   }
   if (res.status === 'no_sale') return '📝 Your name is not a SALE option in the Google Form — please fill it by hand.';
-  if (res.status === 'failed' || res.status === 'error') return '⚠️ Google Form not filled — please fill it by hand.';
+  // 'failed' is tried again every 10 minutes for about 2 hours (fill-google-form retryAll, 2026-11-23)
+  if (res.status === 'failed') return '⚠️ Google is not answering — the website will fill the Google Form by itself in the next minutes.';
+  if (res.status === 'timeout') return '⚠️ Google Form did not answer — check the MASTER LIST; fill it by hand if your order is not there.';
+  if (res.status === 'error') return '⚠️ Google Form not filled — please fill it by hand.';
   return '';
 }
 
@@ -45,5 +48,6 @@ export async function markMasterListTyped(orderId, qty) {
 export function masterListTypedNote(res) {
   if (res?.status === 'marked') return `📝 MASTER LIST row ${res.row} (${res.school}): ${res.text}`;
   if (res?.status === 'not_found') return `⚠️ MASTER LIST: no untyped row for ${res.school}, QTY ${res.qty} — write column I by hand.`;
-  return '⚠️ MASTER LIST not updated — write column I by hand.';
+  // kept and tried again every 10 minutes for about 2 hours (fill-google-form retryAll, 2026-11-23)
+  return '⚠️ Google is not answering — the website will write MASTER LIST column I by itself in the next minutes; write it by hand if it is still empty later.';
 }
