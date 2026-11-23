@@ -18,8 +18,9 @@ describe('order import files', () => {
     expect(orderImportFields({ cart, importFiles: [A, B], importFilePath: B.path }).importFiles).toEqual([A, B]);
   });
 
-  it('falls back to the latest upload when no cart item was tagged', () => {
-    expect(orderImportFields({ cart: [{ id: 1 }], importFiles: [B], importFilePath: B.path, importFileName: B.name }).importFiles).toEqual([B]);
+  it('keeps no file when every plaque was typed by hand, even with an old upload in the draft (ORD-0594)', () => {
+    expect(orderImportFields({ cart: [{ id: 1 }], importFiles: [B], importFilePath: B.path, importFileName: B.name }))
+      .toEqual({ importFilePath: null, importFileName: null, importFiles: [] });
     expect(orderImportFields({ cart: [], importFiles: [] }).importFiles).toEqual([]);
   });
 
@@ -39,8 +40,14 @@ describe('order import files', () => {
       importFiles: [A, B], importFilePath: B.path,
       step2UploadedFiles: [{ name: A.name, categories: ['PPKI'] }, { name: B.name, categories: ['UMUM'] }],
     };
+    // MP1 was filled by no upload: typed by hand, no file
     expect(tagImportFiles([{ categoryKey: 'PPKI' }, { categoryKey: 'UMUM' }, { categoryKey: 'MP1' }], st).map((it) => it.importFile))
-      .toEqual([A.path, B.path, B.path]);
+      .toEqual([A.path, B.path, undefined]);
+  });
+
+  it('a draft that never said which file filled which tab still takes its latest upload', () => {
+    expect(tagImportFiles([{ categoryKey: 'UMUM' }], { importFiles: [B], importFilePath: B.path }).map((it) => it.importFile)).toEqual([B.path]);
+    expect(tagImportFiles([{ categoryKey: 'UMUM' }], { importFiles: [], importFilePath: null })[0].importFile).toBeUndefined();
   });
 
   it("opens another file's copy of a filled tab as '<tab> (2)', '(3)' …", () => {

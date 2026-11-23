@@ -9,14 +9,17 @@ export function withImportFile(items, path) {
 }
 
 // Each cart item tagged with the upload its tab came from (several files in one order, Sean
-// 2026-10-22: NewOrderStep2.jsx's step2UploadedFiles says which file filled which tab); the
-// draft's latest upload when that isn't known (yet).
+// 2026-10-22: NewOrderStep2.jsx's step2UploadedFiles says which file filled which tab). A tab no
+// upload filled was typed by hand: no file (Sean, 2026-11-23: ORD-0594's typed plaques got an
+// old SK MERU (2) upload still in the draft). Only a draft that doesn't say which file filled
+// which tab (no step2UploadedFiles) still takes its latest upload.
 export function tagImportFiles(items, st) {
   const uploaded = [...(st.step2UploadedFiles || [])].reverse();
   const known = [...(st.importFiles || [])].reverse();
   const pathFor = (catKey) => {
+    if (!uploaded.length) return st.importFilePath;
     const owner = uploaded.find((f) => (f.categories || []).includes(catKey));
-    return (owner && known.find((f) => f.name === owner.name)?.path) || st.importFilePath;
+    return (owner && known.find((f) => f.name === owner.name)?.path) || null;
   };
   return items.map((it) => {
     const path = pathFor(it.categoryKey);
@@ -25,15 +28,13 @@ export function tagImportFiles(items, st) {
 }
 
 // The order's import columns at submit, from the draft: the files its cart
-// items came from, in cart order (names from the draft's upload list). A
-// cart with no tagged item (added before the upload finished) falls back to
-// the draft's latest upload, as before.
+// items came from, in cart order (names from the draft's upload list) — none
+// when every plaque was typed by hand, whatever the draft uploaded before
+// (Sean, 2026-11-23: ORD-0594 got an old upload and its check compared the wrong file).
 export function orderImportFields(st) {
   const known = st.importFiles || [];
   const paths = [...new Set((st.cart || []).map((ci) => ci.importFile).filter(Boolean))];
-  const files = paths.length
-    ? paths.map((path) => known.find((f) => f.path === path) || { path, name: 'order.xlsx' })
-    : (st.importFilePath ? [{ path: st.importFilePath, name: st.importFileName || 'order.xlsx' }] : []);
+  const files = paths.map((path) => known.find((f) => f.path === path) || { path, name: 'order.xlsx' });
   return {
     importFilePath: files[0]?.path || null,
     importFileName: files[0]?.name || null,
