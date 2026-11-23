@@ -164,7 +164,7 @@ async function getGoogleAccessToken(): Promise<string> {
 // 2026-11-23 check: ORD-0417 / ORD-0464 missing, cancelled ORD-0240 / ORD-0381 still listed). Its
 // urgent_sheet_synced_at is set / cleared through set_urgent_sheet_synced — the only order write the guard
 // lets the secret key make. Orders of the last RETRY_WITHIN_DAYS, RETRY_PER_RUN of each kind per run.
-const RETRY_WITHIN_DAYS = 30;
+const RETRY_WITHIN_DAYS = 45;
 const RETRY_PER_RUN = 10;
 const RETRY_RUN_MS = 100_000;          // no new order after this (the function has ~150 s)
 const RETRY_QUIET_MS = 3 * 60_000;     // invoiced this recently: the website's own sync may still be running
@@ -316,9 +316,10 @@ async function retryAll(admin: Db) {
     if (Date.now() > stopAt) break;
     await run(o.id, 'write', true);
   }
-  // cancelled, still marked as in the Sheet
+  // cancelled or no longer urgent, still marked as in the Sheet (an untick whose Sheet call failed, or one
+  // set by hand — Sean 2026-11-23: ORD-0098 ships on day 8)
   const { data: cancelled } = await admin.from('orders').select('id')
-    .eq('status', 'Cancelled').not('urgent_sheet_synced_at', 'is', null).gte('created_at', since).limit(RETRY_PER_RUN);
+    .or('status.eq.Cancelled,urgent.eq.false').not('urgent_sheet_synced_at', 'is', null).gte('created_at', since).limit(RETRY_PER_RUN);
   for (const o of cancelled || []) {
     if (Date.now() > stopAt) break;
     await run(o.id, 'remove', false);
