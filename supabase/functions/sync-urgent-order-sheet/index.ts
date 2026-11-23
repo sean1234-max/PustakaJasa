@@ -60,6 +60,8 @@ const URGENT_COMMISSION_RATE = 0.025;
 // An order Production keyed in for a salesman (0125, Sean 2026-11-11) — the salesman is charged 1.5% of the
 // order total. Its own tab in the same spreadsheet (made here the first time, with its header), one row per
 // order from its invoice on; removed when it's cancelled. Called with { orderId, sheet: 'keyin' }.
+// An urgent one is only in the urgent tab (2.5%), never here too (Sean, 2026-11-23: one sheet per order —
+// invoiced on the 1st and shipping by the 7th is urgent; from the 8th it's 1.5%).
 const KEYIN_RATE = 0.015;
 const KEYIN_TAB = '1.5%';
 const KEYIN_HEADER = ['Order ID', 'Invoice', 'Amount', 'Salesman', 'School', 'Keyed in by', 'Date Placed', 'Synced At', '1.5%'];
@@ -203,7 +205,7 @@ Deno.serve(async (req) => {
     ];
   const lastCol = keyin ? 'I' : 'J';
   // its row stays while this holds, else it's removed
-  const keep = keyin ? !!order.created_by_production && !!order.invoice_id && order.status !== 'Cancelled' : !!order.urgent;
+  const keep = keyin ? !!order.created_by_production && !!order.invoice_id && order.status !== 'Cancelled' && !order.urgent : !!order.urgent;
 
   let accessToken: string;
   try {

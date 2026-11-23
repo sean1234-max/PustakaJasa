@@ -1428,7 +1428,7 @@ export function AppStateProvider({ children }) {
   // An urgent order already in the Google Sheet whose total just changed
   // (amend / add-on / Production edit): refresh its row so the amount and
   // 2.5% commission there stay current. Fire-and-forget, like the first sync.
-  // An order Production keyed in (0125): its row in the Sheet's "1.5%" tab, from its invoice on — refreshed
+  // An order Production keyed in (0125): its row in the Sheet's "1.5%" tab (not when urgent: then only the urgent tab), from its invoice on — refreshed
   // when its total changes, removed when it's cancelled (the function decides from the saved order).
   const syncKeyinSheet = useCallback((order) => {
     if (!order?.createdByProduction || !order.invoiceId) return;
@@ -2169,6 +2169,9 @@ export function AppStateProvider({ children }) {
       return { ok: false, message: describeOrderWriteError(err, 'update') };
     }
     patch((latest) => ({ orders: latest.orders.map((o) => (o.id === orderId ? { ...o, ...fields } : o)) }));
+    // A keyed-in order is in one tab only (Sean, 2026-11-23): urgent → the urgent tab, else the 1.5% tab —
+    // its 1.5% row is added / removed here as the urgency changes (the function decides from the saved order)
+    if (urgent !== !!order.urgent) syncKeyinSheet({ ...order, ...fields });
 
     const action = urgentSheetAction({ urgent, wasSynced: !!order.urgentSheetSyncedAt, hasInvoice: !!order.invoiceId });
     if (!action) return { ok: true };
@@ -2186,7 +2189,7 @@ export function AppStateProvider({ children }) {
       patch((latest) => ({ sheetSyncErrors: { ...latest.sheetSyncErrors, [orderId]: err.message } }));
       return { ok: true, sheetError: `Saved, but the urgent Google Sheet could not be updated: ${err.message}` };
     }
-  }, [patch]);
+  }, [patch, syncKeyinSheet]);
 
   // Production: a Function Date / Remark a salesman sent through the Telegram bot (Sean, 2026-11-05;
   // utils/botRequests.js) — applied from the order page, never by the bot itself.

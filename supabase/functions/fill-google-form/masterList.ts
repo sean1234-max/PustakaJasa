@@ -70,14 +70,17 @@ const GOOGLE_BACKOFF_MS = [1_000, 4_000];
 const retryable = (status: number) => status === 429 || status >= 500;
 export async function googleFetch(url: string, init: RequestInit = {}, safeToRepeat = true,
   deps = { fetch: (u: string, i: RequestInit) => fetch(u, i), sleep: (ms: number) => new Promise((r) => setTimeout(r, ms)) }): Promise<Response> {
+  const where = url.replace(/^https:\/\/([^/?]+)([^?]*).*$/, '$1$2');
   for (let attempt = 1; ; attempt++) {
     const last = attempt >= GOOGLE_TRIES;
+    const started = Date.now();
     try {
       const res = await deps.fetch(url, { ...init, signal: AbortSignal.timeout(GOOGLE_TIMEOUT_MS) });
       if (last || !retryable(res.status)) return res;
       await res.body?.cancel();
     } catch (err) {
-      if (last || !safeToRepeat) throw err;
+      // which call and how long — the error lands in master_list_typed.error / the function log
+      if (last || !safeToRepeat) throw new Error(`${where} (try ${attempt}, ${Date.now() - started} ms): ${(err as Error)?.message || err}`);
     }
     await deps.sleep(GOOGLE_BACKOFF_MS[attempt - 1] ?? 4_000);
   }
