@@ -49,13 +49,22 @@ export default function ProductionPriceEditor({ order, addOn = false }) {
     setMessage({ ok: true, text: 'Prices saved.' });
   };
 
+  // In Production (Sean, 2026-11-23): already approved and invoiced; its Edit Order keeps these prices.
+  const inProduction = !addOn && order.status === 'In Production';
+
   return (
     <div style={{ marginTop: 'var(--space-4)' }}>
       <p className="hint-text" style={{ margin: '0 0 var(--space-2)' }}>
         Change Price per Unit on any line (e.g. +RM1 for a plaque with a student’s name), then Save Prices.
-        Changed prices show in red with the old price beside them; the salesman can still change them when approving.
-        Do Edit Order first — saving Edit Order resets prices to the website price list.
+        {inProduction
+          ? ' Changed prices show in red with the old price beside them.'
+          : ' Changed prices show in red with the old price beside them; the salesman can still change them when approving. Do Edit Order first — saving Edit Order resets prices to the website price list.'}
       </p>
+      {inProduction && order.invoiceId && (
+        <p className="hint-text" style={{ margin: '0 0 var(--space-2)', fontWeight: 600, color: '#c0392b' }}>
+          Invoice {order.invoiceId} is already out — change it too after saving new prices.
+        </p>
+      )}
       <PriceTable
         rows={rows} editable priceDrafts={drafts} setPrice={setPrice} plakCatalog={state.plakCatalog}
         totalQty={totalQty} totalHarga={totalHarga}

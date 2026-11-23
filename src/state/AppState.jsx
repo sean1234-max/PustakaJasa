@@ -2883,18 +2883,20 @@ export function AppStateProvider({ children }) {
     }
     if (realStock) restorePlakStock(restore).catch((err) => console.error('Failed to give back stock after a Production edit:', err));
     patch((latest) => ({ orders: latest.orders.map((o) => (o.id === orderId ? { ...o, ...fields } : o)) }));
+    if (inProduction) resyncUrgentSheet({ ...order, ...fields });
     return { ok: true };
-  }, [patch]);
+  }, [patch, resyncUrgentSheet]);
 
   // Production adjusts prices while reviewing (Sean, 2026-10-09 — e.g. RM1
   // more on plaques carrying a student's name): the order's items, or with
   // `addOn` the submitted add-on's. The salesman still sees (and can change)
-  // them when approving.
+  // them when approving. In Production too (Sean, 2026-11-23): the invoice is
+  // already out then, so it is changed by hand; the urgent Sheet row follows.
   const saveProductionPrices = useCallback(async (orderId, drafts, { addOn = false } = {}) => {
     const st = stateRef.current;
     const order = st.orders.find((o) => o.id === orderId);
-    if (addOn ? !isAddonInFlight(order) : (!order || order.status !== 'Reviewing Order')) {
-      return { ok: false, message: addOn ? 'This order has no add-on waiting for review.' : 'Prices can only be changed while the order is being reviewed.' };
+    if (addOn ? !isAddonInFlight(order) : !canProductionEdit(order)) {
+      return { ok: false, message: addOn ? 'This order has no add-on waiting for review.' : 'Prices can only be changed while the order is being reviewed or In Production.' };
     }
     const res = applyPriceDrafts(addOn ? order.pendingAddonItems : order.items, drafts);
     if (res.error) return { ok: false, message: res.error };
@@ -2912,8 +2914,9 @@ export function AppStateProvider({ children }) {
       return { ok: false, message: describeOrderWriteError(err, 'save the prices of') };
     }
     patch((latest) => ({ orders: latest.orders.map((o) => (o.id === orderId ? { ...o, ...fields } : o)) }));
+    if (!addOn) resyncUrgentSheet({ ...order, ...fields });
     return { ok: true };
-  }, [patch]);
+  }, [patch, resyncUrgentSheet]);
 
   // Production: "Done Review" — the order has been checked (and fixed if
   // needed, see saveProductionEdit); Sales / Store Admin can approve it now.

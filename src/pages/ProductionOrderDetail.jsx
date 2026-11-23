@@ -539,7 +539,11 @@ export default function ProductionOrderDetail() {
             <p className="hint-text" style={{ margin: '0 0 var(--space-3)', fontWeight: 600 }}>
               Something to fix? Edit Order, then Save — everything follows the new version.
             </p>
-            <button type="button" className="btn btn-secondary" onClick={() => navigate(`/production/orders/${order.id}/edit`)}>Edit Order</button>
+            <div style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
+              <button type="button" className="btn btn-secondary" onClick={() => navigate(`/production/orders/${order.id}/edit`)}>Edit Order</button>
+              <button type="button" className="btn btn-secondary" onClick={() => togglePrices('order')}>{priceEditor === 'order' ? 'Close Prices' : 'Adjust Prices'}</button>
+            </div>
+            {priceEditor === 'order' && <ProductionPriceEditor order={order} />}
           </div>
         )}
         {/* A submitted add-on (Tambahan) — reviewed like the order itself:

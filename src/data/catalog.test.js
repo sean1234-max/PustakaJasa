@@ -7,7 +7,7 @@ import {
   MALAY_ORDINALS, ordinalToNum, numToOrdinal,
   CATEGORIES, makeDynamicCategoryKey, isDynamicCategoryKey, resolveCategory, categoriesUsedByItems,
   filterHiddenPlakCatalog, getLowStockAlerts, catalogVisibilityToggle,
-  parseDisplayDate, defaultShipmentDate, toMalaysiaDay, malaysiaDayIso,
+  parseDisplayDate, defaultShipmentDate, toMalaysiaDay, malaysiaDayIso, canProductionEdit,
 } from './catalog';
 
 describe('makeDynamicCategoryKey / isDynamicCategoryKey / resolveCategory', () => {
@@ -433,5 +433,15 @@ describe('catalogVisibilityToggle — Production can show a low-stock code again
     expect(filterHiddenPlakCatalog([{ ...low, showWhenLow: true, hidden: true }])).toEqual([]);
     expect(catalogVisibilityToggle({ code: 'B', hidden: true })).toMatchObject({ label: 'Unhide', patch: { hidden: false } });
     expect(catalogVisibilityToggle({ code: 'B' })).toMatchObject({ label: 'Hide', patch: { hidden: true } });
+  });
+});
+
+describe('canProductionEdit', () => {
+  it('lets Production edit (and adjust prices) while reviewing or In Production only', () => {
+    expect(canProductionEdit({ status: 'Reviewing Order' })).toBe(true);
+    expect(canProductionEdit({ status: 'In Production' })).toBe(true);
+    expect(canProductionEdit({ status: 'Salesman Approved' })).toBe(false);
+    expect(canProductionEdit({ status: 'Completed' })).toBe(false);
+    expect(canProductionEdit(null)).toBe(false);
   });
 });
