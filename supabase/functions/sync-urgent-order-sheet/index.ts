@@ -277,6 +277,15 @@ async function syncOrderRow(db: Db, orderId: string, keyin: boolean, authHeader:
   return { status: 200, body: { ok: true } };
 }
 
+// The Order IDs in the 1.5% tab ([] when it can't be read — nothing is cleaned that run)
+async function keyinTabIds(): Promise<string[]> {
+  const token = await getGoogleAccessToken();
+  const resp = await googleFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(`'${KEYIN_TAB}'!A:A`)}`,
+    { headers: { Authorization: `Bearer ${token}` } });
+  if (!resp.ok) { console.error('1.5% tab read failed:', resp.status, await resp.text()); return []; }
+  return ((await resp.json()).values || []).map((r: string[]) => r[0]).filter(Boolean);
+}
+
 async function retryAll(admin: Db) {
   const stopAt = Date.now() + RETRY_RUN_MS;
   const since = new Date(Date.now() - RETRY_WITHIN_DAYS * 86_400_000).toISOString();
@@ -313,6 +322,22 @@ async function retryAll(admin: Db) {
   for (const o of cancelled || []) {
     if (Date.now() > stopAt) break;
     await run(o.id, 'remove', false);
+  }
+  // 1.5% tab, one sheet per order: a keyed-in order that is urgent or cancelled has no row there (Sean,
+  // 2026-11-23: 18 urgent ones were in both tabs). One read of the tab's Order IDs; only those rows go.
+  try {
+    const { data: keyins } = await admin.from('orders').select('id, urgent, status')
+      .not('created_by_production', 'is', null).gte('created_at', since);
+    const wrong = new Set((keyins || []).filter((o: { urgent: boolean; status: string }) => o.urgent || o.status === 'Cancelled')
+      .map((o: { id: string }) => o.id));
+    const listed = wrong.size && Date.now() < stopAt ? await keyinTabIds() : [];
+    for (const id of listed.filter((x) => wrong.has(x)).slice(0, RETRY_PER_RUN)) {
+      if (Date.now() > stopAt) break;
+      const r = await syncOrderRow(admin, id, true, null); // not kept in that tab → its row is removed
+      done.push({ order: id, kind: '1.5% remove', status: r.status === 200 ? 'ok' : String(r.body.error || r.status) });
+    }
+  } catch (err) {
+    console.error('1.5% clean-up failed:', err);
   }
   if (done.length) console.log('urgent retry:', JSON.stringify(done));
   return { status: 'retried', done };
