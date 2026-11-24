@@ -20,7 +20,9 @@ PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 OLD_PLIST="$HOME/Library/LaunchAgents/com.pustakajasa.ai-file-watcher.plist"
 
 mkdir -p "$DEST" "$HOME/Library/LaunchAgents"
-cp ai-file-helper.mjs crystal-job.mjs crystal-illustrator.mjs school-folder.mjs "$DEST/"
+cp ai-file-helper.mjs crystal-job.mjs crystal-illustrator.mjs school-folder.mjs medal-designs.mjs "$DEST/"
+# MEDAL DESIGNS (helper v8): the preview export, next to the helper or in the repo's scripts/plak-preview
+if [ -f export-plak-preview.jsx ]; then cp export-plak-preview.jsx "$DEST/"; else cp ../plak-preview/export-plak-preview.jsx "$DEST/"; fi
 
 # Retire the old watch_ai_file_jobs.js watcher this replaces, if installed.
 if [ -f "$OLD_PLIST" ]; then launchctl unload "$OLD_PLIST" 2>/dev/null; rm -f "$OLD_PLIST"; fi

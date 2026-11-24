@@ -68,6 +68,16 @@ export async function getAiFileHelperJob(jobId) {
   }
 }
 
+// MEDAL DESIGNS (helper v8, Sean 2026-11-24): E CUT 0's DESIGN groups read in Illustrator on a copy -> jobId;
+// the finished job (getAiFileHelperJob) carries { designs, log, pictures }.
+export const MEDAL_DESIGN_HELPER_VERSION = 8;
+export async function startMedalDesignExport() {
+  const res = await fetch(`${HELPER_URL}/medal-designs`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error || `AI File helper returned ${res.status}`);
+  return body.jobId;
+}
+
 // Done Typing (helper v7, Sean 2026-11-16): the order's folder / .ai files in the school's NAS folder moved into its
 // year folder ("2026") by the helper on THIS computer. -> a line for the page; never throws.
 const ARCHIVE_HELPER_VERSION = 7;

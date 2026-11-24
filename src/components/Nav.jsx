@@ -50,6 +50,7 @@ export default function Nav() {
         {/* keys in an order for a salesman / teacher (0125) */}
         <Link to="/order/step1" onClick={newOrderClick} aria-current={pathname.startsWith('/order') ? 'page' : undefined}>New Order</Link>
         <Link to="/production/catalog" aria-current={pathname === '/production/catalog' ? 'page' : undefined}>Catalog</Link>
+        <Link to="/production/medal-designs" aria-current={pathname === '/production/medal-designs' ? 'page' : undefined}>Medal Designs</Link>
         {state.isProductionManager && (
           <Link to="/production/team" aria-current={pathname === '/production/team' ? 'page' : undefined}>Team</Link>
         )}

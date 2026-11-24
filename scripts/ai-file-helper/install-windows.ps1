@@ -27,7 +27,11 @@ Remove-Item (Join-Path $startup "ai-file-watcher.vbs") -ErrorAction SilentlyCont
 New-Item -ItemType Directory -Force -Path $dest | Out-Null
 Copy-Item -Force (Join-Path $PSScriptRoot "ai-file-helper.mjs") $helper
 # crystals (Open in Illustrator from the Crystal Preview) need these two next to it
-foreach ($f in @("crystal-job.mjs", "crystal-illustrator.mjs", "school-folder.mjs")) { Copy-Item -Force (Join-Path $PSScriptRoot $f) (Join-Path $dest $f) }
+foreach ($f in @("crystal-job.mjs", "crystal-illustrator.mjs", "school-folder.mjs", "medal-designs.mjs")) { Copy-Item -Force (Join-Path $PSScriptRoot $f) (Join-Path $dest $f) }
+# MEDAL DESIGNS (helper v8): the preview export, next to the helper or in the repo's scripts\plak-preview
+$jsx = Join-Path $PSScriptRoot "export-plak-preview.jsx"
+if (-not (Test-Path $jsx)) { $jsx = Join-Path $PSScriptRoot "..\plak-preview\export-plak-preview.jsx" }
+Copy-Item -Force $jsx (Join-Path $dest "export-plak-preview.jsx")
 
 # A hidden VBScript wrapper runs it at login without a console window.
 $vbsContent = @"

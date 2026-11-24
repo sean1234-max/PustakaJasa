@@ -5,7 +5,8 @@
 //     their own; the latin ones get SEAN.jsx's house style on the website)
 //   - the plaque picture: BACKGROUND_1 (or the first BACKGROUND_…) as a PNG, else the ANCHOR_CIRCLE outline
 // into manifest.json + PNGs in PRESET_OUT. The .ai files are opened, read and closed without saving.
-// PRESET_SRC / PRESET_OUT are put in front of this file by the .sh.
+// PRESET_SRC / PRESET_OUT are put in front of this file by the .sh. With PRESET_DESIGN_FILE instead (the AI File
+// helper's /medal-designs) it reads E CUT 0's medal designs — see "medal designs" below.
 
 var ANCHOR = "ANCHOR_CIRCLE";
 var FIELDS = { event_header: 1, year: 1, position: 1, event_line_1: 1, event_line_2: 1, event_line_3: 1,
@@ -267,7 +268,181 @@ function exportFile(f, outFolder, log) {
     }
 }
 
-(function main() {
+// ------------------------------------------------------------------ medal designs (Sean, 2026-11-24)
+// E CUT 0 holds every medal design, each a group named "DESIGN <n>" with its layout groups inside (MELAYU /
+// CHINESE containers are fine). PRESET_DESIGN_FILE set → only that .ai, one entry per DESIGN group: its layout
+// groups (as above), its background, and a picture of how it looks — its fullest Malay layout group drawn on the
+// background as it is in the .ai (its own sample words), the background at SEAN.jsx's MEDAL_BG_OPACITY, clipped
+// to the ANCHOR_CIRCLE. -> designs.json + PNGs in PRESET_OUT.
+var MEDAL_BG_OPACITY = 20; // SEAN.jsx MEDAL_BG_OPACITY — change both
+var THUMB_PX = 400;
+
+// "DESIGN 3" (any case, one space or more) — no regex on the whole name (see isTemplateName)
+function designNameOf(item) {
+    var parts = String(item.name).replace(/^\s+|\s+$/g, "").split(/\s+/);
+    return parts.length === 2 && parts[0].toUpperCase() === "DESIGN" && /^\d+$/.test(parts[1]) ? "DESIGN " + Number(parts[1]) : null;
+}
+
+function collectDesigns(items, out) {
+    for (var i = 0; i < items.length; i++) {
+        var it = items[i];
+        if (it.typename !== "GroupItem" || isOldGroup(it) || isTemplateName(templateNameOf(it))) continue;
+        if (designNameOf(it)) out.push(it);
+        else collectDesigns(it.pageItems, out);
+    }
+}
+
+// the design's Malay (T_) layout group with the most lines, else its fullest Chinese one
+function mainTemplateName(templates) {
+    var best = null;
+    for (var t in templates) {
+        if (!templates.hasOwnProperty(t)) continue;
+        var score = (t.indexOf("T_") === 0 ? 100 : 0) + t.split("_").length;
+        if (!best || score > best.score) best = { name: t, score: score };
+    }
+    return best ? best.name : null;
+}
+
+function centreOf(b) { return [(b[0] + b[2]) / 2, (b[1] + b[3]) / 2]; }
+
+// a background's own circle (its widest round path), else the whole background — what SEAN.jsx centres on
+function backgroundCentre(bg) {
+    var best = null;
+    if (bg.typename === "GroupItem") {
+        for (var i = 0; i < bg.pageItems.length; i++) {
+            var p = bg.pageItems[i];
+            if (p.typename !== "PathItem") continue;
+            var b = p.geometricBounds, w = b[2] - b[0], h = b[1] - b[3];
+            if (w > 0 && Math.abs(w - h) < w * 0.02 && (!best || w > best.w)) best = { w: w, c: centreOf(b) };
+        }
+    }
+    return best ? best.c : centreOf(bg.geometricBounds);
+}
+
+// (measured on the copies: a copy in another document doesn't keep the original's coordinates)
+function exportThumb(group, bg, file) {
+    var tmp = app.documents.add(DocumentColorSpace.RGB, 500, 500);
+    try {
+        var layer = tmp.layers[0];
+        var dup = group.duplicate(layer, ElementPlacement.PLACEATBEGINNING);
+        var ab = childNamed(dup, ANCHOR).geometricBounds;
+        if (bg) {
+            var bgDup = bg.duplicate(layer, ElementPlacement.PLACEATEND);
+            bgDup.hidden = false;
+            var from = backgroundCentre(bgDup), to = centreOf(ab);
+            bgDup.translate(to[0] - from[0], to[1] - from[1]);
+            bgDup.opacity = MEDAL_BG_OPACITY;
+            var clip = layer.pathItems.ellipse(ab[1], ab[0], ab[2] - ab[0], ab[1] - ab[3]);
+            var masked = layer.groupItems.add();
+            masked.move(layer, ElementPlacement.PLACEATEND); // under the words
+            bgDup.move(masked, ElementPlacement.PLACEATEND);
+            clip.move(masked, ElementPlacement.PLACEATBEGINNING);
+            masked.clipped = true;
+        }
+        var area = findNamed(dup, TEXT_AREA);
+        if (area) area.remove();
+        // one position only: the first shown of RANK_YELLOW / GREY / BROWN (E CUT 0's arc master shows all three)
+        var shown = false, ranks = ["RANK_YELLOW", "RANK_GREY", "RANK_BROWN"];
+        for (var r = 0; r < ranks.length; r++) {
+            var rank = findNamed(dup, ranks[r]);
+            if (!rank || rank.hidden) continue;
+            if (shown) rank.hidden = true;
+            shown = true;
+        }
+        var pad = 2;
+        tmp.artboards[0].artboardRect = [ab[0] - pad, ab[1] + pad, ab[2] + pad, ab[3] - pad];
+        var opts = new ExportOptionsPNG24();
+        var scale = Math.min(600, THUMB_PX * 100 / Math.max(ab[2] - ab[0] + 2 * pad, 1));
+        opts.horizontalScale = scale; opts.verticalScale = scale;
+        opts.transparency = true; opts.artBoardClipping = true; opts.antiAliasing = true;
+        tmp.exportFile(file, ExportType.PNG24, opts);
+    } finally {
+        tmp.close(SaveOptions.DONOTSAVECHANGES);
+    }
+}
+
+function exportDesign(design, docBg, outFolder, log) {
+    var name = designNameOf(design);
+    var groups = {};
+    collectTemplates(design.pageItems, groups);
+    var templates = {}, count = 0;
+    for (var t in groups) {
+        if (!groups.hasOwnProperty(t)) continue;
+        templates[t] = readTemplate(groups[t]);
+        count++;
+    }
+    if (!count) { log.push(name + ": FAILED no layout group (T_… / TC_… with an ANCHOR_CIRCLE) inside"); return null; }
+    var bg = findBackground(design.pageItems) || docBg;
+    var key = slug(name);
+    var entry = { design: name, templates: templates, picture: null, thumb: key + "-thumb.png", main: mainTemplateName(templates) };
+    if (bg) {
+        var size = exportPng(bg, new File(outFolder.fsName + "/" + key + "-bg.png"), false);
+        entry.picture = { png: key + "-bg.png", outline: false, box: [-size[0] / 2, size[1] / 2, size[0] / 2, -size[1] / 2] };
+    }
+    for (var k in templates) {
+        if (!templates.hasOwnProperty(k)) continue;
+        var art = artOf(groups[k]);
+        if (art.length) {
+            var artPng = key + "-" + k + ".png";
+            templates[k].art = { png: artPng, box: exportArt(art, new File(outFolder.fsName + "/" + artPng), templates[k].centre[0], templates[k].centre[1]) };
+        }
+        delete templates[k].centre;
+    }
+    exportThumb(groups[entry.main], bg, new File(outFolder.fsName + "/" + entry.thumb));
+    log.push(name + ": " + count + " layout group(s), picture from " + entry.main + (bg ? " on " + bg.name : " (no background)"));
+    return entry;
+}
+
+function exportDesigns(f, outFolder, log) {
+    var doc = app.open(f);
+    try {
+        for (var L = 0; L < doc.layers.length; L++) { doc.layers[L].locked = false; doc.layers[L].visible = true; }
+        var found = [];
+        for (var l = 0; l < doc.layers.length; l++) collectDesigns(doc.layers[l].pageItems, found);
+        var docBg = null;
+        for (var b = 0; b < doc.layers.length && !docBg; b++) docBg = findBackground(doc.layers[b].pageItems);
+        var entries = [], seen = {};
+        for (var i = 0; i < found.length; i++) {
+            var n = designNameOf(found[i]);
+            if (seen[n]) { log.push(n + ": FAILED two groups are named " + n + " — rename one"); continue; }
+            seen[n] = true;
+            try {
+                var e = exportDesign(found[i], docBg, outFolder, log);
+                if (e) entries.push(e);
+            } catch (err) {
+                log.push(n + ": FAILED " + err.message + " (line " + err.line + ")");
+            }
+        }
+        if (!found.length) log.push(decodeURI(f.name) + ": FAILED no group named DESIGN 1, DESIGN 2 …");
+        return entries;
+    } finally {
+        doc.close(SaveOptions.DONOTSAVECHANGES);
+    }
+}
+
+function writeText(folder, name, text) {
+    var file = new File(folder.fsName + "/" + name);
+    file.encoding = "UTF-8"; file.open("w"); file.write(text); file.close();
+}
+
+function designsMain() {
+    var out = new Folder(PRESET_OUT);
+    if (!out.exists) out.create();
+    var prevInteraction = app.userInteractionLevel;
+    app.userInteractionLevel = UserInteractionLevel.DONTDISPLAYALERTS;
+    var designs = [], log = [];
+    try {
+        designs = exportDesigns(new File(PRESET_DESIGN_FILE), out, log);
+    } catch (err) {
+        log.push("FAILED " + err.message + " (line " + err.line + ")");
+    } finally {
+        app.userInteractionLevel = prevInteraction;
+    }
+    writeText(out, "designs.json", json({ designs: designs }));
+    writeText(out, "export-log.txt", log.join("\n"));
+}
+
+function main() {
     var src = new Folder(PRESET_SRC), out = new Folder(PRESET_OUT);
     if (!out.exists) out.create();
     var prevInteraction = app.userInteractionLevel;
@@ -290,4 +465,6 @@ function exportFile(f, outFolder, log) {
     m.encoding = "UTF-8"; m.open("w"); m.write(json({ files: entries })); m.close();
     var lf = new File(out.fsName + "/export-log.txt");
     lf.encoding = "UTF-8"; lf.open("w"); lf.write(log.join("\n")); lf.close();
-})();
+}
+
+if (typeof PRESET_DESIGN_FILE !== "undefined") designsMain(); else main();

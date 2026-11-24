@@ -26,6 +26,7 @@ import ProductionOrderDetail from './pages/ProductionOrderDetail';
 import ProductionEditOrder from './pages/ProductionEditOrder';
 import ProductionCatalog from './pages/ProductionCatalog';
 import ProductionTeam from './pages/ProductionTeam';
+import ProductionMedalDesigns from './pages/ProductionMedalDesigns';
 import ProductionReviewLog from './pages/ProductionReviewLog';
 import StoreAdminDashboard from './pages/StoreAdminDashboard';
 import StoreAdminOrderDetail from './pages/StoreAdminOrderDetail';
@@ -77,6 +78,7 @@ function AppRoutes() {
       <Route path="/production/orders/:id" element={<RequireRole role="production"><ProductionOrderDetail /></RequireRole>} />
       <Route path="/production/orders/:id/edit" element={<RequireRole role="production"><ProductionEditOrder /></RequireRole>} />
       <Route path="/production/catalog" element={<RequireRole role="production"><ProductionCatalog /></RequireRole>} />
+      <Route path="/production/medal-designs" element={<RequireRole role="production"><ProductionMedalDesigns /></RequireRole>} />
       <Route path="/production/team" element={<RequireRole role="production"><ProductionTeam /></RequireRole>} />
       <Route path="/production/review-log" element={<RequireRole role="production"><ProductionReviewLog /></RequireRole>} />
 

@@ -13,6 +13,8 @@
 //   POST /crystal   -> { job, files } from the Crystal Preview / Crystal Studio -> the crystals
 //                      made in Illustrator from their original .ai (crystal-job.mjs), saved under
 //                      OUTPUT/CRYSTAL/<date time> - <school (order)>; returns jobId + folder
+//   POST /medal-designs -> every DESIGN group of E CUT 0 read on a copy (medal-designs.mjs); the finished
+//                      job carries { designs, log, pictures } for the MEDAL DESIGNS page to store
 // The job runs on THIS computer, the one whose browser clicked the button.
 // No Supabase access and no secrets — the page sends the CSV itself. Node
 // built-ins only, so install is just "have Node.js, run the installer".
@@ -27,6 +29,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { checkCrystalJob, crystalOutDir, writeCrystalScript } from './crystal-job.mjs';
 import { archiveToYear, copyToSchool, resolveSchoolDir } from './school-folder.mjs';
+import { MEDAL_DESIGN_FILE, findExportJsx, readDesignExport, writeDesignScript } from './medal-designs.mjs';
 
 const execFileAsync = promisify(execFile);
 
@@ -37,7 +40,8 @@ export const PORT = 47821;
 //    /generate, so Illustrator doesn't ask for it (Sean 2026-10-22)
 // 5: a finished job carries SEAN.jsx's run report (`report`) for the check after Generate
 // 7: POST /archive — Done Typing moves the order's files into the school's year folder (Sean 2026-11-16)
-const VERSION = 7;
+// 8: POST /medal-designs — the MEDAL DESIGNS page reads E CUT 0's designs (Sean 2026-11-24)
+const VERSION = 8;
 const HELPER_DIR = path.dirname(fileURLToPath(import.meta.url));
 const TEMP_DIR = path.join(tmpdir(), 'pustakajasa-ai-helper');
 // crystals can carry pictures and .svg artwork (Crystal Studio), so more room than a CSV needs
@@ -207,7 +211,7 @@ function csvCells(line) {
   return out;
 }
 // SEAN.jsx isHangingMedalCode: HM… / HANGING MEDAL, any case -> the round medal file, after product_mapping.csv (Sean, 2026-11-12)
-const HANGING_MEDAL_FILE = 'E CUT 0 - MEDAL (SUKAN) -SALES.ai';
+const HANGING_MEDAL_FILE = MEDAL_DESIGN_FILE;
 export const isHangingMedalCode = (code) => /^\s*HM([^A-Z]|$)/i.test(String(code || '')) || /HANGING\s*MEDAL/i.test(String(code || ''));
 export function findTemplates(folder, codes) {
   const files = existsSync(folder) ? readdirSync(folder).filter((n) => /\.ai$/i.test(n)) : [];
@@ -349,6 +353,26 @@ async function runCrystalJob(job, checked) {
   console.log(`[${new Date().toISOString()}] crystals ${job.outputFolder} -> ${job.status} (${job.files.length} file(s))\n${job.message}\n`);
 }
 
+// Medal designs: E CUT 0 copied, its DESIGN groups exported in Illustrator, the result kept on the job
+async function runMedalDesignJob(job) {
+  job.status = 'running';
+  const workDir = path.join(TEMP_DIR, `medal-designs-${job.id}`);
+  try {
+    const aiFileDir = resolveAiFileDir();
+    if (!(await folderReachable(aiFileDir))) throw new Error(`This computer can't reach ${aiFileDir}`);
+    await runIllustrator(writeDesignScript(aiFileDir, workDir, findExportJsx(HELPER_DIR)));
+    Object.assign(job, readDesignExport(path.join(workDir, 'out')));
+    job.message = job.log.join('\n');
+    job.status = job.designs.length ? 'done' : 'error';
+  } catch (err) {
+    job.status = 'error';
+    job.message = err.stderr ? `Illustrator call failed: ${err.stderr.toString()}` : err.message;
+  } finally {
+    try { rmSync(workDir, { recursive: true, force: true }); } catch { /* a file Illustrator still holds — the OS clears temp */ }
+  }
+  console.log(`[${new Date().toISOString()}] medal designs -> ${job.status} (${(job.designs || []).length} design(s))\n${job.message}\n`);
+}
+
 // One Illustrator run at a time — a second click just waits its turn.
 function queueJob(run, outputFolder = '') {
   const job = { id: randomUUID(), status: 'queued', message: '', outputFolder, files: [], schoolCopy: '' };
@@ -434,6 +458,10 @@ function startServer() {
         let job;
         try { job = startCrystalJob(JSON.parse(await readBody(req))); } catch (err) { send(400, { error: err.message }); return; }
         send(202, { jobId: job.id, folder: job.outputFolder });
+        return;
+      }
+      if (req.method === 'POST' && pathname === '/medal-designs') {
+        send(202, { jobId: queueJob(runMedalDesignJob).id });
         return;
       }
       const match = pathname.match(/^\/jobs\/([\w-]+)$/);
