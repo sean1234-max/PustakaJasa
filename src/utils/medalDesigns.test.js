@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { designLabel, isPickable, mergeDesignRows, moveDesign, sortDesigns, storedPreview } from './medalDesigns';
+import { designLabel, isPickable, mergeDesignRows, moveDesign, rowForDesign, sortDesigns, storedPreview } from './medalDesigns';
 
 const row = (name, extra = {}) => ({ name, label: '', hidden: false, sort_order: 1, in_file: true, preview: { old: true }, ...extra });
 const previewOf = (d) => ({ from: d.design });
@@ -96,5 +96,14 @@ describe('sortDesigns / isPickable / designLabel', () => {
   it('shows the label, else the name', () => {
     expect(designLabel(row('DESIGN 1', { label: ' Arc ' }))).toBe('Arc');
     expect(designLabel(row('DESIGN 1'))).toBe('DESIGN 1');
+  });
+});
+
+describe('rowForDesign', () => {
+  it('drops the lines a design has no place for (DESIGN 2 has no bottom arc), keeps the rest', () => {
+    const templates = { T_H_PC_L1_L2: { fields: { event_header: {}, event_line_1: {}, event_line_2: {}, RANK_GREY: {} } } };
+    const row = { event_header: 'SK', year: 'KEJOHANAN 2026', position: 'JOHAN', event_line_1: 'TAHUN 6', event_line_2: 'LARI', jenis_plak: 'HM-M-0031 / GOLD' };
+
+    expect(rowForDesign(row, templates)).toEqual({ ...row, year: '' });
   });
 });

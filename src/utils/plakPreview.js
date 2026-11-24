@@ -7,6 +7,8 @@
 // ponytail: SAMPLE tweaks (UPDATE FROM SAMPLE: moved gaps, sizes) and Illustrator's own text wrapping are
 // not copied — the AI file stays the final word.
 
+import { ROUND_MEDAL_FILE, isHangingMedalCode } from './roundMedal';
+
 // ------------------------------------------------------------------ which .ai (SEAN.jsx findMatchingAiFile)
 const squash = (s) => String(s || '').replace(/[\s !-/:-@[-`{-~]+/g, '').toUpperCase();
 const eCutNumber = (s) => /E\s*CUT\s*(\d+)/i.exec(String(s || ''))?.[1] ?? null;
@@ -36,7 +38,6 @@ const COLOURS = ['GOLD', 'SILVER', 'BRONZE', 'RED', 'BLUE'];
 export const withoutColour = (code) => String(code || '').split('/').map((p) => p.trim())
   .filter((p) => p && !COLOURS.includes(p.toUpperCase())).join(' / ');
 
-const HANGING_MEDAL_FILE = 'E CUT 0 - MEDAL (SUKAN) -SALES.ai';
 export function fileForCode(code, manifest) {
   const files = (manifest?.files || []).map((f) => f.file);
   const codes = [...new Set([code, withoutColour(code)])];
@@ -47,7 +48,7 @@ export function fileForCode(code, manifest) {
   const mapped = codes.map((c) => mapping.find(([m]) => squash(m) === squash(c))?.[1]).find((f) => f && files.includes(f));
   if (mapped) return mapped;
   // SEAN.jsx isHangingMedalCode: HM… / HANGING MEDAL, any case → the round medal file, after the mapping
-  if ((/^\s*HM([^A-Z]|$)/i.test(code) || /HANGING\s*MEDAL/i.test(code)) && files.includes(HANGING_MEDAL_FILE)) return HANGING_MEDAL_FILE;
+  if (isHangingMedalCode(code) && files.includes(ROUND_MEDAL_FILE)) return ROUND_MEDAL_FILE;
   const trofi = trofiBase(withoutColour(code));
   if (trofi) return files.find((f) => /TROFI/i.test(f) && trofiKey(f).includes(trofi)) || null;
   const n = eCutNumber(code);
@@ -254,20 +255,36 @@ function fieldLayout(field, value, tpl, opts) {
 // -> { fields: [{ field, lines, size, leading, font, color, align, x, baselines: [y…] }] } in pt around
 // the anchor centre, y DOWN (ready for SVG). `measure(text, size, font, tracking)` = width in pt.
 // rankColors: false on a plaque with a background — JOHAN stays red there (SEAN.jsx, Sean 2026-11-02)
+// A round medal's TAJUK / YEAR on its arc (SEAN.jsx: the whole TAJUK on the top arc, the YEAR on the bottom one,
+// Sean 2026-11-19): a path text frame's box is its path's circle, the line's baseline — the letters stand outwards on
+// the top arc and inwards on the bottom one. -> { arc: { cx, cy, r, top } } (pt, y down), one line, shrunk to fit.
+// ponytail: SEAN.jsx fits the arc between the stars; the preview allows ARC_SPAN_DEG of the circle
+const ARC_SPAN_DEG = 150;
+function arcLayout(it, measure) {
+  const [l, t, r, b] = it.frame.box;
+  const radius = (r - l) / 2;
+  const text = it.lines.join(' ');
+  const size = fit([text], it.frame.size || it.size, radius * ARC_SPAN_DEG * (Math.PI / 180), (s2, s) => measure(s2, s, it.font, it.tracking || 0));
+  const { frame: _frame, ...rest } = it;
+  return { ...rest, lines: [text], size, arc: { cx: (l + r) / 2, cy: -(t + b) / 2, r: radius, top: it.field !== 'year' } };
+}
+
 export function layoutPlaque(row, tpl, { trofi = false, measure, rankColors = true, chineseFromT = false }) {
   const cjk = templateNameFor(row).startsWith('TC');
   const roundMedal = !!(tpl.fields.event_header?.path || tpl.fields.year?.path);
   const lone = roundMedal ? null : loneLineField(row);
-  const laid = lineOrderFor(row)
+  const all = lineOrderFor(row)
     .map((f) => [f, clean(row[f])])
     .filter(([, v]) => v)
     .map(([f, v]) => fieldLayout(f, v, tpl, { trofi, cjk, measure, rankColors, chineseFromT, lone, shortPos: !trofi && !roundMedal && isShortPos(row) }))
     .filter(Boolean);
-  if (tpl.textArea && laid.length) return { fields: layoutInTextArea(laid, tpl.textArea, row, { measure, lone }) };
-  if (!laid.length) return { fields: [] };
+  const arcs = all.filter((it) => it.frame.path).map((it) => arcLayout(it, measure));
+  const laid = all.filter((it) => !it.frame.path);
+  if (tpl.textArea && laid.length) return { fields: [...layoutInTextArea(laid, tpl.textArea, row, { measure, lone }), ...arcs] };
+  if (!laid.length) return { fields: arcs };
   // stacked ink to ink with SEAN.jsx's gaps, the whole stack centred on the anchor
   const { placed, height } = stackInk(laid.map((it) => ({ ...it, x: xOf(it) })));
-  return { fields: placed.map(({ frame: _frame, ...it }) => ({ ...it, baselines: it.baselines.map((b) => b - height / 2) })) };
+  return { fields: [...placed.map(({ frame: _frame, ...it }) => ({ ...it, baselines: it.baselines.map((b) => b - height / 2) })), ...arcs] };
 }
 
 const xOf = (it) => {

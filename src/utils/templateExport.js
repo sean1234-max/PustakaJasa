@@ -393,17 +393,18 @@ function layoutUmum(ws) {
   const no = findCells(ws, 'NO.')[0];
   if (!no) return null;
   const col = (label) => findCells(ws, label).find((p) => p.r === no.r)?.c;
-  const cols = { l0: col('①'), l1: col('②'), l2: col('③'), l3: col('④'), qty: col('KUANTITI'), plak: col('JENIS PLAK') };
+  // ⑤ since 2026-11-25 — an older template without it just gets ①–④
+  const cols = { l0: col('①'), l1: col('②'), l2: col('③'), l3: col('④'), l4: col('⑤'), qty: col('KUANTITI'), plak: col('JENIS PLAK') };
   if (cols.l1 == null || cols.qty == null || cols.plak == null) return null;
   const range = XLSX.utils.decode_range(ws['!ref']);
   const rows = [];
   for (let r = no.r + 1; r <= range.e.r; r++) if (/^\d+$/.test(textAt(ws, r, no.c))) rows.push(r);
-  // The CONTOH lines ①-④ above the list.
+  // The CONTOH lines ①-⑤ above the list.
   // Its "WARNA MERAH?" pick beside each line.
   const contoh = {};
   const merah = {};
   const merahHead = findCells(ws, '', (t) => /^WARNA MERAH/.test(t)).find((p) => p.r < no.r);
-  ['①', '②', '③', '④'].forEach((mark, i) => {
+  ['①', '②', '③', '④', '⑤'].forEach((mark, i) => {
     const p = findCells(ws, mark).find((q) => q.r < no.r && q.c === no.c);
     if (p) contoh[`l${i}`] = addr(p.r, p.c + 1);
     if (p && merahHead) merah[`${i}`] = addr(p.r, merahHead.c);

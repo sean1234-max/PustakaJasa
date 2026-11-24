@@ -1684,7 +1684,8 @@ function parseTahunPlakRowSheet(ws, { allowNoTahun = false } = {}) {
 // carrying only the lines it changes (blank = same as the CONTOH, "-" = no
 // such line on this plaque); the grey CONTOH/示范 example rows are skipped.
 // null when the sheet isn't this shape (or has no row with a KUANTITI).
-const UMUM_MARKS = ['①', '②', '③', '④'];
+// ⑤ since 2026-11-25 (a medal's line 2); a sheet without it still reads
+const UMUM_MARKS = ['①', '②', '③', '④', '⑤'];
 
 function parseUmumSheet(ws) {
   const range = sheetRange(ws);

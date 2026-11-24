@@ -2,9 +2,12 @@
 // .ai's picture with the order's own words — the first CSV row of that Jenis Plak, the same rows Generate
 // AI File makes, so a change in the Reference Sample (words, line order) shows at once. Layout rules:
 // utils/plakPreview.js; templates: public/plak-preview (scripts/plak-preview). Crystals have their own.
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import { CSV_COLUMNS, buildCsvRows, getOrderJenisPlakGroups, isCrystalCode } from '../utils/exportCsv';
 import { FONTS, fileForCode, layoutPlaque, templateFor } from '../utils/plakPreview';
+import { isRoundMedalCode } from '../utils/roundMedal';
+import { loadMedalDesigns, medalPictureUrl } from '../lib/medalDesignsApi';
+import { rowForDesign } from '../utils/medalDesigns';
 import { A4, jpegPagesToPdf } from '../utils/simplePdf';
 import { downloadBinaryFile } from '../utils/downloadBlob';
 
@@ -34,60 +37,94 @@ function useFontsReady() {
   return ready;
 }
 
-// one sample per Jenis Plak + layout: its first row
-export function plakSamplesOf(order, manifest) {
+// A medal's MEDAL DESIGN (Sean, 2026-11-25) as a templates.json entry: its own layout groups and pictures
+// (the "medal-designs" bucket). null when the design (or its background) isn't there — the plain E CUT 0 then.
+const MEDAL_BG_OPACITY = 0.2; // SEAN.jsx MEDAL_BG_OPACITY (20 %)
+function designEntry(name, designs) {
+  const d = name && (designs || []).find((x) => x.name === name);
+  if (!d?.preview?.picture) return null;
+  return { file: d.name, design: d.name, templates: d.preview.templates, picture: d.preview.picture, url: medalPictureUrl };
+}
+const pngUrl = (entry, png) => (entry.url ? entry.url(png) : `${BASE}${encodeURIComponent(png)}`);
+
+// one sample per Jenis Plak + layout (+ medal design): its first row
+export function plakSamplesOf(order, manifest, designs = []) {
   if (!order || !manifest) return { samples: [], missing: [] };
   const samples = [];
   const missing = [];
   getOrderJenisPlakGroups(order).filter((g) => !isCrystalCode(g.jenisPlak)).forEach((g) => {
     const file = fileForCode(g.jenisPlak, manifest);
-    const entry = manifest.files.find((f) => f.file === file);
-    if (!entry) { missing.push(g.jenisPlak); return; }
+    const fileEntry = manifest.files.find((f) => f.file === file);
+    const medal = isRoundMedalCode(g.jenisPlak);
+    if (!fileEntry && !medal) { missing.push(g.jenisPlak); return; }
     const seen = new Set();
     buildCsvRows(order, null, g.items).rows
       .map((r) => Object.fromEntries(CSV_COLUMNS.map((c, i) => [c, r[i] ?? ''])))
       .filter((row) => !row.invoice_gap && CSV_COLUMNS.slice(0, 5).some((c) => String(row[c]).trim()))
       .forEach((csvRow) => {
-        const picked = templateFor(entry, csvRow);
-        if (!picked || seen.has(picked.name)) return;
-        seen.add(picked.name);
-        samples.push({ key: `${g.jenisPlak}::${picked.name}`, jenisPlak: g.jenisPlak, entry, ...picked });
+        const entry = (medal && designEntry(csvRow.design, designs)) || fileEntry;
+        const picked = entry && templateFor(entry, entry.design ? rowForDesign(csvRow, entry.templates) : csvRow);
+        const key = `${g.jenisPlak}::${entry?.design || ''}::${picked?.name}`;
+        if (!picked || seen.has(key)) return;
+        seen.add(key);
+        samples.push({ key, jenisPlak: entry.design ? `${g.jenisPlak} · ${entry.design}` : g.jenisPlak, entry, ...picked });
       });
+    if (!seen.size && !fileEntry) missing.push(g.jenisPlak);
   });
   return { samples, missing };
 }
 
-// one sample laid out: its words (pt, y down) and the box around the anchor and picture
+// one sample laid out: its words (pt, y down) and the box around the anchor and picture. A medal design is
+// drawn like SEAN.jsx makes it: inside its ANCHOR_CIRCLE (`clipR`), the background at 20 %, rank colours.
+const MEDAL_PAD_PT = 2;
 function sceneOf({ entry, template, row, chineseFromT }) {
-  const { fields } = layoutPlaque(row, template, { trofi: /TROFI/i.test(entry.file), measure, rankColors: !!entry.picture.outline, chineseFromT });
+  const medal = !!entry.design;
+  const { fields } = layoutPlaque(row, template, { trofi: /TROFI/i.test(entry.file), measure, rankColors: !!entry.picture.outline || medal, chineseFromT });
   const [aw, ah] = template.anchor;
   const pic = entry.picture.box; // [l, t, r, b], y up
   // the layout group's own artwork (a trophy's frame pattern — Sean, 2026-11-02), over the picture
-  const art = template.art ? { box: template.art.box, src: `${BASE}${encodeURIComponent(template.art.png)}` } : null;
-  const boxes = [pic, [-aw / 2, ah / 2, aw / 2, -ah / 2], ...(art ? [art.box] : [])];
+  const art = template.art ? { box: template.art.box, src: pngUrl(entry, template.art.png) } : null;
+  const anchorBox = [-aw / 2, ah / 2, aw / 2, -ah / 2];
+  const P = MEDAL_PAD_PT;
+  const boxes = medal ? [[anchorBox[0] - P, anchorBox[1] + P, anchorBox[2] + P, anchorBox[3] - P]] : [pic, anchorBox, ...(art ? [art.box] : [])];
   const l = Math.min(...boxes.map((b) => b[0]));
   const t = Math.max(...boxes.map((b) => b[1]));
   return {
     fields, pic, art, l, t, w: Math.max(...boxes.map((b) => b[2])) - l, h: t - Math.min(...boxes.map((b) => b[3])),
-    src: `${BASE}${encodeURIComponent(entry.picture.png)}`,
+    src: pngUrl(entry, entry.picture.png),
+    clipR: medal ? Math.min(aw, ah) / 2 : null, picOpacity: medal ? MEDAL_BG_OPACITY : 1,
   };
 }
+
+// a medal arc as an SVG path through the top (left to right, clockwise) or the bottom (left to right, the other way)
+const arcPath = ({ cx, cy, r, top }) => `M ${cx - r} ${cy} A ${r} ${r} 0 0 ${top ? 1 : 0} ${cx + r} ${cy}`;
 
 const anchorOf = (align) => (align === 'left' ? 'start' : align === 'right' ? 'end' : 'middle');
 
 function PlakSvg({ sample }) {
-  const { fields, pic, art, l, t, w, h, src } = sceneOf(sample);
+  const { fields, pic, art, l, t, w, h, src, clipR, picOpacity } = sceneOf(sample);
+  const uid = useId();
+  const textStyle = (f) => ({
+    fill: f.color, fontFamily: f.font.family, fontWeight: f.font.weight, fontSize: f.size,
+    letterSpacing: f.tracking ? (f.tracking / 1000) * f.size : undefined,
+    stroke: f.stroke ? '#000' : undefined, strokeWidth: f.stroke || undefined,
+  });
   return (
     <svg viewBox={`${l} ${-t} ${w} ${h}`} style={{ width: '100%', display: 'block' }} role="img" aria-label={`${sample.jenisPlak} preview`}>
-      <image href={src} x={pic[0]} y={-pic[1]} width={pic[2] - pic[0]} height={pic[1] - pic[3]} preserveAspectRatio="none" />
-      {art && <image href={art.src} x={art.box[0]} y={-art.box[1]} width={art.box[2] - art.box[0]} height={art.box[1] - art.box[3]} preserveAspectRatio="none" />}
-      {fields.map((f) => f.lines.map((line, i) => (
-        <text
-          key={`${f.field}-${i}`} x={f.x} y={f.baselines[i]} textAnchor={anchorOf(f.align)}
-          fill={f.color} fontFamily={f.font.family} fontWeight={f.font.weight} fontSize={f.size}
-          letterSpacing={f.tracking ? (f.tracking / 1000) * f.size : undefined}
-          stroke={f.stroke ? '#000' : undefined} strokeWidth={f.stroke || undefined}
-        >
+      {clipR && <defs><clipPath id={`${uid}clip`}><circle cx={0} cy={0} r={clipR} /></clipPath></defs>}
+      <g clipPath={clipR ? `url(#${uid}clip)` : undefined}>
+        <image href={src} x={pic[0]} y={-pic[1]} width={pic[2] - pic[0]} height={pic[1] - pic[3]} preserveAspectRatio="none" opacity={picOpacity} />
+        {art && <image href={art.src} x={art.box[0]} y={-art.box[1]} width={art.box[2] - art.box[0]} height={art.box[1] - art.box[3]} preserveAspectRatio="none" />}
+      </g>
+      {clipR && <circle cx={0} cy={0} r={clipR} fill="none" stroke="#000" strokeWidth={0.5} />}
+      {fields.filter((f) => f.arc).map((f) => (
+        <g key={f.field}>
+          <path id={`${uid}${f.field}`} d={arcPath(f.arc)} fill="none" />
+          <text style={textStyle(f)}><textPath href={`#${uid}${f.field}`} startOffset="50%" textAnchor="middle">{f.lines[0]}</textPath></text>
+        </g>
+      ))}
+      {fields.filter((f) => !f.arc).map((f) => f.lines.map((line, i) => (
+        <text key={`${f.field}-${i}`} x={f.x} y={f.baselines[i]} textAnchor={anchorOf(f.align)} style={textStyle(f)}>
           {line}
         </text>
       )))}
@@ -130,17 +167,49 @@ const loadImage = (src) => new Promise((ok, fail) => {
 });
 
 // the sample drawn on the page canvas at (x, y) pt, `width` pt wide; returns its height in pt
+// a medal arc letter by letter (canvas has no text on a path): centred on the top / bottom of the circle
+// (cx, cy, R in canvas px), upright outwards on top, inwards below — as the SVG's textPath
+function drawArc(ctx, f, cx, cy, R, s) {
+  ctx.font = `${f.font.weight} ${f.size * s}px ${f.font.family}`;
+  ctx.textAlign = 'center';
+  if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
+  const track = f.tracking ? (f.tracking / 1000) * f.size * s : 0;
+  const chars = [...f.lines[0]];
+  const widths = chars.map((c) => ctx.measureText(c).width + track);
+  let along = -(widths.reduce((a, b) => a + b, 0) - track) / 2;
+  ctx.fillStyle = f.color;
+  chars.forEach((c, i) => {
+    const mid = along + (widths[i] - track) / 2;
+    const a = f.arc.top ? -Math.PI / 2 + mid / R : Math.PI / 2 - mid / R;
+    ctx.save();
+    ctx.translate(cx + R * Math.cos(a), cy + R * Math.sin(a));
+    ctx.rotate(f.arc.top ? a + Math.PI / 2 : a - Math.PI / 2);
+    ctx.fillText(c, 0, 0);
+    ctx.restore();
+    along += widths[i];
+  });
+}
+
 function drawSample(ctx, sample, img, artImg, x, y, width) {
-  const { fields, pic, art, l, t, w, h } = sceneOf(sample);
+  const { fields, pic, art, l, t, w, h, clipR, picOpacity } = sceneOf(sample);
   const s = width / w;
   ctx.fillStyle = '#333';
   ctx.font = `600 9px ${FONTS.line.family}`;
   ctx.textAlign = 'left';
   ctx.fillText(sample.jenisPlak, x, y + 9);
   const top = y + CAPTION;
+  const ox = x - l * s;
+  const oy = top + t * s;
+  ctx.save();
+  if (clipR) { ctx.beginPath(); ctx.arc(ox, oy, clipR * s, 0, 2 * Math.PI); ctx.clip(); }
+  ctx.globalAlpha = picOpacity;
   ctx.drawImage(img, x + (pic[0] - l) * s, top + (t - pic[1]) * s, (pic[2] - pic[0]) * s, (pic[1] - pic[3]) * s);
+  ctx.globalAlpha = 1;
   if (art && artImg) ctx.drawImage(artImg, x + (art.box[0] - l) * s, top + (t - art.box[1]) * s, (art.box[2] - art.box[0]) * s, (art.box[1] - art.box[3]) * s);
-  fields.forEach((f) => f.lines.forEach((line, i) => {
+  ctx.restore();
+  if (clipR) { ctx.beginPath(); ctx.arc(ox, oy, clipR * s, 0, 2 * Math.PI); ctx.strokeStyle = '#000'; ctx.lineWidth = 0.5 * s; ctx.stroke(); }
+  fields.filter((f) => f.arc).forEach((f) => drawArc(ctx, f, ox + f.arc.cx * s, oy + f.arc.cy * s, f.arc.r * s, s));
+  fields.filter((f) => !f.arc).forEach((f) => f.lines.forEach((line, i) => {
     ctx.font = `${f.font.weight} ${f.size * s}px ${f.font.family}`;
     ctx.textAlign = f.align === 'left' ? 'left' : f.align === 'right' ? 'right' : 'center';
     if ('letterSpacing' in ctx) ctx.letterSpacing = `${f.tracking ? (f.tracking / 1000) * f.size * s : 0}px`;
@@ -255,10 +324,12 @@ async function plakPdf(samples, title) {
 
 export default function PlakPreview({ order }) {
   const [manifest, setManifest] = useState(null);
+  const [designs, setDesigns] = useState([]);
   const [pdf, setPdf] = useState({ busy: false, error: '' });
   const fontsReady = useFontsReady();
   useEffect(() => { let live = true; loadManifest().then((m) => { if (live) setManifest(m); }); return () => { live = false; }; }, []);
-  const { samples, missing } = useMemo(() => plakSamplesOf(order, manifest), [order, manifest]);
+  useEffect(() => { let live = true; loadMedalDesigns().then((d) => { if (live) setDesigns(d); }); return () => { live = false; }; }, []);
+  const { samples, missing } = useMemo(() => plakSamplesOf(order, manifest, designs), [order, manifest, designs]);
   if (!manifest || !fontsReady || (samples.length === 0 && missing.length === 0)) return null;
   const name = [order.id, order.sekolah].filter(Boolean).join(' ');
   const download = async () => {

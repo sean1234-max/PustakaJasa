@@ -1,5 +1,5 @@
-// UMUM (ORDER LAIN-LAIN) sheet — which plaque field each CONTOH line ①–④ (Reference
-// Sample slots '0'–'3') is engraved on. Shared by computeBlocks.js (which
+// UMUM (ORDER LAIN-LAIN) sheet — which plaque field each CONTOH line ①–⑤ (Reference
+// Sample slots '0'–'4'; ⑤ since 2026-11-25) is engraved on. Shared by computeBlocks.js (which
 // line shows red on screen), exportCsv.js (CSV columns + line_order).
 //
 // Sean's rules (2026-10-02):
@@ -28,7 +28,11 @@
 
 import { RED_WORD_RES, PLACE_LINE_RE, TITLE_LINE_RE } from './positionWords';
 
-export const UMUM_SLOTS = ['0', '1', '2', '3'];
+export const UMUM_SLOTS = ['0', '1', '2', '3', '4'];
+// A medal row (utils/roundMedal.js — every medal is made from E CUT 0) never guesses: ① the top arc, ② the
+// bottom arc, ③ the position, ④ line 1, ⑤ line 2, whatever the words or MERAH (Sean, 2026-11-25).
+export const MEDAL_SLOT_FIELDS = { 0: 'event_header', 1: 'year', 2: 'position', 3: 'event_line_1', 4: 'event_line_2' };
+const NO_KEYWORD_FIELDS = ['event_header', 'position', 'event_line_1', 'event_line_2', 'event_line_2'];
 // Stored in the umumRed line when the teacher unticks the red line.
 export const UMUM_NO_RED = 'none';
 
@@ -85,10 +89,11 @@ export function umumRedToggle(red, slot) {
 }
 
 // `contoh` = { '0': text, ... } (the CONTOH lines), `redSetting` = the slot(s)
-// marked MERAH ('' / undefined = none: an ANUGERAH line counts as marked). Returns { slot: field } for every
-// filled slot.
-export function umumSlotFields(contoh, redSetting) {
+// marked MERAH ('' / undefined = none: an ANUGERAH line counts as marked), `medal` = the row is a
+// medal (MEDAL_SLOT_FIELDS). Returns { slot: field } for every filled slot.
+export function umumSlotFields(contoh, redSetting, medal = false) {
   const slots = UMUM_SLOTS.filter((s) => String(contoh[s] || '').trim());
+  if (medal) return Object.fromEntries(slots.map((s) => [s, MEDAL_SLOT_FIELDS[s]]));
   const out = {};
   const taken = new Set();
   const assign = (list, field) => list.forEach((s) => { out[s] = field; taken.add(s); });
@@ -108,7 +113,7 @@ export function umumSlotFields(contoh, redSetting) {
     else if (!redSlots.includes(slots[0])) assign([slots[0]], 'event_header');
   } else {
     if (!slots.some((s) => kinds[s] || HAS_YEAR_RE.test(contoh[s]))) {
-      slots.forEach((s, i) => { out[s] = ['event_header', 'position', 'event_line_1', 'event_line_2'][i]; });
+      slots.forEach((s, i) => { out[s] = NO_KEYWORD_FIELDS[i]; });
       return out;
     }
     // Every line looks like a title (MAJLIS / SK / 2026 …) and none is marked
@@ -134,7 +139,8 @@ export function umumSlotFields(contoh, redSetting) {
 
 // The slot(s) printed red — see the header note. `redSetting` is the stored
 // umumRed value: a slot (or touching slots '1,2'), UMUM_NO_RED, or '' (not touched: keywords decide).
-export function umumRedSlots(contoh, redSetting) {
+export function umumRedSlots(contoh, redSetting, medal = false) {
+  if (medal) return String(contoh[2] || '').trim() ? ['2'] : [];
   if (redSetting === UMUM_NO_RED) return [];
   const fields = umumSlotFields(contoh, redSetting);
   const set = umumRedList(redSetting).filter((s) => fields[s] === 'position');

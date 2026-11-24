@@ -1414,3 +1414,52 @@ describe('buildCsvRows — MP THP 2 kelas: never more plaques than the subject\'
     expect(rows).toHaveLength(6);
   });
 });
+
+describe('ORDER LAIN-LAIN medal rows (Sean, 2026-11-25)', () => {
+  const lines = {
+    'UMUM::0::0': 'SK TEST MEDAL', 'UMUM::0::1': 'KEJOHANAN OLAHRAGA 2026', 'UMUM::0::2': 'JOHAN',
+    'UMUM::0::3': 'TAHUN 6', 'UMUM::0::4': 'LOMPAT JAUH', 'UMUM::0::design': 'DESIGN 2',
+  };
+  const item = (jenisPlak, rows) => ({ id: jenisPlak, categoryKey: 'UMUM', blockIdx: 0, jenisPlak, qty: 1, detail: { lines, rows } });
+
+  it('a medal engraves ① ② ③ ④ ⑤ as header / year / position / line 1 / line 2, in rank colour, with the tab\'s design', async () => {
+    const { buildCsvRows, CSV_COLUMNS } = await import('./exportCsv');
+    const medal = item('HM-M-0031 / SILVER', [{ id: 1, l2: 'NAIB JOHAN', qty: '2' }]);
+
+    const { rows } = buildCsvRows({ schoolLanguage: 'SK', items: [medal] }, 'UMUM', [medal]);
+
+    expect(CSV_COLUMNS[CSV_COLUMNS.length - 1]).toBe('design');
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toEqual(['SK TEST MEDAL', 'KEJOHANAN OLAHRAGA 2026', 'NAIB JOHAN', 'TAHUN 6', 'LOMPAT JAUH',
+      'HM-M-0031 / SILVER', 'ORDER LAIN-LAIN', 'event_header|year|event_line_1|event_line_2|position', '', '', 'DESIGN 2']);
+  });
+
+  it('a medal whose lines were dragged follows the drag', async () => {
+    const { buildCsvRows, CSV_COLUMNS } = await import('./exportCsv');
+    const medal = { ...item('HM-M-0031 / GOLD', [{ id: 1, qty: '1' }]), detail: { lines: { ...lines, 'UMUM::0::refOrder': '0,1,2,3,4' }, rows: [{ id: 1, qty: '1' }] } };
+    const { rows } = buildCsvRows({ schoolLanguage: 'SK', items: [medal] }, 'UMUM', [medal]);
+    expect(rows[0][CSV_COLUMNS.indexOf('line_order')]).toBe('event_header|year|position|event_line_1|event_line_2');
+  });
+
+  it('a plaque on the same tab keeps the keyword rules and no design', async () => {
+    const { buildCsvRows } = await import('./exportCsv');
+    const plaque = item('PKF 265', [{ id: 1, qty: '1' }]);
+
+    const { rows } = buildCsvRows({ schoolLanguage: 'SK', items: [plaque] }, 'UMUM', [plaque]);
+
+    expect(rows[0]).toHaveLength(9);
+    expect(rows[0][1]).toBe('');
+    expect(rows[0].slice(0, 5).join('|')).toContain('KEJOHANAN OLAHRAGA 2026');
+  });
+
+  it('a medal on a tab with no design picked writes a blank design (SEAN.jsx then picks as before)', async () => {
+    const { buildCsvRows } = await import('./exportCsv');
+    const { 'UMUM::0::design': _gone, ...noDesign } = lines;
+    const medal = { ...item('15063 / GOLD', [{ id: 1, qty: '1' }]), detail: { lines: noDesign, rows: [{ id: 1, qty: '1' }] } };
+
+    const { rows } = buildCsvRows({ schoolLanguage: 'SK', items: [medal] }, 'UMUM', [medal]);
+
+    expect(rows[0]).toHaveLength(9);
+    expect(rows[0][1]).toBe('KEJOHANAN OLAHRAGA 2026');
+  });
+});

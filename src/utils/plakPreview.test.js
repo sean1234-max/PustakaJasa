@@ -151,3 +151,41 @@ describe('plakPreview — one master template with a TEXT_AREA (SEAN.jsx 2026-11
     expect(plain.color).toBe('#000000');
   });
 });
+
+describe('round medal arcs (Sean, 2026-11-25)', () => {
+  // E CUT 0 DESIGN 1: event_header / year are path text — their box is the path's circle
+  const arcTpl = {
+    anchor: [106.3, 106.3],
+    fields: {
+      event_header: { box: [-41.53, 40.53, 41.53, -42.53], size: 12, color: '#000000', justify: 'center', path: true },
+      year: { box: [-46.77, 44.27, 46.77, -49.62], size: 12, color: '#000000', justify: 'center', path: true },
+      event_line_1: { box: [-36.97, 23.1, 36.97, 12.09], size: 10, color: '#000000', justify: 'center' },
+      RANK_GREY: { box: [-37.56, -3.53, 37.56, -17.49], size: 11, color: '#c0c0c0', justify: 'center' },
+    },
+  };
+
+  it('puts the TAJUK on the top arc and the YEAR on the bottom one, the rest stacked in the middle', () => {
+    const row = { event_header: 'SK TEST MEDAL', year: 'KEJOHANAN OLAHRAGA 2026', position: 'NAIB JOHAN', event_line_1: 'TAHUN 6' };
+
+    const { fields } = layoutPlaque(row, arcTpl, { measure });
+    const header = fields.find((f) => f.field === 'event_header');
+    const year = fields.find((f) => f.field === 'year');
+
+    expect(header.arc).toEqual({ cx: 0, cy: 1, r: 41.53, top: true });
+    expect(year.arc.top).toBe(false);
+    expect(year.arc.r).toBeCloseTo(46.77);
+    expect(header.lines).toEqual(['SK TEST MEDAL']);
+    expect(fields.filter((f) => !f.arc).map((f) => f.field)).toEqual(['position', 'event_line_1']);
+    expect(fields.find((f) => f.field === 'position').color).toBe('#c0c0c0');
+  });
+
+  it('joins a two-line TAJUK on the arc and shrinks it to fit 150° of the circle', () => {
+    const long = 'SK TAMAN SRI ANDALAS\nKLANG SELANGOR';
+
+    const header = layoutPlaque({ event_header: long }, arcTpl, { measure }).fields.find((f) => f.field === 'event_header');
+
+    expect(header.lines).toEqual(['SK TAMAN SRI ANDALAS KLANG SELANGOR']);
+    expect(measure(header.lines[0], header.size)).toBeLessThanOrEqual(41.53 * (150 * Math.PI / 180) + 0.5);
+    expect(header.size).toBeLessThan(12);
+  });
+});

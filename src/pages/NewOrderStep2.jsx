@@ -5,6 +5,7 @@ import DraftRestoredNote from '../components/DraftRestoredNote';
 import CategoryTabs from '../components/CategoryTabs';
 import OrderCategoryBlock from '../components/OrderCategoryBlock';
 import CrystalPreview from '../components/CrystalPreview';
+import MedalDesignPicker from '../components/MedalDesignPicker';
 import PlakPreview from '../components/PlakPreview';
 import KertasKerjaUpload from '../components/KertasKerjaUpload';
 import { isCrystalCode } from '../utils/exportCsv';
@@ -817,6 +818,7 @@ export default function NewOrderStep2() {
               flashJenisPlak={flashBlockIdx === blk.idx}
               crystalSample={(
                 <>
+                  {blk.medalDesign && <MedalDesignPicker value={blk.medalDesign.value} onPick={blk.medalDesign.set} />}
                   {plaksByBlock[blk.idx] && <PlakPreview order={plaksByBlock[blk.idx]} />}
                   {crystalsByBlock[blk.idx] && <CrystalPreview order={crystalsByBlock[blk.idx].order} role="teacher" showArtwork={false} />}
                 </>

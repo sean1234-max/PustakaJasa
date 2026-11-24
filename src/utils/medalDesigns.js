@@ -14,6 +14,17 @@ export const isPickable = (row) => !row.hidden && row.in_file;
 /** the name salesmen see */
 export const designLabel = (row) => String(row.label || '').trim() || row.name;
 
+const MEDAL_FIELDS = ['event_header', 'year', 'position', 'event_line_1', 'event_line_2'];
+/** the medal lines a design has a place for, in any of its layout groups (a RANK_ colour frame is the position) */
+export const designLines = (templates) => new Set(Object.values(templates || {})
+  .flatMap((t) => Object.keys(t.fields || {}).map((f) => (f.startsWith('RANK_') ? 'position' : f))));
+
+/** a CSV row (object) without the lines the design has no place for — they aren't printed (SEAN.jsx does the same) */
+export function rowForDesign(row, templates) {
+  const has = designLines(templates);
+  return Object.fromEntries(Object.entries(row).map(([k, v]) => [k, MEDAL_FIELDS.includes(k) && !has.has(k) ? '' : v]));
+}
+
 /**
  * One exported design with its picture names swapped for their stored names ({ "DESIGN-1-thumb.png": "<sha1>.png" }).
  * @returns {{ main: string, thumb: string, picture: object|null, templates: object }}

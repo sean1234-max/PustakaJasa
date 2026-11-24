@@ -170,3 +170,25 @@ describe('red by default — the same rule as the FORM ANUGERAH (Sean, 2026-10-2
     expect(umumRedSlots({ 0: 'MAJLIS ANUGERAH 2026', 1: 'ANUGERAH SUKAN', 2: 'TEMPAT PERTAMA' }, '')).toEqual(['2']);
   });
 });
+
+describe('⑤ and medal rows (Sean, 2026-11-25)', () => {
+  it('a medal takes ① ② ③ ④ ⑤ as top arc / bottom arc / position / line 1 / line 2, whatever the words', () => {
+    expect(umumSlotFields(lines('SK TEST MEDAL', 'KEJOHANAN OLAHRAGA 2026', 'NAIB JOHAN', 'TAHUN 6', 'LOMPAT JAUH'), '', true))
+      .toEqual({ 0: 'event_header', 1: 'year', 2: 'position', 3: 'event_line_1', 4: 'event_line_2' });
+    // MERAH ticks don't move a medal's lines; empty ones are left out
+    expect(umumSlotFields({ 2: 'KETIGA', 3: 'TAHUN 4', 4: 'Bo-Se-Jar' }, '3', true))
+      .toEqual({ 2: 'position', 3: 'event_line_1', 4: 'event_line_2' });
+  });
+
+  it('a medal\'s red line is ③', () => {
+    expect(umumRedSlots(lines('SK TEST MEDAL', 'KEJOHANAN 2026', 'JOHAN', 'TAHUN 6'), '', true)).toEqual(['2']);
+    expect(umumRedSlots(lines('SK TEST MEDAL', 'KEJOHANAN 2026', '', 'TAHUN 6'), '', true)).toEqual([]);
+  });
+
+  it('a plaque\'s ⑤ joins the leftover lines: the last is line 2', () => {
+    expect(umumSlotFields(lines('MAJLIS X', 'ANUGERAH', 'ALI', '6 BESTARI', 'KELAB SAINS'), '1'))
+      .toEqual({ 0: 'event_header', 1: 'position', 2: 'event_line_1', 3: 'event_line_1', 4: 'event_line_2' });
+    expect(umumSlotFields(lines('KARNIVAL', 'PENGAKAP', 'ROVER', 'KUMPULAN A', 'UNIT 2')))
+      .toEqual({ 0: 'event_header', 1: 'position', 2: 'event_line_1', 3: 'event_line_2', 4: 'event_line_2' });
+  });
+});

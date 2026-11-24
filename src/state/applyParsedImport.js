@@ -359,13 +359,13 @@ export function applyParsedImport(st, parsedIn, fields, { applyFilter = null, ke
         });
       } else if (section.isUmumList) {
         // UMUM (ORDER LAIN-LAIN) (excelImport.js's parseUmumSheet) — one row per plak
-        // row of the sheet: its own ①–④ changes (l0–l3), KUANTITI, Jenis
+        // row of the sheet: its own ①–⑤ changes (l0–l4), KUANTITI, Jenis
         // Plak (plakPerRow) and the sheet's HARGA PER UNIT, kept only to
         // show it (catalog.js's UMUM_ROW_FIELDS).
         newRowsByBlock[key] = section.umumRows.map((ur) => ({
           id: nextRowId++, desc: ur.no, qty: ur.qty ? String(ur.qty) : '',
           jenisPlak: matchPlakOrWarn(ur.jenisPlak, catKey, cat.label),
-          l0: ur.l0, l1: ur.l1, l2: ur.l2, l3: ur.l3, hargaExcel: ur.harga,
+          l0: ur.l0, l1: ur.l1, l2: ur.l2, l3: ur.l3, l4: ur.l4 ?? '', hargaExcel: ur.harga,
         }));
       } else if (section.isAliran || section.isAliranKelas) {
         // ALIRAN TERBAIK (excelImport.js's parseAliranSheet) — six fixed

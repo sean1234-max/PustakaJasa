@@ -200,7 +200,8 @@ const STANDARD_REFERENCE_LINES = ['TAJUK BESAR', 'YEAR', 'ACARA', '( TAHUN ? )']
 // event_line_1 → event_line_2 on every sheet. ALIRAN's position is the
 // ordinal on slot 3 (ACARA on slot 2 is its event_line_1), so it needs its
 // own default to put that row second.
-export const DEFAULT_REF_ORDER = ['0', '0b', '1', '2', '2b', '3'];
+// '4': ORDER LAIN-LAIN's ⑤ (Sean, 2026-11-25)
+export const DEFAULT_REF_ORDER = ['0', '0b', '1', '2', '2b', '3', '4'];
 export const ALIRAN_REF_ORDER = ['0', '0b', '1', '3', '2', '2b'];
 
 // PPKI / MP THP 1/2 (and their "Kalau ada kelas" variants) follow the
@@ -238,6 +239,8 @@ export const UMUM_ROW_FIELDS = [
   { key: 'l1', label: '②', place: 'beforeQty', contohSlot: '1' },
   { key: 'l2', label: '③', place: 'beforeQty', contohSlot: '2' },
   { key: 'l3', label: '④', place: 'beforeQty', contohSlot: '3' },
+  // ⑤ (Sean, 2026-11-25): a medal's line 2 — ① top arc, ② bottom arc, ③ position, ④ line 1 (umumLines.js)
+  { key: 'l4', label: '⑤', place: 'beforeQty', contohSlot: '4' },
   { key: 'hargaExcel', label: 'Harga (Excel)', place: 'afterPlak', readOnly: true },
 ];
 
@@ -512,7 +515,7 @@ export const CATEGORIES = [
     hideQtyLabelSuffix: true,
     plakPerRow: true,
     umumRows: true,
-    linePlaceholders: ['BARIS ①', 'BARIS ②', 'BARIS ③', 'BARIS ④'],
+    linePlaceholders: ['BARIS ①', 'BARIS ②', 'BARIS ③', 'BARIS ④', 'BARIS ⑤'],
     requiredLineIndices: [0],
     draggableReferenceSample: true,
   },

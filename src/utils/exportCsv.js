@@ -9,19 +9,26 @@ import { breakAcaraLine } from './acaraBreak';
 import { partialSplitQty } from './orderBatches';
 import { UMUM_SLOTS, umumSlotFields, umumClassifyText, umumRedSlots } from './umumLines';
 import { slotFieldsFor, visibleRefSlots, applyRedLines, redLinesProblem } from './redLines';
+import { isRoundMedalCode } from './roundMedal';
 
 // invoice_gap: only on addInvoiceGaps' blank row — "<invoice before>|<invoice after>", written in that slot by SEAN.jsx
-export const CSV_COLUMNS = ['event_header', 'year', 'position', 'event_line_1', 'event_line_2', 'jenis_plak', 'category', 'line_order', 'position_black', 'invoice_gap'];
+// design: a medal's MEDAL DESIGN ("DESIGN 2") — only on ORDER LAIN-LAIN medal rows whose tab has one picked (Sean,
+// 2026-11-25); SEAN.jsx then lays it out from that DESIGN group of E CUT 0. Other rows stop before it.
+export const CSV_COLUMNS = ['event_header', 'year', 'position', 'event_line_1', 'event_line_2', 'jenis_plak', 'category', 'line_order', 'position_black', 'invoice_gap', 'design'];
 
-// UMUM (ORDER LAIN-LAIN): the CONTOH lines ①–④ (slots 0–3) of this item, which plaque
-// field each one is (utils/umumLines.js), and a raw slot reader (no
+// UMUM (ORDER LAIN-LAIN): the CONTOH lines ①–⑤ (slots 0–4) of this item, which plaque
+// field each one is (utils/umumLines.js — a medal's are fixed), and a raw slot reader (no
 // breakAcaraLine — UMUM lines are engraved exactly as typed).
 function umumParts(item) {
   const raw = (slot) => item.detail?.lines?.[`${item.categoryKey}::${item.blockIdx}::${slot}`] || '';
   const contoh = Object.fromEntries(UMUM_SLOTS.map((s) => [s, raw(s)]));
   const classifyText = umumClassifyText(contoh, item.detail?.rows);
-  const fields = umumSlotFields(classifyText, raw('umumRed'));
-  return { contoh, fields, black: umumRedSlots(classifyText, raw('umumRed')).length === 0 };
+  const medal = isRoundMedalCode(item.jenisPlak);
+  const fields = umumSlotFields(classifyText, raw('umumRed'), medal);
+  return {
+    contoh, fields, black: umumRedSlots(classifyText, raw('umumRed'), medal).length === 0,
+    design: medal ? String(raw('design')).trim() : '',
+  };
 }
 
 function umumFieldLists(item) {
@@ -41,7 +48,7 @@ function buildUmumRows(item) {
     const qty = Number(r.qty) || 0;
     // still waiting for its name: left out until it's filled in (buildCsvRows counts it)
     if (qty <= 0 || reservedField(item, r)) return;
-    const out = { event_header: [], position: [], event_line_1: [], event_line_2: [] };
+    const out = { event_header: [], year: [], position: [], event_line_1: [], event_line_2: [] };
     UMUM_SLOTS.forEach((s) => {
       if (!fields[s]) return;
       const own = String(r[`l${s}`] || '').trim();
@@ -50,7 +57,7 @@ function buildUmumRows(item) {
       const text = own === '-' ? '' : (own && !asContoh ? own : contoh[s]);
       if (text) out[fields[s]].push(text);
     });
-    const row = [out.event_header.join('\n'), '', out.position.join('\n'), out.event_line_1.join('\n'), out.event_line_2.join('\n')];
+    const row = [out.event_header.join('\n'), out.year.join('\n'), out.position.join('\n'), out.event_line_1.join('\n'), out.event_line_2.join('\n')];
     for (let i = 0; i < qty; i++) rows.push(row);
   });
   return rows;
@@ -62,9 +69,15 @@ function buildUmumRows(item) {
 // computeBlocks.js's refOrder). SEAN.jsx stacks the plaque in this order.
 const DEFAULT_LINE_ORDER = ['event_header', 'position', 'event_line_1', 'event_line_2'];
 
+// A medal whose lines were never dragged: ① ② on the arcs, then ④ ⑤ and the position ③ under them — the
+// order both MEDAL DESIGNS stack them in (Sean, 2026-11-25).
+const MEDAL_LINE_ORDER = ['event_header', 'year', 'event_line_1', 'event_line_2', 'position'];
+
 // A line with no visible row of its own (a hidden slot, or TOKOH's NAMA
 // MURID with no line-3 CONTOH) keeps its default place at the end.
 export function getLineOrder(item, cat) {
+  if (cat?.umumRows && isRoundMedalCode(item.jenisPlak)
+    && !item.detail?.lines?.[`${item.categoryKey}::${item.blockIdx ?? 0}::refOrder`]) return MEDAL_LINE_ORDER.join('|');
   const slotFields = cat?.umumRows ? umumFieldLists(item) : slotFieldsFor(cat);
   if (!slotFields) return DEFAULT_LINE_ORDER.join('|');
   const order = [];
@@ -950,14 +963,17 @@ export function buildCsvRows(order, categoryKey, items) {
     const lineOrder = getLineOrder(item, cat);
     // position_black = "1": SEAN.jsx prints the position in black instead
     // of red (UMUM with no red line — umumLines.js).
-    const positionBlack = cat?.umumRows && umumParts(item).black ? '1' : '';
+    const umum = cat?.umumRows ? umumParts(item) : null;
+    const positionBlack = umum?.black ? '1' : '';
+    // a medal's design goes last, after the (blank) invoice_gap
+    const designCells = umum?.design ? ['', umum.design] : [];
     // Production's MERAH ticks (redLines.js) rearrange the lines
     const linePrefix = `${item.categoryKey}::${item.blockIdx ?? 0}::`;
     itemRows.forEach((r) => {
       const red = cat?.umumRows ? null : applyRedLines(r, item.detail.lines, linePrefix, cat);
       rows.push(red
         ? [...red.row, item.jenisPlak || '', categoryLabel, red.lineOrder, red.positionBlack]
-        : [...r, item.jenisPlak || '', categoryLabel, lineOrder, positionBlack]);
+        : [...r, item.jenisPlak || '', categoryLabel, lineOrder, positionBlack, ...designCells]);
     });
   });
 
@@ -1072,7 +1088,7 @@ export function addInvoiceGaps(order, rows) {
     seen[jp] = (seen[jp] || 0) + 1;
     const label = gaps[jp].get(seen[jp]);
     if (label == null) return [r];
-    const blank = CSV_COLUMNS.map(() => '');
+    const blank = CSV_COLUMNS.slice(0, CSV_COLUMNS.indexOf('invoice_gap') + 1).map(() => '');
     blank[JP] = jp;
     blank[CAT] = r[CAT];
     blank[CSV_COLUMNS.indexOf('invoice_gap')] = label;

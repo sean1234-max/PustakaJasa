@@ -7,7 +7,8 @@ import {
   resolveCategory, categoriesUsedByItems, kelasListLabel, isCustomPlakCode,
 } from '../data/catalog';
 import { findPossibleTypo, replaceWord } from './typoCheck';
-import { umumSlotFields, umumRedSlots, umumRedToggle } from './umumLines';
+import { umumSlotFields, umumRedSlots, umumRedToggle, UMUM_SLOTS } from './umumLines';
+import { hasMedalRows, isMedalBlock } from './roundMedal';
 import { storedRedSlots, redPickFor, redLinesProblem, RED_LINES_SUFFIX } from './redLines';
 
 // Assigns each Reference Sample line its displayed number, 1..N — except
@@ -183,10 +184,13 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
     // marked MERAH ('' = untouched, keywords decide; UMUM_NO_RED = unticked).
     const umumRedKey = `${catKey}::${b}::umumRed`;
     const umumContoh = currentCat.umumRows
-      ? Object.fromEntries(['0', '1', '2', '3'].map((s) => [s, lineValues[`${catKey}::${b}::${s}`] || '']))
+      ? Object.fromEntries(UMUM_SLOTS.map((s) => [s, lineValues[`${catKey}::${b}::${s}`] || '']))
       : null;
-    const umumFields = umumContoh ? umumSlotFields(umumContoh, lineValues[umumRedKey]) : null;
-    const umumRed = umumContoh ? umumRedSlots(umumContoh, lineValues[umumRedKey]) : [];
+    // a tab of medals only shows the medal lines (① top arc … ⑤ line 2, ③ red — umumLines.js MEDAL_SLOT_FIELDS)
+    const umumBlockRows = currentCat.umumRows ? rowsByBlockMap[`${catKey}::${b}`] : null;
+    const umumMedal = !!umumBlockRows && isMedalBlock(umumBlockRows);
+    const umumFields = umumContoh ? umumSlotFields(umumContoh, lineValues[umumRedKey], umumMedal) : null;
+    const umumRed = umumContoh ? umumRedSlots(umumContoh, lineValues[umumRedKey], umumMedal) : [];
     // Which Reference Sample rows print red: the category's own `redSlots`
     // (MP THP: ACARA only; ALIRAN: the KEDUDUKAN line) or, by default, ACARA
     // and its second box.
@@ -221,7 +225,7 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
         redPick: redPick(slotId),
         // UMUM's own per-line MERAH toggle (the sheet's WARNA MERAH? column):
         // ticked = red; unticking the red line makes it black.
-        umumRed: umumFields ? {
+        umumRed: umumFields && !umumMedal ? {
           checked: umumRed.includes(`${i}`),
           toggle: () => updaters.onLine(umumRedKey, umumRedToggle(umumRed, `${i}`)),
         } : null,
@@ -784,6 +788,11 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
 
     blocks.push({
       idx: b,
+      // ORDER LAIN-LAIN with medal rows: the tab's MEDAL DESIGN ("DESIGN 2", '' = not picked yet — Add to Cart asks)
+      medalDesign: umumBlockRows && hasMedalRows(umumBlockRows) ? {
+        value: lineValues[`${catKey}::${b}::design`] || '',
+        set: (name) => updaters.onLine(`${catKey}::${b}::design`, name),
+      } : null,
       qtyLabel: currentCat.hideQtyLabelSuffix ? '' : currentCat.label,
       qtyColHeader: isMatrix ? 'QTY' : (currentCat.qtyColumnLabels?.[b] || currentCat.qtyColumnLabels?.[0] || 'QTY'),
       sampleSlotId: `sample-${catKey}-${b}`,

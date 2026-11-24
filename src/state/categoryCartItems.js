@@ -110,6 +110,10 @@ export function buildCategoryCartItems(st, catKey, { lenient = false, allowTypos
     if (typoLine && !allowTypos) {
       return { engaged, error: `Possible typo in ${blockLabel}: "${typoLine.typoHint.word}" — or "${typoLine.typoHint.suggestion}"? Pick the right one under the word before adding to cart.` };
     }
+    // a medal tab needs its MEDAL DESIGN (Sean, 2026-11-25): the design cards above its Reference Sample
+    if (blk.medalDesign && !blk.medalDesign.value) {
+      return { engaged, error: `Pick a medal design for ${blockLabel} (the design pictures above its Reference Sample) before adding to cart.` };
+    }
     if (!hasQty) {
       return { engaged, error: `Please enter a quantity for ${blockLabel} before adding to cart.` };
     }

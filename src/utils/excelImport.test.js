@@ -6,7 +6,7 @@ import { computeBlocks, noopUpdaters, reconstructOrderDetailGroups } from './com
 import { buildCategoryCartItems } from '../state/categoryCartItems';
 import { buildCsvRows, CSV_COLUMNS } from './exportCsv';
 import { checkAliranKelasTotals } from './importChecks';
-import { makeDynamicCategoryKey, resolveCategory } from '../data/catalog';
+import { makeDynamicCategoryKey, resolveCategory, flattenPlakCatalog } from '../data/catalog';
 
 function workbookFromSheets(sheets) {
   const wb = XLSX.utils.book_new();
@@ -556,8 +556,8 @@ describe('UMUM (万能) — import → cart → CSV', () => {
     const section = parsed.categorized.UMUM[0];
     expect(section.lines).toEqual({ 0: 'SK TAMAN SEGAR\nKARNIVAL KOKURIKULUM 2026', 1: 'PENGAKAP', 2: 'JOHAN TAHUN 4', umumRed: '2' });
     expect(section.umumRows).toEqual([
-      { no: '1', l0: '', l1: '', l2: '', l3: '', qty: 3, jenisPlak: 'PKC 263', harga: '10' },
-      { no: '2', l0: '', l1: 'KADET POLIS', l2: 'NAIB JOHAN', l3: '-', qty: 2, jenisPlak: 'PKC 263', harga: '8' },
+      { no: '1', l0: '', l1: '', l2: '', l3: '', l4: '', qty: 3, jenisPlak: 'PKC 263', harga: '10' },
+      { no: '2', l0: '', l1: 'KADET POLIS', l2: 'NAIB JOHAN', l3: '-', l4: '', qty: 2, jenisPlak: 'PKC 263', harga: '8' },
     ]);
   });
 
@@ -569,7 +569,7 @@ describe('UMUM (万能) — import → cart → CSV', () => {
     const st = toDraft('UMUM', section);
     const blk = computeBlocks('UMUM', st.lineValues, {}, st.rowsByBlock, st.plakRows, {}, noopUpdaters, catalog, 'SK').blocks[0];
     expect(blk.lines.map((ln) => [ln.value, ln.redText])).toEqual([
-      ['SK TAMAN SEGAR\nKARNIVAL KOKURIKULUM 2026', false], ['PENGAKAP', false], ['JOHAN TAHUN 4', true], ['', false],
+      ['SK TAMAN SEGAR\nKARNIVAL KOKURIKULUM 2026', false], ['PENGAKAP', false], ['JOHAN TAHUN 4', true], ['', false], ['', false],
     ]);
     // the sheet's own price: 10 = website price (plain), 8 ≠ website (flagged red)
     expect(blk.rows.map((r) => r.tokohFields.find((f) => f.key === 'hargaExcel').alert)).toEqual([false, true]);
@@ -594,7 +594,7 @@ describe('UMUM (万能) — import → cart → CSV', () => {
     let saved = null;
     const updaters = { ...noopUpdaters, onLine: (key, value) => { saved = [key, value]; } };
     const blk = computeBlocks('UMUM', st.lineValues, {}, st.rowsByBlock, st.plakRows, {}, updaters, catalog, 'SK').blocks[0];
-    expect(blk.lines.map((ln) => [ln.redText, ln.umumRed.checked])).toEqual([[false, false], [true, true], [true, true], [false, false]]);
+    expect(blk.lines.map((ln) => [ln.redText, ln.umumRed.checked])).toEqual([[false, false], [true, true], [true, true], [false, false], [false, false]]);
     // unticking one keeps the other; ticking a line next to them adds it, one further away replaces them
     blk.lines[2].umumRed.toggle();
     expect(saved).toEqual(['UMUM::0::umumRed', '1']);
@@ -638,7 +638,7 @@ describe('UMUM (万能) — import → cart → CSV', () => {
     const section = parse({ 'UMUM (万能)': umum({ rows: [[null, null, null, null, 1, 'PKC 263']] }) }).categorized.UMUM[0];
     const st = toDraft('UMUM', section);
     const lines = (lv) => computeBlocks('UMUM', lv, {}, st.rowsByBlock, st.plakRows, {}, noopUpdaters, catalog, 'SK').blocks[0].lines;
-    expect(lines(st.lineValues).map((ln) => [ln.redText, ln.umumRed.checked])).toEqual([[false, false], [false, false], [true, true], [false, false]]);
+    expect(lines(st.lineValues).map((ln) => [ln.redText, ln.umumRed.checked])).toEqual([[false, false], [false, false], [true, true], [false, false], [false, false]]);
 
     const unticked = { ...st, lineValues: { ...st.lineValues, 'UMUM::0::umumRed': 'none' } };
     expect(lines(unticked.lineValues).some((ln) => ln.redText || ln.umumRed.checked)).toBe(false);
@@ -1597,5 +1597,73 @@ describe('codes written without their slash (plak-ham 2026.docx)', () => {
   it('"PK 261A" is PK 261 / A', () => {
     const tree = [{ code: 'PK 261', children: [{ code: 'A' }, { code: 'B' }, { code: 'C' }] }, { code: 'SHINING STICKER A' }, { code: 'PKF 266' }];
     expect(['PK 261A', 'SHINING STICKER A', 'PKF 266'].map((c) => matchJenisPlakPath(c, tree))).toEqual(['PK 261 / A', 'SHINING STICKER A', 'PKF 266']);
+  });
+});
+
+describe('ORDER LAIN-LAIN with ⑤ — a medal tab (Sean, 2026-11-25)', () => {
+  // the new template: ⑤ under ④ in the CONTOH box and a ⑤ column in the list
+  const sheet = (rows) => {
+    const r = [];
+    r[0] = ['TOLONG ISI DI SINI  ·  ORDER LAIN-LAIN'];
+    r[3] = ['LANGKAH 1 · CONTOH PLAK', null, null, null, null, 'WARNA MERAH?'];
+    r[4] = ['①', 'SK TEST MEDAL'];
+    r[5] = ['②', 'KEJOHANAN OLAHRAGA 2026'];
+    r[6] = ['③', 'JOHAN'];
+    r[7] = ['④', 'TAHUN 6'];
+    r[8] = ['⑤', 'LOMPAT JAUH'];
+    r[10] = ['No.', '①', '②', '③', '④', '⑤', 'KUANTITI', 'JENIS PLAK', 'HARGA PER UNIT'];
+    rows.forEach((row, i) => { r[11 + i] = [i + 1, ...row]; });
+    r[11 + 40] = ['LANGKAH 3 · JUMLAH PLAK  →'];
+    return r.map((x) => x || []);
+  };
+  const catalog = [
+    { code: 'HM-M-0031', price: 4.5, children: [{ code: 'GOLD', price: 0 }, { code: 'SILVER', price: 0 }] },
+  ];
+  const flat = flattenPlakCatalog(catalog);
+
+  it('reads ⑤, shows the medal lines (③ red, no MERAH ticks), offers a design and engraves header / year / position / lines', () => {
+    const section = parseFormAnugerahExcel(workbookFromSheets({ 'ORDER LAIN-LAIN': sheet([
+      [null, null, null, null, null, 2, 'HM-M-0031 / GOLD'],
+      [null, null, 'NAIB JOHAN', null, '-', 1, 'HM-M-0031 / SILVER'],
+    ]) })).categorized.UMUM[0];
+    expect(section.lines[4]).toBe('LOMPAT JAUH');
+    expect(section.umumRows.map((u) => u.l4)).toEqual(['', '-']);
+
+    const key = 'UMUM::0';
+    const lineValues = { ...Object.fromEntries(Object.entries(section.lines).map(([k, v]) => [`${key}::${k}`, v])), [`${key}::design`]: 'DESIGN 1' };
+    const rows = section.umumRows.map((u, i) => ({ id: i + 1, desc: u.no, qty: String(u.qty), jenisPlak: u.jenisPlak, l0: u.l0, l1: u.l1, l2: u.l2, l3: u.l3, l4: u.l4 }));
+    const st = { lineValues, matrixValues: {}, rowsByBlock: { [key]: rows }, plakRows: { [key]: [] }, columnsByBlock: {}, plakCatalog: flat, schoolLanguage: 'SK' };
+    let saved = null;
+    const blk = computeBlocks('UMUM', lineValues, {}, st.rowsByBlock, st.plakRows, {}, { ...noopUpdaters, onLine: (k, v) => { saved = [k, v]; } }, flat, 'SK').blocks[0];
+    expect(blk.lines.map((ln) => [ln.value, ln.redText, ln.umumRed])).toEqual([
+      ['SK TEST MEDAL', false, null], ['KEJOHANAN OLAHRAGA 2026', false, null], ['JOHAN', true, null], ['TAHUN 6', false, null], ['LOMPAT JAUH', false, null],
+    ]);
+    expect(blk.medalDesign.value).toBe('DESIGN 1');
+    blk.medalDesign.set('DESIGN 2');
+    expect(saved).toEqual(['UMUM::0::design', 'DESIGN 2']);
+
+    const res = buildCategoryCartItems(st, 'UMUM');
+    expect(res.error).toBeUndefined();
+    const out = buildCsvRows({ schoolLanguage: 'SK', items: res.items }, 'UMUM', res.items).rows;
+    expect(out.map((x) => x.slice(0, 5))).toEqual([
+      ['SK TEST MEDAL', 'KEJOHANAN OLAHRAGA 2026', 'JOHAN', 'TAHUN 6', 'LOMPAT JAUH'],
+      ['SK TEST MEDAL', 'KEJOHANAN OLAHRAGA 2026', 'JOHAN', 'TAHUN 6', 'LOMPAT JAUH'],
+      ['SK TEST MEDAL', 'KEJOHANAN OLAHRAGA 2026', 'NAIB JOHAN', 'TAHUN 6', ''],
+    ]);
+    expect(out.map((x) => x[CSV_COLUMNS.indexOf('design')])).toEqual(['DESIGN 1', 'DESIGN 1', 'DESIGN 1']);
+  });
+
+  it('a medal tab can\'t go to the cart until its design is picked', () => {
+    const key = 'UMUM::0';
+    const lineValues = { [`${key}::0`]: 'SK TEST MEDAL', [`${key}::2`]: 'JOHAN' };
+    const st = { lineValues, matrixValues: {}, rowsByBlock: { [key]: [{ id: 1, desc: '1', qty: '1', jenisPlak: 'HM-M-0031 / GOLD' }] }, plakRows: { [key]: [] }, columnsByBlock: {}, plakCatalog: flat, schoolLanguage: 'SK' };
+    expect(buildCategoryCartItems(st, 'UMUM').error).toMatch(/Pick a medal design for ORDER LAIN-LAIN/);
+    expect(buildCategoryCartItems({ ...st, lineValues: { ...lineValues, [`${key}::design`]: 'DESIGN 2' } }, 'UMUM').error).toBeUndefined();
+  });
+
+  it('a plaque tab gets no design picker', () => {
+    const lineValues = { 'UMUM::0::0': 'MAJLIS X', 'UMUM::0::1': 'ANUGERAH' };
+    const blk = computeBlocks('UMUM', lineValues, {}, { 'UMUM::0': [{ id: 1, qty: '1', jenisPlak: 'PKF 265' }] }, { 'UMUM::0': [] }, {}, noopUpdaters, [], 'SK').blocks[0];
+    expect(blk.medalDesign).toBeNull();
   });
 });

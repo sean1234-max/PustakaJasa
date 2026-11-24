@@ -12,6 +12,18 @@ export async function fetchMedalDesigns() {
 
 export const medalPictureUrl = (name) => supabase.storage.from(BUCKET).getPublicUrl(name).data.publicUrl;
 
+// every design (hidden ones too — an older order keeps its own), once per page load, [] when it can't be read;
+// for the Plak Preview and the design picker
+let designsOnce = null;
+export const loadMedalDesigns = () => {
+  designsOnce = designsOnce || fetchMedalDesigns().catch((err) => {
+    console.error('Medal designs could not be read:', err);
+    designsOnce = null;
+    return [];
+  });
+  return designsOnce;
+};
+
 const base64Bytes = (b64) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
 async function sha1Hex(bytes) {
   const digest = await crypto.subtle.digest('SHA-1', bytes);
