@@ -24,6 +24,17 @@ describe('plakPreview — the same .ai and layout group as SEAN.jsx', () => {
     expect(withoutColour('SR-116 A / BLUE')).toBe('SR-116 A');
   });
 
+  it('gives every hanging medal (HM…, HANGING MEDAL) the round medal file, after product_mapping.csv', () => {
+    const medal = { mapping: [['HM-M-9999', 'E CUT 6 - PLAK C (020C, stand lamp FD 251).ai']],
+      files: [...manifest.files, { file: 'E CUT 0 - MEDAL (SUKAN) -SALES.ai' }] };
+    expect(fileForCode('HM-M-0031 / GOLD', medal)).toBe('E CUT 0 - MEDAL (SUKAN) -SALES.ai');
+    expect(fileForCode('hm 7026', medal)).toBe('E CUT 0 - MEDAL (SUKAN) -SALES.ai');
+    expect(fileForCode('MEDAL HANGING MEDAL', medal)).toBe('E CUT 0 - MEDAL (SUKAN) -SALES.ai');
+    expect(fileForCode('HM-M-9999', medal)).toBe('E CUT 6 - PLAK C (020C, stand lamp FD 251).ai');
+    expect(fileForCode('HMX 12', medal)).toBeNull();
+    expect(fileForCode('HM-M-0031', manifest)).toBeNull();
+  });
+
   it('names the layout group by the filled lines and falls back to the closest one', () => {
     expect(templateNameFor({ event_header: 'MAJLIS', position: 'JOHAN', event_line_1: 'ALI' })).toBe('T_H_PC_L1');
     expect(templateNameFor({ position: '冠军' })).toBe('TC_PC');

@@ -36,6 +36,7 @@ const COLOURS = ['GOLD', 'SILVER', 'BRONZE', 'RED', 'BLUE'];
 export const withoutColour = (code) => String(code || '').split('/').map((p) => p.trim())
   .filter((p) => p && !COLOURS.includes(p.toUpperCase())).join(' / ');
 
+const HANGING_MEDAL_FILE = 'E CUT 0 - MEDAL (SUKAN) -SALES.ai';
 export function fileForCode(code, manifest) {
   const files = (manifest?.files || []).map((f) => f.file);
   const codes = [...new Set([code, withoutColour(code)])];
@@ -45,6 +46,8 @@ export function fileForCode(code, manifest) {
   const mapping = manifest?.mapping || [];
   const mapped = codes.map((c) => mapping.find(([m]) => squash(m) === squash(c))?.[1]).find((f) => f && files.includes(f));
   if (mapped) return mapped;
+  // SEAN.jsx isHangingMedalCode: HM… / HANGING MEDAL, any case → the round medal file, after the mapping
+  if ((/^\s*HM([^A-Z]|$)/i.test(code) || /HANGING\s*MEDAL/i.test(code)) && files.includes(HANGING_MEDAL_FILE)) return HANGING_MEDAL_FILE;
   const trofi = trofiBase(withoutColour(code));
   if (trofi) return files.find((f) => /TROFI/i.test(f) && trofiKey(f).includes(trofi)) || null;
   const n = eCutNumber(code);
