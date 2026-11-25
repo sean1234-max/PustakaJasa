@@ -176,6 +176,17 @@ describe('fillOrderTemplate, the one-award sheets (the real template)', () => {
   });
 });
 
+describe('the real template, medals (Sean, 2026-11-25)', () => {
+  it('has line ⑤ on ORDER LAIN-LAIN and the medals before OTHER in SENARAI PLAK', () => {
+    const wb = read(fs.readFileSync('public/templates/FORM-ANUGERAH.xlsx'));
+    expect(['A9', 'E11', 'F11', 'G11', 'G4'].map((r) => v(wb, 'ORDER LAIN-LAIN', r))).toEqual(['⑤', '④', '⑤', 'KUANTITI', 'WARNA MERAH?']);
+    const list = XLSX.utils.sheet_to_json(wb.Sheets['SENARAI PLAK'], { header: 1 });
+    expect(list.find((r) => r[0] === 'HM-M-0031 / GOLD')?.[1]).toBe(4.5);
+    expect(list.find((r) => r[0] === '15063 / BRONZE')?.[1]).toBe(4);
+    expect(list[list.length - 1]).toEqual(['OTHER', 0]);
+  });
+});
+
 describe('fillOrderTemplate, prices', () => {
   it('writes the website prices into SENARAI PLAK and names codes it does not list', async () => {
     const prices = { 'SR-116 A / RED': 34, 'PKF 266': 10, 'CPH / C': 7.5 };
@@ -241,7 +252,7 @@ describe('fillOrderTemplate, TOKOH NAMA MURID and line breaks', () => {
     expect([ws.B20?.v, ws.D20?.v, ws.E20?.v]).toEqual(['TAHUN 3', 2, 'PK 261 / A']);
     expect([ws.A21?.v, ws.D21?.f, ws.H21?.f, ws.H20?.f, ws.G20?.f]).toEqual([
       'TOTAL:', 'SUM(D7:D20)', 'SUM(H7:H20)', 'IFERROR(G20*D20,0)',
-      'IF(E20="","",IFERROR(VLOOKUP(E20,\'SENARAI PLAK\'!$A$2:$B$159,2,FALSE),""))',
+      'IF(E20="","",IFERROR(VLOOKUP(E20,\'SENARAI PLAK\'!$A$2:$B$192,2,FALSE),""))',
     ]);
     const zip = await JSZip.loadAsync(res.buffer);
     const xml = await zip.file('xl/worksheets/sheet12.xml').async('string');
@@ -290,14 +301,14 @@ describe('fillOrderTemplate, ANUGERAH red by default (Sean, 2026-10-20)', () => 
     }, { DOMParser, XMLSerializer });
     const wb = read(res.buffer);
     const u = (ref) => v(wb, 'ORDER LAIN-LAIN', ref);
-    expect([u('B6'), u('F5'), u('F6'), u('F7')]).toEqual(['ANUGERAH SAHSIAH TERPUJI', undefined, 'MERAH', undefined]);
+    expect([u('B6'), u('G5'), u('G6'), u('G7')]).toEqual(['ANUGERAH SAHSIAH TERPUJI', undefined, 'MERAH', undefined]);
   });
   it('leaves MERAH blank when no line has ANUGERAH / KEHADIRAN / KEDUDUKAN or a place', async () => {
     const res = await fillOrderTemplate(fs.readFileSync('public/templates/FORM-ANUGERAH.xlsx'), {
       plaques: [P({ award: 'Pengawas Terbaik', line: '1 Ibnu Sina', eline2: 'Johan' })],
     }, { DOMParser, XMLSerializer });
     const wb = read(res.buffer);
-    expect(['F5', 'F6', 'F7', 'F8'].map((r) => v(wb, 'ORDER LAIN-LAIN', r))).toEqual([undefined, undefined, undefined, undefined]);
+    expect(['G5', 'G6', 'G7', 'G8'].map((r) => v(wb, 'ORDER LAIN-LAIN', r))).toEqual([undefined, undefined, undefined, undefined]);
   });
 
   it('a KEDUDUKAN line is red too', async () => {
@@ -305,7 +316,7 @@ describe('fillOrderTemplate, ANUGERAH red by default (Sean, 2026-10-20)', () => 
       plaques: [P({ award: 'Kedudukan Terbaik', line: '1 Ibnu Sina', eline2: 'Johan' })],
     }, { DOMParser, XMLSerializer });
     const wb = read(res.buffer);
-    expect(['F5', 'F6', 'F7', 'F8'].map((r) => v(wb, 'ORDER LAIN-LAIN', r))).toEqual([undefined, 'MERAH', undefined, undefined]);
+    expect(['G5', 'G6', 'G7', 'G8'].map((r) => v(wb, 'ORDER LAIN-LAIN', r))).toEqual([undefined, 'MERAH', undefined, undefined]);
   });
 });
 
@@ -315,7 +326,7 @@ describe('fillOrderTemplate, a place line is red first (Sean, 2026-10-20)', () =
       plaques: [{ heading: 'Ihtifal 2026', award: 'Anugerah Cemerlang', line: '1 Ibnu Sina', eline2: 'Pertama', code: 'PKC 263', qty: 1 }],
     }, { DOMParser, XMLSerializer });
     const wb = read(res.buffer);
-    expect(['F6', 'F7', 'F8'].map((r) => v(wb, 'ORDER LAIN-LAIN', r))).toEqual([undefined, undefined, 'MERAH']);
+    expect(['G6', 'G7', 'G8'].map((r) => v(wb, 'ORDER LAIN-LAIN', r))).toEqual([undefined, undefined, 'MERAH']);
   });
 });
 
