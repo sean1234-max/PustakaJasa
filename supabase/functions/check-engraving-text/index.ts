@@ -21,11 +21,13 @@ const PUBLISHABLE_KEY = JSON.parse(Deno.env.get('SUPABASE_PUBLISHABLE_KEYS')!)['
 const SECRET_KEY = JSON.parse(Deno.env.get('SUPABASE_SECRET_KEYS')!)['default'];
 const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY')!;
 
-const MODEL = Deno.env.get('GRAMMAR_MODEL') ?? 'claude-haiku-4-5-20251001';
+// Haiku 5.5 since 2026-11-25: on 15 recent orders' lines it flagged 1 word where Haiku 4.5 flagged 5 (mostly
+// right words like KOKURIKULUM), at about a ninth of the cost. A forced tool call skips its thinking.
+const MODEL = Deno.env.get('GRAMMAR_MODEL') ?? 'claude-haiku-5-5';
 const MONTHLY_CAP_USD = Number(Deno.env.get('GRAMMAR_MONTHLY_CAP_USD') ?? '3');
 const RATE_LIMIT_PER_HOUR = Number(Deno.env.get('GRAMMAR_RATE_LIMIT_PER_HOUR') ?? '120');
-const PRICE_IN_PER_MTOK = Number(Deno.env.get('GRAMMAR_PRICE_IN_USD') ?? '1');
-const PRICE_OUT_PER_MTOK = Number(Deno.env.get('GRAMMAR_PRICE_OUT_USD') ?? '5');
+const PRICE_IN_PER_MTOK = Number(Deno.env.get('GRAMMAR_PRICE_IN_USD') ?? '0.10');
+const PRICE_OUT_PER_MTOK = Number(Deno.env.get('GRAMMAR_PRICE_OUT_USD') ?? '0.50');
 const DISABLED = Deno.env.get('GRAMMAR_DISABLED') === '1';
 
 const MAX_LINES = 40;

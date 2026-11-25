@@ -7,6 +7,9 @@ import { db } from './db.ts';
 const PRICES: Record<string, [number, number]> = {
   'claude-sonnet-5-5': [2, 10],
   'claude-opus-5-5': [4, 20],
+  // the spell check (orderChat.ts SPELL_MODEL): Haiku 5.5 since 2026-11-25 (prompts ≤ 100K tokens), 4.5 before
+  'claude-haiku-5-5': [0.1, 0.5],
+  'claude-haiku-4-5-20251001': [1, 5],
 };
 
 export type Usage = { input_tokens: number; output_tokens: number; cache_read_input_tokens?: number | null; cache_creation_input_tokens?: number | null };

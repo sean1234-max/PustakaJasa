@@ -25,6 +25,7 @@ import { readFormCached } from './formCache.ts';
 import { toFormPlaques, toFormSelempang, type ReadPlaque, type ReadSelempang } from './formPlaques.ts';
 import { ruleRead, type TableRead } from './ruleRead.ts';
 import { logUsage } from './usage.ts';
+import { recordMiss } from './ruleMiss.ts';
 // @ts-ignore a plain JS bundle
 import { fillOrderTemplate, loadDocx, readWordingTables } from './form.bundle.js';
 
@@ -148,15 +149,17 @@ function isFormAnugerah(bytes: Uint8Array, fileName: string) {
   }
 }
 
-// A Word file whose order is a WORDING / KUANTITI table, read by rules (ruleRead.ts) — null when the
+// A Word file whose order is a WORDING / KUANTITI table, read by rules (ruleRead.ts) — { why } when the
 // rules aren't sure (then the AI reads it). Salesman's notes need the AI too. Logged at no cost.
 async function readByRules(bytes: Uint8Array | undefined, fileName: string, notes: string) {
-  if (!bytes || notes || !/\.docx$/i.test(fileName)) return null;
+  if (!bytes) return { why: 'no file' };
+  if (notes) return { why: 'the salesman wrote notes (the AI reads them)' };
+  if (!/\.docx$/i.test(fileName)) return { why: `not a Word file (${/\.[^.]+$/.exec(fileName)?.[0] ?? 'no extension'})` };
   const doc = await loadDocx(bytes, DOMParser);
   const result = doc ? ruleRead(readWordingTables(doc) as TableRead) : { ok: false as const, why: 'not a Word file' };
   if (!result.ok) {
     console.log(`rules can't read ${fileName}: ${result.why}`);
-    return null;
+    return { why: result.why };
   }
   await logUsage('read_form_rules', 'rules', null, fileName);
   return { input: result.input, cached: false, rules: true };
@@ -167,7 +170,10 @@ async function readByRules(bytes: Uint8Array | undefined, fileName: string, note
 // `lang`: the salesman's (i18n.ts) — the caption and the questions; Sean's assistant passes 'zh'.
 export async function fillForm(content: FileContent, fileName: string, notes: string, bytes?: Uint8Array, lang: Lang = 'zh') {
   const t = tr(lang);
-  const read = await readByRules(bytes, fileName, notes) ?? await readFormCached(db, readForm, content, fileName, notes);
+  const rules = await readByRules(bytes, fileName, notes);
+  const read = 'why' in rules ? await readFormCached(db, readForm, content, fileName, notes) : rules;
+  // a fresh AI read the rules couldn't do: why, and the file kept 60 days, to become a rule (ruleMiss.ts)
+  if ('why' in rules && read && !read.cached && bytes) await recordMiss(bytes, fileName, rules.why);
   if (!read) return { ok: false as const, message: t('❌ Couldn\'t read that file — try again or send a clearer copy.', '❌ 读不了这个文件 — 请再试一次，或发清楚一点的。') };
   const plaques = toFormPlaques(read.input.plaques as ReadPlaque[]);
   const selempang = toFormSelempang(read.input.selempang as ReadSelempang[]);

@@ -50,7 +50,7 @@ type Row = Session & {
 };
 
 const SITE_URL = Deno.env.get('SITE_URL') ?? 'https://pustaka-jasa.vercel.app';
-const SPELL_MODEL = Deno.env.get('GRAMMAR_MODEL') ?? 'claude-haiku-4-5-20251001';
+const SPELL_MODEL = Deno.env.get('GRAMMAR_MODEL') ?? 'claude-haiku-5-5'; // as check-engraving-text (2026-11-25)
 const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 const ALBUM_WAIT_MS = 2500;        // the other files of an album arrive as their own messages
 const SESSION_DAYS = 3;            // an unfinished order is forgotten after this
