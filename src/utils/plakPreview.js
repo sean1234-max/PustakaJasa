@@ -193,14 +193,26 @@ function fit(lines, size, maxW, measure, min = MIN_SIZE) {
   return s;
 }
 
+// SEAN.jsx house style: TAJUK BESAR 11 / leading 10 (Sean 2026-11-25), YEAR keeps 9.5 / 9
+const HEADER = { size: 11, leading: 10 };
+const YEAR = { size: 9.5, leading: 9 };
+
 // SEAN.jsx applyShortPosLine1Only (Sean 2026-11-19): a position of ≤ 3 words with other lines — 14pt, leading 15,
 // on 1 or 2 lines, smaller only when it doesn't fit
 const SHORT_POS_SIZE = 14;
 const SHORT_POS_LEADING = 15;
-function positionLines(text, maxW, measureAt, trofi, shortPos) {
+// SEAN.jsx anugerahKhasTwoLines (Sean 2026-11-25): "ANUGERAH KHAS" + 1–3 words → ANUGERAH KHAS / the rest,
+// whatever breaks were typed; null otherwise
+function anugerahKhasLines(text) {
+  const flat = text.replace(/\s+/g, ' ').trim();
+  const m = /^ANUGERAH KHAS((?: \S+){1,3})$/i.exec(flat);
+  return m ? [flat.slice(0, 13), m[1].slice(1)] : null;
+}
+
+function positionLines(text, maxW, measureAt, trofi, shortPos, roundMedal) {
   const one = shortPos ? SHORT_POS_SIZE : trofi ? TROFI.position : POSITION_ONE_LINE;
   const two = shortPos ? SHORT_POS_SIZE : trofi ? TROFI.position2 : POSITION_TWO_LINES;
-  let lines = text.includes('\n') ? text.split('\n') : null;
+  let lines = (!roundMedal && anugerahKhasLines(text)) || (text.includes('\n') ? text.split('\n') : null);
   const anugerah = /^(ANUGERAH)(?![\s ]+KHAS\b)[\s ]+(\S+\s+\S[\s\S]*)$/i.exec(text);
   if (!lines && anugerah) lines = [anugerah[1], anugerah[2]];
   if (!lines && measureAt(text, one) <= maxW) lines = [text];
@@ -214,7 +226,7 @@ function positionLines(text, maxW, measureAt, trofi, shortPos) {
 
 // one field's lines, font and size; null when the template has no frame for it
 function fieldLayout(field, value, tpl, opts) {
-  const { trofi, cjk, measure, rankColors, chineseFromT, lone, shortPos } = opts;
+  const { trofi, cjk, measure, rankColors, chineseFromT, lone, shortPos, roundMedal } = opts;
   const posFrame = () => {
     const c = rankColors && field !== lone && rankColor(value);
     const rank = c && tpl.fields[`RANK_${c.toUpperCase()}`];
@@ -236,11 +248,13 @@ function fieldLayout(field, value, tpl, opts) {
   if (field === 'position') {
     const font = field === lone ? FONTS.single : FONTS.position;
     const measureAt = (l, s) => measure(l, s, font, POSITION_TRACKING);
-    return { ...base, ...positionLines(value, maxW, measureAt, trofi, shortPos), font, tracking: POSITION_TRACKING, stroke: POSITION_STROKE };
+    return { ...base, ...positionLines(value, maxW, measureAt, trofi, shortPos, roundMedal), font, tracking: POSITION_TRACKING, stroke: POSITION_STROKE };
   }
   const isHeader = field === 'event_header' || field === 'year';
   const font = field === lone ? FONTS.single : isHeader ? FONTS.header : FONTS.line;
-  const start = trofi ? (isHeader ? TROFI.header : TROFI.line) : isHeader ? 9.5 : 9;
+  // TAJUK BESAR 11 / 10 (SEAN.jsx house style, Sean 2026-11-25); YEAR keeps 9.5 / 9, a trophy 12 / 11.4
+  const plainHeader = field === 'event_header' ? HEADER : YEAR;
+  const start = trofi ? (isHeader ? TROFI.header : TROFI.line) : isHeader ? plainHeader.size : 9;
   let lines = value.split('\n');
   if (field === 'event_header' && lines.length === 1 && words(value).length > HEADER_WORD_LIMIT) {
     lines = [words(value).slice(0, HEADER_WORD_LIMIT).join(' '), words(value).slice(HEADER_WORD_LIMIT).join(' ')];
@@ -248,7 +262,7 @@ function fieldLayout(field, value, tpl, opts) {
   const bin = /^(.*?\S)\s+((?:BIN|BINTI)\s+\S[\s\S]*)$/i.exec(value);
   if (!isHeader && lines.length === 1 && bin && measure(value, start, font) > maxW) lines = [bin[1], bin[2]];
   const size = fit(lines, start, maxW, (l, s) => measure(l, s, font));
-  const leading = isHeader ? (trofi ? 9 * start / 9.5 : 9) : lines.length > 1 ? size + 1 : (trofi ? 16 : 12);
+  const leading = isHeader ? (trofi ? 9 * start / 9.5 : plainHeader.leading) : lines.length > 1 ? size + 1 : (trofi ? 16 : 12);
   return { ...base, lines, size, leading, font };
 }
 
@@ -276,7 +290,7 @@ export function layoutPlaque(row, tpl, { trofi = false, measure, rankColors = tr
   const all = lineOrderFor(row)
     .map((f) => [f, clean(row[f])])
     .filter(([, v]) => v)
-    .map(([f, v]) => fieldLayout(f, v, tpl, { trofi, cjk, measure, rankColors, chineseFromT, lone, shortPos: !trofi && !roundMedal && isShortPos(row) }))
+    .map(([f, v]) => fieldLayout(f, v, tpl, { trofi, cjk, measure, rankColors, chineseFromT, lone, roundMedal, shortPos: !trofi && !roundMedal && isShortPos(row) }))
     .filter(Boolean);
   const arcs = all.filter((it) => it.frame.path).map((it) => arcLayout(it, measure));
   const laid = all.filter((it) => !it.frame.path);

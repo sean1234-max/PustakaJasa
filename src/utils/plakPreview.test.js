@@ -93,6 +93,22 @@ describe('plakPreview — the same .ai and layout group as SEAN.jsx', () => {
     expect(fields[0].lines).toEqual(['MAJLIS ANUGERAH KECEMERLANGAN SK TAMAN', 'SEROJA 2026']);
     expect(fields[1].lines).toEqual(['ANUGERAH', 'MURID CEMERLANG']);
   });
+
+  it('sets the TAJUK BESAR at 11pt / leading 10, a trophy keeps 12pt / 11.4 (SEAN.jsx, Sean 2026-11-25)', () => {
+    const row = { event_header: 'HI TEA BKGK', position: 'JOHAN' };
+    expect(layoutPlaque(row, tpl, { measure }).fields[0]).toMatchObject({ size: 11, leading: 10 });
+    const trofi = layoutPlaque(row, tpl, { measure, trofi: true }).fields[0];
+    expect(trofi.size).toBe(12);
+    expect(trofi.leading).toBeCloseTo(9 * 12 / 9.5, 5);
+  });
+
+  it('puts ANUGERAH KHAS on line 1 and the rest on line 2 for 3–5 words, whatever breaks were typed (Sean 2026-11-25)', () => {
+    const pos = (position) => layoutPlaque({ event_header: 'HI TEA', position }, tpl, { measure }).fields[1].lines;
+    expect(pos('ANUGERAH\nKHAS GURU BESAR')).toEqual(['ANUGERAH KHAS', 'GURU BESAR']);
+    expect(pos('ANUGERAH KHAS PENGETUA')).toEqual(['ANUGERAH KHAS', 'PENGETUA']);
+    expect(pos('ANUGERAH KHAS')).toEqual(['ANUGERAH KHAS']);
+    expect(pos('ANUGERAH KHAS A B C D')).toEqual(['ANUGERAH KHAS A B C D']);
+  });
 });
 
 describe('plakPreview — one master template with a TEXT_AREA (SEAN.jsx 2026-11-18)', () => {
