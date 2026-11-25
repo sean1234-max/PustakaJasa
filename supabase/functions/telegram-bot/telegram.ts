@@ -87,6 +87,17 @@ export function telegramBot(token: string, opts: { onMigrate?: (oldId: number, n
     return sent ? { messageId: sent.message_id, fileId: sent.document?.file_id ?? '' } : null;
   }
 
+  // Pictures by URL (Telegram fetches them), each with its caption: one photo, or an album of 2–10
+  async function sendPhotos(chatId: number | string, photos: { url: string; caption: string }[]) {
+    const media = photos.slice(0, 10).map((p) => ({ type: 'photo', media: p.url, caption: p.caption.slice(0, 1000) }));
+    if (!media.length) return;
+    const [method, body] = media.length === 1
+      ? ['sendPhoto', { chat_id: chatId, photo: media[0].media, caption: media[0].caption }]
+      : ['sendMediaGroup', { chat_id: chatId, media }];
+    const res = await fetch(`${api}/${method}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (!res.ok) console.error(`Telegram ${method} failed:`, res.status, (await res.text()).slice(0, 300));
+  }
+
   // Telegram keeps a webhook's old settings when its URL is the same ("Webhook is already set") — buttons never
   // arrived (Sean, 2026-11-10) — so the old one is removed first and set again with today's settings
   async function setWebhook(url: string) {
@@ -126,5 +137,5 @@ export function telegramBot(token: string, opts: { onMigrate?: (oldId: number, n
     return res.ok ? (res.result as { user: { id: number; is_bot: boolean } }[]).filter((m) => !m.user.is_bot).map((m) => m.user.id) : [];
   }
 
-  return { webhookSecret, reply, ask, answerButton, editText, dropButtons, sendDocument, setWebhook, downloadFile, inAnyGroup, adminIds };
+  return { webhookSecret, reply, ask, answerButton, editText, dropButtons, sendDocument, sendPhotos, setWebhook, downloadFile, inAnyGroup, adminIds };
 }

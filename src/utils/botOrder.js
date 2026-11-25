@@ -11,6 +11,7 @@ import { buildCategoryCartItems } from '../state/categoryCartItems';
 import { ACTIVE_CATEGORIES, isDynamicCategoryKey, resolveCategory, getStockStatus, otherPlakIncomplete, flattenPlakCatalog, filterHiddenPlakCatalog } from '../data/catalog';
 import { buildInitialRowsByBlock, buildInitialColumnsByBlock, buildInitialPlakRows } from '../data/formDefaults';
 import { computeBlocks, noopUpdaters } from './computeBlocks';
+import { sortDesigns, isPickable, designLabel } from './medalDesigns';
 
 const escRe = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -98,12 +99,38 @@ export function questionId(kind, text) {
   return `${kind}:${(h >>> 0).toString(36)}`;
 }
 
+// An ORDER LAIN-LAIN tab with medals needs its MEDAL DESIGN, as the website's design cards ask (Sean, 2026-11-25):
+// the salesman's answer goes where the website keeps it (`<tab>::design`); a tab still without one is asked, with
+// the published designs as options. -> { st, questions, waiting: the category keys still waiting for a design }
+function pickMedalDesigns(st, cats, ctx, zh) {
+  const options = sortDesigns((ctx.medalDesigns || []).filter(isPickable))
+    .map((d) => ({ key: d.name, label: designLabel(d), thumb: d.preview?.thumb || '' }));
+  const lineValues = { ...st.lineValues };
+  const questions = [];
+  const waiting = new Set();
+  cats.filter((cat) => cat.umumRows).forEach((cat) => {
+    const { blocks } = computeBlocks(cat.key, st.lineValues, st.matrixValues, st.rowsByBlock, st.plakRows, st.columnsByBlock, noopUpdaters, st.plakCatalog, st.schoolLanguage);
+    blocks.filter((blk) => blk.medalDesign).forEach((blk) => {
+      const blockKey = `${cat.key}::${blk.idx}`;
+      const id = questionId('design', blockKey);
+      const picked = options.find((o) => o.key === ctx.answers?.[id]);
+      if (picked) { lineValues[`${blockKey}::design`] = picked.key; return; }
+      waiting.add(cat.key);
+      if (!options.length) return;
+      const where = `${cat.label}${blocks.length > 1 ? ` (${blk.idx + 1})` : ''}`;
+      questions.push({ id, kind: 'design', blockKey, options, text: zh ? `${where}：这些 medal 用哪个 design？` : `${where}: which medal design for these medals?` });
+    });
+  });
+  return { st: { ...st, lineValues }, questions, waiting };
+}
+
 /**
  * buffer: the FORM ANUGERAH (.xlsx). ctx: { plakCatalog, schoolLanguage, salesman: { id, name },
  *   details: { picName, phone, funcSelected (Date), remark }, subs, answers: { [questionId]: optionKey },
- *   okWords: [{ blockKey, word }], swaps: [{ from, to }] (out of stock → in stock), lang: 'zh' | 'en' }
+ *   okWords: [{ blockKey, word }], swaps: [{ from, to }] (out of stock → in stock), lang: 'zh' | 'en',
+ *   medalDesigns: the medal_designs rows }
  * -> { error } | { items, total, questions, stop, problems, remark, details, lines, categories }
- *   questions: still to ask, in order (kind plak | choice | note | typo | extra); stop: an answer said
+ *   questions: still to ask, in order (kind plak | choice | note | design | typo | extra | stock); stop: an answer said
  *   "I'll do it on the website"; problems: what the chat can't fix (the order can't go in from here).
  */
 export function readOrderForm(buffer, ctx) {
@@ -168,24 +195,32 @@ export function readOrderForm(buffer, ctx) {
     st = { ...st, remark: [st.remark, ...notes.filter((x) => !String(st.remark || '').includes(x))].filter(Boolean).join('\n') };
   }
 
-  // Add All to Cart (AppState.jsx addAllToCart): every engaged category, a category's error stops it
+  const zh = ctx.lang !== 'en';
   const dynamicCats = Object.keys(st.visibleBlocksByCategory || {}).filter(isDynamicCategoryKey).map(resolveCategory).filter(Boolean);
+  const allCats = [...ACTIVE_CATEGORIES, ...dynamicCats];
+  const medals = pickMedalDesigns(st, allCats, ctx, zh);
+  st = medals.st;
+  questions.push(...medals.questions);
+
+  // Add All to Cart (AppState.jsx addAllToCart): every engaged category, a category's error stops it
   const items = [];
   const problems = [];
   const engaged = [];
-  [...ACTIVE_CATEGORIES, ...dynamicCats].forEach((cat) => {
+  allCats.forEach((cat) => {
     // a possible typo is asked below (as the website's pick-under-the-word), not a stop here
     const built = buildCategoryCartItems(st, cat.key, { allowTypos: true });
     if (!built.engaged) return;
     engaged.push(cat.key);
     if (built.error) {
-      // a Jenis Plak still to be named is a question above, not a problem
-      if (!questions.some((q) => q.kind === 'plak')) problems.push(`${cat.label}: ${built.error}`);
+      // a Jenis Plak still to be named, or a medal design still to be picked, is a question, not a problem
+      if (!questions.some((q) => q.kind === 'plak') && !medals.waiting.has(cat.key)) problems.push(`${cat.label}: ${built.error}`);
       return;
     }
     items.push(...built.items);
   });
-  const zh = ctx.lang !== 'en';
+  if (medals.waiting.size && !medals.questions.length) {
+    problems.push(zh ? '还没有 medal design 可以选 — 请 Production 在网站的 Medal Designs 页 publish 一个。' : 'No medal design is published yet — ask Production to publish one on the website\'s Medal Designs page.');
+  }
   if (engaged.length === 0 && !questions.some((q) => q.kind === 'plak')) problems.push(zh ? '这份 FORM ANUGERAH 里读不到任何订单。' : 'Nothing in this FORM ANUGERAH could be read as an order.');
 
   // The website's own word-list typo check (typoCheck.js — blocking at Add to Cart unless the right word is

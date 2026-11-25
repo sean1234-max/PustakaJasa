@@ -83,6 +83,53 @@ describe('readOrderForm', () => {
     expect(stockAlternatives('PK 261 / A', 2, tree).map((o) => o.code)).toEqual(['PK 262 / A', 'PK 263 / A']);
   });
 
+  describe('medals on ORDER LAIN-LAIN (Sean, 2026-11-25)', () => {
+    const medalCatalog = [...catalog, { id: 'm', code: 'HM-M-0031', price: 4.5, children: [{ id: 'm1', code: 'GOLD', price: 0 }] }];
+    const designs = [
+      { name: 'DESIGN 2', label: '', hidden: false, in_file: true, sort_order: 0, preview: { thumb: 'b.png' } },
+      { name: 'DESIGN 1', label: 'Lengkung', hidden: false, in_file: true, sort_order: 0, preview: { thumb: 'a.png' } },
+      { name: 'DESIGN 3', label: '', hidden: true, in_file: true, sort_order: 0, preview: { thumb: 'c.png' } },
+    ];
+    const medalForm = () => form([{ slots: ['KEJOHANAN OLAHRAGA', '2026', 'JOHAN', '100 METER', 'LELAKI'], qty: 3, code: 'HM-M-0031 / GOLD' }]);
+    const readMedal = (buf, extra = {}) => read(buf, { plakCatalog: medalCatalog, medalDesigns: designs, ...extra });
+
+    it('asks which design, with the published ones as options, and adds nothing until it is picked', async () => {
+      const r = readMedal(await medalForm());
+      expect(r.problems).toEqual([]);
+      const q = r.questions.find((x) => x.kind === 'design');
+      expect(q.options).toEqual([
+        { key: 'DESIGN 1', label: 'Lengkung', thumb: 'a.png' },
+        { key: 'DESIGN 2', label: 'DESIGN 2', thumb: 'b.png' },
+      ]);
+      expect(r.items).toEqual([]);
+    });
+
+    it('the picked design goes on the order, as the website keeps it', async () => {
+      const buf = await medalForm();
+      const q = readMedal(buf).questions.find((x) => x.kind === 'design');
+      const r = readMedal(buf, { answers: { [q.id]: 'DESIGN 2' } });
+      expect(r.questions.filter((x) => x.kind === 'design')).toEqual([]);
+      expect(r.problems).toEqual([]);
+      expect(r.items.map((it) => [it.jenisPlak, Number(it.qty)])).toEqual([['HM-M-0031 / GOLD', 3]]);
+      expect(r.items[0].detail.lines[`${q.blockKey}::design`]).toBe('DESIGN 2');
+    });
+
+    it('a design no longer offered is asked again', async () => {
+      const buf = await medalForm();
+      const q = readMedal(buf).questions.find((x) => x.kind === 'design');
+      const r = readMedal(buf, { answers: { [q.id]: 'DESIGN 3' } });
+      expect(r.questions.find((x) => x.kind === 'design')?.id).toBe(q.id);
+      expect(r.items).toEqual([]);
+    });
+
+    it('no design published: a problem that says so', async () => {
+      const r = readMedal(await medalForm(), { medalDesigns: [], lang: 'en' });
+      expect(r.questions.filter((x) => x.kind === 'design')).toEqual([]);
+      expect(r.problems).toHaveLength(1);
+      expect(r.problems[0]).toContain('No medal design');
+    });
+  });
+
   it('a file that isn\'t a FORM ANUGERAH', () => {
     const r = read(new Uint8Array([1, 2, 3]).buffer);
     expect(r.error || r.problems.join(' ')).toBeTruthy();

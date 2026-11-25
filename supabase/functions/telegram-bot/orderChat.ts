@@ -15,7 +15,7 @@
 // the salesman fixes the Excel and sends it again, or opens the order on the website.
 // Sessions: bot_order_sessions. Buttons: callback data "o:<session id>:<answer>".
 
-import { db } from './db.ts';
+import { db, SUPABASE_URL } from './db.ts';
 import { esc, MAX_FILE_BYTES } from './telegram.ts';
 import { formBot } from './formBot.ts';
 import { readDraftList, listTemplate } from './orderDraft.ts';
@@ -37,7 +37,7 @@ type Item = { jenisPlak: string; qty: string | number; harga: number; categoryKe
 type ReadResult = {
   error?: string; items: Item[]; total: number; stop: boolean; problems: string[]; remark: string;
   questions: {
-    id: string; kind: 'plak' | 'choice' | 'note' | 'typo' | 'extra' | 'stock'; text: string; raw?: string; options?: any[];
+    id: string; kind: 'plak' | 'choice' | 'note' | 'typo' | 'extra' | 'stock' | 'design'; text: string; raw?: string; options?: any[];
     code?: string; qty?: number; left?: number;
     blockKey?: string; word?: string; suggestion?: string;
   }[];
@@ -151,11 +151,19 @@ async function plakCatalog() {
   return catalogCache.tree;
 }
 
+// Production's MEDAL DESIGNS (migration 0129) — the medal tabs' design question; their pictures are public
+async function medalDesigns() {
+  const { data, error } = await db.from('medal_designs').select('name, label, hidden, in_file, sort_order, preview');
+  if (error) throw error;
+  return data || [];
+}
+const medalPicture = (name: string) => `${SUPABASE_URL}/storage/v1/object/public/medal-designs/${encodeURIComponent(name)}`;
+
 async function readOrder(s: Row, salesman: { id: string; name: string }) {
   const bytes = await formBot.downloadFile(s.excel!.fileId);
   const [y, m, d] = s.details.functionDate.split('-').map(Number);
   return readOrderForm(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength), {
-    plakCatalog: await plakCatalog(), schoolLanguage: s.school?.schoolLanguage || 'SK', salesman,
+    plakCatalog: await plakCatalog(), medalDesigns: await medalDesigns(), schoolLanguage: s.school?.schoolLanguage || 'SK', salesman,
     details: { picName: s.details.picName, phone: s.details.phone, funcSelected: new Date(y, m - 1, d), remark: s.details.remark || '' },
     // a code swapped for one in stock (the 'stock' question) is applied to the order, not to the file's words
     subs: s.subs.filter((x) => !x.stock), swaps: s.subs.filter((x) => x.stock), answers: s.answers, okWords: s.ok_words,
@@ -300,6 +308,12 @@ async function advance(s: Row, salesman: { id: string; name: string }, aiAllowed
     }
     if (q.kind === 'choice') {
       return ask(s, `❓ ${esc(q.text)}`, (q.options || []).map((o) => [btn(s, `q:${o.key}`, o.label)]), { kind: 'question', id: q.id });
+    }
+    if (q.kind === 'design') {
+      // the design pictures first (as the website's design cards), then one button each
+      const opts = (q.options || []) as { key: string; label: string; thumb: string }[];
+      await formBot.sendPhotos(s.chat_id, opts.filter((o) => o.thumb).map((o) => ({ url: medalPicture(o.thumb), caption: o.label })));
+      return ask(s, `🏅 ${esc(q.text)}`, opts.map((o, i) => [btn(s, `ds:${i}`, o.label)]), { kind: 'design', id: q.id, options: opts.map((o) => o.key) });
     }
     return ask(s, `❓ ${esc(q.text)}`, [[btn(s, 'q:ok', q.kind === 'extra' ? t('✅ Yes, engrave', '✅ 要刻') : t('✅ OK', '✅ 好')), btn(s, 'q:stop', t('✋ Stop (website)', '✋ 停（去网站做）'))]], { kind: 'question', id: q.id });
   }
@@ -698,6 +712,9 @@ export async function handleOrderButton(cb: Msg, aiAllowed: AiAllowed) {
     const key = a.slice(2);
     if (key === 'stop') return stopForWebsite(s, t('OK — stopped.', '好 — 已停。'));
     await save(s, { answers: { ...s.answers, [p.id]: key }, pending: null });
+  } else if (a.startsWith('ds:') && p.kind === 'design') {
+    const name = p.options?.[Number(a.slice(3))];
+    if (name) await save(s, { answers: { ...s.answers, [p.id]: name }, pending: null });
   } else if (a.startsWith('sp:') && p.kind === 'spell') {
     const [, idx, choice] = a.split(':');
     const it = s.answers._spell?.[Number(idx)];
