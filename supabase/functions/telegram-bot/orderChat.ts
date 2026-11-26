@@ -118,6 +118,13 @@ async function openSession(chatId: number, userId: number): Promise<Row | null> 
   return (data as Row) || null;
 }
 
+/** The order chat is in the middle of an order with him (asking, or working): his texts are its answers, his
+ *  files its pages — inbox.ts leaves them as they are. Waiting only for the list is not "busy". */
+export async function orderChatBusy(chatId: number, userId: number) {
+  const s = await openSession(chatId, userId);
+  return !!s && s.pending?.kind !== 'list';
+}
+
 // The order open in this chat, whoever started it — Production cancels it for the salesman (Sean, 2026-11-10:
 // his "cancel" in Fida's group did nothing, the order was hers)
 async function openSessionInChat(chatId: number): Promise<Row | null> {

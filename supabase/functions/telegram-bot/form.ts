@@ -15,7 +15,8 @@
 import { DOMParser, XMLSerializer } from 'npm:@xmldom/xmldom@0.9.12';
 import { esc, MAX_FILE_BYTES } from './telegram.ts';
 import { formBot } from './formBot.ts';
-import { groupSalesman, handleOrderMessage, startFromForm } from './orderChat.ts';
+import { groupSalesman, handleOrderMessage, orderChatBusy, startFromForm } from './orderChat.ts';
+import { planBatch, waitForQuiet } from './inbox.ts';
 import * as XLSX from 'npm:xlsx@0.18.5';
 import { tr, folded, topLines, langOfProfile, langOfTelegramUser, type Lang } from './i18n.ts';
 import { readFile, type FileContent } from './files.ts';
@@ -89,6 +90,46 @@ async function replyLang(msg: Msg): Promise<Lang> {
   const { data: link } = await db.from('telegram_links').select('profile_id').eq('telegram_user_id', Number(msg.from?.id)).maybeSingle();
   if (link?.profile_id || msg.chat?.type === 'private') return langOfProfile(db, link?.profile_id);
   return langOfProfile(db, (await groupSalesman(msg.chat.id, Number(msg.from?.id)))?.id);
+}
+
+// A message for the form bot, read once the salesman has stopped sending (inbox.ts, Sean 2026-11-26): a link
+// code, /lang and the Production group's messages at once; the rest after 15 quiet seconds, all of his together —
+// a text sent on its own beside a kertas kerja is read as its notes. One message failing doesn't stop the others.
+export async function handleFormMessage(msg: Msg, aiAllowed: () => Promise<unknown>) {
+  const text = String(msg.text ?? '');
+  const productionGroup = msg.chat?.type !== 'private' && GROUPS.includes(String(msg.chat?.id));
+  if (!msg.from?.id || productionGroup || LINK_CODE_RE.test(text) || LANG_RE.test(text)) return handleForm(msg, aiAllowed);
+  // "Reading message…" at once (Sean, 2026-11-26: a quiet bot looks like it didn't get it) — not for a group's
+  // own chatter, which the bot doesn't answer
+  const answered = msg.chat?.type === 'private' || hasFile(msg) || msg.reply_to_message?.from?.is_bot === true;
+  const t = tr(await replyLang(msg));
+  const got = await waitForQuiet(msg, {
+    announce: async () => (answered ? formBot.ask(msg.chat.id, msg.message_id, t(
+      '📖 Reading message… (anything else? send it within 15 s)', '📖 正在读取讯息…（还有要补充的，15 秒内发）')) : null),
+  });
+  if (!got) return;
+  await Promise.all(got.statusIds.map((id) => formBot.deleteMessage(msg.chat.id, id)));
+  const busy = await orderChatBusy(msg.chat.id, Number(msg.from.id));
+  const running: Promise<unknown>[] = [];
+  for (const step of planBatch(got.msgs, !busy)) {
+    // a text (a list, cancel, an answer) only after everything before it is done: the FORM ANUGERAH it goes with
+    // must have opened its order first
+    if (!step.some(hasFile)) await Promise.all(running);
+    const run = Promise.all(step.map((m) => handleForm(m, aiAllowed).catch((err) => replyFailed(m, err))));
+    running.push(run);
+    // ponytail: a file gets a 5 s head start, then the next file starts beside it — a fill takes 1–2 min, so five
+    // separate pages still end inside the edge runtime's 400 s. A queue of its own if that ever isn't enough.
+    await Promise.race([run, new Promise((r) => setTimeout(r, STEP_HEAD_START_MS))]);
+  }
+  await Promise.all(running);
+}
+const STEP_HEAD_START_MS = 5000;
+const hasFile = (m: Msg) => !!(m.document || (Array.isArray(m.photo) && m.photo.length));
+
+async function replyFailed(msg: Msg, err: unknown) {
+  console.error('telegram-bot (form) failed:', err);
+  const noCredit = /credit balance is too low/i.test(String(err));
+  await formBot.reply(msg.chat.id, msg.message_id, noCredit ? 'The AI account has run out of credit — please ask Sean to top it up.' : 'Sorry, something went wrong. Please try again.').catch(() => {});
 }
 
 export async function handleForm(msg: Msg, aiAllowed: () => Promise<unknown>) {

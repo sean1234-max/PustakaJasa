@@ -23,7 +23,7 @@
 
 import { db, SUPABASE_URL } from './db.ts';
 import { esc, telegramBot, MAX_FILE_BYTES } from './telegram.ts';
-import { fillForm, formBot, handleForm } from './form.ts';
+import { fillForm, formBot, handleFormMessage } from './form.ts';
 import { handleOrderButton } from './orderChat.ts';
 import { runReviewJob, handleSalesmanGroup, handleReviewButton, groupMoved } from './autoReview.ts';
 import { remindSalesman, runApprovalReminders } from './remind.ts';
@@ -321,7 +321,7 @@ Deno.serve(async (req) => {
   }
   if (!msg || (!isForm && String(msg.chat?.id) !== CHAT_ID)) return new Response('ok');
   // answer in the background — Telegram only waits for the 200
-  const work = (isForm ? handleForm(msg, aiAllowed) : kind === 'assistant' ? handleAssistant(msg) : handle(msg)).catch(async (err) => {
+  const work = (isForm ? handleFormMessage(msg, aiAllowed) : kind === 'assistant' ? handleAssistant(msg) : handle(msg)).catch(async (err) => {
     console.error('telegram-bot failed:', err);
     const noCredit = /credit balance is too low/i.test(String(err));
     await which.reply(msg.chat.id, msg.message_id, noCredit ? 'The AI account has run out of credit — please ask Sean to top it up.' : 'Sorry, something went wrong. Please try again.').catch(() => {});
