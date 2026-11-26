@@ -33,7 +33,8 @@ import { MEDAL_DESIGN_FILE, findExportJsx, readDesignExport, writeDesignScript }
 
 const execFileAsync = promisify(execFile);
 
-export const PORT = 47821;
+// AI_HELPER_PORT: only for trying a copy beside the installed helper (the website always uses 47821)
+export const PORT = Number(process.env.AI_HELPER_PORT) || 47821;
 // 2: crystals too (POST /crystal) — the website asks for at least this to open crystals
 // 3: a copy in the school's folder too (school-folder.mjs, Sean 2026-10-21)
 // 4: POST /templates (Production's check before Generate AI File) + the operator's name sent with
@@ -41,7 +42,9 @@ export const PORT = 47821;
 // 5: a finished job carries SEAN.jsx's run report (`report`) for the check after Generate
 // 7: POST /archive — Done Typing moves the order's files into the school's year folder (Sean 2026-11-16)
 // 8: POST /medal-designs — the MEDAL DESIGNS page reads E CUT 0's designs (Sean 2026-11-24)
-const VERSION = 8;
+// 9: started by launcher.mjs, which pulls newer versions from the NAS by itself; /status says `busy`
+//    so the launcher never swaps versions in the middle of a job (Sean 2026-11-26)
+const VERSION = 9;
 const HELPER_DIR = path.dirname(fileURLToPath(import.meta.url));
 const TEMP_DIR = path.join(tmpdir(), 'pustakajasa-ai-helper');
 // crystals can carry pictures and .svg artwork (Crystal Studio), so more room than a CSV needs
@@ -426,7 +429,8 @@ function startServer() {
     try {
       if (req.method === 'GET' && pathname === '/status') {
         const aiFileDir = resolveAiFileDir();
-        send(200, { ok: true, version: VERSION, crystal: true, platform: process.platform, aiFileDir, nasOk: await folderReachable(aiFileDir) });
+        const busy = [...jobs.values()].some((j) => j.status === 'queued' || j.status === 'running');
+        send(200, { ok: true, version: VERSION, crystal: true, platform: process.platform, aiFileDir, nasOk: await folderReachable(aiFileDir), busy });
         return;
       }
       if (req.method === 'POST' && pathname === '/generate') {

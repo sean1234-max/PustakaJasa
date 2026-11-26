@@ -13,6 +13,8 @@ if (-not $node) {
 
 $dest = Join-Path $env:LOCALAPPDATA "PustakaJasa-AI-Helper"
 $helper = Join-Path $dest "ai-file-helper.mjs"
+# helper v9: login runs launcher.mjs, which starts the helper and pulls newer versions from the NAS
+$launcher = Join-Path $dest "launcher.mjs"
 $log = Join-Path $dest "helper.log"
 $startup = [Environment]::GetFolderPath("Startup")
 $vbs = Join-Path $startup "pustakajasa-ai-helper.vbs"
@@ -20,14 +22,14 @@ $vbs = Join-Path $startup "pustakajasa-ai-helper.vbs"
 # Stop any running copy (this helper, or the old watch_ai_file_jobs.js
 # watcher it replaces) so the new version can take the port.
 Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" |
-    Where-Object { $_.CommandLine -match 'ai-file-helper\.mjs|watch_ai_file_jobs\.js' } |
+    Where-Object { $_.CommandLine -match 'ai-file-helper\.mjs|launcher\.mjs|watch_ai_file_jobs\.js' } |
     ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 Remove-Item (Join-Path $startup "ai-file-watcher.vbs") -ErrorAction SilentlyContinue
 
 New-Item -ItemType Directory -Force -Path $dest | Out-Null
 Copy-Item -Force (Join-Path $PSScriptRoot "ai-file-helper.mjs") $helper
 # crystals (Open in Illustrator from the Crystal Preview) need these two next to it
-foreach ($f in @("crystal-job.mjs", "crystal-illustrator.mjs", "school-folder.mjs", "medal-designs.mjs")) { Copy-Item -Force (Join-Path $PSScriptRoot $f) (Join-Path $dest $f) }
+foreach ($f in @("launcher.mjs", "crystal-job.mjs", "crystal-illustrator.mjs", "school-folder.mjs", "medal-designs.mjs")) { Copy-Item -Force (Join-Path $PSScriptRoot $f) (Join-Path $dest $f) }
 # MEDAL DESIGNS (helper v8): the preview export, next to the helper or in the repo's scripts\plak-preview
 $jsx = Join-Path $PSScriptRoot "export-plak-preview.jsx"
 if (-not (Test-Path $jsx)) { $jsx = Join-Path $PSScriptRoot "..\plak-preview\export-plak-preview.jsx" }
@@ -36,7 +38,7 @@ Copy-Item -Force $jsx (Join-Path $dest "export-plak-preview.jsx")
 # A hidden VBScript wrapper runs it at login without a console window.
 $vbsContent = @"
 Set s = CreateObject("WScript.Shell")
-s.Run "cmd /c """"$($node.Source)"" ""$helper"" >> ""$log"" 2>&1""", 0, False
+s.Run "cmd /c """"$($node.Source)"" ""$launcher"" >> ""$log"" 2>&1""", 0, False
 "@
 Set-Content -Path $vbs -Value $vbsContent -Encoding Unicode
 Start-Process -FilePath "wscript.exe" -ArgumentList "`"$vbs`""

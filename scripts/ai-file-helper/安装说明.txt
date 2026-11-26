@@ -80,3 +80,25 @@ Mac 右键 install-mac.command → 打开），装完：
     搬进学校的 2026 资料夹：有「(DWI-…) - 学校」资料夹就整个搬，没有的话就搬 invoice 号码对得上的 .ai。
     学校没有 2026 资料夹、或 2026 里已经有同名的，就不动。
   - 网站更新上线后才会用到这个功能；之前装好也不会影响其他功能。
+
+
+【2026-11-25 更新（版本 8）】每台 Production 电脑都要再装一次（Windows 双击 install-windows.bat，
+Mac 右键 install-mac.command → 打开），装完：
+  - 还没装版本 7 的电脑，版本 7 的功能（上面那段：Done 之后把 AI file 搬进 2026 资料夹）也一起有了。
+  - Production 的 MEDAL DESIGNS 页按「Update from E CUT 0」时，这台电脑的 Illustrator 会读 E CUT 0
+    里的每个 DESIGN，做出预览图给网站。
+  - 资料夹里的 export-plak-preview.jsx 要跟其他档案放在一起再安装（安装时会一起复制过去）。
+  - 只用 Generate 的话，没装也照样可以 Generate。
+
+
+【2026-11-26 更新（版本 9）—— 最后一次手动安装】每台电脑再装一次（Windows 双击 install-windows.bat，
+Mac 右键 install-mac.command → 打开）。装完以后就会自己更新，不用再一台一台重装：
+  - 开机时、之后每 10 分钟，这台电脑会去看 NAS 的 AI FILE 资料夹\ai-file-helper\ 有没有新版本，
+    有就自己复制回来、自己重开 helper。
+  - 正在 Generate / Crystal / Medal Designs 的时候不会换，等那张跑完才换。
+  - 新版本有问题（开不起来）会自己换回旧版，记在 helper.log，那个版本不会再试。
+  - 更新时 helper 会停几秒；网站刚好在那几秒按 Generate 的话，等一下再按一次就好。
+  - 资料夹里多了 launcher.mjs，安装时会一起复制过去（要跟其他档案放在一起再安装）。
+
+【Sean：放新版本上 NAS 的顺序】改 helper 时 ai-file-helper.mjs 里的 VERSION 要加 1，
+再把档案复制进 NAS 的 ai-file-helper 资料夹，ai-file-helper.mjs 最后才放。

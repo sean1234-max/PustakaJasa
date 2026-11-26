@@ -3,6 +3,8 @@
 # time: right-click > Open, since it's an unsigned script). Copies it to
 # ~/Library/Application Support/PustakaJasa-AI-Helper and registers a
 # LaunchAgent so it starts at every login and restarts if it ever quits.
+# Since helper v9 the LaunchAgent runs launcher.mjs: it starts the helper and
+# pulls newer versions from the NAS by itself.
 cd "$(dirname "$0")" || exit 1
 export PATH="$PATH:/usr/local/bin:/opt/homebrew/bin"
 
@@ -20,7 +22,7 @@ PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 OLD_PLIST="$HOME/Library/LaunchAgents/com.pustakajasa.ai-file-watcher.plist"
 
 mkdir -p "$DEST" "$HOME/Library/LaunchAgents"
-cp ai-file-helper.mjs crystal-job.mjs crystal-illustrator.mjs school-folder.mjs medal-designs.mjs "$DEST/"
+cp launcher.mjs ai-file-helper.mjs crystal-job.mjs crystal-illustrator.mjs school-folder.mjs medal-designs.mjs "$DEST/"
 # MEDAL DESIGNS (helper v8): the preview export, next to the helper or in the repo's scripts/plak-preview
 if [ -f export-plak-preview.jsx ]; then cp export-plak-preview.jsx "$DEST/"; else cp ../plak-preview/export-plak-preview.jsx "$DEST/"; fi
 
@@ -36,7 +38,7 @@ cat > "$PLIST" <<PLIST
   <key>ProgramArguments</key>
   <array>
     <string>$NODE_BIN</string>
-    <string>$DEST/ai-file-helper.mjs</string>
+    <string>$DEST/launcher.mjs</string>
   </array>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
