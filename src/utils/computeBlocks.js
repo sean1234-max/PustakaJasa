@@ -834,6 +834,8 @@ export function computeBlocks(catKey, lineValues, matrixValues, rowsByBlockMap, 
       // Words the AI spelling check flagged that the teacher confirmed are
       // right (NewOrderStep2) — shown to Production at review.
       wordsOk: (lineValues[`${catKey}::${b}::wordsOk`] || '').split(',').filter(Boolean),
+      // Differences from the kertas kerja the salesman said the teacher wants (NewOrderStep2's kertas kerja check)
+      kkOk: (lineValues[`${catKey}::${b}::kkOk`] || '').split(',').filter(Boolean),
       extraRefColumns,
       canAddRow: !currentCat.capRowsAt5 || rows.length < 5,
       columns, matrixRows, levelBreakdown,

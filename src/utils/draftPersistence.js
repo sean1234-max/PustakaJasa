@@ -15,7 +15,7 @@ export const DRAFT_FIELDS = [
   // Order Details
   'category', 'lineValues', 'matrixValues', 'rowsByBlock', 'columnsByBlock', 'plakRows',
   'nextRowId', 'nextPlakRowId', 'nextColumnId', 'visibleBlocksByCategory',
-  'importFilePath', 'importFileName', 'importFiles', 'kertasKerjaFiles',
+  'importFilePath', 'importFileName', 'importFiles', 'kertasKerjaFiles', 'formFillIds',
   'step2ImportStatus', 'step2ChoiceAnswers', 'step2UploadedFiles',
   'cart',
 ];

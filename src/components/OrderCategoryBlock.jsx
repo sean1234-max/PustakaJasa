@@ -3,6 +3,7 @@ import PlakPicker from './PlakPicker';
 import SelempangBlock from './SelempangBlock';
 import { getStockStatus, MALAY_ORDINALS } from '../data/catalog';
 import { isReservedName, hasKivWord } from '../utils/exportCsv';
+import { kkOkLabel } from '../utils/kertasKerjaCheck';
 import { useColumnWidths, useFillHandle, moveCellFocus } from './listTableTools';
 
 const TAHUN_OPTIONS = ['TAHUN 1', 'TAHUN 2', 'TAHUN 3', 'TAHUN 4', 'TAHUN 5', 'TAHUN 6'];
@@ -347,6 +348,11 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
       {blk.wordsOk?.length > 0 && (
         <p className="typo-hint" style={{ marginBottom: 'var(--space-3)' }}>
           The teacher confirmed these words are correct (the AI spelling check flagged them): {blk.wordsOk.join(', ')}. Please double-check them.
+        </p>
+      )}
+      {blk.kkOk?.length > 0 && (
+        <p className="typo-hint" style={{ marginBottom: 'var(--space-3)' }}>
+          Different from the teacher&apos;s kertas kerja, confirmed by the salesman as wanted: {blk.kkOk.map(kkOkLabel).join('; ')}.
         </p>
       )}
       {showSharedSections && (

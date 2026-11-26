@@ -357,6 +357,9 @@ function initialState() {
     // The teacher's kertas kerja ({ path, name }) uploaded on Order Details (0110), for Production
     // to compare with the order; addOnKertasKerja is the Add On's.
     kertasKerjaFiles: [],
+    // FORM ANUGERAH files the form bot filled, by their form_fills id (0132, formFillTag.js): Add to Cart
+    // checks the plaques against the bot's reading of the kertas kerja (kertasKerjaCheck.js)
+    formFillIds: [],
     addOnKertasKerja: [],
     // Salesman Edit Order (Sean, 2026-11-07): the New Order flow is open on this submitted order
     // (Step 1 → Step 2 → Cart's Save Changes saves over it) — null for a normal New Order.
@@ -769,7 +772,7 @@ export function AppStateProvider({ children }) {
       sales: '', picName: '', phone: '', ketuaPanitia: '', terms: '', remark: '',
       shipmentDateSelected: null, funcSelected: null,
       logoDataUrl: null, logoFileName: '', logoRemark: '', schoolType: null, stepError: '',
-      importFilePath: null, importFileName: null, importFiles: [], kertasKerjaFiles: [],
+      importFilePath: null, importFileName: null, importFiles: [], kertasKerjaFiles: [], formFillIds: [],
       step2ImportStatus: null, step2ChoiceAnswers: {},
       step2UploadedFiles: [],
 
@@ -1307,7 +1310,7 @@ export function AppStateProvider({ children }) {
       patch({ cartToast: message });
       return null;
     }
-    patch((latest) => ({ lastOrderId: newId, orders: [newOrder, ...latest.orders], cart: [], cartToast: '', step2ImportStatus: null, step2ChoiceAnswers: {}, step2UploadedFiles: [], kertasKerjaFiles: [], draftDone: true, draftRestoredToast: '' }));
+    patch((latest) => ({ lastOrderId: newId, orders: [newOrder, ...latest.orders], cart: [], cartToast: '', step2ImportStatus: null, step2ChoiceAnswers: {}, step2UploadedFiles: [], kertasKerjaFiles: [], formFillIds: [], draftDone: true, draftRestoredToast: '' }));
     // crystal changes the teacher made before submitting (Cart → Edit Crystal): onto the order now
     if (st.cart.some((ci) => isCrystalCode(ci.jenisPlak))) saveCrystalDraft(newId).catch((err) => console.error('Order saved, but its crystal changes were not:', err));
     // who confirmed the artwork is stamped by the database (0089) — read it back for the order page
@@ -1340,7 +1343,7 @@ export function AppStateProvider({ children }) {
       logoDataUrl: ord.logoDataUrl || null, logoFileName: ord.logoFileName || '', logoRemark: ord.logoRemark || '', schoolType: ord.schoolType || null,
       // A reorder is a fresh order — no upload behind it unless the teacher
       // imports one now.
-      importFilePath: null, importFileName: null, importFiles: [], kertasKerjaFiles: [],
+      importFilePath: null, importFileName: null, importFiles: [], kertasKerjaFiles: [], formFillIds: [],
       stepError: '', editOrderId: null,
 
       category: restored.category || 'TOKOH',
@@ -1380,7 +1383,7 @@ export function AppStateProvider({ children }) {
         shipmentDateSelected: toMalaysiaDay(ord.shipmentDate), funcSelected: toMalaysiaDay(ord.functionDate),
         logoDataUrl: ord.logoDataUrl || null, logoFileName: ord.logoFileName || '', logoRemark: ord.logoRemark || '', schoolType: ord.schoolType || null,
         // only files uploaded during this edit; the order's own stay on it until one of these replaces them
-        importFilePath: null, importFileName: null, importFiles: [], kertasKerjaFiles: ord.kertasKerjaFiles || [],
+        importFilePath: null, importFileName: null, importFiles: [], kertasKerjaFiles: ord.kertasKerjaFiles || [], formFillIds: [],
         step2ImportStatus: null, step2ChoiceAnswers: {}, step2UploadedFiles: [], stepError: '',
         category: keys[0] || null,
         lineValues: draft.lineValues, matrixValues: draft.matrixValues, rowsByBlock: draft.rowsByBlock,
@@ -1574,7 +1577,7 @@ export function AppStateProvider({ children }) {
     patch((latest) => ({
       orders: latest.orders.map((o) => (o.id === order.id ? (fresh || { ...o, ...fields }) : o)),
       editOrderId: null, cart: [], cartToast: '', importFilePath: null, importFileName: null, importFiles: [],
-      step2ImportStatus: null, step2ChoiceAnswers: {}, step2UploadedFiles: [], kertasKerjaFiles: [], draftDone: true,
+      step2ImportStatus: null, step2ChoiceAnswers: {}, step2UploadedFiles: [], kertasKerjaFiles: [], formFillIds: [], draftDone: true,
     }));
     flashToast('updateToast', 'Order updated — Production will see the new version.');
     return { ok: true, id: order.id };

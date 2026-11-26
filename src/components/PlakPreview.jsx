@@ -369,3 +369,20 @@ export default function PlakPreview({ order }) {
     </div>
   );
 }
+
+// One plaque drawn alone from its CSV row (array in CSV_COLUMNS order) — the one a kertas kerja question
+// on Add to Cart is about (Sean, 2026-11-26). Nothing when its Jenis Plak has no preview picture yet.
+export function PlakRowPicture({ row }) {
+  const [manifest, setManifest] = useState(null);
+  const fontsReady = useFontsReady();
+  useEffect(() => { let live = true; loadManifest().then((m) => { if (live) setManifest(m); }); return () => { live = false; }; }, []);
+  const sample = useMemo(() => {
+    if (!manifest || !row) return null;
+    const csvRow = Object.fromEntries(CSV_COLUMNS.map((c, i) => [c, row[i] ?? '']));
+    const entry = manifest.files.find((f) => f.file === fileForCode(csvRow.jenis_plak, manifest));
+    const picked = entry && templateFor(entry, csvRow);
+    return picked ? { key: csvRow.jenis_plak, jenisPlak: csvRow.jenis_plak, entry, ...picked } : null;
+  }, [manifest, row]);
+  if (!sample || !fontsReady) return null;
+  return <PlakSvg sample={sample} />;
+}

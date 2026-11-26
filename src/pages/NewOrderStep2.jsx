@@ -8,15 +8,20 @@ import CrystalPreview from '../components/CrystalPreview';
 import MedalDesignPicker from '../components/MedalDesignPicker';
 import PlakPreview from '../components/PlakPreview';
 import KertasKerjaUpload from '../components/KertasKerjaUpload';
+import KertasKerjaIssue from '../components/KertasKerjaIssue';
 import { isCrystalCode } from '../utils/exportCsv';
 import { useAppState } from '../state/useAppState';
 import { buildCategoryCartItems } from '../state/categoryCartItems';
 import {
-  ACTIVE_CATEGORIES, filterHiddenPlakCatalog, getStockStatus, isDynamicCategoryKey, resolveCategory, nextFreeCategoryKey,
+  ACTIVE_CATEGORIES, CUSTOM_MATRIX_LABEL_SUFFIX, filterHiddenPlakCatalog, getStockStatus, isDynamicCategoryKey, resolveCategory, nextFreeCategoryKey,
 } from '../data/catalog';
 import { computeBlocks, noopUpdaters } from '../utils/computeBlocks';
 import { createDraftUpdaters } from '../utils/draftUpdaters';
 import { checkEngravingText } from '../lib/grammarCheckApi';
+import { formFillOfFile, readingsOf } from '../lib/formFillApi';
+import { aiPlaquesOf } from '../utils/reviewChecks';
+import { checkAgainstReading, issueKey, MIN_READING_COVERAGE, readingCoverage } from '../utils/kertasKerjaCheck';
+import { replaceWord } from '../utils/typoCheck';
 import { canUseAiReader } from '../lib/fileReadApi';
 import { downloadBinaryFile } from '../utils/downloadBlob';
 import { draftPlaques } from '../utils/draftForm';
@@ -95,6 +100,21 @@ export default function NewOrderStep2() {
   // double click is stopped by this ref, not the flag.
   const busyRef = useRef(false);
 
+  // A FORM ANUGERAH the form bot filled (formFillTag.js): its kertas kerja goes on the order by itself, and
+  // Add to Cart checks the plaques against the bot's reading of it (Sean, 2026-11-26). Nothing for any other
+  // file, or when the reading can't be fetched.
+  const attachFormFill = (file) => formFillOfFile(file).then((fill) => {
+    if (!fill) return;
+    patch((st) => {
+      const kk = st.kertasKerjaFiles || [];
+      const hasKk = !fill.kkPath || kk.some((f) => f.path === fill.kkPath);
+      return {
+        formFillIds: [...new Set([...(st.formFillIds || []), fill.id])],
+        ...(hasKk ? {} : { kertasKerjaFiles: [...kk, { path: fill.kkPath, name: fill.kkName || 'kertas kerja' }] }),
+      };
+    });
+  }).catch((err) => console.error('form fill lookup failed:', err));
+
   // One file into the draft. `keep`: tabs another uploaded file already filled — this file's copy
   // of one opens as "<tab> (2)" (AppState.jsx). Returns the import result + the status to show.
   const importOneFile = async (file, keep) => {
@@ -107,6 +127,7 @@ export default function NewOrderStep2() {
       if (result.ok && /\.(docx|pdf)$/i.test(file.name)) result = await convertImportToForm(file, result, { keep });
       status = { ...result };
       delete status.aiCategorized;
+      if (result.ok) attachFormFill(file);
       if (result.ok) {
         // This upload session's files, and the tabs each one filled — the
         // same file uploaded again takes its tabs over.
@@ -514,7 +535,17 @@ export default function NewOrderStep2() {
         ? { ...prev, targets: [...prev.targets, line.target] }
         : { ...it, type: 'ai', blockKey: line.blockKey, where: line.where, targets: [line.target] });
     });
-    const issues = [...extras, ...grouped.values()];
+    let kkIssues = [];
+    if (state.formFillIds?.length) {
+      setChecking(true);
+      try {
+        kkIssues = await kertasKerjaIssuesFor(catKeys, lines);
+      } catch (err) {
+        console.error('kertas kerja check failed:', err);
+      }
+      setChecking(false);
+    }
+    const issues = [...extras, ...grouped.values(), ...kkIssues];
     if (issues.length > 0) {
       setPendingCheck({ issues, proceed });
     } else {
@@ -524,6 +555,45 @@ export default function NewOrderStep2() {
         setTimeout(() => setCheckOkToast(false), 2500);
       }
     }
+  };
+
+  // The plaques against the form bot's reading of the kertas kerja (kertasKerjaCheck.js — plain code, no AI),
+  // for a draft imported from a FORM ANUGERAH the bot filled. One entry per question across the blocks; an
+  // answer the salesman gave for a block (::kkOk) isn't asked again. A spelling fix can go into the lines
+  // (Reference Sample, rows) and the MP subjects that have the word.
+  const kkOkOf = (blockKey) => (state.lineValues[`${blockKey}::kkOk`] || '').split(',').filter(Boolean);
+  const hasWord = (text, word) => new RegExp(`(?<![A-Z])${word}(?![A-Z])`, 'i').test(String(text || ''));
+  const kertasKerjaIssuesFor = async (catKeys, lines) => {
+    const readings = await readingsOf(state.formFillIds);
+    if (!readings.length) return [];
+    const known = [state.sekolah, state.picName];
+    const items = catKeys.flatMap((catKey) => buildCategoryCartItems(draftForCheck, catKey).items || []);
+    // the bot's Excel replaced by another file: its reading no longer fits these plaques — no questions
+    if (readingCoverage(aiPlaquesOf({ schoolLanguage: state.schoolLanguage, items }), readings) < MIN_READING_COVERAGE) return [];
+    const grouped = new Map();
+    items.forEach((item) => {
+      const blockKey = `${item.categoryKey}::${item.blockIdx ?? 0}`;
+      const answered = kkOkOf(blockKey);
+      checkAgainstReading(aiPlaquesOf({ schoolLanguage: state.schoolLanguage, items: [item] }), readings, known)
+        .filter((i) => !answered.includes(issueKey(i)))
+        .forEach((i) => {
+          const key = issueKey(i);
+          const prev = grouped.get(key);
+          grouped.set(key, prev
+            ? { ...prev, count: prev.count + i.count, blockKeys: [...new Set([...prev.blockKeys, blockKey])] }
+            : { ...i, type: 'kk', blockKeys: [blockKey], sheetLabel: `${i.plaque.sheet} — kertas kerja check` });
+        });
+    });
+    const subjectTargets = (i) => Object.entries(state.matrixValues || {})
+      .filter(([k, v]) => k.endsWith(CUSTOM_MATRIX_LABEL_SUFFIX) && i.blockKeys.some((b) => k.startsWith(`${b.split('::')[0]}::`)) && hasWord(v, i.word))
+      .map(([k]) => ({ matrixKey: k }));
+    return [...grouped.values()].map((i) => ({
+      ...i,
+      targets: i.kind !== 'typo' ? [] : [
+        ...lines.filter((l) => i.blockKeys.includes(l.blockKey) && hasWord(l.text, i.word)).map((l) => l.target),
+        ...subjectTargets(i),
+      ],
+    }));
   };
 
   const handleAddCategory = () => {
@@ -586,6 +656,25 @@ export default function NewOrderStep2() {
     const words = (state.lineValues[key] || '').split(',').filter(Boolean);
     const word = issue.original.toUpperCase();
     if (!words.includes(word)) updaters.onLine(key, [...words, word].join(','));
+    resolveIssue(issue);
+  };
+  // The kertas kerja's spelling, everywhere the word is in this question's blocks
+  const applyKkFix = (issue) => {
+    issue.targets.forEach((t) => {
+      if (t.matrixKey) { updaters.onMatrix(t.matrixKey, replaceWord(state.matrixValues[t.matrixKey], issue.word, issue.kk)); return; }
+      if (t.lineKey) { updaters.onLine(t.lineKey, replaceWord(state.lineValues[t.lineKey], issue.word, issue.kk)); return; }
+      const row = (state.rowsByBlock[t.rowsKey] || []).find((r) => r.id === t.rowId);
+      if (row) updaters.onRowField(t.rowsKey, t.rowId, t.field, replaceWord(row[t.field], issue.word, issue.kk));
+    });
+    resolveIssue(issue);
+  };
+  // "The teacher wants it this way" — remembered on each block (::kkOk): not asked again, Production sees it
+  const keepKk = (issue) => {
+    const key = issueKey(issue);
+    issue.blockKeys.forEach((b) => {
+      const answered = kkOkOf(b);
+      if (!answered.includes(key)) updaters.onLine(`${b}::kkOk`, [...answered, key].join(','));
+    });
     resolveIssue(issue);
   };
   const proceedFromPanel = () => {
@@ -839,8 +928,10 @@ export default function NewOrderStep2() {
             </p>
             {pendingCheck.issues.map((issue, k) => (
               <div key={k} className="confirm-item">
-                <p className="hint-text" style={{ margin: 0 }}>{issue.where}</p>
-                {issue.type === 'extra' ? (
+                <p className="hint-text" style={{ margin: 0 }}>{issue.type === 'kk' ? issue.sheetLabel : issue.where}</p>
+                {issue.type === 'kk' ? (
+                  <KertasKerjaIssue issue={issue} onFix={() => applyKkFix(issue)} onKeep={() => keepKk(issue)} />
+                ) : issue.type === 'extra' ? (
                   <>
                     <p className="confirm-item-q" style={{ margin: 0 }}>
                       <strong>{issue.text}</strong> — not in the Reference Sample. Engrave it on this plaque?

@@ -25,6 +25,8 @@ import { readFormCached } from './formCache.ts';
 import { toFormPlaques, toFormSelempang, type ReadPlaque, type ReadSelempang } from './formPlaques.ts';
 import { ruleRead, type TableRead } from './ruleRead.ts';
 import { logUsage } from './usage.ts';
+import { saveFormFill, tagFormFill } from './formFill.ts';
+import JSZip from 'npm:jszip@3.10.1';
 import { recordMiss } from './ruleMiss.ts';
 // @ts-ignore a plain JS bundle
 import { fillOrderTemplate, loadDocx, readWordingTables } from './form.bundle.js';
@@ -183,6 +185,12 @@ export async function fillForm(content: FileContent, fileName: string, notes: st
   if (!res.ok) throw new Error(`template download ${res.status}`);
   const front = { sekolah: String(read.input.school || ''), cikgu: String(read.input.teacher || '') };
   const out = await fillOrderTemplate(await res.arrayBuffer(), { plaques, selempang, front, priceOf: () => null }, { DOMParser, XMLSerializer });
+  // where it came from, kept under an id in the Excel: the website attaches the kertas kerja and checks the
+  // plaques against this reading when the form is imported (formFill.ts)
+  const fillId = await saveFormFill(read.input, bytes, fileName);
+  const buffer: Uint8Array = fillId
+    ? await tagFormFill(out.buffer as Uint8Array, fillId, JSZip).catch((err) => { console.error('tagging the form failed:', err); return out.buffer as Uint8Array; })
+    : out.buffer as Uint8Array;
 
   const placed = Object.entries(out.placed as Record<string, number>);
   const total = placed.reduce((a, [, n]) => a + n, 0);
@@ -213,7 +221,7 @@ export async function fillForm(content: FileContent, fileName: string, notes: st
   ].filter(Boolean).join('\n') : '';
   const base = (front.sekolah || fileName.replace(/\.[^.]+$/, '')).replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'ORDER';
   return {
-    ok: true as const, buffer: out.buffer as Uint8Array, fileName: `${base} (FORM ANUGERAH).xlsx`, caption, total,
+    ok: true as const, buffer, fileName: `${base} (FORM ANUGERAH).xlsx`, caption, total,
     questionsHtml, notes: [...asks, ...fyi], front,
   };
 }

@@ -58,7 +58,7 @@ export function getTypoDictionary() {
   return [...new Set([...TYPO_CHECK_DICTIONARY, ...customWords])];
 }
 
-function levenshtein(a, b) {
+export function levenshtein(a, b) {
   const m = a.length;
   const n = b.length;
   if (m === 0) return n;
