@@ -297,7 +297,7 @@ Deno.serve(async (req) => {
   if (kind === 'review' && update?.callback_query) {
     // ✅ Approve / CONFIRM / Google Form under an approval reminder (approve.ts), else a review's answer
     const cb = update.callback_query;
-    const work = (/^ap[cng]?:/.test(String(cb.data || '')) ? handleApproveButton(cb, bot) : handleReviewButton(cb, bot))
+    const work = (/^ap[a-z]?:/.test(String(cb.data || '')) ? handleApproveButton(cb, bot) : handleReviewButton(cb, bot))
       .catch((err) => console.error('telegram-bot (review button) failed:', err));
     // @ts-ignore EdgeRuntime is provided by the Supabase Edge runtime
     if (typeof EdgeRuntime !== 'undefined') EdgeRuntime.waitUntil(work); else await work;
