@@ -15,7 +15,7 @@
 import { DOMParser, XMLSerializer } from 'npm:@xmldom/xmldom@0.9.12';
 import { esc, MAX_FILE_BYTES } from './telegram.ts';
 import { formBot } from './formBot.ts';
-import { groupSalesman, handleOrderMessage, orderChatBusy, startFromForm } from './orderChat.ts';
+import { formOrderButtons, groupSalesman, handleOrderMessage, orderChatBusy, startFromForm } from './orderChat.ts';
 import { planBatch, waitForQuiet } from './inbox.ts';
 import * as XLSX from 'npm:xlsx@0.18.5';
 import { tr, folded, topLines, langOfProfile, langOfTelegramUser, type Lang } from './i18n.ts';
@@ -41,6 +41,7 @@ const help = (lang: Lang) => tr(lang)(
   `1️⃣ Send the teacher's kertas kerja → I fill FORM ANUGERAH.\n2️⃣ Reply to the form with this list → I check it and you tap Submit:\n<code>${LIST_SAMPLE}</code>\nLanguage: /lang zh`,
   `1️⃣ 发老师的 kertas kerja 给我 → 我填好 FORM ANUGERAH。\n2️⃣ 回复那份 Excel，贴上这个清单 → 我检查后，你按 Submit：\n<code>${LIST_SAMPLE}</code>\nLanguage: /lang en`,
 );
+const MAX_CAPTION = 1000; // Telegram's caption limit is 1024 (sendDocument cuts at 1000)
 const LANG_RE = /^\s*\/lang(?:@\w+)?\s+(en|zh)\s*$/i;
 
 type Msg = Record<string, any>;
@@ -165,19 +166,28 @@ export async function handleForm(msg: Msg, aiAllowed: () => Promise<unknown>) {
   const content = readFile(bytes, fileName);
   if (!content) return say(t('❌ I can\'t read this — send PDF, Word, Excel or a photo.', '❌ 读不了这个文件 — 请发 PDF、Word、Excel 或照片。'));
   if (!(await aiAllowed())) return say(t('❌ AI budget used up this month — please fill it by hand.', '❌ 这个月的 AI 额度用完了 — 请手动填。'));
-  await say(t('📝 Filling FORM ANUGERAH… (1–2 min)', '📝 正在填 FORM ANUGERAH…（1–2 分钟）'));
+  // gone once the form is out (Sean 2026-11-27: one message to read, not four)
+  const fillingId = await formBot.ask(chatId, msg.message_id, t('📝 Filling FORM ANUGERAH… (1–2 min)', '📝 正在填 FORM ANUGERAH…（1–2 分钟）'));
   const filled = await fillForm(content, fileName, String(msg.caption ?? '').trim(), bytes, lang);
+  if (fillingId) await formBot.deleteMessage(chatId, fillingId);
   if (!filled.ok) return say(filled.message);
-  const sent = await formBot.sendDocument(chatId, msg.message_id, filled.buffer, filled.fileName, filled.caption);
+  const known = { sekolah: filled.front.sekolah, cikgu: filled.front.cikgu };
+  const order = await formOrderButtons(msg, filled.buffer, filled.fileName, known);
+  // the questions inside the Excel's caption when they fit (a caption holds 1024 characters), else after it
+  const withQuestions = filled.questionsHtml ? `${filled.caption}\n\n${filled.questionsHtml}` : filled.caption;
+  const questionsInside = withQuestions.length <= MAX_CAPTION;
+  const sent = await formBot.sendDocument(chatId, msg.message_id, filled.buffer, filled.fileName, questionsInside ? withQuestions : filled.caption, order?.buttons ?? []);
   // replying to this form with the list puts the order in, with this kertas kerja on it (orderChat.ts)
   if (sent) {
     const { error: srcError } = await db.from('bot_form_sources').insert({ chat_id: chatId, message_id: sent.messageId, file_id: file.file_id, file_name: fileName });
     if (srcError) console.error('bot_form_sources insert failed:', srcError.message);
   }
-  if (filled.questionsHtml) await formBot.reply(chatId, msg.message_id, filled.questionsHtml);
-  // then the list to submit it, the school and teacher it read already in (Sean, 2026-11-10)
+  if (filled.questionsHtml && !questionsInside) await formBot.reply(chatId, msg.message_id, filled.questionsHtml);
+  // the order chat waits for the list, the school and teacher it read already in (Sean, 2026-11-10); with the
+  // 📋 button the list is handed out only when pressed
   if (sent?.fileId) {
-    await startFromForm(msg, { fileId: sent.fileId, name: filled.fileName }, [{ fileId: file.file_id, name: fileName }], { sekolah: filled.front.sekolah, cikgu: filled.front.cikgu });
+    await startFromForm(msg, { fileId: sent.fileId, name: filled.fileName }, [{ fileId: file.file_id, name: fileName }], known,
+      order ? { sessionId: order.sessionId, messageId: sent.messageId } : undefined);
   }
 }
 
@@ -248,7 +258,7 @@ export async function fillForm(content: FileContent, fileName: string, notes: st
     `📄 <b>${esc(front.sekolah || fileName)}</b>`,
     `${t(`${total} plaque(s)`, `${total} 块`)}${sashes ? ` · ${t(`${sashes} selempang`, `${sashes} 条 selempang`)}` : ''}${read.cached || 'rules' in read ? ` · ${t('no AI cost', '没用 AI 费用')}` : ''}`,
     ...warn.map((w) => `⚠️ ${esc(w)}`),
-    t('👉 Check it, then reply to this file with the order list.', '👉 检查后，回复这份文件，贴上订单资料清单。'),
+    t('👉 Check it, then open it on the website or submit it here 👇', '👉 检查后，在网站打开，或直接在这里交单 👇'),
   ];
   const sheets = folded(placed.map(([sheet, n]) => `${esc(sheet)}: ${n}`).join('\n'));
   // a caption holds 1024 characters: the folded sheet list only when it fits whole (a cut tag breaks it)

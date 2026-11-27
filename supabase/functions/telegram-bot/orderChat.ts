@@ -687,6 +687,11 @@ export async function handleOrderButton(cb: Msg, aiAllowed: AiAllowed) {
   const salesman = await salesmanById(s.profile_id);
   if (!salesman) return formBot.answerButton(cb.id, t('Your Telegram is no longer linked.', '你的 Telegram 已经没有连接网站。'));
   await formBot.answerButton(cb.id);
+  // 📋 under the bot's form: the list, the 🌐 button kept (formOrderButtons)
+  if (m[2] === 'list' && s.pending.kind === 'list') {
+    const id = await formBot.ask(s.chat_id, msgId, listPromptHtml(await langOfProfile(db, s.profile_id), s.pending.known || {}));
+    return save(s, { pending: { ...s.pending, messageId: id } });
+  }
   await formBot.dropButtons(s.chat_id, msgId);
   const a = m[2];
   const p = s.pending;
@@ -824,20 +829,47 @@ export function listPromptHtml(lang: 'en' | 'zh', known: { sekolah?: string; cik
  * A FORM ANUGERAH with no list yet — sent by the salesman, or just filled by the bot (form.ts): kept as this
  * chat's order waiting for its list, and the list handed out. `kertasKerja`: the teacher's file it came from.
  */
-export async function startFromForm(msg: Msg, excel: FileRef, kertasKerja: FileRef[], known: { sekolah?: string; cikgu?: string } = {}) {
+export async function startFromForm(msg: Msg, excel: FileRef, kertasKerja: FileRef[], known: { sekolah?: string; cikgu?: string } = {}, sent?: FormSent) {
   const chatId = msg.chat.id;
   const userId = Number(msg.from?.id);
   const salesman = await orderSalesman(msg);
   const lang = salesman ? await langOfProfile(db, salesman.id) : 'zh';
-  const promptId = await formBot.ask(chatId, msg.message_id, listPromptHtml(lang, known));
+  // the bot's own form with its 📋 button (formOrderButtons): the list waits for that button
+  const promptId = salesman && sent ? sent.messageId : await formBot.ask(chatId, msg.message_id, listPromptHtml(lang, known));
   if (!salesman) {
     await formBot.ask(chatId, null, NOT_A_SALESMAN);
     return;
   }
   await db.from('bot_order_sessions').update({ state: 'cancelled' }).eq('chat_id', chatId).eq('telegram_user_id', userId).eq('state', 'open');
   const { error } = await db.from('bot_order_sessions').insert({
+    ...(sent ? { id: sent.sessionId } : {}),
     chat_id: chatId, telegram_user_id: userId, profile_id: salesman.id, details: {}, excel,
-    kertas_kerja: kertasKerja, kertas_asked: kertasKerja.length > 0, pending: { kind: 'list', messageId: promptId },
+    kertas_kerja: kertasKerja, kertas_asked: kertasKerja.length > 0, pending: { kind: 'list', messageId: promptId, known },
   });
   if (error) throw error;
+}
+
+type FormSent = { sessionId: string; messageId: number };
+
+/**
+ * The buttons under the bot's filled FORM ANUGERAH (Sean, 2026-11-27 — one message, no download / upload):
+ * 🌐 opens it on the website as an order draft (0114), 📋 hands out the list to submit it here. `sessionId`:
+ * the order chat startFromForm opens once the form is sent. Null when the sender isn't a salesman.
+ */
+export async function formOrderButtons(msg: Msg, bytes: Uint8Array, fileName: string, known: { sekolah?: string; cikgu?: string }) {
+  const salesman = await orderSalesman(msg);
+  if (!salesman) return null;
+  const t = tr(await langOfProfile(db, salesman.id));
+  const sessionId = crypto.randomUUID();
+  const rows: [string, string][][] = [];
+  const draftId = crypto.randomUUID();
+  const path = `${salesman.id}/draft-${draftId}.xlsx`;
+  const { error: upError } = await db.storage.from('order-imports').upload(path, bytes, { contentType: XLSX_TYPE });
+  const { error } = upError ? { error: upError } : await db.from('order_drafts').insert({
+    id: draftId, profile_id: salesman.id, fields: { sekolah: known.sekolah || '', picName: known.cikgu || '' }, file_path: path, file_name: fileName,
+  });
+  if (error) console.error('order draft for the website button failed:', error.message);
+  else rows.push([[t('🌐 Open on the website', '🌐 在网站打开'), `${SITE_URL}/#/order/step1?draft=${draftId}`]]);
+  rows.push([[t('📋 Submit here in Telegram', '📋 在 Telegram 交单'), `o:${sessionId}:list`]]);
+  return { sessionId, buttons: rows };
 }

@@ -80,8 +80,14 @@ export function telegramBot(token: string, opts: { onMigrate?: (oldId: number, n
   }
 
   // -> the sent message's id and its file's id (to be sent back to the bot later)
-  async function sendDocument(chatId: number | string, replyTo: number, bytes: Uint8Array, fileName: string, captionHtml: string): Promise<{ messageId: number; fileId: string } | null> {
+  // `buttons`: rows of [label, callback data or an https link]
+  async function sendDocument(chatId: number | string, replyTo: number, bytes: Uint8Array, fileName: string, captionHtml: string, buttons: [string, string][][] = []): Promise<{ messageId: number; fileId: string } | null> {
     const form = new FormData();
+    if (buttons.length) {
+      form.append('reply_markup', JSON.stringify({
+        inline_keyboard: buttons.map((row) => row.map(([text, to]) => (to.startsWith('https://') ? { text, url: to } : { text, callback_data: to }))),
+      }));
+    }
     form.append('chat_id', String(chatId));
     form.append('document', new Blob([bytes]), fileName);
     form.append('caption', captionHtml.slice(0, 1000)); // Telegram's caption limit is 1024
