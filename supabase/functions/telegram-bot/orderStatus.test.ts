@@ -13,6 +13,16 @@ Deno.test('an order number in any spelling', () => {
   same(readLookup('Ord0091'), { orderId: 'ORD-0091' });
 });
 
+Deno.test('asking to check, and an invoice number in any spelling', () => {
+  same(readLookup('查单'), { ask: true });
+  same(readLookup('Check'), { ask: true });
+  same(readLookup('DWI-26111377'), { invoice: '26111377' });
+  same(readLookup('dwi 26111377'), { invoice: '26111377' });
+  same(readLookup('26111377'), { invoice: '26111377' });
+  same(readLookup('PJI-26100177'), { invoice: '26100177' });
+  same(readLookup('DWI_26101021'), { invoice: '26101021' });
+});
+
 Deno.test('a school name gives its words; sentences and Chinese do not', () => {
   same(readLookup('selayang baru'), { words: ['SELAYANG', 'BARU'] });
   same(readLookup('SJKC Selayang Baru'), { words: ['SJKC', 'SELAYANG', 'BARU'] });

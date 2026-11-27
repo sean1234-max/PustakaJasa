@@ -1,5 +1,6 @@
-// "Where is my order?" in the form bot's private chat (Sean, 2026-11-27): a salesman types an order number
-// ("ORD-0553", "ord 553") or part of a school name, and gets each order's stage, Shipment Date and invoice —
+// "Where is my order?" in the form bot's private chat (Sean, 2026-11-27): a salesman types "查单" (the bot asks
+// the invoice number), an invoice number, an order number or part of a school name, and gets each order's
+// stage, Shipment Date and invoice —
 // read from the database, no AI. A salesman sees only his own orders (form.ts lookupOrders). Plain, no imports
 // but i18n's types — orderStatus.test.ts.
 
@@ -20,11 +21,22 @@ const esc = (t: unknown) => String(t ?? '').replace(/&/g, '&amp;').replace(/</g,
 const dayOf = (s: string | null) => (s && /^\d{4}-\d\d-\d\d/.test(s) ? s.slice(0, 10) : null);
 const showDate = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
 
-// What the salesman typed: an order number, else the school words to look for (null = not a lookup)
-export function readLookup(text: string): { orderId: string } | { words: string[] } | null {
+// What the salesman typed (Sean, 2026-11-27: "check an order" → the bot asks the invoice number first):
+//   "查单" / "check" / "semak" / "status"   → ask (the bot asks for the invoice number)
+//   "DWI-26111377", "dwi 26111377", "26111377", "PJI-26100177" → invoice: its digits (prefixes and
+//      separators vary in the database: DWI / PJI / PAI / DO, "-" / "_")
+//   "ORD-0553", "ord 553"                   → orderId
+//   a few words                             → words of a school name
+// null = not a lookup (a sentence, Chinese, …)
+export type Lookup = { ask: true } | { invoice: string } | { orderId: string } | { words: string[] };
+const ASK_RE = /^(查单|查单号|查订单|check|check order|semak|semak order|status|order status|cek|查)$/i;
+export function readLookup(text: string): Lookup | null {
   const t = String(text || '').trim();
-  const m = /^ord\s*-?\s*(\d{1,4})$/i.exec(t);
+  if (ASK_RE.test(t)) return { ask: true };
+  let m = /^ord\s*-?\s*(\d{1,4})$/i.exec(t);
   if (m) return { orderId: `ORD-${m[1].padStart(4, '0')}` };
+  m = /^(?:[a-z]{2,3}\s*[-_ ]?\s*)?(\d{5,9})$/i.exec(t);
+  if (m) return { invoice: m[1] };
   // a sentence isn't a school name: a few words, letters / digits only
   const words = t.toUpperCase().replace(/[^A-Z0-9() ]+/g, ' ').split(/\s+/).filter((w) => w.length >= 2 && !/^\(?[A-Z0-9]?\)?$/.test(w));
   if (!words.length || words.length > 6 || t.length > 60) return null;
