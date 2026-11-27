@@ -8,14 +8,15 @@
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { tr, langOfProfile } from './i18n.ts';
 import { dueReminders } from './remindPlan.ts';
+import { approvalButtons, approvalLines } from './approve.ts';
 
 const SITE_URL = Deno.env.get('SITE_URL') ?? 'https://pustaka-jasa.vercel.app';
 const esc = (t: unknown) => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-type Sender = { ask: (chatId: number | string, replyTo: number | null, html: string) => Promise<number | null> };
+type Sender = { ask: (chatId: number | string, replyTo: number | null, html: string, buttons?: [string, string][][]) => Promise<number | null> };
 
 export async function remindSalesman(db: SupabaseClient, bot: Sender, orderId: string, note: string) {
-  const { data: o } = await db.from('orders').select('id, sekolah, status, reviewed_at, salesman_id, sales').eq('id', orderId).maybeSingle();
+  const { data: o } = await db.from('orders').select('id, sekolah, status, reviewed_at, cancelled_at, salesman_id, sales, shipment_date, function_date, items, total_amount, parent_order_id, created_by_salesman, created_by_production').eq('id', orderId).maybeSingle();
   if (!o) return { error: `no order ${orderId}` };
   if (!o.salesman_id) return { error: `${orderId} has no salesman` };
   const { data: g } = await db.from('salesman_groups').select('chat_id').eq('profile_id', o.salesman_id).order('linked_at', { ascending: false }).limit(1).maybeSingle();
@@ -27,12 +28,13 @@ export async function remindSalesman(db: SupabaseClient, bot: Sender, orderId: s
   const waitingApproval = o.status === 'Reviewing Order' && o.reviewed_at;
   const html = [
     `🔔 ${who} ${order}`,
-    waitingApproval
-      ? t('✅ Reviewed — please <b>approve</b> it on the website.', '✅ 已经 review 好了 — 请上网站 <b>approve</b>。')
-      : t(`Status: ${esc(o.status)}`, `状态：${esc(o.status)}`),
+    ...(waitingApproval
+      // ✅ Approve right here (approve.ts, Sean 2026-11-27)
+      ? [t('✅ Reviewed — tap <b>Approve</b> (or approve it on the website).', '✅ 已经 review 好了 — 按 <b>Approve</b>（或上网站 approve）。'), ...approvalLines(o, t)]
+      : [t(`Status: ${esc(o.status)}`, `状态：${esc(o.status)}`)]),
     ...(note.trim() ? [`📝 Sean: ${esc(note.trim())}`] : []),
   ].join('\n');
-  const sent = await bot.ask(g.chat_id, null, html);
+  const sent = await bot.ask(g.chat_id, null, html, waitingApproval && !o.cancelled_at ? approvalButtons(o.id, t) : []);
   return sent ? { sent: `reminded ${o.sales || 'the salesman'} in his group about ${o.id}` } : { error: 'Telegram did not take the message (is ReviewAgent still in that group?)' };
 }
 

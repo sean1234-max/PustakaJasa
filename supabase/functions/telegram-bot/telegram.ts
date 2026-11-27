@@ -28,7 +28,12 @@ export function telegramBot(token: string, opts: { onMigrate?: (oldId: number, n
     if (!res.ok) console.error('Telegram sendMessage failed:', res.status, (await res.text()).slice(0, 300));
   }
 
-  // A message with buttons under it (rows of [label, callback data ≤ 64 bytes]); returns its message_id
+  // Rows of [label, callback data ≤ 64 bytes — or an https link, opened in the browser]
+  const keyboard = (buttons: [string, string][][]) => ({
+    inline_keyboard: buttons.map((row) => row.map(([text, to]) => (to.startsWith('https://') ? { text, url: to } : { text, callback_data: to }))),
+  });
+
+  // A message with buttons under it (see keyboard); returns its message_id
   async function ask(chatId: number | string, replyTo: number | null, html: string, buttons: [string, string][][] = []): Promise<number | null> {
     const text = html.length > MAX_MESSAGE_CHARS ? `${html.slice(0, MAX_MESSAGE_CHARS)}\n…` : html;
     const send = (to: number | string) => fetch(`${api}/sendMessage`, {
@@ -37,7 +42,7 @@ export function telegramBot(token: string, opts: { onMigrate?: (oldId: number, n
       body: JSON.stringify({
         chat_id: to, text, parse_mode: 'HTML', disable_web_page_preview: true,
         ...(replyTo ? { reply_parameters: { message_id: replyTo, allow_sending_without_reply: true } } : {}),
-        ...(buttons.length ? { reply_markup: { inline_keyboard: buttons.map((row) => row.map(([label, data]) => ({ text: label, callback_data: data }))) } } : {}),
+        ...(buttons.length ? { reply_markup: keyboard(buttons) } : {}),
       }),
     });
     let res = await send(chatId);
@@ -84,9 +89,7 @@ export function telegramBot(token: string, opts: { onMigrate?: (oldId: number, n
   async function sendDocument(chatId: number | string, replyTo: number, bytes: Uint8Array, fileName: string, captionHtml: string, buttons: [string, string][][] = []): Promise<{ messageId: number; fileId: string } | null> {
     const form = new FormData();
     if (buttons.length) {
-      form.append('reply_markup', JSON.stringify({
-        inline_keyboard: buttons.map((row) => row.map(([text, to]) => (to.startsWith('https://') ? { text, url: to } : { text, callback_data: to }))),
-      }));
+      form.append('reply_markup', JSON.stringify(keyboard(buttons)));
     }
     form.append('chat_id', String(chatId));
     form.append('document', new Blob([bytes]), fileName);

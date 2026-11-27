@@ -25,6 +25,7 @@ import { db, SUPABASE_URL } from './db.ts';
 import { esc, telegramBot, MAX_FILE_BYTES } from './telegram.ts';
 import { fillForm, formBot, handleFormMessage } from './form.ts';
 import { handleOrderButton } from './orderChat.ts';
+import { handleApproveButton, handleApprovalReply } from './approve.ts';
 import { runReviewJob, handleSalesmanGroup, handleReviewButton, groupMoved } from './autoReview.ts';
 import { remindSalesman, runApprovalReminders } from './remind.ts';
 import { readFile, type FileContent } from './files.ts';
@@ -294,7 +295,10 @@ Deno.serve(async (req) => {
   const update = await req.json().catch(() => null);
   // the review bot's buttons: a salesman's answers to a review (autoReview.ts)
   if (kind === 'review' && update?.callback_query) {
-    const work = handleReviewButton(update.callback_query, bot).catch((err) => console.error('telegram-bot (review button) failed:', err));
+    // ✅ Approve / CONFIRM / Google Form under an approval reminder (approve.ts), else a review's answer
+    const cb = update.callback_query;
+    const work = (/^ap[cng]?:/.test(String(cb.data || '')) ? handleApproveButton(cb, bot) : handleReviewButton(cb, bot))
+      .catch((err) => console.error('telegram-bot (review button) failed:', err));
     // @ts-ignore EdgeRuntime is provided by the Supabase Edge runtime
     if (typeof EdgeRuntime !== 'undefined') EdgeRuntime.waitUntil(work); else await work;
     return new Response('ok');
@@ -314,7 +318,9 @@ Deno.serve(async (req) => {
   const msg = update?.message;
   // the review bot in a salesman's own group: "link", and his replies to its reviews (autoReview.ts)
   if (msg && kind === 'review' && String(msg.chat?.id) !== CHAT_ID && msg.chat?.type !== 'private') {
-    const work = handleSalesmanGroup(msg, bot, BOT_NAME).catch((err) => console.error('telegram-bot (salesman group) failed:', err));
+    // his reply to the Google Form question after approving (approve.ts) first
+    const work = (async () => { if (!(await handleApprovalReply(msg, bot))) await handleSalesmanGroup(msg, bot, BOT_NAME); })()
+      .catch((err) => console.error('telegram-bot (salesman group) failed:', err));
     // @ts-ignore EdgeRuntime is provided by the Supabase Edge runtime
     if (typeof EdgeRuntime !== 'undefined') EdgeRuntime.waitUntil(work); else await work;
     return new Response('ok');

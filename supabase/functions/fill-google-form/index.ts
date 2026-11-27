@@ -130,11 +130,21 @@ async function retryAll(admin: any) {
   return { status: 'retried', done };
 }
 
+const cleanNote = (v: unknown) => String(v || '').replace(/[\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, MAX_NOTE);
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   let body: Record<string, unknown> = {};
   try { body = await req.json(); } catch { /* no body */ }
   if (body.action === 'retry') return json(await retryAll(createClient(SUPABASE_URL, SECRET_KEY)));
+  // ReviewAgent after a salesman approved in Telegram (telegram-bot approve.ts, Sean 2026-11-27): the same fill
+  // as his website popup; only the bot knows the secret key it sends
+  if (body.action === 'bot') {
+    if (req.headers.get('x-job-key') !== SECRET_KEY) return json({ error: 'forbidden' }, 403);
+    const botOrderId = String(body.orderId || '');
+    if (!/^ORD-\d+$/.test(botOrderId)) return json({ error: 'Bad orderId.' }, 400);
+    return json(await fillForm(createClient(SUPABASE_URL, SECRET_KEY), botOrderId, cleanNote(body.note), false));
+  }
   const authHeader = req.headers.get('Authorization');
   if (!authHeader) return json({ error: 'Missing Authorization header.' }, 401);
   const caller = createClient(SUPABASE_URL, PUBLISHABLE_KEY, { global: { headers: { Authorization: authHeader } } });
@@ -153,7 +163,7 @@ Deno.serve(async (req) => {
   const orderId = String(body.orderId || '');
   const force = body.force === true; // "YES, FILL AGAIN" after a look-alike row was found
   // the salesman's words after "<school> (W) -" (GoogleFormSchoolModal)
-  const note = String(body.note || '').replace(/[\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, MAX_NOTE);
+  const note = cleanNote(body.note);
   if (!/^ORD-\d+$/.test(orderId)) return json({ error: 'Bad orderId.' }, 400);
   return json(await fillForm(admin, orderId, note, force));
 });
