@@ -29,6 +29,7 @@ import { logUsage } from './usage.ts';
 import { saveFormFill, tagFormFill } from './formFill.ts';
 import JSZip from 'npm:jszip@3.10.1';
 import { recordMiss } from './ruleMiss.ts';
+import { readLookup, orderStatusHtml, FOUND_FIELDS, MAX_FOUND, type FoundOrder } from './orderStatus.ts';
 // @ts-ignore a plain JS bundle
 import { fillOrderTemplate, loadDocx, readWordingTables } from './form.bundle.js';
 
@@ -38,8 +39,8 @@ export { formBot };
 
 const LIST_SAMPLE = 'SEKOLAH NAMA:\nCIKGU NAMA:\nPHONE NUMBER:\nKETUA PANITIA:\nTERMS:\nSHIPMENT DATE:\nFUNCTION DATE:';
 const help = (lang: Lang) => tr(lang)(
-  `1️⃣ Send the teacher's kertas kerja → I fill FORM ANUGERAH.\n2️⃣ Reply to the form with this list → I check it and you tap Submit:\n<code>${LIST_SAMPLE}</code>\nLanguage: /lang zh`,
-  `1️⃣ 发老师的 kertas kerja 给我 → 我填好 FORM ANUGERAH。\n2️⃣ 回复那份 Excel，贴上这个清单 → 我检查后，你按 Submit：\n<code>${LIST_SAMPLE}</code>\nLanguage: /lang en`,
+  `1️⃣ Send the teacher's kertas kerja → I fill FORM ANUGERAH.\n2️⃣ Reply to the form with this list → I check it and you tap Submit:\n<code>${LIST_SAMPLE}</code>\n🔎 Type an order number (ORD-0553) or a school name → where your order is.\nLanguage: /lang zh`,
+  `1️⃣ 发老师的 kertas kerja 给我 → 我填好 FORM ANUGERAH。\n2️⃣ 回复那份 Excel，贴上这个清单 → 我检查后，你按 Submit：\n<code>${LIST_SAMPLE}</code>\n🔎 打单号（ORD-0553）或学校名 → 查你的单到哪里了。\nLanguage: /lang en`,
 );
 const MAX_CAPTION = 1000; // Telegram's caption limit is 1024 (sendDocument cuts at 1000)
 const LANG_RE = /^\s*\/lang(?:@\w+)?\s+(en|zh)\s*$/i;
@@ -99,7 +100,9 @@ async function replyLang(msg: Msg): Promise<Lang> {
 export async function handleFormMessage(msg: Msg, aiAllowed: () => Promise<unknown>) {
   const text = String(msg.text ?? '');
   const productionGroup = msg.chat?.type !== 'private' && GROUPS.includes(String(msg.chat?.id));
-  if (!msg.from?.id || productionGroup || LINK_CODE_RE.test(text) || LANG_RE.test(text)) return handleForm(msg, aiAllowed);
+  // an order number in a private chat (orderStatus.ts) is answered at once, too
+  const orderNumber = msg.chat?.type === 'private' && !hasFile(msg) && (readLookup(text) as { orderId?: string } | null)?.orderId;
+  if (!msg.from?.id || productionGroup || LINK_CODE_RE.test(text) || LANG_RE.test(text) || orderNumber) return handleForm(msg, aiAllowed);
   // "Reading message…" at once (Sean, 2026-11-26: a quiet bot looks like it didn't get it) — not for a group's
   // own chatter, which the bot doesn't answer
   const answered = msg.chat?.type === 'private' || hasFile(msg) || msg.reply_to_message?.from?.is_bot === true;
@@ -156,7 +159,7 @@ export async function handleForm(msg: Msg, aiAllowed: () => Promise<unknown>) {
   const t = tr(lang);
   const say = (html: string) => formBot.reply(chatId, msg.message_id, html);
   if (!(await allowed(msg))) return say('Sorry, this bot is only for Pustaka Jasa salesmen. / 这个 bot 只给 Pustaka Jasa 的 salesman 用。');
-  if (!file) return say(help(lang));
+  if (!file) return (await lookupOrders(msg, lang)) || say(help(lang));
   if ((file.file_size || 0) > MAX_FILE_BYTES) return say(t('❌ Too big (20 MB max).', '❌ 文件太大（最多 20 MB）。'));
   const fileName = doc?.file_name || 'photo.jpg';
   const bytes = await formBot.downloadFile(file.file_id);
@@ -189,6 +192,36 @@ export async function handleForm(msg: Msg, aiAllowed: () => Promise<unknown>) {
     await startFromForm(msg, { fileId: sent.fileId, name: filled.fileName }, [{ fileId: file.file_id, name: fileName }], known,
       order ? { sessionId: order.sessionId, messageId: sent.messageId } : undefined);
   }
+}
+
+// "Where is my order?" (orderStatus.ts, Sean 2026-11-27): in a private chat, an order number or school words →
+// each order's stage, Shipment Date and invoice. A salesman sees his own orders; Production (in the group,
+// no Telegram link) all. False: not a lookup, or school words that match nothing (then the help).
+async function lookupOrders(msg: Msg, lang: Lang) {
+  if (msg.chat?.type !== 'private') return false;
+  const q = readLookup(String(msg.text ?? ''));
+  if (!q) return false;
+  const t = tr(lang);
+  const { data: link } = await db.from('telegram_links').select('profile_id').eq('telegram_user_id', Number(msg.from?.id)).maybeSingle();
+  let query = db.from('orders').select(FOUND_FIELDS).order('created_at', { ascending: false }).limit(MAX_FOUND + 1);
+  if (link) query = query.eq('salesman_id', link.profile_id);
+  if ('orderId' in q) query = query.eq('id', q.orderId);
+  else for (const w of q.words) query = query.ilike('sekolah', `%${w}%`);
+  const { data, error } = await query;
+  if (error) throw error;
+  const found = (data || []) as FoundOrder[];
+  if (!found.length) {
+    if (!('orderId' in q)) return false;
+    await formBot.reply(msg.chat.id, msg.message_id, link
+      ? t(`No ${q.orderId} among your orders.`, `你的单里没有 ${q.orderId}。`)
+      : t(`No ${q.orderId}.`, `找不到 ${q.orderId}。`));
+    return true;
+  }
+  const page = link ? 'sales' : 'production';
+  const blocks = found.slice(0, MAX_FOUND).map((o) => orderStatusHtml(o, lang, `${SITE_URL}/#/${page}/orders/${encodeURIComponent(o.id)}`));
+  const more = found.length > MAX_FOUND ? [t(`… more — type more of the school name, or the order number.`, `… 还有更多 — 打完整一点的学校名，或单号。`)] : [];
+  await formBot.reply(msg.chat.id, msg.message_id, [...blocks, ...more].join('\n\n'));
+  return true;
 }
 
 // The website's FORM ANUGERAH (its own sheets), not a teacher's kertas kerja that happens to be an Excel
