@@ -13,15 +13,19 @@ import { isCrystalCode } from '../utils/exportCsv';
 import { useAppState } from '../state/useAppState';
 import { buildCategoryCartItems } from '../state/categoryCartItems';
 import {
-  ACTIVE_CATEGORIES, CUSTOM_MATRIX_LABEL_SUFFIX, filterHiddenPlakCatalog, getStockStatus, isDynamicCategoryKey, resolveCategory, nextFreeCategoryKey,
+  ACTIVE_CATEGORIES, CUSTOM_MATRIX_LABEL_SUFFIX, filterHiddenPlakCatalog, flattenPlakCatalog, getStockStatus, isDynamicCategoryKey, resolveCategory, nextFreeCategoryKey,
 } from '../data/catalog';
 import { computeBlocks, noopUpdaters } from '../utils/computeBlocks';
 import { createDraftUpdaters } from '../utils/draftUpdaters';
 import { checkEngravingText } from '../lib/grammarCheckApi';
 import { formFillOfFile, readingsOf } from '../lib/formFillApi';
 import { aiPlaquesOf } from '../utils/reviewChecks';
-import { checkAgainstReading, issueKey, MIN_READING_COVERAGE, readingCoverage } from '../utils/kertasKerjaCheck';
-import { replaceWord } from '../utils/typoCheck';
+import {
+  checkAgainstReading, checkLines, indexLines, issueKey, linesCoverage, MIN_LINES_COVERAGE, MIN_READING_COVERAGE, readingCoverage, WRONG_FILE_ISSUE,
+} from '../utils/kertasKerjaCheck';
+import { linesOfAll, linesOfKertasKerja } from '../lib/kertasKerjaLinesApi';
+import { replacePhrase, selfCheckIssues } from '../utils/orderSelfCheck';
+import { tagImportFiles } from '../utils/importFiles';
 import { canUseAiReader } from '../lib/fileReadApi';
 import { downloadBinaryFile } from '../utils/downloadBlob';
 import { draftPlaques } from '../utils/draftForm';
@@ -536,7 +540,7 @@ export default function NewOrderStep2() {
         : { ...it, type: 'ai', blockKey: line.blockKey, where: line.where, targets: [line.target] });
     });
     let kkIssues = [];
-    if (state.formFillIds?.length) {
+    if (state.formFillIds?.length || state.kertasKerjaFiles?.length || state.importFiles?.length) {
       setChecking(true);
       try {
         kkIssues = await kertasKerjaIssuesFor(catKeys, lines);
@@ -545,7 +549,13 @@ export default function NewOrderStep2() {
       }
       setChecking(false);
     }
-    const issues = [...extras, ...grouped.values(), ...kkIssues];
+    let ownIssues = [];
+    try {
+      ownIssues = websiteIssuesFor(catKeys, lines);
+    } catch (err) {
+      console.error('website check failed:', err);
+    }
+    const issues = [...extras, ...grouped.values(), ...kkIssues, ...ownIssues];
     if (issues.length > 0) {
       setPendingCheck({ issues, proceed });
     } else {
@@ -557,32 +567,61 @@ export default function NewOrderStep2() {
     }
   };
 
-  // The plaques against the form bot's reading of the kertas kerja (kertasKerjaCheck.js — plain code, no AI),
-  // for a draft imported from a FORM ANUGERAH the bot filled. One entry per question across the blocks; an
-  // answer the salesman gave for a block (::kkOk) isn't asked again. A spelling fix can go into the lines
-  // (Reference Sample, rows) and the MP subjects that have the word.
+  // The plaques against the form bot's reading of the kertas kerja, the salesman's own kertas kerja and the
+  // uploaded order file each plaque was read from (kertasKerjaCheck.js — plain code, no AI). One entry per
+  // question across the blocks; an answer the salesman gave for a block (::kkOk) isn't asked again. A
+  // spelling fix can go into the lines (Reference Sample, rows) and the MP subjects that have the word.
   const kkOkOf = (blockKey) => (state.lineValues[`${blockKey}::kkOk`] || '').split(',').filter(Boolean);
   const hasWord = (text, word) => new RegExp(`(?<![A-Z])${word}(?![A-Z])`, 'i').test(String(text || ''));
   const kertasKerjaIssuesFor = async (catKeys, lines) => {
-    const readings = await readingsOf(state.formFillIds);
-    if (!readings.length) return [];
+    // each plaque tagged with the upload it was read from (importFiles.js) — a typed plaque has none
+    const items = tagImportFiles(catKeys.flatMap((catKey) => buildCategoryCartItems(draftForCheck, catKey).items || []), state);
+    const importPaths = [...new Set(items.map((it) => it.importFile).filter(Boolean))];
+    const importFile = (path) => (state.importFiles || []).find((f) => f.path === path) || { path, name: path };
+    // the form bot's reading of its kertas kerja, the lines of the salesman's own and of the order files
+    // (kertasKerjaLinesApi.js)
+    const [readings, kkLines, importLines] = await Promise.all([
+      // the bot's reading failing mustn't take the file checks with it
+      readingsOf(state.formFillIds).catch((err) => { console.error('form fill readings failed:', err); return []; }),
+      linesOfAll(state.kertasKerjaFiles),
+      Promise.all(importPaths.map((path) => linesOfKertasKerja(importFile(path)))),
+    ]);
     const known = [state.sekolah, state.picName];
-    const items = catKeys.flatMap((catKey) => buildCategoryCartItems(draftForCheck, catKey).items || []);
-    // the bot's Excel replaced by another file: its reading no longer fits these plaques — no questions
-    if (readingCoverage(aiPlaquesOf({ schoolLanguage: state.schoolLanguage, items }), readings) < MIN_READING_COVERAGE) return [];
+    const notOnPlaque = flattenPlakCatalog(state.plakCatalog).map((p) => p.code);
+    const importIndex = new Map(importPaths.map((path, i) => [path, importLines[i]?.length ? indexLines(importLines[i], known, notOnPlaque) : null]));
+    if (!readings.length && !kkLines.length && ![...importIndex.values()].some(Boolean)) return [];
+    const plaquesOf = (its) => aiPlaquesOf({ schoolLanguage: state.schoolLanguage, items: its });
+    // judged on the whole order (these plaques and the cart's), so Add and Add All agree about a file
+    const orderPlaques = plaquesOf([...items, ...(state.cart || [])]);
+    const kkIndex = kkLines.length ? indexLines(kkLines, known, notOnPlaque) : null;
+    // a reading that no longer fits these plaques (the bot's Excel replaced by another file): not used
+    const useReadings = readings.length > 0 && readingCoverage(orderPlaques, readings) >= MIN_READING_COVERAGE;
+    // the salesman's kertas kerja with little of the order in it: one question about the file, not dozens of
+    // words — and once he says it is the right file, its words aren't checked (they would all differ)
+    const wrongFile = !!kkIndex && linesCoverage(orderPlaques, kkIndex) < MIN_LINES_COVERAGE;
     const grouped = new Map();
+    const add = (i, blockKey) => {
+      const key = issueKey(i);
+      const prev = grouped.get(key);
+      grouped.set(key, prev
+        ? { ...prev, count: prev.count + i.count, blockKeys: [...new Set([...prev.blockKeys, blockKey])] }
+        : { ...i, type: 'kk', blockKeys: [blockKey], sheetLabel: i.plaque?.sheet || 'Order' });
+    };
     items.forEach((item) => {
       const blockKey = `${item.categoryKey}::${item.blockIdx ?? 0}`;
       const answered = kkOkOf(blockKey);
-      checkAgainstReading(aiPlaquesOf({ schoolLanguage: state.schoolLanguage, items: [item] }), readings, known)
-        .filter((i) => !answered.includes(issueKey(i)))
-        .forEach((i) => {
-          const key = issueKey(i);
-          const prev = grouped.get(key);
-          grouped.set(key, prev
-            ? { ...prev, count: prev.count + i.count, blockKeys: [...new Set([...prev.blockKeys, blockKey])] }
-            : { ...i, type: 'kk', blockKeys: [blockKey], sheetLabel: `${i.plaque.sheet} — kertas kerja check` });
-        });
+      const plaques = plaquesOf([item]);
+      if (wrongFile && plaques.length && !answered.includes(issueKey(WRONG_FILE_ISSUE))) add({ ...WRONG_FILE_ISSUE, count: 0 }, blockKey);
+      // the same question from the order file, the bot's reading and the kertas kerja counts once for this
+      // item — asked as the kertas kerja's (the teacher's) where it has it. The order file is the source of
+      // these plaques: what differs is an import loss or a change made here, never "the wrong file".
+      const fileIndex = importIndex.get(item.importFile);
+      const own = new Map([
+        ...(fileIndex ? checkLines(plaques, fileIndex, { wholePlaque: true }).map((i) => ({ ...i, source: 'file' })) : []),
+        ...(useReadings ? checkAgainstReading(plaques, readings, known) : []),
+        ...(kkIndex && !wrongFile ? checkLines(plaques, kkIndex) : []),
+      ].map((i) => [issueKey(i), i]));
+      [...own.values()].filter((i) => !answered.includes(issueKey(i))).forEach((i) => add(i, blockKey));
     });
     const subjectTargets = (i) => Object.entries(state.matrixValues || {})
       .filter(([k, v]) => k.endsWith(CUSTOM_MATRIX_LABEL_SUFFIX) && i.blockKeys.some((b) => k.startsWith(`${b.split('::')[0]}::`)) && hasWord(v, i.word))
@@ -594,6 +633,16 @@ export default function NewOrderStep2() {
         ...subjectTargets(i),
       ],
     }));
+  };
+
+  // The website's own questions (orderSelfCheck.js): a joined / split word (MATAPELAJARAN), the same plaque on
+  // two rows of a sheet (TAHAP 2 twice, no TAHAP 1) — Sean, 2026-11-27. Answers kept like the kertas kerja's.
+  const websiteIssuesFor = (catKeys, lines) => {
+    const items = catKeys.flatMap((catKey) => buildCategoryCartItems(draftForCheck, catKey).items || []);
+    const plaquesOf = (its) => aiPlaquesOf({ schoolLanguage: state.schoolLanguage, items: its });
+    return selfCheckIssues({ items, lines, rowsByBlock: state.rowsByBlock, plaquesOf })
+      .filter((i) => !i.blockKeys.every((b) => kkOkOf(b).includes(issueKey(i))))
+      .map((i) => ({ ...i, type: 'kk', sheetLabel: i.plaque?.sheet || 'Order' }));
   };
 
   const handleAddCategory = () => {
@@ -658,13 +707,16 @@ export default function NewOrderStep2() {
     if (!words.includes(word)) updaters.onLine(key, [...words, word].join(','));
     resolveIssue(issue);
   };
-  // The kertas kerja's spelling, everywhere the word is in this question's blocks
+  // The file's spelling (or the website's fix: MATA PELAJARAN, TAHAP 1 on the later row), everywhere the
+  // question's targets have it
   const applyKkFix = (issue) => {
+    const from = issue.fixFrom ?? issue.word;
+    const to = issue.fixTo ?? issue.kk;
     issue.targets.forEach((t) => {
-      if (t.matrixKey) { updaters.onMatrix(t.matrixKey, replaceWord(state.matrixValues[t.matrixKey], issue.word, issue.kk)); return; }
-      if (t.lineKey) { updaters.onLine(t.lineKey, replaceWord(state.lineValues[t.lineKey], issue.word, issue.kk)); return; }
+      if (t.matrixKey) { updaters.onMatrix(t.matrixKey, replacePhrase(state.matrixValues[t.matrixKey], from, to)); return; }
+      if (t.lineKey) { updaters.onLine(t.lineKey, replacePhrase(state.lineValues[t.lineKey], from, to)); return; }
       const row = (state.rowsByBlock[t.rowsKey] || []).find((r) => r.id === t.rowId);
-      if (row) updaters.onRowField(t.rowsKey, t.rowId, t.field, replaceWord(row[t.field], issue.word, issue.kk));
+      if (row) updaters.onRowField(t.rowsKey, t.rowId, t.field, replacePhrase(row[t.field], from, to));
     });
     resolveIssue(issue);
   };
@@ -920,11 +972,10 @@ export default function NewOrderStep2() {
         {pendingCheck && (
           <div className="confirm-panel" style={{ marginTop: 'var(--space-5)' }}>
             <div className="confirm-panel-title">
-              Please check — {pendingCheck.issues.length === 0 ? 'all done' : `${pendingCheck.issues.length} thing(s) to answer`}
-              <span className="confirm-panel-count">AI</span>
+              {pendingCheck.issues.length === 0 ? 'All answered' : `Check before adding — ${pendingCheck.issues.length} left`}
             </div>
             <p className="hint-text" style={{ margin: '0 0 var(--space-3)' }}>
-              This text gets engraved on the plaque. Answer every item below before adding to cart.
+              It is engraved exactly as written. Answer each one to add to cart.
             </p>
             {pendingCheck.issues.map((issue, k) => (
               <div key={k} className="confirm-item">
@@ -933,23 +984,23 @@ export default function NewOrderStep2() {
                   <KertasKerjaIssue issue={issue} onFix={() => applyKkFix(issue)} onKeep={() => keepKk(issue)} />
                 ) : issue.type === 'extra' ? (
                   <>
-                    <p className="confirm-item-q" style={{ margin: 0 }}>
-                      <strong>{issue.text}</strong> — not in the Reference Sample. Engrave it on this plaque?
+                    <p className="confirm-item-q" style={{ margin: 0, fontSize: 14 }}>
+                      Engrave <strong>{issue.text}</strong> too?
                     </p>
+                    <p className="hint-text" style={{ margin: '2px 0 0' }}>It isn&apos;t in the Reference Sample. To remove it, go Back to editing.</p>
                     <div className="confirm-item-opts">
-                      <button type="button" className="btn btn-ghost" onClick={() => resolveIssue(issue)}>Yes, keep it</button>
+                      <button type="button" className="btn btn-secondary" onClick={() => resolveIssue(issue)}>Yes, engrave it</button>
                     </div>
                   </>
                 ) : (
                   <>
-                    <p className="confirm-item-q" style={{ margin: 0 }}>
-                      Which one is right?
-                      <span className="hint-text" style={{ marginLeft: 8 }}>({issue.kind})</span>
+                    <p className="confirm-item-q" style={{ margin: 0, fontSize: 14 }}>
+                      Which spelling: <strong>{issue.suggestion}</strong> or <strong>{issue.original}</strong>?
                     </p>
-                    {issue.note && <p className="hint-text" style={{ margin: '2px 0 6px' }}>{issue.note}</p>}
-                    <div className="confirm-item-opts">
-                      <button type="button" className="btn btn-ghost" onClick={() => keepWord(issue)}>1. {issue.original}</button>
-                      <button type="button" className="btn btn-ghost" onClick={() => applyFix(issue)}>2. {issue.suggestion}</button>
+                    {issue.note && <p className="hint-text" style={{ margin: '2px 0 0' }}>{issue.note}</p>}
+                    <div className="confirm-item-opts" style={{ marginTop: 6 }}>
+                      <button type="button" className="btn btn-secondary" onClick={() => applyFix(issue)}>{issue.suggestion}</button>
+                      <button type="button" className="btn btn-secondary" onClick={() => keepWord(issue)}>{issue.original}</button>
                     </div>
                   </>
                 )}

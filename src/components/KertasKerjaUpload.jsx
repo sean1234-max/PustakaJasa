@@ -2,8 +2,15 @@ import { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useAppState } from '../state/useAppState';
 import { uploadKertasKerjaFile } from '../lib/storageApi';
+import { linesOfKertasKerja, readUploadedKertasKerja } from '../lib/kertasKerjaLinesApi';
 
 export const KERTAS_KERJA_ANCHOR = 'kertas-kerja';
+
+// why Add to Cart can't check against this file (kertasKerjaText.js reads .docx / .xlsx / text .pdf)
+const unreadableWhy = (name) => (/\.(jpe?g|png|heic|webp)$/i.test(name) ? 'A photo: the website can\'t read its words'
+  : /\.pdf$/i.test(name) ? 'A scanned PDF (or it couldn\'t be opened): no words to read'
+  : /\.(docx|xlsx)$/i.test(name) ? 'The website couldn\'t read this file'
+  : 'This file type can\'t be read (save it as .docx, .xlsx or .pdf)');
 
 // The teacher's kertas kerja (Sean, 2026-11-05): any file, several at once, uploaded under the
 // Import Order File box on New Order (stateKey 'kertasKerjaFiles') and Add On ('addOnKertasKerja').
@@ -15,6 +22,16 @@ export default function KertasKerjaUpload({ stateKey }) {
   const [dragOver, setDragOver] = useState(false);
   const [error, setError] = useState('');
   const files = state[stateKey] || [];
+  // which files Add to Cart can check the order against (a scan or a photo has no text to read)
+  const [readable, setReadable] = useState({});
+  useEffect(() => {
+    let live = true;
+    files.filter((f) => !f.path.startsWith('form-bot/') && !(f.path in readable)).forEach((f) => {
+      linesOfKertasKerja(f).then((lines) => { if (live) setReadable((r) => ({ ...r, [f.path]: !!lines })); });
+    });
+    return () => { live = false; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [files]);
   // Cart / Add On's "Yes, I have it" lands here (navigate(…, { state: { scrollTo: KERTAS_KERJA_ANCHOR } }))
   const scrollHere = useLocation().state?.scrollTo === KERTAS_KERJA_ANCHOR;
   const boxRef = useRef(null);
@@ -31,6 +48,7 @@ export default function KertasKerjaUpload({ stateKey }) {
     for (const file of picked) {
       try {
         const res = await uploadKertasKerjaFile(file);
+        readUploadedKertasKerja(res.path, file);
         patch((st) => ({ [stateKey]: [...(st[stateKey] || []), res] }));
       } catch (err) {
         failed.push(err.message);
@@ -67,7 +85,14 @@ export default function KertasKerjaUpload({ stateKey }) {
         <ul style={{ listStyle: 'none', margin: '6px 0 0', padding: 0 }}>
           {files.map((f) => (
             <li key={f.path} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.9em', fontWeight: 600, color: '#1f8a3b' }}>
-              <span style={{ flex: 1, overflowWrap: 'anywhere' }}>✓ {f.name}</span>
+              <span style={{ flex: 1, overflowWrap: 'anywhere' }}>
+                ✓ {f.name}
+                {readable[f.path] === false && (
+                  <span className="hint-text" style={{ display: 'block', fontWeight: 400, color: '#8a6d1f' }}>
+                    {unreadableWhy(f.name)} — so the order isn&apos;t checked against it. Production still sees it.
+                  </span>
+                )}
+              </span>
               <button type="button" className="btn btn-ghost" style={{ padding: '0 8px' }} aria-label={`Remove ${f.name}`} onClick={() => remove(f.path)}>✕</button>
             </li>
           ))}

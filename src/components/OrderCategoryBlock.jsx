@@ -352,7 +352,7 @@ export default function OrderCategoryBlock({ blk, editable, plakOptions, hideEmp
       )}
       {blk.kkOk?.length > 0 && (
         <p className="typo-hint" style={{ marginBottom: 'var(--space-3)' }}>
-          Different from the teacher&apos;s kertas kerja, confirmed by the salesman as wanted: {blk.kkOk.map(kkOkLabel).join('; ')}.
+          Asked at Add to Cart (against the teacher&apos;s files, or the website&apos;s own check) and confirmed as wanted: {blk.kkOk.map(kkOkLabel).join('; ')}.
         </p>
       )}
       {showSharedSections && (

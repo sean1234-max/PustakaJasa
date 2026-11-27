@@ -39,6 +39,8 @@ const EVENT_WORDS = [
   'SRI', // TAMAN SRI ANDALAS — not SERI (Sean, 2026-10-27)
   // DISAPLIN TERBAIK reached ORD-0567 unflagged; EMAS was flagged as KEMAS (Sean, 2026-11-19)
   'DISIPLIN', 'EMAS', 'PERAK', 'GANGSA',
+  // one word, not MATA + HARI (orderSelfCheck.js asks about a word made of two listed words)
+  'MATAHARI',
 ];
 
 export const TYPO_CHECK_DICTIONARY = [...new Set([...SUBJECT_WORDS, ...EVENT_WORDS])];

@@ -126,8 +126,11 @@ export default function Cart() {
   // Teacher and salesman answer in a full-screen dialog (Sean, 2026-10-15 / 10-17); only a
   // salesman may submit first and confirm the artwork later (Sales order Summary → Confirm Artwork).
   const [crystalModal, setCrystalModal] = useState(false);
-  // no kertas kerja uploaded: asked first (KertasKerjaAskModal), then the crystal / duplicate checks
+  // no kertas kerja uploaded: asked first (KertasKerjaAskModal), then the crystal / duplicate checks. A salesman's
+  // new order can't go without one (Sean, 2026-11-26) — Add to Cart checks the plaques against it.
   const [askKertasKerja, setAskKertasKerja] = useState(false);
+  // …unless the order came from an uploaded file: Add to Cart compared the plaques with it (Sean, 2026-11-27)
+  const kertasKerjaRequired = isSalesman && !editing && orderImportFields(state).importFiles.length === 0;
   const startSubmit = () => (hasCrystal ? setCrystalModal(true) : handleSubmit());
   const [crystalBusy, setCrystalBusy] = useState(false);
   // artwork: true = confirmed, false = later (salesman), 'manual' = a designer draws it (Production)
@@ -345,7 +348,7 @@ export default function Cart() {
         <KertasKerjaAskModal
           open={askKertasKerja} busy={submitting}
           onYes={() => { setAskKertasKerja(false); restoreCartToDraft(); navigate('/order/step2', { state: { scrollTo: KERTAS_KERJA_ANCHOR } }); }}
-          onNo={() => { setAskKertasKerja(false); startSubmit(); }}
+          onNo={kertasKerjaRequired ? null : () => { setAskKertasKerja(false); startSubmit(); }}
           onClose={() => setAskKertasKerja(false)}
         />
         <CrystalConfirmModal

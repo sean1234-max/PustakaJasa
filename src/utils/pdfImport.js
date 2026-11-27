@@ -16,7 +16,7 @@ import { readPdfHeadingWithAi, readPdfPlaquesWithAi, readPdfWithAi } from '../li
 let pdfjsPromise = null;
 // pdf.js is large, so it is only loaded the first time a PDF is uploaded.
 // The legacy build runs on older browsers (school PCs, older iPads).
-function loadPdfjs() {
+export function loadPdfjs() {
   if (!pdfjsPromise) {
     pdfjsPromise = Promise.all([
       import('pdfjs-dist/legacy/build/pdf.min.mjs'),

@@ -1,5 +1,5 @@
 import { wordsOf } from './sourceCheck';
-import { levenshtein } from './typoCheck';
+import { getTypoDictionary, levenshtein } from './typoCheck';
 
 // The order's plaques against the form bot's reading of the teacher's kertas kerja (Sean, 2026-11-26).
 // The bot already paid for the reading (form_reads); this is plain code, no AI, no cost.
@@ -58,9 +58,25 @@ export function kkOkLabel(key) {
   const [where, kind, rest = ''] = String(key).split(':');
   const [word, kk] = rest.split('>');
   const place = where === 'header' ? 'TAJUK' : 'plaque';
-  if (kind === 'typo') return `${word} (kertas kerja: ${kk})`;
+  if (kind === 'file') return 'the kertas kerja is right although it differs a lot';
+  if (kind === 'typo') return `${word} (the file: ${kk})`;
+  if (kind === 'join') return `${word} as written (not ${kk})`;
+  if (kind === 'same') return `the same plaque on more than one row: ${word.replace(/_AND_(\d+)_MORE$/, ' (and $1 more)').replace(/_/g, ' ')}`;
   if (kind === 'missing') return `${place} without ${word}`;
   return `${word} added to the ${place}`;
+}
+
+// One entry per question, counted over every plaque that has it (the first plaque kept, to draw it)
+function issueList() {
+  const grouped = new Map();
+  return {
+    add: (issue, p, kkText) => {
+      const key = issueKey(issue);
+      const hit = grouped.get(key) || { ...issue, kkText, plaque: p, count: 0 };
+      grouped.set(key, { ...hit, count: hit.count + (p.count || 1) });
+    },
+    all: () => [...grouped.values()],
+  };
 }
 
 // `plaques`: reviewChecks.aiPlaquesOf(order); `readings`: form_reads results; `known`: other words that
@@ -72,18 +88,14 @@ export function checkAgainstReading(plaques, readings, known = []) {
   const readHeadings = reads.map((p) => wordsOf(p.heading));
   const knownWords = wordsOf([...known, ...(readings || []).map((r) => `${r?.school || ''} ${r?.teacher || ''}`)].join(' '));
   const vocab = new Set([...readBodies, ...readHeadings].flatMap((s) => [...s]).concat([...knownWords]));
-  const grouped = new Map();
+  const issues = issueList();
   (plaques || []).forEach((p) => {
     const header = wordsOf(p.header);
     const words = bodyWords(p);
     const all = new Set([...header, ...words]);
     const best = words.size ? closestReading(words, readBodies) : -1;
     const kkText = best >= 0 ? readingText(reads[best]) : '';
-    const add = (issue) => {
-      const key = issueKey(issue);
-      const hit = grouped.get(key) || { ...issue, kkText, plaque: p, count: 0 };
-      grouped.set(key, { ...hit, count: hit.count + (p.count || 1) });
-    };
+    const add = (issue) => issues.add(issue, p, kkText);
     // the TAJUK only where the kertas kerja's plaque has one (the bot leaves it empty when the file has none)
     const heading = best >= 0 ? readHeadings[best] : new Set();
     if (heading.size) [...header].filter((w) => !vocab.has(w)).forEach((w) => add({ kind: 'extra', where: 'header', word: w }));
@@ -107,7 +119,74 @@ export function checkAgainstReading(plaques, readings, known = []) {
       lostHeading.forEach((w) => add({ kind: 'missing', where: 'header', word: w }));
     }
   });
-  return [...grouped.values()];
+  return issues.all();
+}
+
+// ------------------------------------------------------------------ the salesman's own kertas kerja
+// No reading, only its printed lines (kertasKerjaText.js). A plaque is checked against the line most of whose
+// words it carries ("PENDIDIKAN SENI VISUAL | TAHUN 1-6 | 6"); a word nowhere in the file is asked about.
+const LINE_MIN_SHARE = 0.6;  // the share of the line's words on the plaque
+const LINE_MIN_SHARED = 2;   // one shared word ("ANUGERAH") says nothing
+
+export function closestLine(words, lineWords) {
+  let best = -1;
+  let bestScore = 0;
+  let bestShared = 0;
+  lineWords.forEach((lw, i) => {
+    const shared = [...lw].filter((w) => words.has(w)).length;
+    if (shared < LINE_MIN_SHARED) return;
+    const score = shared / lw.size;
+    if (score > bestScore || (score === bestScore && shared > bestShared)) { best = i; bestScore = score; bestShared = shared; }
+  });
+  return bestScore >= LINE_MIN_SHARE ? best : -1;
+}
+
+// The kertas kerja's lines made ready once for many checks (a file can have 4,000 lines): `lines` from
+// kertasKerjaLines() of every kertas kerja on the order; `known` as above; `notOnPlaque`: words a kertas kerja
+// line carries that never go on a plaque — the Jenis Plak codes (PKC 263, GOLD, SONGKET BLUE). `good`: the
+// spelling check's words (typoCheck.js) — one on a plaque the file spells a little differently is the file's
+// mistake, not asked about (SASIAH in the Excel where the website already wrote SAHSIAH, ORD-0599).
+export function indexLines(lines, known = [], notOnPlaque = [], good = getTypoDictionary()) {
+  const lineWords = (lines || []).map(wordsOf);
+  // words the website writes itself: a subject plaque's award, "TAHUN 6"
+  const own = wordsOf([...known, MP_DEFAULT_AWARD, 'TAHUN'].join(' '));
+  const vocab = new Set([...lineWords.flatMap((w) => [...w]), ...own]);
+  const goodSet = new Set(good);
+  // the file's words that aren't on the list: where a listed plaque word's misspelling would be
+  const odd = [...vocab].filter((w) => !goodSet.has(w));
+  return { lines: lines || [], lineWords, vocab, own, odd, skip: wordsOf(notOnPlaque.join(' ')), good: goodSet };
+}
+
+export const checkAgainstLines = (plaques, lines, known = [], notOnPlaque = [], opts = {}) => checkLines(plaques, indexLines(lines, known, notOnPlaque), opts);
+
+// `wholePlaque` (the order's own Excel, Sean 2026-11-27): a word is missing only where the closest line holds
+// every word of the plaque (the website's own "TAHUN" aside) — its siblings (TEMPAT PERTAMA for TEMPAT KEDUA,
+// IBNU SINA for IBNU KHALDUN) don't.
+export function checkLines(plaques, { lines, lineWords, vocab, own = new Set(), odd = [], skip, good = new Set() }, { wholePlaque = false } = {}) {
+  if (!lineWords.some((w) => w.size)) return [];
+  const issues = issueList();
+  (plaques || []).forEach((p) => {
+    const header = wordsOf(p.header);
+    const words = bodyWords(p);
+    const all = new Set([...header, ...words]);
+    const best = words.size ? closestLine(words, lineWords) : -1;
+    const add = (issue) => issues.add(issue, p, best >= 0 ? lines[best] : '');
+    [...header].filter((w) => !vocab.has(w)).forEach((w) => add({ kind: 'extra', where: 'header', word: w }));
+    const lacking = best >= 0 ? [...lineWords[best]].filter((w) => !all.has(w) && !skip.has(w)) : [];
+    const taken = new Set();
+    [...words].filter((w) => best < 0 || !lineWords[best].has(w)).forEach((w) => {
+      const near = nearWord(w, lacking);
+      // a listed word against the file's unlisted near-miss is the file's mistake; against another listed word
+      // (TAHAP / TAHUN, KELAS / KEMAS) it is a real difference
+      if (near) { taken.add(near); if (!good.has(w) || good.has(near)) add({ kind: 'typo', where: 'plaque', word: w, kk: near }); return; }
+      if (vocab.has(w) || (good.has(w) && nearWord(w, odd))) return;
+      add({ kind: 'extra', where: 'plaque', word: w });
+    });
+    const missing = lacking.filter((w) => !taken.has(w));
+    const holdsPlaque = !wholePlaque || (best >= 0 && [...words].every((w) => lineWords[best].has(w) || own.has(w)));
+    if (holdsPlaque && missing.length && missing.length <= MISSING_MAX_WORDS) missing.forEach((w) => add({ kind: 'missing', where: 'plaque', word: w }));
+  });
+  return issues.all();
 }
 
 // How much of the order the reading covers: the share of plaques with a close kertas kerja plaque.
@@ -119,3 +198,13 @@ export function readingCoverage(plaques, readings) {
   if (!bodies.length || !readBodies.length) return 0;
   return bodies.filter((w) => closestReading(w, readBodies) >= 0).length / bodies.length;
 }
+
+// How much of the order's wording is anywhere in the kertas kerja: the share of the plaques' distinct words.
+// Low = it is another school's or event's file — one question about the file instead of dozens of words.
+export const MIN_LINES_COVERAGE = 0.5;
+export function linesCoverage(plaques, linesOrIndex) {
+  const vocab = linesOrIndex?.vocab || new Set((linesOrIndex || []).flatMap((l) => [...wordsOf(l)]));
+  const words = new Set((plaques || []).flatMap((p) => [...bodyWords(p)]));
+  return words.size ? [...words].filter((w) => vocab.has(w)).length / words.size : 1;
+}
+export const WRONG_FILE_ISSUE = { kind: 'file', where: 'plaque', word: 'FILE' };
